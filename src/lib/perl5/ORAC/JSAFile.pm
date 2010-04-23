@@ -115,12 +115,12 @@ sub collate_headers {
   push(@toappend, $asntype);
 
   if ( ! $self->is_frame ) {
-    my $md5 = md5_hex($self->groupid);
-    my $asnid = new Astro::FITS::Header::Item( Keyword => 'ASN_ID',
-                                               Value   => $md5,
+    my $asnid = $self->asn_id;
+    my $asnhdr= new Astro::FITS::Header::Item( Keyword => 'ASN_ID',
+                                               Value   => $asnid,
                                                Comment => 'Association Identifier',
                                                Type    => 'STRING' );
-    push ( @toappend, $asnid );
+    push ( @toappend, $asnhdr );
   }
 
   # Check to see if the OBSIDSS header exists. If it doesn't, create
@@ -139,6 +139,29 @@ sub collate_headers {
 
   $header->append( \@toappend );
   return $header;
+}
+
+=item B<asn_id>
+
+Retrieves the group identifier for this frame or group and converts it
+to an association identifier.
+
+ $asn_id = $obj->asn_id();
+
+The association id will not be prefixed according to mode since the frame
+or group does not know the processing mode.
+
+=cut
+
+sub asn_id {
+  my $self = shift;
+  my $asn_txt = '';
+  if ($self->is_frame) {
+    $asn_txt = $self->group;
+  } else {
+    $asn_txt = $self->groupid;
+  }
+  return md5_hex( $asn_txt );
 }
 
 =back
