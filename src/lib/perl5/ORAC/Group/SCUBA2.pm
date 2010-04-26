@@ -168,7 +168,8 @@ sub sort_by_subarray {
 
   # Sort data files by subarray
   my %rawdata;
-  foreach my $frmobj ( $self->members ) {
+  foreach my $frmobj ( $self->allmembers ) {
+    next unless $frmobj->isgood;
     # Re-read the header to get the subheaders in place - takes time
     # with lots of files but unavoidable
     $frmobj->readhdr;
