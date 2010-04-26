@@ -6,9 +6,7 @@ _MAKEMAP_FRAME_ - convert time-series data into an image
 
 =head1 SYNOPSIS
 
-  _MAKEMAP_FRAME_ PIXSIZE=7.5
-
-  _MAKEMAP_FRAME_ MYCONFIG=1 NUMITER=10 BADFRAC=0.1
+  _MAKEMAP_FRAME_
 
 =head1 DESCRIPTION
 
@@ -16,10 +14,9 @@ This primitive takes time-series data for the current Frame and uses
 SMURF MAKEMAP to construct an image. The user may specify either the
 simple rebinning method or the full iterative solution.
 
-For the iterative map-maker a configuration file must be specified. By
-default, the system configuration file is used. However, the user may
-override this behaviour by specifying an alternative configuration
-file with the B<CONFIG> parameter. See
+For the iterative map-maker a configuration file is obtained based on
+the Frame uhdr entry C<MAKEMAP_CONFIG_TYPE>, though this may be
+overriden with a recipe parameter. See
 L<_GET_MAKEMAP_CONFIG_|_GET_MAKEMAP_CONFIG_> for further details.
 
 The output file size is kept below 2 GB which in practice corresponds
@@ -38,11 +35,6 @@ The following arguments are supported:
 
 =over 4
 
-=item B<CONFIG>
-
-Name of config file to be used. Default is to use one based on the
-value of C<MAKEMAP_CONFIG_TYPE> in the Frame uhdr.
-
 =item B<INFILES>
 
 A switch to determine how many files are given to makemap.  Valid
@@ -57,12 +49,6 @@ Image reconstruction method. May be C<REBIN> to use a simple rebinning
 scheme or C<ITER> to use the iterative map-maker. The default is
 C<ITER>.
 
-=item B<PIXSIZE>
-
-Size of the output map pixels in arcsec. The default is wavelength
-dependent and is determined by C<MAKEMAP> (4 arcsec at 850 um, 2 arcsec
-at 450 um).
-
 =item B<SYSTEM>
 
 Coordinate system for output image. May be any supported by
@@ -72,7 +58,7 @@ C<AST>. Default is C<TRACKING>.
 
 Desired pixel-spreading scheme for the rebin method. May be either
 C<NEAREST> for nearest-neighbour resampling or C<LINEAR> for bi-linear
-resampling.  Default is C<NEAREST>.
+resampling. Default is C<NEAREST>.
 
 =back
 
@@ -82,13 +68,17 @@ The following external tasks are used:
 
 =over 4
 
+=item KAPPA
+
+SETTITLE
+
 =item SMURF
 
 MAKEMAP
 
 =item ORAC-DR PRIMITIVES
 
-_GET_MAKEMAP_CONFIG_
+_CHECK_MAP_BOUNDS_, _GET_MAKEMAP_ARGS_, _GET_MAKEMAP_CONFIG_
 
 =back
 
@@ -156,9 +146,6 @@ if ($Frm->uhdr("DARKONLY")) {
   # Set a flag to indicate a map was not made
   $Frm->uhdr("NEWIMAGE",0);
 } else {
-  # Pixel size for output image
-  my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef);
-
   # Output coordinate system - default is TRACKING
   my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING");
 
@@ -246,22 +233,40 @@ if ($Frm->uhdr("DARKONLY")) {
   # small enough to keep the map size below 2 GB
   my $tiledims = int(sqrt(MAXPIX));
 
-  # Makemap argument list
-  my $args = "in=^$inlist out=$out spread=$spread bbm=$bbm "
-    ."system=$system method=$method tiledims=$tiledims";
-
-  $args .= " pixsize=$pixsize" if (defined $pixsize);
-
+  # Define makemap argument list - mandatory arguments
+  my $args = "in=^$inlist out=$out bbm=$bbm tiledims=$tiledims";
+  # Define the variable arguments to makemap
+  my %makemapargs = ( spread => $spread,
+		      system => $system,
+		      method => $method,
+		    );
   # Add CROTA=0 and ALIGNSYS=true for AzEl maps
-  $args .= " crota=0 alignsys=true" if ( uc($system) eq "AZEL");
+  if (uc($system) eq "AZEL") {
+    $makemapargs{crota} = 0;
+    $makemapargs{alignsys} = "true";
+  }
 
+  # Retrieve any makemap arguments given as recipe parameters
+  _GET_MAKEMAP_ARGS_
+  if ( defined $_GET_MAKEMAP_ARGS_{ARGS} ) {
+    my %newmakemapargs = %{$_GET_MAKEMAP_ARGS_{ARGS}};
+    # Store these new arguments in the hash - existing entries will be
+    # overriden
+    foreach my $arg (keys %newmakemapargs) {
+      $makemapargs{$arg} = $newmakemapargs{$arg};
+    }
+  }
+
+  # Construct argument list for makemap
+  foreach my $arg (keys %makemapargs) {
+    $args .= " $arg=$makemapargs{$arg}";
+  }
+
+  # Append name of config file to argument list
   my $config;
   if ( $iterate ) {
-    # Get name of optional user-specified config file
-    my $config = get_prim_arg( $_PRIM_ARGS_, "CONFIG", undef );
-
-    _GET_MAKEMAP_CONFIG_ CONFIG=$config
-    $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIGFILE};
+    _GET_MAKEMAP_CONFIG_
+    $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIG};
   }
 
   # Call makemap - really must have some sort of feedback to user
