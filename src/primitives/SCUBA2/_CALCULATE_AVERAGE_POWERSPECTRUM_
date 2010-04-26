@@ -103,9 +103,21 @@ USA.
 
 =cut
 
-# Skip darks in the case of science data
-unless ( $Frm->uhdr("DARKONLY") ) {
+my $proceed = 0;
 
+# Always calculate power spectrum for the summit and QL pipelines
+$proceed = 1 if ($Frm->uhdr("SUMMIT") || $Frm->uhdr("QUICKLOOK"));
+
+# Skip darks in the case of science data
+$proceed = 0 if ( $Frm->uhdr("DARKONLY") );
+
+# Proceed if the observation has finished
+$proceed = 1 if ($Frm->uhdr("OBSEND"));
+
+# ...unless the current Frame is marked as bad
+$proceed = 0 if ( !$Frm->isgood );
+
+if ($proceed) {
   # Sigma-clipping threshold for good bolometers in the average power
   # spectrum
   my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", 3.0);
@@ -124,9 +136,8 @@ unless ( $Frm->uhdr("DARKONLY") ) {
   # Parameters for sc2concat
   my $doflat = ($flat) ? "flat" : "noflat";
   # Calculate length of file and set padding accordingly for short
-  # observations. All files should be from the same observation so there
-  # should not be any subheaders.
-  my $obslength = $Frm->hdr("SEQEND") - $Frm->hdr("SEQSTART") + 1;
+  # observations
+  my $obslength = $Frm->hdrval("SEQEND",-1) - $Frm->hdrval("SEQSTART",0) + 1;
   my $padding = ($obslength < 10000) ? int ($obslength / 10) : 1000;
 
   # Parameters for sc2clean
@@ -134,49 +145,56 @@ unless ( $Frm->uhdr("DARKONLY") ) {
   my $dcthresh = 250;
   my $apod = $padding;
 
-  my $spectrum = ($Frm->nfiles == 1) ? "spectrum" : "spectra";
+  my $obsnum = $Frm->uhdr("ORAC_OBSERVATION_NUMBER");
+  my $nsubarrays = $Frm->subarrays;
+  # Sort files by subarray
+  my %subfiles = $Frm->get_files_by_subarray;
+
+  my $spectrum = ($nsubarrays == 1) ? "spectrum" : "spectra";
   orac_print "Calculating average power $spectrum..." if ($verbose);
 
-  orac_warn "Too many files to display - only the first 4 will be shown\n"
-    if ($Frm->nfiles > 4 && $verbose && $display_spectra);
-
   my @avpspec;
-  foreach my $i (1 .. $Frm->nfiles) {
-
-    # Add padding
-    my ($in, $out) = $Frm->inout("_avpspec", $i);
+  my $i = 0;
+  # Process each subarray separately
+  foreach my $subarray (sort keys %subfiles) {
+    # Step 1: add padding
+    $i++;
+    my $out = $Frm->inout("_avpspec", $i);
+    my $inlist = write_file_list( @{$subfiles{$subarray}} );
     my $temp1 = new ORAC::TempFile;
     my $tempfile1 = $temp1->file;
-    my $args = "in=$in out=$tempfile1 padstart=$padding padend=$padding $doflat";
+    my $args = "in=^$inlist out=$tempfile1 padstart=$padding padend=$padding $doflat";
     $Mon{smurf_mon}->obeyw("sc2concat","$args");
 
-    # Do some basic cleaning
+    # Step 2: do some basic cleaning
     my $temp2 = new ORAC::TempFile;
     my $tempfile2 = $temp2->file;
     $args = "in=$tempfile1 out=$tempfile2 dcbox=$dcbox dcthresh=$dcthresh order=0 apod=$apod fillgaps";
     $Mon{smurf_mon}->obeyw("sc2clean","$args");
 
-    # Calculate average power spectrum - reuse tempfile1 for output file
+    # Step 3: calculate average power spectrum - reuse tempfile1 for
+    # output file
     $args = "in=$tempfile2 out=$tempfile1 avpspec avpspecthresh=$thresh";
     $Mon{smurf_mon}->obeyw("sc2fft","$args");
     my ($ORAC_STATUS, $ngood) = $Mon{smurf_mon}->get("sc2fft","ngood");
 
-    # Threshold the spectrum at 1e7 for display purposes
+    # Threshold the spectrum at 1e7 for display purposes and copy out
+    # first axis from this 4-d file for linplot
     $Mon{kappa_mon}->obeyw("stats","ndf=$tempfile1");
     ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
     if ( $max > 1.0e7 ) {
       # Can reuse tempfile2 here
       my $args = "in=$tempfile1 out=$tempfile2 thrlo=0 newlo=0 thrhi=1.0e7 newhi=1.0e7";
       $Mon{kappa_mon}->obeyw("thresh","$args");
-      # Copy out first axis from this 4-d file for linplot
       $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile2(,0,0,1) trim trimwcs out=$out");
     } else {
-      # Copy out first axis from this 4-d file for linplot
       $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1(,0,0,1) trim trimwcs out=$out");
     }
 
-    # Set a suitable title
-    my $title = "'Ave power spec for $in ($ngood bolos)'";
+    # Set a suitable title - included subscan number for QL/SUMMIT pipelines
+    my $extra = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT"))
+      ? "/ scan ".($Frm->hdr("NSUBSCAN")) : "";
+    my $title = "'Ave power spec $subarray / obs $obsnum $extra ($ngood bolos)'";
     $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
 
     push(@avpspec, $out);
