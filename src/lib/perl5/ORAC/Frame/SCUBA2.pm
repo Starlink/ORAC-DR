@@ -903,6 +903,26 @@ sub subarrays {
   return @subarrays;
 }
 
+=item B<makemap_args>
+
+Return a list of supported arguments for makemap which may be
+specified as recipe parameters. Returns array or array reference
+depending on calling context.
+
+  my @makemap_args = $Frm->makemap_args;
+
+The supported arguments are (currently): alignsys, config, crota,
+maxmem, method, pixsize, reflat, reflon, spread, system.
+
+=cut
+
+sub makemap_args {
+  my $self = shift;
+  my @makemap_args = qw/ alignsys config crota maxmem method params pixsize
+                         reflat reflon spread system /;
+  return (wantarray) ? @makemap_args : \@makemap_args;
+}
+
 =item B<filter_darks>
 
 Standard image-based DREAM and STARE processing has no need for dark
