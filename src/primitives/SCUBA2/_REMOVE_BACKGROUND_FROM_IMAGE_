@@ -218,8 +218,22 @@ if ( $force || !$Frm->uhdr("SKY_SUBTRACTION") ) {
 	# Mask image using default position
 	_MASK_IMAGE_ IMAGE=$in MASKED=$maskfile RADIUS=$radius
 
-	# Fit and create a background surface
-	$Mon{kappa_mon}->obeyw("fitsurface","ndf=$maskfile accept");
+	# Fit and create a background surface - default to a polynomial fit
+	my $fittype = ( defined $Frm->uhdr("RECPAR_FITSURFACE_FITTYPE") ) ?
+	  $Frm->uhdr("RECPAR_FITSURFACE_FITTYPE") : "polynomial";
+	# Default parameters for fitsurface
+	my @par = ($fittype eq "polynomial") ? (2,2) : (4,4);
+	# Override with recipe parameter
+	@par = @{ $Frm->uhdr("RECPAR_FITSURFACE_FITPAR") }
+	  if ( defined $Frm->uhdr("RECPAR_FITSURFACE_FITPAR") );
+	# Arguments for fitsurface depend on the fittype
+	my $args = "ndf=$maskfile fittype=$fittype ";
+	$args .= ($fittype eq "spline") ? "knots=[$par[0],$par[1]]"
+	  : "nxpar=$par[0] nypar=$par[1]";
+	$Mon{kappa_mon}->obeyw("fitsurface","$args accept");
+	print "fitsurface $args\n";
+
+	# Now construct the surface from the fit
 	$Mon{kappa_mon}->obeyw("makesurface","in=$maskfile out=$tmpfile like=$maskfile variance=true accept");
 	# Subtract surface from original image
 	$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpfile out=$out");
