@@ -8,9 +8,9 @@ _REMOVE_BACKGROUND_FROM_IMAGE_ -  fit and remove a background from an image
 
  _REMOVE_BACKGROUND_FROM_IMAGE_
 
- _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=BACKGROUND BOX=15
+ _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=FINDBACK BOX=15
 
- _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=BACKGROUND MASK=1 RADIUS=25
+ _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=FITSURFACE MASK=1 RADIUS=25
 
  _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=PLANE
 
@@ -25,8 +25,8 @@ are supported:
 =item * find and remove a general background of arbitrary shape (using
 CUPID C<FINDBACK>);
 
-=item * fit and remove a polynomial surface after masking out an
-aperture centred on the source (using KAPPA C<FITSURFACE> and
+=item * fit and remove a polynomial surface after optionally masking
+out an aperture centred on the source (using KAPPA C<FITSURFACE> and
 C<MAKESURFACE>.
 
 =item * fit and remove a 2-D plane;
@@ -39,7 +39,6 @@ It is assumed that this is amounts to removing the bulk atmospheric
 contribution from the data, with the result that the Frame has the
 uhdr entry C<SKY_SUBTRACTION> set to 1 on success. It will not work on
 raw time series data.
-
 
 =head1 ARGUMENTS
 
@@ -58,6 +57,19 @@ Flag to indicate that the background removal should only done for
 known calibrators. Overrides the B<FORCE> parameter below but has no
 effect if sky subtraction has not taken place. Default is 0 (remove
 background for all sources).
+
+=item B<FITPAR>
+
+Parameters for controlling the polynomial order or spline fitting for
+fitsurface. May be one value, indicating the same fit us to be carried
+out in the X and Y directions, or two to indicate a different order or
+number of knots for each axis. Default depends on B<FITTYPE> and is 2
+for C<polynomial>, 4 for C<spline>.
+
+=item B<FITTYPE>
+
+Type of fit to be carried out by C<fitsurface>. May be C<polynomial>
+or C<spline>. Default is C<polynomial>.
 
 =item B<FORCE>
 
@@ -169,90 +181,88 @@ if ( $force || !$Frm->uhdr("SKY_SUBTRACTION") ) {
   my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 
   # Method of background removal
-  my $bgmethod = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "background"));
+  my $bgmethod = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "findback"));
 
   # Fall back on the default if not recognized
-  if ( $bgmethod !~ /^[back|plan|dc]/ ) {
-    orac_warn "Unrecognized background-removal option, $bgmethod: using default (background)\n";
-    $bgmethod = "background";
+  if ( $bgmethod !~ /^[fitsur|findba|plan|dc]/ ) {
+    orac_warn "Unrecognized background-removal option, $bgmethod: using default (findback)\n";
+    $bgmethod = "findback";
   }
 
-  if ( $bgmethod eq "background" ) {
+  my $nfiles = $Frm->nfiles;
+
+  if ( $bgmethod eq "fitsurface" || $bgmethod eq "findback" ) {
+    my $findback = ($bgmethod eq "findback") ? 1 : 0;
     # Fit and remove a background
-    my $nfiles = $Frm->nfiles;
-    my $images = ( $nfiles > 1 ) ? "images" : "image";
-    orac_print "Fitting and removing background from $nfiles $images..."
+    orac_print "Fitting and removing background..."
       if $verbose;
 
-    # Use a different suffix if this is a background removal rather
-    # than a simple sky subtraction
+    # Use a different suffix if this is a background removal (post
+    # sky-subtraction) rather than a simple sky subtraction
     my $suffix = ( $Frm->uhdr("SKY_SUBTRACTION") ) ? "_back" : "_sky";
 
-    # Mask parameter
-    my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 0 );
-    # Override with BACKGROUND_MASK recipe parameter if given
-    $mask = $Frm->uhdr("RECPAR_BACKGROUND_MASK")
-      if (defined $Frm->uhdr("RECPAR_BACKGROUND_MASK") );
-
+    # Background-subtracted files
     my @out;
 
-    if ( $mask ) {
-      # Mask out source before estimating background
-      my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS",
-				 ($Frm->hdr("FILTER") =~ /850/) ? 30 : 15);
-      # Override radius with recipe parameter if given
-      $radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
-	if ( defined $Frm->uhdr("RECPAR_APERTURE_RADIUS") );
-
-      # Temporary files for masking/fitting background
-      my $masked = new ORAC::TempFile;
-      my $maskfile = $masked->file;
-      my $tmp = new ORAC::TempFile;
-      my $tmpfile = $tmp->file;
-
-      orac_print " masking..." if $verbose;
-
-      # Fit surface and subtract from input image
-      foreach my $i ( 1 .. $nfiles ) {
-	my ($in, $out) = $Frm->inout( $suffix, $i);
-	# Mask image using default position
-	_MASK_IMAGE_ IMAGE=$in MASKED=$maskfile RADIUS=$radius
-
-	# Fit and create a background surface - default to a polynomial fit
-	my $fittype = ( defined $Frm->uhdr("RECPAR_FITSURFACE_FITTYPE") ) ?
-	  $Frm->uhdr("RECPAR_FITSURFACE_FITTYPE") : "polynomial";
-	# Default parameters for fitsurface
-	my @par = ($fittype eq "polynomial") ? (2,2) : (4,4);
-	# Override with recipe parameter
-	@par = @{ $Frm->uhdr("RECPAR_FITSURFACE_FITPAR") }
-	  if ( defined $Frm->uhdr("RECPAR_FITSURFACE_FITPAR") );
-	# Arguments for fitsurface depend on the fittype
-	my $args = "ndf=$maskfile fittype=$fittype ";
-	$args .= ($fittype eq "spline") ? "knots=[$par[0],$par[1]]"
-	  : "nxpar=$par[0] nypar=$par[1]";
-	$Mon{kappa_mon}->obeyw("fitsurface","$args accept");
-	print "fitsurface $args\n";
-
-	# Now construct the surface from the fit
-	$Mon{kappa_mon}->obeyw("makesurface","in=$maskfile out=$tmpfile like=$maskfile variance=true accept");
-	# Subtract surface from original image
-	$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpfile out=$out");
-	push(@out, $out);
-      }
-      orac_print " fitting..." if $verbose;
-    } else {
+    if ( $findback ) {
       # Size of region to use for smoothing. A default of 11 seems to
       # work well for point sources, preserving the peak flux while
       # fitting the background.
       my $box = get_prim_arg( $_PRIM_ARGS_, "BOX", 11 );
-      # Override box with recipe parameter if given
-      $box = $Frm->uhdr("RECPAR_FINDBACK_BOX")
-	if ( defined $Frm->uhdr("RECPAR_FINDBACK_BOX") );
       # Fit and remove background from each file
       foreach my $i ( 1 .. $nfiles ) {
 	my ($in, $out) = $Frm->inout( $suffix, $i);
 	my $args = "in=$in out=$out box=$box sub=true accept";
 	$Mon{cupid_mon}->obeyw("findback","$args");
+	push(@out, $out);
+      }
+
+    } else {
+
+      # Mask out a circular region centred on the source if requested
+      my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 0 );
+      # Aperture for masking out the source
+      my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS",
+				 ($Frm->hdr("FILTER") =~ /850/) ? 30 : 15 );
+      orac_print " masking with ".2.*$radius." arcsec aperture..."
+	if ($verbose && $mask);
+
+      # Temporary files for fitting background
+      my $tmp = new ORAC::TempFile;
+      my $tmpfile = $tmp->file;
+      my $masked = new ORAC::TempFile;
+      my $maskfile = $masked->file;
+      # Flag to keep the fitted surface on disk - default to no
+      my $keepsurface = (defined $Frm->uhdr("RECPAR_FITSURFACE_KEEPSURFACE"))
+	? $Frm->uhdr("RECPAR_FITSURFACE_KEEPSURFACE") : 0;
+
+      # Fit surface and subtract from input image
+      foreach my $i ( 1 .. $nfiles ) {
+	my ($in, $out) = $Frm->inout( $suffix, $i);
+
+	# Mask out the source if required
+	if ( $mask ) {
+	  _MASK_IMAGE_ IMAGE=$in MASKED=$maskfile RADIUS=$radius
+	}
+
+	# Fit and create a background surface - default to a polynomial fit
+	my $fittype = get_prim_arg($_PRIM_ARGS_, "FITTYPE", "polynomial");
+	my $fitpar = get_prim_arg($_PRIM_ARGS_, "FITPAR",
+				  ($fittype eq "polynomial") ? [2,2] : [4,4]);
+	my @par = @{$fitpar};
+	# Arguments for fitsurface depend on the fittype
+	my $infile = ($mask) ? $maskfile : $in;
+	my $args = "ndf=$infile fittype=$fittype ";
+	$args .= ($fittype eq "spline") ? "knots=[$par[0],$par[1]]"
+	  : "nxpar=$par[0] nypar=$par[1]";
+	$Mon{kappa_mon}->obeyw("fitsurface","$args accept");
+
+	# Now construct the surface from the fit - optionally keep the
+	# fitted surface on disk (derive name from current file)
+	my $surface = ($keepsurface) ? $Frm->inout("_surface", $i) : $tmpfile;
+	$Mon{kappa_mon}->obeyw("makesurface","in=$in out=$surface like=$in variance=true accept");
+	# Subtract fitted surface from original image
+	$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$surface out=$out");
 	push(@out, $out);
       }
     }
