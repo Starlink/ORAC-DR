@@ -21,9 +21,9 @@ generated Gaussian PSF. Each output pixel value is given by:
 where the sum is over all input pixels that contribute to the output
 pixel. The variances stored with the resulting image are given by:
 
-                        input_variance
-      output_variance = ---------------
-                        sum( psf_i**2 )
+                                     1.0
+      output_variance = --------------------------------
+                        sum( psf_i**2/input_variance_i )
 
 
 The input file must contain a variance, though no check is made for
@@ -70,7 +70,7 @@ an output file with the suffix C<_mf>.
 =item B<SMOOTH>
 
 Full-width at half-maximum in arcsec of Gaussian used to smooth input
-image and PSF. Default is twice the beamsize at the current wavelength.
+image and PSF. Default is 30 arcsec.
 
 =back
 
@@ -221,8 +221,11 @@ if (!$psf) {
 }
 
 # Smooth input image and PSF by gaussian with given FWHM and subtract
-# from each. The default size is twice the (default) FWHM of the PSF.
-my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 2*$Cal->fwhm);
+# from each. The default size is 30".
+my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 30.0);
+# Override with recipe parameter
+$smooth_fwhm = $Frm->uhdr("RECPAR_SMOOTH_FWHM")
+  if (defined $Frm->uhdr("RECPAR_SMOOTH_FWHM"));
 my $smooth_pix = $smooth_fwhm / $pixscale;
 $Mon{kappa_mon}->obeyw("gausmooth","in=$in out=$tempfile1 fwhm=$smooth_pix");
 $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tempfile1 out=$tempfile_in");
@@ -272,11 +275,10 @@ my $tempfileb = $tempb->file;
 $args = "in=$tempfile4 out=$tempfileb scalar=$psfsum2";
 $Mon{kappa_mon}->obeyw("cmult","$args");
 
-# The output image is the ratio of a and b
+# The output image is the ratio of A and B
 $Mon{kappa_mon}->obeyw("div","in1=$tempfilea in2=$tempfileb out=$out");
 
-# The variance in the output image should be:
-# (input_var)/(data sum in squared PSF)
-$args = "exp=va/pa va=$in pa=$psfsum2 out=$tempfile1";
+# The variance in the output image is the reciprocal of B.
+$args = "exp=1/ia ia=$tempfileb out=$tempfile1";
 $Mon{kappa_mon}->obeyw("maths","$args");
 $Mon{ndfpack_mon}->obeyw("setvar","ndf=$out from=$tempfile1 comp=data");
