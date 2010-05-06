@@ -101,9 +101,21 @@ sub findgroup {
   return $self->group;
 }
 
+=item B<framegroup>
+
+All files given to PICARD end up in separate Frame objects.
+
+=cut
+
+sub framegroup {
+  my $class = shift;
+  my @files = @_;
+  return map { $class->new($_) } @files;
+}
+
 =item B<framegroupkeys>
 
-For PICARD, return an empty list.
+For PICARD, return an empty list. This method does nothing.
 
 =cut
 
