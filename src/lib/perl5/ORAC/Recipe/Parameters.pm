@@ -146,7 +146,7 @@ sub verify_parameters {
     }
   }
   foreach my $invalid ( sort keys %recpars_copy ) {
-    orac_warn "Recipe parameter $invalid not valid for current recipe!\n";
+    orac_warn "Ignoring unsupported recipe parameter $invalid\n";
   }
 }
 
