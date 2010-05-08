@@ -118,77 +118,35 @@ if ( $raw ) {
 }
 
 # Retrieve existing results if present
-my @picard_results;
+my %picard_results;
 if (defined $Frm->uhdr("PICARD_RESULTS")) {
-  @picard_results = @{ $Frm->uhdr("PICARD_RESULTS") };
+  %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
 }
 
-# Calibrate the data if necessary - use the default calibration of
-# `per beam'
-unless ( @picard_results && $usefcf ) {
+# Calibrate using derived FCF is requested
+if ( $usefcf ) {
+  my $out = $Frm->inout("_cal");
+  # Calibrate data
+  my $fcf = 1000.0 * $picard_results{fcf_equivbeam};
+  my $args = "in=".($Frm->file)." out=$out scalar=$fcf";
+  $Mon{kappa_mon}->obeyw("cmult","$args");
+  $Frm->files($out);
+} else {
+  # Otherwise use default calibration `per beam'
   _CALIBRATE_DATA_
 }
 
-# Now, _CALCULATE_NEFD_ only operates on the current Frame or Group
-# file, so we need to trick it. First we store the list of files in
-# the Frame, then we take a copy of the Frame before creating a new
-# template SCUBA2 Frame object.  Then loop over all the files in the
-# Frame, read the header from each and store as the Frame file. Now
-# we can derive the NEFD.
+# Inform user of progress.
+my $object = $Frm->hdr("OBJECT");
+my $obs = $Frm->hdr("OBSNUM");
+orac_print "\nCalculating NEFD for ".($Frm->file)." ($object)\n";
 
-# Retrieve info about files in Frame
-my $nfiles = $Frm->nfiles;
-my @files = $Frm->files;
-# List of calibrated files if done below
-my @out;
-# Make a copy to restore later
-my $inFrm = $Frm;
+_CALCULATE_NEFD_ GROUP=0 VERBOSE=1 ESTIMATOR=MODE KEEP_NEFD=1 LOGFILE=$nefdlog
 
-# Create a new Frame object
-$Frm = $Frm->new;
-
-# Loop over each file
-foreach my $i ( 1 .. $nfiles ) {
-  # Define the header for the new Frame
-  $Frm->files($files[$i-1]);
-  $Frm->readhdr;
-
-  # Obtain basic results and define current results hash
-  _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
-  my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
-
-  if ( @picard_results && $usefcf ) {
-    my $out = $Frm->inout("_cal");
-    # Calibrate data
-    my $fcf = 1000.0 * $current_results{fcf_equivbeam};
-    my $args = "in=".($Frm->file)." out=$out scalar=$fcf";
-    $Mon{kappa_mon}->obeyw("cmult","$args");
-    $Frm->files($out);
-    push(@out, $out);
-  }
-
-  # Inform user of progress. If the data are from a single
-  # observation, print that number
-  my $object = $Frm->hdr("OBJECT");
-  my $obs = $Frm->hdr("OBSNUM");
-  my $extra = ( defined $obs ) ? ", obs $obs" : "";
-  orac_print "\nCalculating NEFD for $files[$i-1] (".$object.$extra.")\n";
-
-  _CALCULATE_NEFD_ GROUP=0 VERBOSE=1 ESTIMATOR=MODE KEEP_NEFD=1 LOGFILE=$nefdlog
-
-  # Store NEFD in current hash
-  $current_results{nefd} = $_CALCULATE_NEFD_{NEFD};
-
-  # Store the current results
-  $picard_results[$i-1] = \%current_results;
-}
-# Since no new files were created, restore the original Frame object
-$Frm = $inFrm;
-
-# Store calibrated output files if created
-$Frm->files(@out) if @out;
+# Store NEFD in current hash
+$picard_results{nefd} = $_CALCULATE_NEFD_{NEFD};
 
 # Store the results hash in the Frame uhdr
 if ( $logfile ) {
-  $Frm->uhdr("PICARD_RESULTS", \@picard_results);
+  $Frm->uhdr("PICARD_RESULTS", \%picard_results);
 }

@@ -94,9 +94,7 @@ USA.
 orac_print ("\nCalling _WRITE_FCFNEFD_LOGFILE_: write flux/nefd/fcf info to log file\n", "yellow");
 
 # This uhdr entry should exist if this primitive is being called....!
-my @sources = @{ $Frm->uhdr("PICARD_RESULTS") };
-
-if ( @sources ) {
+if ( $Frm->uhdr("PICARD_RESULTS") ) {
   orac_print "Writing results to log file, log.fcfnefd...";
 
   my ($extra1, $extra2) = ("","");
@@ -115,48 +113,45 @@ if ( @sources ) {
   # blank if none is defined.
   my $radius = (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS"))
     ? $Frm->uhdr("RECPAR_APERTURE_RADIUS") : 30;
-  for my $file ( 0 .. $#sources ) {
+  my %current_results = %{ $Frm->uhdr("PICARD_RESULTS") };
 
-    my %current_results = %{ $sources[$file] };
+  my $datafile = $current_results{file};
+  my $source   = $current_results{source};
+  my $wavelen  = $current_results{wavelen};
+  my $wvm      = sprintf "%6.3f", $current_results{wvm};
+  my $airmass  = sprintf "%5.3f", $current_results{airmass};
 
-    my $datafile = $current_results{file};
-    my $source   = $current_results{source};
-    my $wavelen  = $current_results{wavelen};
-    my $wvm      = sprintf "%6.3f", $current_results{wvm};
-    my $airmass  = sprintf "%5.3f", $current_results{airmass};
+  my $noise    = sprintf "%8.2f", $current_results{noise};
+  my $texp     = sprintf "%6.2f", $current_results{texp};
 
-    my $noise    = sprintf "%8.2f", $current_results{noise};
-    my $texp     = sprintf "%6.2f", $current_results{texp};
+  # FCF
+  my $fcf = sprintf "%8.3f", $current_results{fcf_beam};
+  my $fcf_as = sprintf "%8.3f", $current_results{fcf_asec};
+  my $fcf_eq = sprintf "%8.3f", $current_results{fcf_equivbeam};
 
-    # FCF
-    my $fcf = sprintf "%8.3f", $current_results{fcf_beam};
-    my $fcf_as = sprintf "%8.3f", $current_results{fcf_asec};
-    my $fcf_eq = sprintf "%8.3f", $current_results{fcf_equivbeam};
+  # Flux and image noise - these are left in pW
+  my $flux_ap  = sprintf "%10.2f", $current_results{flux_ap};
+  my $imnoise = sprintf "%8.4g", $current_results{imnoise};
 
-    # Flux and image noise - these are left in pW
-    my $flux_ap  = sprintf "%10.2f", $current_results{flux_ap};
-    my $imnoise = sprintf "%8.4g", $current_results{imnoise};
+  # Apply a zenith correction to the NEFD
+  my $tau = $current_results{tau};
+  my $zencorr = exp( $tau * ($current_results{airmass} - 1) );
+  my $nefd_zen = sprintf "%5d", ($current_results{nefd} / $zencorr);
 
-    # Apply a zenith correction to the NEFD
-    my $tau = $current_results{tau};
-    my $zencorr = exp( $tau * ($current_results{airmass} - 1) );
-    my $nefd_zen = sprintf "%5d", ($current_results{nefd} / $zencorr);
-
-    # NEFD at this tau based on values given in the Call for Proposals
-    # the relation appears to be a quadratic of the form:
-    # Amult * (wvm - off)*(wvm - off) + Bmult * (wvm - off) + const
-    my ( $amult, $bmult, $const, $off );
-    if ( $wavelen eq "850") {
-      ( $amult, $bmult, $const, $off ) = ( 924.79, 196.91, 39.914, 0.0);
-    } else {
-      ( $amult, $bmult, $const, $off ) = ( 7.5e4, 0.0, 70.0, 0.02);
-    }
-    my $nefd_cfp = sprintf "%5d", ($amult * ($wvm - $off)*($wvm - $off) +
-				   $bmult * ($wvm - $off) + $const);
-    $nefd_cfp = "" unless ($Frm->uhdr("RECPAR_NEFD_CFP"));
-
-    $logfile->addentry("$datafile   $source  $wavelen $flux_ap $imnoise $texp  $wvm  $airmass $noise $fcf  $fcf_as  $fcf_eq   $nefd_zen  $nefd_cfp   $radius");
+  # NEFD at this tau based on values given in the Call for Proposals
+  # the relation appears to be a quadratic of the form:
+  # Amult * (wvm - off)*(wvm - off) + Bmult * (wvm - off) + const
+  my ( $amult, $bmult, $const, $off );
+  if ( $wavelen eq "850") {
+    ( $amult, $bmult, $const, $off ) = ( 924.79, 196.91, 39.914, 0.0);
+  } else {
+    ( $amult, $bmult, $const, $off ) = ( 7.5e4, 0.0, 70.0, 0.02);
   }
+  my $nefd_cfp = sprintf "%5d", ($amult * ($wvm - $off)*($wvm - $off) +
+				 $bmult * ($wvm - $off) + $const);
+  $nefd_cfp = "" unless ($Frm->uhdr("RECPAR_NEFD_CFP"));
+
+  $logfile->addentry("$datafile   $source  $wavelen $flux_ap $imnoise $texp  $wvm  $airmass $noise $fcf  $fcf_as  $fcf_eq   $nefd_zen  $nefd_cfp   $radius");
 
   orac_print " done\n";
 } else {

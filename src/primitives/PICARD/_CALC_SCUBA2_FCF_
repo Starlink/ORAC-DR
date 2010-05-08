@@ -99,80 +99,46 @@ $logfile = $Frm->uhdr("RECPAR_LOGFILE")
 if ( $Frm->uhdr("DATA_UNITS") eq "pW") {
 
   # Retrieve existing results if present
-  my @picard_results;
+  my %picard_results;
   if (defined $Frm->uhdr("PICARD_RESULTS")) {
-    @picard_results = @{ $Frm->uhdr("PICARD_RESULTS") };
+    %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
   }
 
-  # Now, _FIND_CALIBRATION_MAP_ only operates on the current Frame or
-  # Group file, so we need to trick it. Loop over all the files in the
-  # Frame, store each in turn as the Frame file and derive the FCF.
-  my $nfiles = $Frm->nfiles;
-  my @files = $Frm->files;
-  # Make a copy to restore later
-  my $inFrm = $Frm;
+  my $object = $Frm->hdr("OBJECT");
 
-  # Create a new temporary Frame object
-  $Frm = $Frm->new;
-
-  # Store the uhdr in the new Frame
-  $Frm->uhdr( %{ $inFrm->uhdr} );
-
-  # Process each file
-  foreach my $i ( 1 .. $nfiles ) {
-    $Frm->files($files[$i-1]);
-    $Frm->readhdr;
-    my $object = $Frm->hdr("OBJECT");
-    # Set the OBJECT translated header
-    $Frm->uhdr("ORAC_OBJECT", $object);
-
-    # Make sure the OBSEND uhdr comes through or else
-    # _FIND_CALIBRATION_MAP_ won't run.
-    $Frm->uhdr( "OBSEND", $inFrm->uhdr( "OBSEND" ) );
-
-    # Set a flag to denote whether a flux can be determined for the
-    # current wavelength
-    my $fluxexists = 0;
-    if ( $Cal->iscalsource($object) ) {
+  # Set a flag to denote whether a flux can be determined for the
+  # current wavelength
+  my $fluxexists = 0;
+  if ( $Cal->iscalsource($object) ) {
+    $fluxexists = 1;
+  } else {
+    my $long = ( $Frm->hdr("FILTER") =~ /850/ ) ? 1 : 0;
+    if ( $long && defined $Frm->uhdr("RECPAR_FLUX_850") ) {
       $fluxexists = 1;
-    } else {
-      my $long = ( $Frm->hdr("FILTER") =~ /850/ ) ? 1 : 0;
-      if ( $long && defined $inFrm->uhdr("RECPAR_FLUX_850") ) {
-	$Frm->uhdr("RECPAR_FLUX_850", $inFrm->uhdr("RECPAR_FLUX_850"));
-	$fluxexists = 1;
-      } elsif ( !$long && defined $inFrm->uhdr("RECPAR_FLUX_450") ) {
-	$Frm->uhdr("RECPAR_FLUX_450", $inFrm->uhdr("RECPAR_FLUX_450"));
-	$fluxexists = 1;
-      }
-    }
-
-    if ( $fluxexists ) {
-      orac_print "\nCalculating FCF for $files[$i-1] ($object)\n";
-      # Set store=0 because we don't want to try and store the FCF in the
-      # calibration system
-      _FIND_CALIBRATION_MAP_ STORE=0 GROUP=0
-
-      # Obtain basic results and define current results hash
-      _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
-      my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
-      my $fcfs = $_FIND_CALIBRATION_MAP_{FCF};
-      if ( defined $fcfs ) {
-	$current_results{fcf_asec} = $fcfs->{ARCSEC};
-	$current_results{fcf_beam} = $fcfs->{BEAM};
-	$current_results{fcf_equivbeam} = $fcfs->{BEAMEQUIV};
-      }
-
-      $picard_results[$i-1] = \%current_results;
-    } else {
-      orac_print "\nSkipping $files[$i-1] ($object): no way to determine flux\n";
+    } elsif ( !$long && defined $Frm->uhdr("RECPAR_FLUX_450") ) {
+      $fluxexists = 1;
     }
   }
-  # Restore the Frame to its input state
-  $Frm = $inFrm;
+
+  if ( $fluxexists ) {
+    orac_print "\nCalculating FCF for ".($Frm->file)." ($object)\n";
+    # Set store=0 because we don't want to try and store the FCF in the
+    # calibration system
+    _FIND_CALIBRATION_MAP_ STORE=0 GROUP=0
+
+    my $fcfs = $_FIND_CALIBRATION_MAP_{FCF};
+    if ( defined $fcfs ) {
+      $picard_results{fcf_asec} = $fcfs->{ARCSEC};
+      $picard_results{fcf_beam} = $fcfs->{BEAM};
+      $picard_results{fcf_equivbeam} = $fcfs->{BEAMEQUIV};
+    }
+  } else {
+    orac_print "\nSkipping $picard_results{file} ($object): no way to determine flux\n";
+  }
 
   # Store the results hash in the Frame uhdr
   if ( $logfile ) {
-    $Frm->uhdr("PICARD_RESULTS", \@picard_results);
+    $Frm->uhdr("PICARD_RESULTS", \%picard_results);
   }
 
 } else {

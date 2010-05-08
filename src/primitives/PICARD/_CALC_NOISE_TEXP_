@@ -112,59 +112,33 @@ $radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
   if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS"));
 
 # Retrieve existing results if present
-my @picard_results;
+my %picard_results;
 if (defined $Frm->uhdr("PICARD_RESULTS")) {
-  @picard_results = @{ $Frm->uhdr("PICARD_RESULTS") };
+  %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
 }
 
-# Retrieve info about files in Frame
-my $nfiles = $Frm->nfiles;
-my @files = $Frm->files;
-# Make a copy to restore later
-my $inFrm = $Frm;
+# Calculate mean Texp within an aperture centred on the source,
+# determined as the centroid near the SkyRef position.
+_CENTROID_IMAGE_
+my $xypos = $_CENTROID_IMAGE_{RESULTS};
+my $image = $Frm->file .".more.smurf.exp_time";
+_FIND_INTEGRATED_INTENSITY_ IMAGE=$image MASK=0 RADIUS=$radius XYPOS=$xypos
+my $meantexp = $_FIND_INTEGRATED_INTENSITY_{SUM} / $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
 
-# Create a new Frame object
-$Frm = $Frm->new;
+# Now repeat for the variance - unfortunately we have to copy it out
+# first to a temporary file
+my $var = new ORAC::TempFile;
+$image = $var->file;
 
-# Loop over each file
-foreach my $i ( 1 .. $nfiles ) {
-  # Define the header for the new Frame
-  $Frm->files($files[$i-1]);
-  $Frm->readhdr;
+my $args = "in=".($Frm->file)." out=$image comp=var";
+$Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+_FIND_INTEGRATED_INTENSITY_ IMAGE=$image MASK=0 RADIUS=$radius XYPOS=$xypos
+my $meanvar = $_FIND_INTEGRATED_INTENSITY_{SUM} / $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
 
-  # Calculate mean Texp within an aperture centred on the source,
-  # determined as the centroid near the SkyRef position.
-  _CENTROID_IMAGE_
-  my $xypos = $_CENTROID_IMAGE_{RESULTS};
-  my $image = $Frm->file .".more.smurf.exp_time";
-  _FIND_INTEGRATED_INTENSITY_ IMAGE=$image MASK=0 RADIUS=$radius XYPOS=$xypos
-  my $meantexp = $_FIND_INTEGRATED_INTENSITY_{SUM} / $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
-
-  # Now repeat for the variance - unfortunately we have to copy it out
-  # first to a temporary file
-  my $var = new ORAC::TempFile;
-  $image = $var->file;
-
-  my $args = "in=".($Frm->file)." out=$image comp=var";
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
-  _FIND_INTEGRATED_INTENSITY_ IMAGE=$image MASK=0 RADIUS=$radius XYPOS=$xypos
-  my $meanvar = $_FIND_INTEGRATED_INTENSITY_{SUM} / $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
-
-  # Obtain basic results and define current results hash
-  _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
-  my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
-
-  $current_results{texp} = $meantexp;
-  $current_results{noise} = sqrt($meanvar);
-
-  # Store the current results
-  $picard_results[$i-1] = \%current_results;
-}
-
-# Since no new files were created, restore the original Frame object
-$Frm = $inFrm;
+$picard_results{texp} = $meantexp;
+$picard_results{noise} = sqrt($meanvar);
 
 # Store the results hash in the Frame uhdr
 if ( $logfile ) {
-  $Frm->uhdr("PICARD_RESULTS", \@picard_results);
+  $Frm->uhdr("PICARD_RESULTS", \%picard_results);
 }
