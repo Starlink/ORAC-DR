@@ -2,22 +2,23 @@
 
 =head1 NAME
 
-_MOSAIC_IMAGES_ - combine SCUBA-2 images taking NDF components into account
+_MOSAIC_JCMT_IMAGES_ - combine JCMT images taking NDF components into account
 
 =head1 SYNOPSIS
 
-_MOSAIC_IMAGES__
+_MOSAIC_JCMT_IMAGES_
 
 =head1 DESCRIPTION
 
-This PICARD primitive is designed to combine multiple SCUBA-2 images,
-taking into account the existence of the EXP_TIME and WEIGHTS NDF
-components.
+This PICARD primitive is designed to combine multiple SCUBA-2 or ACSIS
+images, taking into account the existence of the EXP_TIME and WEIGHTS
+NDF components.
 
 The mosaicking step can be performed by KAPPA/wcsmosaic or
 CCDPACK/makemos (not yet implemented).
 
-All the input images must be of the same source.
+All the input images must be of the same source and they must be
+aligned to the same grid for the EXP_TIME sum to work correctly.
 
 =head1 ARGUMENTS
 
@@ -27,11 +28,12 @@ This primitive supports the following arguments:
 
 =item B<METHOD>
 
-Pixel-spreading scheme. Default is C<NEAREST> for nearest-neighhour.
+Pixel-spreading scheme. Default is C<NEAREST> for nearest-neighbour.
 
 =item B<TASK>
 
-Task to perform the mosaicking step. May be C<wcsmosaic> or C<makemos>.
+Task to perform the mosaicking step. May be C<wcsmosaic> or
+C<makemos>. Default is C<wcsmosaic>.
 
 =head1 EXTERNAL TASKS
 
@@ -59,7 +61,18 @@ Creates a single output file with the suffix C<_mos>
 
 =head1 NOTES
 
+Processing is delayed until the last Frame in the Group is
+reached. Care should be taken that any downstream primitives are aware
+of this.
+
 Only KAPPA/wcsmosaic supported at the moment.
+
+Does not handle multiple sources (will try and mosaic them all!).
+
+Has not been tested on ACSIS data.
+
+The output EXP_TIME is created via a simple sum of pixel values so all
+the input images should be created on the same grid.
 
 =head1 AUTHOR
 
@@ -87,16 +100,13 @@ USA.
 
 =cut
 
-orac_print ("\nCalling _MOSAIC_IMAGES_: combine SCUBA-2 images\n", "yellow");
-
-# First thing is to check the data are for the same source
-unless ( defined $Frm->hdr("OBJECT") ) {
-  orac_throw "Input images must all be of same source\n";
-}
+orac_print ("\nCalling _MOSAIC_JCMT_IMAGES_: combine JCMT images\n", "yellow");
 
 # Obtain mosaicking task - set wcsmos flag
 my $task = lc(get_prim_arg($_PRIM_ARGS_, "TASK", "wcsmosaic"));
 my $wcsmos = ( $task =~ /wcsmos/ ) ? 1 : 0;
+# Hack for now to ensure wcsmosaic is always used
+$wcsmos = 1;
 
 # Pixel-spreading scheme for wcsalign/wcsmosaic
 my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest"));
@@ -104,28 +114,36 @@ my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest"));
 my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
   $Frm->uhdr("RECPAR_VERBOSE") : 0;
 
-# Collate images
-my (@infiles, $refimage);
-if ( $wcsmos ) {
-  @infiles = $Frm->files;
+# Only proceed for the last member of the Group
+if ($Grp->lastmember($Frm)) {
+  # Collate images
+  my (@infiles, $refimage);
+  if ( $wcsmos ) {
+    @infiles = map { $_->files } $Grp->members;
+  } else {
+    # wcsalign images...
+  }
+  my $nfiles = scalar(@infiles);
+  orac_print "Reached last Group member: Mosaicking $nfiles images...\n";
+
+  my $inlist = write_file_list( @infiles );
+
+  # Combine images
+  my $out = $Frm->inout("_mos");
+  if ( $wcsmos ) {
+    my $args = "ref=! variance genvar=! method=$method out=$out "
+      ."in=^$inlist lbnd=! ubnd=!";
+    $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+  } else {
+    # Placeholder for makemos...
+  }
+
+  # Add up the EXP_TIME and WEIGHTS components
+  $Frm->uhdr("EXP_TIME",1);
+  $Frm->uhdr("WEIGHTS",1);
+  _ADD_IMAGES_ INLIST=\@infiles OUT=$out COMPS=EXP_TIME,WEIGHTS
+  orac_print "\n";
+
 } else {
-  # wcsalign images...
+  orac_print "Delaying processing until the last Group member\n";
 }
-
-my $inlist = write_file_list( @infiles );
-
-# Combine images
-my $out = $Frm->inout("_mos");
-if ( $wcsmos ) {
-  my $args = "ref=! variance genvar=! method=$method out=$out "
-    ."in=^$inlist lbnd=! ubnd=!";
-  $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
-} else {
-  # Placeholder for makemos...
-}
-
-# Add up the EXP_TIME and WEIGHTS components
-$Frm->uhdr("EXP_TIME",1);
-$Frm->uhdr("WEIGHTS",1);
-_ADD_IMAGES_ INLIST=\@infiles OUT=$out COMPS=EXP_TIME,WEIGHTS
-orac_print "\n";
