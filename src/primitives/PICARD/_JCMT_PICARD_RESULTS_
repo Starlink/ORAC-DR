@@ -2,11 +2,11 @@
 
 =head1 NAME
 
-_SCUBA2_PICARD_RESULTS_ - store basic observation info in header
+_JCMT_PICARD_RESULTS_ - store basic observation info in hash
 
 =head1 SYNOPSIS
 
-_SCUBA2_PICARD_RESULTS_
+_JCMT_PICARD_RESULTS_
 
 =head1 DESCRIPTION
 
@@ -17,8 +17,8 @@ The stored hash is used and re-stored in subsequent primitives, and
 the values are available for writing to a log file once processing is
 complete.
 
-However, the hash is only created if the recipe parameter C<LOGFILE>
-is true.
+Note that if the hash already exists, this primitive will overwrite
+it.
 
 =head1 ARGUMENTS
 
@@ -43,6 +43,10 @@ Mean airmass for current file.
 
 Name of input file.
 
+=item * freq
+
+Frequency in GHz
+
 =item * obsnum
 
 Observation number.
@@ -57,7 +61,7 @@ Mean optical depth at 225 GHz for current file.
 
 =item * wavelen
 
-Wavelength in um (either 850 or 450).
+Wavelength in um.
 
 =item * wvm
 
@@ -95,27 +99,41 @@ USA.
 
 =cut
 
-# If LOGFILE has been specified store various properties of the
-# observation for writing to the log file
-if ($Frm->uhdr("RECPAR_LOGFILE")) {
-  my %picard_results;
-  $picard_results{file} = $Frm->file;
+use constant CSOL => 2.9979e8;
 
-  # Object, observation number and wavelength
-  $picard_results{source} = $Frm->hdr("OBJECT");
-  $picard_results{obsnum} = $Frm->hdr("OBSNUM");
-  $picard_results{wavelen} = ( $Frm->hdr("FILTER") =~ /^850/ ) ? "850" : "450";
+my %picard_results;
+$picard_results{file} = $Frm->file;
 
-  # Optical depth
-  use JCMT::Tau;
-  my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
-  $picard_results{wvm} = $tau;
-  ($picard_results{tau}, my $status) = get_tau( $Frm->hdr("FILTER"),
-						"CSO", $tau);
-
-  # Airmass
-  $picard_results{airmass} = 0.5 * ( $Frm->hdr("AMSTART") +
-				     $Frm->hdr("AMEND"));
-
-  $Frm->uhdr("PICARD_RESULTS", \%picard_results);
+# Object, observation number and wavelength
+$picard_results{source} = $Frm->hdr("OBJECT");
+$picard_results{obsnum} = $Frm->hdr("OBSNUM");
+my ($freq, $wavelen);
+if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" ) {
+  $wavelen = 1.0e6 * $Frm->hdr("WAVELEN");
+  $freq = sprintf "%8.4f", CSOL / (1.0e9 * $Frm->hdr("WAVELEN"));
+} else {
+  if ($Frm->hdr("OBS_SB") eq "USB") {
+    $freq = 0.5 * ($Frm->hdr("LOFREQS") + $Frm->hdr("LOFREQE")) +
+      $Frm->hdr("IFFREQ");
+  } else {
+    $freq = 0.5 * ($Frm->hdr("LOFREQS") + $Frm->hdr("LOFREQE")) -
+      $Frm->hdr("IFFREQ");
+  }
+  $wavelen = sprintf "%3d", CSOL / (1.0e3 * $freq);
+  $freq = sprintf "%8.4f", $freq;
 }
+$picard_results{wavelen} = $wavelen;
+$picard_results{freq} = $freq;
+
+# Optical depth
+use JCMT::Tau;
+my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
+$picard_results{wvm} = $tau;
+($picard_results{tau}, my $status) = get_tau( $Frm->hdr("FILTER"),
+					      "CSO", $tau);
+
+# Airmass
+$picard_results{airmass} = 0.5 * ( $Frm->hdr("AMSTART") +
+				   $Frm->hdr("AMEND"));
+
+$Frm->uhdr("PICARD_RESULTS", \%picard_results);
