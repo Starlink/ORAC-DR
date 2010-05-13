@@ -32,8 +32,8 @@ Pixel-spreading scheme. Default is C<NEAREST> for nearest-neighbour.
 
 =item B<PARAMS>
 
-Optional parameters if B<METHOD> is not C<NEAREST> ir
-C<BILINEAR>. Should be specified as a string with 1 or 2 values
+Optional parameters if B<METHOD> is not C<NEAREST> or
+C<BILINEAR>. Should be specified as a string of 1 or 2 values
 (separated by a comma). See documentation for wcsalign/wcsmosaic for
 further details.
 
@@ -122,12 +122,11 @@ $method = $Frm->uhdr("RECPAR_WCSMOSAIC_METHOD")
 
 # PARAMS for wcsalign/wcsmosaic
 my $params = get_prim_arg($_PRIM_ARGS_, "PARAMS", undef);
-my $parstring = "[$params]" if (defined $params);
 if (defined $Frm->uhdr("RECPAR_WCSMOSAIC_PARAMS")) {
-  $params = $Frm->uhdr("RECPAR_WCSMOSAIC_PARAMS");
-  $parstring = (ref($params) eq 'ARRAY') ? "[".$params->[0].",".$params->[1]."]"
-    : $params;
+  my $mospar = $Frm->uhdr("RECPAR_WCSMOSAIC_PARAMS");
+  $params = (ref($mospar) eq 'ARRAY') ? "$mospar->[0],$mospar->[1]" : $mospar;
 }
+my $parstring = "[$params]" if (defined $params);
 
 my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
   $Frm->uhdr("RECPAR_VERBOSE") : 0;
@@ -157,12 +156,32 @@ if ($Grp->lastmember($Frm)) {
     # Placeholder for makemos...
   }
 
-  # Add up the EXP_TIME and WEIGHTS components
+  # Add up the EXP_TIME and WEIGHTS component - set a uhdr flag to
+  # indicate the chosen component `exists'
   $Frm->uhdr("EXP_TIME",1);
-  $Frm->uhdr("WEIGHTS",1);
-  _ADD_IMAGES_ INLIST=\@infiles OUT=$out COMPS=EXP_TIME,WEIGHTS
-  orac_print "\n";
+  my $comps = "EXP_TIME";
+  my $things_to_align = "exposure times";
+  # Only SCUBA-2 has the weights component
+  if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" ) {
+    $comps .= ",WEIGHTS";
+    $Frm->uhdr("WEIGHTS",1);
+    $things_to_align .= " and weights";
+  } else {
+    # Heterodyne data has EFF_TIME
+    $comps .= ",EFF_TIME";
+    $Frm->uhdr("EFF_TIME",1);
+    $things_to_align .= " and effective integration times";
+  }
 
+  # Align components to same pixel grid, use the first image as the reference
+  my $tmpfrm = $Frm->new;
+  $tmpfrm->files(@infiles);
+  orac_print "Aligning $things_to_align...\n";
+  _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=1 FRAME=$tmpfrm PARAMS=$params
+  @infiles = $tmpfrm->files;
+
+  # Add up exposure times and other NDF components
+  _ADD_IMAGES_ INLIST=\@infiles OUT=$out COMPS=$comps
 } else {
   orac_print "Delaying processing until the last Group member\n";
 }
