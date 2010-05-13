@@ -58,6 +58,13 @@ A flag to determine whether to rebin or resample. Default is 0
 The name of the reference image to use for alignment in the SKY
 domain. If left blank, the primitive will call _GET_REFERENCE_IMAGE_.
 
+=item B<PARAMS>
+
+Optional parameters if B<METHOD> is not C<NEAREST> or
+C<BILINEAR>. Should be specified as a string of 1 or 2 values
+(separated by a comma). See documentation for wcsalign for further
+details.
+
 =item B<SKYREF>
 
 A flag to denote whether to align the images to a celestial coordinate
@@ -92,7 +99,7 @@ _GET_REFERENCE_IMAGE_
 The uhdr entry C<ALIGNED> is set to 1.
 
 The name of the reference image is stored in the given Frame uhdr
-under C<REFIMAGE>.
+under C<REFIMAGE> (if not the default).
 
 =head1 OUTPUT FILES
 
@@ -160,6 +167,10 @@ if ( !$aligned ) {
   # Flag to decide whether to align other components
   my $comp = get_prim_arg( $_PRIM_ARGS_, "COMP", 0 );
 
+  # PARAMS for wcsalign/wcsmosaic
+  my $params = get_prim_arg( $_PRIM_ARGS_, "PARAMS", undef );
+  my $parstring = "[$params]" if (defined $params);
+
   # Verbose?
   my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
 
@@ -169,26 +180,14 @@ if ( !$aligned ) {
     $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
   }
 
-  # Write alignment text files
-  my $intmp = new ORAC::TempFile;
-  my $outtmp = new ORAC::TempFile;
-  my (@in, @out);
+  my ($inlist, $outlist, @out) = write_file_list_inout( $Frmobj, "_al" );
+
   my $nfiles = $Frmobj->nfiles;
-  for my $i (1..$nfiles) {
-    my ($in, $out) = $Frmobj->inout('_al', $i);
-    print {$intmp->handle} $in ."\n";
-    push(@out, $out);
-    push(@in, $in);
-    orac_warn "Input and output files are the same\n" if ( $in eq $out );
-    print {$outtmp->handle} "$out\n";
-  }
+  orac_print("Aligning $nfiles ".( ($nfiles == 1) ? "image" : "images")." to common coordinate frame...\n") if $verbose;
 
-  orac_print("Aligning $nfiles ".( ($nfiles == 1) ? "image" : "images")." to common coordinate frame...\n");
-
-  $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file." rebin=$rebin");
-
-  undef $intmp;
-  undef $outtmp;
+  my $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^$outlist in=^$inlist rebin=$rebin";
+  $args .= " params=$parstring" if ($params);
+  $Mon{kappa_mon}->obeyw("wcsalign","$args");
 
   # If we are also aligning any sub-components then do that now.
   if ( $comp ) {
@@ -196,27 +195,30 @@ if ( !$aligned ) {
     my $moving = $Grp->uhdr("MOVING");
     # Start with exp_time - add more as necessary. Note that there is NO
     # checking to see if the component exists before attempting to align.
-    my @comp = (".more.smurf.exp_time", ".more.smurf.weights");
-    foreach my $ndfcomp ( @comp ) {
-      my $component = "exposure times" if ($ndfcomp =~ /exp_time$/);
-      $component = "weights" if ($ndfcomp =~ /weights$/);
-      orac_print "Aligning $component... " if $verbose;
+    my @comp = ("EXP_TIME", "WEIGHTS");
+    my %known_comps = ( EXP_TIME => "exposure times",
+			WEIGHTS => "weights",
+		      );
+    foreach my $ndfcomp ( sort keys %known_comps ) {
+      orac_print "Aligning $known_comps{$ndfcomp}... " if $verbose;
       orac_print "Setting attributes for moving sources... "
 	if ($moving && $verbose);
-      $intmp = new ORAC::TempFile;
-      $outtmp = new ORAC::TempFile;
+      my @in = map { $_.".more.smurf.$ndfcomp"} $Frmobj->files;
+      # Set SkyRefIs and AlignOffset attributes for moving sources.
+      # Note that the EXP_TIME and WEIGHTS components have separate
+      # WCS and must therefore be modified separately for moving sources
       for my $i (0..$#in) {
-	# Set SkyRefIs and AlignOffset attributes for moving sources.
-	# Note that the EXP_TIME and WEIGHTS components have separate
-	# WCS and must therefore be modified separately for moving sources
 	if ( $moving ) {
 	  my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
 	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 	}
-	print {$intmp->handle} $in[$i].$ndfcomp."\n";
-	print {$outtmp->handle} $out[$i].$ndfcomp."\n";
       }
-      $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
+      $inlist = write_file_list( @in );
+      $outlist = write_file_list( map { $_.".more.smurf.$ndfcomp"} @out );
+
+      $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^$outlist in=^$inlist";
+      $args .= " params=$parstring" if ($params);
+      $Mon{kappa_mon}->obeyw("wcsalign","$args");
     }
   }
 
@@ -224,7 +226,7 @@ if ( !$aligned ) {
   # are now aligned to a common coordinate frame, store the name of
   # the reference image for sanity checking.
   $Frmobj->uhdr("ALIGNED",1);
-  $Frmobj->uhdr("REFIMAGE",$refimage);
+  $Frmobj->uhdr("REFIMAGE",$refimage) if ($refimage ne "!");
   # Register new file names
   $Frmobj->files( @out );
 
