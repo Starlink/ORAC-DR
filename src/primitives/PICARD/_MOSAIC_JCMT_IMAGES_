@@ -111,9 +111,9 @@ orac_print ("\nCalling _MOSAIC_JCMT_IMAGES_: combine JCMT images\n", "yellow");
 
 # Obtain mosaicking task - set wcsmos flag
 my $task = lc(get_prim_arg($_PRIM_ARGS_, "TASK", "wcsmosaic"));
-my $wcsmos = ( $task =~ /wcsmos/ ) ? 1 : 0;
-# Hack for now to ensure wcsmosaic is always used
-$wcsmos = 1;
+$task = $Frm->uhdr("RECPAR_MOSAIC_TASK")
+  if defined $Frm->uhdr("RECPAR_MOSAIC_TASK");
+my $wcsmos = ( $task =~ /^wcsmos/ ) ? 1 : 0;
 
 # Pixel-spreading scheme for wcsalign/wcsmosaic
 my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest"));
@@ -128,33 +128,28 @@ if (defined $Frm->uhdr("RECPAR_WCSMOSAIC_PARAMS")) {
 }
 my $parstring = "[$params]" if (defined $params);
 
+# If not using wcsmosaic, get the method parameter for makemos
+my ($makemos_method, $sigmas);
+if (!$wcsmos) {
+  $makemos_method = get_prim_arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "median");
+  $makemos_method = $Frm->uhdr("RECPAR_MAKEMOS_METHOD")
+    if (defined $Frm->uhdr("RECPAR_MAKEMOS_METHOD"));
+  $sigmas = $Frm->uhdr("RECPAR_MAKEMOS_SIGMAS") if ($makemos_method eq "sigmas");
+}
+
 my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
   $Frm->uhdr("RECPAR_VERBOSE") : 0;
 
 # Only proceed for the last member of the Group
 if ($Grp->lastmember($Frm)) {
   # Collate images
-  my (@infiles, $refimage);
-  if ( $wcsmos ) {
-    @infiles = map { $_->files } $Grp->members;
-  } else {
-    # wcsalign images...
-  }
+  my $refimage;
+  my @infiles = map { $_->files } $Grp->members;
   my $nfiles = scalar(@infiles);
   orac_print "Reached last Group member: Mosaicking $nfiles images...\n";
 
+  # Write list of files for wcsmosaic
   my $inlist = write_file_list( @infiles );
-
-  # Combine images
-  my $out = $Frm->inout("_mos");
-  if ( $wcsmos ) {
-    my $args = "ref=! variance genvar=! method=$method out=$out "
-      ."in=^$inlist lbnd=! ubnd=!";
-    $args .= " params=$parstring" if (defined $params);
-    $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
-  } else {
-    # Placeholder for makemos...
-  }
 
   # Add up the EXP_TIME and WEIGHTS component - set a uhdr flag to
   # indicate the chosen component `exists'
@@ -173,12 +168,31 @@ if ($Grp->lastmember($Frm)) {
     $things_to_align .= " and effective integration times";
   }
 
-  # Align components to same pixel grid, use the first image as the reference
+  # Align components to same pixel grid, use the first image as the
+  # reference.
   my $tmpfrm = $Frm->new;
   $tmpfrm->files(@infiles);
   orac_print "Aligning $things_to_align...\n";
   _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=1 FRAME=$tmpfrm PARAMS=$params
   @infiles = $tmpfrm->files;
+
+  # Combine images
+  my $out = $Frm->inout("_mos");
+  if ( $wcsmos ) {
+    my $args = "ref=! variance genvar=! method=$method out=$out "
+      ."in=^$inlist lbnd=! ubnd=!";
+    $args .= " params=$parstring" if (defined $params);
+
+    $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+  } else {
+    # Now that the files are all aligned makemos can be called
+    $inlist = write_file_list( @infiles );
+    my $args = "in=^$inlist method=$makemos_method ref=! "
+      ."nozero noscale out=$out usevar genvar logto=neither";
+    $args .= " sigmas=$sigmas" if ($sigmas);
+
+    $Mon{ccdpack_reg}->obeyw("makemos","$args");
+  }
 
   # Add up exposure times and other NDF components
   _ADD_IMAGES_ INLIST=\@infiles OUT=$out COMPS=$comps
