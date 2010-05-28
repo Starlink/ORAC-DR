@@ -69,6 +69,13 @@ an output file with the suffix C<_mf>.
 
 =item B<SMOOTH>
 
+A flag to denote whether or not to smooth the image with a larger
+gaussian (whose FWHM is given by B<SMOOTH_FWHM>). The smoothed version
+is subtracted from the unsmoothed version and the difference is
+used in applying the matched filter. Default is 1 (yes).
+
+=item B<SMOOTH_FWHM>
+
 Full-width at half-maximum in arcsec of Gaussian used to smooth input
 image and PSF. Default is 30 arcsec.
 
@@ -121,7 +128,7 @@ The PSF must contain floating point values.
 
 =back
 
-Implementation based on the SMURF C<match-filter> C-shell script by
+Implementation based on the SMURF C<matched-filter> C-shell script by
 David Berry E<lt>d.berry@jach.hawaii.edu<gt>.
 
 =head1 AUTHOR
@@ -165,6 +172,16 @@ if (!$out) {
 # Obtain optional PSF image
 my $psf = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
 
+# The input image and PSF may be smoothed by a gaussian with given
+# FWHM and subtracted from each. The default size is 30".
+my $smooth = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 1);
+$smooth = $Frm->uhdr("RECPAR_SMOOTH_DATA")
+  if (defined $Frm->uhdr("RECPAR_SMOOTH_DATA"));
+my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH_FWHM", 30.0);
+# Override with recipe parameter
+$smooth_fwhm = $Frm->uhdr("RECPAR_SMOOTH_FWHM")
+  if (defined $Frm->uhdr("RECPAR_SMOOTH_FWHM"));
+
 # Create some re-useable temporary files
 my $temp1 = new ORAC::TempFile;
 my $tempfile1 = $temp1->file;
@@ -177,8 +194,10 @@ my $tempfile4 = $temp4->file;
 # Non-reuseable temporary files
 my $temp_in = new ORAC::TempFile;
 my $tempfile_in = $temp_in->file;
-my $temp_psf = new ORAC::TempFile;
-my $tempfile_psf = $temp_psf->file;
+my $tempa = new ORAC::TempFile;
+my $tempfilea = $tempa->file;
+my $tempb = new ORAC::TempFile;
+my $tempfileb = $tempb->file;
 
 # Retrieve the pixel scale for later use
 _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
@@ -186,8 +205,7 @@ my $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
 		      $_GET_PIXEL_SCALE_{RESULTS}->[1]);
 
 # If no psf has been specified, check recipe parameter for name of
-# suitable image in current working dir Generate a
-# PSF image
+# suitable image in current working dir otherwise generate a PSF image
 if (!$psf) {
   # Has the user specified a recipe parameter with the name of the PSF
   # image?
@@ -213,47 +231,31 @@ if (!$psf) {
 
     # Use inout method to define a suitable PSF file name
     $psf = $Obj->inout("_psf");
-    _CREATE_PSF_IMAGE_ PSF=$psf PIXSIZE=$pixscale NORM=$norm
+    _CREATE_PSF_IMAGE_ PSF=$psf PIXSIZE=$pixscale NORM=$norm SMOOTH=$smooth SMOOTH_FWHM=$smooth_fwhm
 
     # Abort with an error if no psf image could be created
     orac_term "Unable to create a PSF image" unless $psf;
   }
 }
 
-# Smooth input image and PSF by gaussian with given FWHM and subtract
-# from each. The default size is 30".
-my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 30.0);
-# Override with recipe parameter
-$smooth_fwhm = $Frm->uhdr("RECPAR_SMOOTH_FWHM")
-  if (defined $Frm->uhdr("RECPAR_SMOOTH_FWHM"));
-my $smooth_pix = $smooth_fwhm / $pixscale;
-$Mon{kappa_mon}->obeyw("gausmooth","in=$in out=$tempfile1 fwhm=$smooth_pix");
-$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tempfile1 out=$tempfile_in");
-$Mon{kappa_mon}->obeyw("gausmooth","in=$psf out=$tempfile2 fwhm=$smooth_pix");
-$Mon{kappa_mon}->obeyw("sub","in1=$psf in2=$tempfile2 out=$tempfile_psf");
-# Redefine the input and PSF filenames for subsequent use
-$in = $tempfile_in;
-$psf = $tempfile_psf;
+# If desired, smooth input image by gaussian with given FWHM and
+# subtract from original.
+if ($smooth) {
+  my $smooth_pix = $smooth_fwhm / $pixscale;
+  $Mon{kappa_mon}->obeyw("gausmooth","in=$in out=$tempfile1 fwhm=$smooth_pix");
+  $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tempfile1 out=$tempfile_in");
+  # Redefine the input filename for subsequent use
+  $in = $tempfile_in;
+}
 
 # Create image A = numerator in expression in POD. First step -
 # calculate ratio of data to variance for the input image.
 my $args = "exp=ia/va ia=$in out=$tempfile1";
 $Mon{kappa_mon}->obeyw("maths","$args");
 
-# Smooth this using the supplied psf.
-$args = "in=$tempfile1 out=$tempfile2 psf=$psf xcentre=0 ycentre=0";
+# Smooth this using the supplied psf - do not normalize
+$args = "in=$tempfile1 out=$tempfilea psf=$psf xcentre=0 ycentre=0 norm=0";
 $Mon{kappa_mon}->obeyw("convolve","$args");
-
-# The kappa:convolve command normalises the output NDF by dividing the
-# data values by the total data sum in the PSF. We do not want this
-# normalisation, so we now scale the output image created above by the
-# total data sum in the PSF.
-_FIND_IMAGE_STATISTICS_ IMAGE=$psf VERBOSE=0
-my $psfsum = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
-my $tempa = new ORAC::TempFile;
-my $tempfilea = $tempa->file;
-$args = "in=$tempfile2 out=$tempfilea scalar=$psfsum";
-$Mon{kappa_mon}->obeyw("cmult","$args");
 
 # Now go on to create image B, the denominator. Get the reciprocal of
 # the variances from the input image.
@@ -263,17 +265,9 @@ $Mon{kappa_mon}->obeyw("maths","$args");
 # Get the square of the PSF
 $Mon{kappa_mon}->obeyw("mult","in1=$psf in2=$psf out=$tempfile3");
 
-# Smooth the reciprocal of the variancess using the squared psf.
-$args = "in=$tempfile1 out=$tempfile4 psf=$tempfile3 xcentre=0 ycentre=0";
+# Smooth the reciprocal of the variances using the squared psf
+$args = "in=$tempfile1 out=$tempfileb psf=$tempfile3 xcentre=0 ycentre=0 norm=0";
 $Mon{kappa_mon}->obeyw("convolve","$args");
-
-# Undo the normalisation produced by kappa:convolve.
-_FIND_IMAGE_STATISTICS_ IMAGE=$tempfile3
-my $psfsum2 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
-my $tempb = new ORAC::TempFile;
-my $tempfileb = $tempb->file;
-$args = "in=$tempfile4 out=$tempfileb scalar=$psfsum2";
-$Mon{kappa_mon}->obeyw("cmult","$args");
 
 # The output image is the ratio of A and B
 $Mon{kappa_mon}->obeyw("div","in1=$tempfilea in2=$tempfileb out=$out");
