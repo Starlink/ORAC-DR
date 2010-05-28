@@ -10,7 +10,16 @@ _CREATE_PSF_IMAGE_ - create a suitable PSF image for a matched filter
 
 =head1 DESCRIPTION
 
-This primitive creates a PSF image
+This primitive creates a PSF image for use as part of a matched
+filter. The user must supply and input file and the name of the file
+to store the PSF image, though the latter may also be defined using
+the C<inout> method of the current Frame or Group if desired.
+
+By default, the PSF FWHM is obtained from the beamsize at the current
+wavelength, but may also be defined by the user.
+
+The PSF may optionally be smoothed and have the smoothed version
+subtracted from it. The smoothed version is returned.
 
 =head1 ARGUMENTS
 
@@ -21,12 +30,13 @@ The following arguments are supported:
 =item B<GROUP>
 
 Flag to denote whether to create the PSF file name based on the Group
-or Frame file.Default is 0 (use the Frame). Only accessed if B<PSF> is
+or Frame file. Default is 0 (use the Frame). Only accessed if B<PSF> is
 not specified.
 
 =item B<IN>
 
-Name of input image for which to derive pixel scale. No default.
+Name of input image for which to derive pixel scale if B<PIXSIZE> not
+specified. No default.
 
 =item B<NORM>
 
@@ -35,8 +45,8 @@ to a peak of 1; if C<sum> the PSF is normalized to a sum of 1.
 
 =item B<PIXSIZE>
 
-Pixel scale in arcsec. Only accessed if B<IN> is not specified. No
-default.
+Pixel scale in arcsec. If not specified the pixel scale is obtained
+from the image given via the B<IN> parameter.
 
 =item B<PSF>
 
@@ -48,6 +58,17 @@ the B<GROUP> parameter above.
 
 Radius (HWHM) of PSF. Default is to use the appropriate FWHM.
 
+=item B<SMOOTH>
+
+A flag to denote whether or not to smooth the PSF with a larger
+gaussian (whose FWHM is given by B<SMOOTH_FWHM>). The smoothed version
+is subtracted from the unsmoothed version and the difference is
+returned as the PSF. Default is 1 (yes).
+
+=item B<SMOOTH_FWHM>
+
+FWHM in arcsec of gaussian used to smooth the PSF. Default is 30.
+
 =back
 
 =head1 NOTES
@@ -57,6 +78,11 @@ arguments are missing.
 
 Based on code written for the SMURF C-shell script C<match-filter> by
 David Berry E<lt>d.berry@jach.hawaii.edu<gt>.
+
+=head1 OUTPUT FILES
+
+Creates an output file with the suffix C<_psf> unless the B<PSF>
+option is specified in which case a file with that name is created.
 
 =head1 AUTHOR
 
@@ -102,6 +128,10 @@ if (!$psf) {
   $psf = $Obj->inout("_psf");
 }
 
+# Is the PSF to be smoothed?
+my $smooth = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 1);
+my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH_FWHM", 30.0);
+
 my $pixscale = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", undef);
 if ( !defined $pixscale ) {
   # If pixscale is not defined, use the input image if given, else
@@ -111,7 +141,7 @@ if ( !defined $pixscale ) {
     $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
 		       $_GET_PIXEL_SCALE_{RESULTS}->[1]);
   } else {
-    orac_term "Must supply pixel scale if no input image given\n";
+    orac_throw "Must supply pixel scale if no input image given\n";
   }
 }
 
@@ -120,15 +150,19 @@ if ( !defined $pixscale ) {
 # calibration system.
 my $airy_radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", $Cal->fwhm);
 
-# FWHM in pixels
+# FWHM and PSF image size in pixels - use 2x the smoothing FWHM if
+# necessary to ensure the PSF is well defined
 my $airy_pix = $airy_radius / $pixscale;
-my $npix = 2*$airy_pix;
+my $smooth_pix = $smooth_fwhm / $pixscale;
+my $npix = ($smooth) ? 2*$smooth_pix : 2*$airy_pix;
 
 # Reuseable temp files
 my $temp1 = new ORAC::TempFile;
 my $tempfile1 = $temp1->file;
 my $temp2 = new ORAC::TempFile;
 my $tempfile2 = $temp2->file;
+
+orac_print "Creating PSF image...";
 
 # Create a flat image with value zero with bounds (-npix:npix,-npix:npix)
 my $args = "lbound=[-$npix,-$npix] ubound=[$npix,$npix] mode=fl mean=0 out=$tempfile1";
@@ -148,15 +182,24 @@ $Mon{kappa_mon}->obeyw("chpix","$args");
 $args = "in=$tempfile2 fwhm=$airy_pix out=$tempfile1";
 $Mon{kappa_mon}->obeyw("gausmooth","$args");
 
-# Use inout method to define a suitable PSF file name
-my $psfname = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
-
 # Normalise the PSF to a peak value of 1.0 if requested
 if ($norm eq "peak") {
   _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 VERBOSE=0
   my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
   $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 scalar=$peak out=$psf");
+  orac_print " normalizing...";
 } else {
   # Otherwise just copy input to output
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1 out=$psf");
 }
+
+# If smoothing return the smoothed and subtracted version as the PSF
+if ($smooth) {
+  orac_print " smoothing and subtracting from original...";
+  my $temp_psf = new ORAC::TempFile;
+  my $tempfile_psf = $temp_psf->file;
+  $Mon{kappa_mon}->obeyw("gausmooth","in=$psf out=$tempfile2 fwhm=$smooth_pix");
+  $Mon{kappa_mon}->obeyw("sub","in1=$psf in2=$tempfile2 out=$tempfile_psf");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile_psf out=$psf");
+}
+orac_print " done\n";
