@@ -194,16 +194,19 @@ if ($usenoise) {
                extcor => exp($tau * $airmass), };
     };
 
-    if (@noisefiles == 1) {
-      @fileinfo = ( $calc_extcor->( $Frm ) );
-    } else {
-      # read the files and translate the headers
-      for my $f (@noisefiles) {
-        my $tmpfrm = $Frm->new();
-        $tmpfrm->raw( $f );
-        $tmpfrm->file( $f );
-        $tmpfrm->readhdr;
-        push(@fileinfo, $calc_extcor->($tmpfrm) );
+    my $onsky = ($Frm->uhdr("ORAC_OBJECT") eq "DARK") ? 0 : 1;
+    if ($onsky){
+      if (@noisefiles == 1) {
+	@fileinfo = ( $calc_extcor->( $Frm ) );
+      } else {
+	# read the files and translate the headers
+	for my $f (@noisefiles) {
+	  my $tmpfrm = $Frm->new();
+	  $tmpfrm->raw( $f );
+	  $tmpfrm->file( $f );
+	  $tmpfrm->readhdr;
+	  push(@fileinfo, $calc_extcor->($tmpfrm) );
+	}
       }
     }
 
@@ -231,7 +234,7 @@ if ($usenoise) {
       my $nep = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
 
       # Multiply NEP by combined FCF/transmission factor to get NEFD
-      my $info = shift(@fileinfo);
+      my $info = shift(@fileinfo) if ($onsky);
 
       # NEFD at airmass just needs the FCF. Divide by sqrt(2)
       # because... NEPs are pW/rt(Hz) but NEFDs are mJy rt(s) and the
@@ -240,19 +243,24 @@ if ($usenoise) {
 
       # Similarly calculate zenith NEFD which must be a smaller number
       # and accounts for airmass and tau
-      $znefd = $nefd / $info->{extcor};
+      $znefd = $nefd / $info->{extcor} if ($onsky);
 
       if (defined $nefd) {
 	my $subarray = $Frm->subarray($noisefile);
-        my $trans = sprintf "%.1f", 100.0 / $info->{extcor};
 	my $pnefd = sprintf "%6.2f", $nefd;
-	my $pznefd = sprintf "%6.2f", $znefd;
-        my $airmass = sprintf "%6.4f", $info->{airmass};
 
 	orac_print("Subarray $subarray:\n","green");
-	orac_print ("Measured NEFD = $pnefd mJy/beam s**0.5, "
-		    ."sky trans = $trans %, A = $airmass\n", "green");
-	orac_print ("  Zenith NEFD = $pznefd mJy/beam s**0.5\n", "green");
+	if ($onsky) {
+	  my $pznefd = sprintf "%6.2f", $znefd;
+	  my $trans = sprintf "%.1f", 100.0 / $info->{extcor};
+	  my $airmass = sprintf "%6.4f", $info->{airmass};
+
+	  orac_print ("Measured NEFD = $pnefd mJy/beam s**0.5, "
+		      ."sky trans = $trans %, A = $airmass\n", "green");
+	  orac_print ("  Zenith NEFD = $pznefd mJy/beam s**0.5\n", "green");
+	} else {
+	  orac_print ("Dark NEFD = $pnefd mJy/beam s**0.5\n", "green");
+	}
 
       } else {
 	orac_warn "Could not determine ".(lc($estimator))." NEFD for $noisefile\n";
