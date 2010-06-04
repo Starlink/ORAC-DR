@@ -2,39 +2,77 @@
 
 =head1 NAME
 
-_MAKEMAP_FRAME_
+_MAKEMAP_GROUP_
 
 =head1 SYNOPSIS
 
-  _MAKEMAP_FRAME_ PARAMETERS...
+  _MAKEMAP_GROUP_
 
 =head1 DESCRIPTION
 
-This primitive takes timeseries data for the current frame and
-constructs an image. This is a many to one operation, with only a
-single output file created.
+This primitive takes timeseries data for the current Group object and
+constructs an image. The user may specify either the simple rebinning
+method or the full iterative solution.
+
+For the iterative map-maker a configuration file is obtained based on
+the Frame uhdr entry C<MAKEMAP_CONFIG_TYPE>, though this may be
+overriden with a recipe parameter. See
+L<_GET_MAKEMAP_CONFIG_|_GET_MAKEMAP_CONFIG_> for further details.
+
+The output file size is kept below 2 GB which in practice corresponds
+to an image with about 60 million pixels (7745 pixels on a side, or
+6.45 degrees on the sky for 3-arcsec pixels). Currently the primitive
+creates a smaller image if the limit is exceeded. Each dimension is
+reduced in proportion. The primitive aborts if the memory requirements
+for processing the data exceeds that available.
+
+This is a many to one operation, with only a single output file
+created.
 
 =head1 ARGUMENTS
 
 =over 4
 
-=item B<SOMETHING>
+=item B<CONFIG_TYPE>
 
-SOMETHING....
+Type of makemap configuration file to use. The choice is determined by
+the type of object observed (and hence by the calling recipe). May be
+C<BRIGHT>, C<EXTENDED> or C<FAINT> which use the normal, extended or
+faint versions of the makemap configuration file. Default is C<FAINT>.
+
+=item B<METHOD>
+
+Image reconstruction method. May be C<REBIN> to use a simple rebinning
+scheme or C<ITER> to use the iterative map-maker. The default is
+C<ITER>.
 
 =back
 
-=head1 KNOWN ISSUES
+=head1 EXTERNAL TASKS
 
-...
+The following external task is used:
 
-=head1 ALGORITHMS
+=over 4
 
-...
+=item ORAC-DR PRIMITIVES
 
-=head1 FILE SUFFIX
+_MAKEMAP_FRAME_
 
-Creates a single output file with a '_map' suffix.
+=back
+
+=head1 NOTES
+
+For use in batch mode only where all the groups are pre-calculated.
+
+Proceeds only once the final Frame has been reached.
+
+This primitive is a wrapper around L<_MAKEMAP_FRAME_|_MAKEMAP_FRAME_>.
+
+Should work as advertised but is as yet untested.
+
+=head1 OUTPUT FILES
+
+Creates a single output file with a C<_mos> suffix.
 
 =head1 AUTHOR
 
@@ -42,7 +80,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2006 University of British Columbia and the Particle
+Copyright (C) 2006-2010 University of British Columbia and the Particle
 Physcis and Astronomy Research Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -58,33 +96,16 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
+if ( $Grp->lastmember($Frm) ) {
 
-my @out;
+  my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "iterate"));
+  my $conftype = get_prim_arg($_PRIM_ARGS_, "CONFIG_TYPE", "FAINT");
 
-# What checks should we carry out?
+  _MAKEMAP_FRAME_ INFILES=ALL METHOD=$method CONFIG_TYPE=$conftype
 
-# Retrieve list of files in current frame
-my @files = $Frm->files;
-
-# Write filenames to a temp file
-my $intmp = new ORAC::TempFile;
-print {$intmp->handle} join("\n",@files[0..$#files]);
-
-# Set output filename
-my ($in, $out) = $Frm->inout('_map', 0);
-
-# Argument list - no doubt this will get longer...
-my $args = "in=^".$inlist." out=".$out." pixsize=".$pixsize." method=rebin accept";
-
-# Call makemap
-$Mon{smurf_mon}->obeyw("makemap",$args);
-
-# Register the new file name
-$Frm->files( $out );
-
-orac_print "Image created \n";
-
+  $Grp->uhdr("NEWIMAGE", $Frm->uhdr("NEWIMAGE"));
+}
