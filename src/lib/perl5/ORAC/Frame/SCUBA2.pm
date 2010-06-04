@@ -918,8 +918,7 @@ maxmem, method, pixsize, reflat, reflon, spread, system.
 
 sub makemap_args {
   my $self = shift;
-  my @makemap_args = qw/ alignsys config crota maxmem method params pixsize
-                         reflat reflon spread system /;
+  my @makemap_args = qw/ config crota maxmem params pixsize spread system /;
   return (wantarray) ? @makemap_args : \@makemap_args;
 }
 
