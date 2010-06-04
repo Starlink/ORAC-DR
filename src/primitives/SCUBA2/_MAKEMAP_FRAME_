@@ -35,6 +35,13 @@ The following arguments are supported:
 
 =over 4
 
+=item B<CONFIG_TYPE>
+
+Type of makemap configuration file to use. The choice is determined by
+the type of object observed (and hence by the calling recipe). May be
+C<BRIGHT>, C<EXTENDED> or C<FAINT> which use the normal, extended or
+faint versions of the makemap configuration file. Default is C<FAINT>.
+
 =item B<INFILES>
 
 A switch to determine how many files are given to makemap.  Valid
@@ -48,17 +55,6 @@ valid files for all Frames in the current Group object.
 Image reconstruction method. May be C<REBIN> to use a simple rebinning
 scheme or C<ITER> to use the iterative map-maker. The default is
 C<ITER>.
-
-=item B<SYSTEM>
-
-Coordinate system for output image. May be any supported by
-C<AST>. Default is C<TRACKING>.
-
-=item B<SPREAD>
-
-Desired pixel-spreading scheme for the rebin method. May be either
-C<NEAREST> for nearest-neighbour resampling or C<LINEAR> for bi-linear
-resampling. Default is C<NEAREST>.
 
 =back
 
@@ -146,17 +142,6 @@ if ($Frm->uhdr("DARKONLY")) {
   # Set a flag to indicate a map was not made
   $Frm->uhdr("NEWIMAGE",0);
 } else {
-  # Output coordinate system - default is TRACKING
-  my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING");
-
-  # Pixel-spreading scheme
-  my $spread = lc(get_prim_arg( $_PRIM_ARGS_, "SPREAD", "nearest"));
-
-  # Reset to "nearest" if an unsupported scheme is given
-  if ( ($spread ne "nearest") && ($spread ne "linear") ) {
-    orac_warn "Unsupported pixel-spreading scheme, $spread: using NEAREST\n";
-    $spread = "nearest";
-  }
 
   # Method for reconstructing map
   my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "iter"));
@@ -172,12 +157,11 @@ if ($Frm->uhdr("DARKONLY")) {
     $method = "rebin";
   }
 
-  my $obsnum = $Frm->hdr("OBSNUM");
-
   # How many files are we making a map with?
   my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
 
   my @infiles;
+  my $obsnum = $Frm->hdr("OBSNUM");
   if ( $infiles eq "FRAME" ) {
     # Use all files in current Frame
     @infiles = $Frm->files;
@@ -235,26 +219,16 @@ if ($Frm->uhdr("DARKONLY")) {
 
   # Define makemap argument list - mandatory arguments
   my $args = "in=^$inlist out=$out bbm=$bbm tiledims=$tiledims";
-  # Define the variable arguments to makemap
-  my %makemapargs = ( spread => $spread,
-		      system => $system,
-		      method => $method,
-		    );
-  # Add CROTA=0 and ALIGNSYS=true for AzEl maps
-  if (uc($system) eq "AZEL") {
-    $makemapargs{crota} = 0;
-    $makemapargs{alignsys} = "true";
-  }
 
+  # Define the variable arguments to makemap
+  my %makemapargs = ( method => $method );
   # Retrieve any makemap arguments given as recipe parameters
   _GET_MAKEMAP_ARGS_
-  if ( defined $_GET_MAKEMAP_ARGS_{ARGS} ) {
-    my %newmakemapargs = %{$_GET_MAKEMAP_ARGS_{ARGS}};
-    # Store these new arguments in the hash - existing entries will be
-    # overriden
-    foreach my $arg (keys %newmakemapargs) {
-      $makemapargs{$arg} = $newmakemapargs{$arg};
-    }
+  my %newmakemapargs = %{$_GET_MAKEMAP_ARGS_{ARGS}};
+  # Store these new arguments in the hash - existing entries will be
+  # overriden
+  foreach my $arg (keys %newmakemapargs) {
+    $makemapargs{$arg} = $newmakemapargs{$arg};
   }
 
   # Construct argument list for makemap
@@ -263,8 +237,18 @@ if ($Frm->uhdr("DARKONLY")) {
   }
 
   # Append name of config file to argument list
-  my $config;
   if ( $iterate ) {
+    # Type of config file to use: FAINT, BRIGHT or EXTENDED
+    my $conftype = get_prim_arg($_PRIM_ARGS_, "CONFIG_TYPE", "FAINT");
+    # Set config type to `normal' for calibrators or other bright point sources
+    $conftype = "normal" if ($Cal->iscalsource( $Frm->hdr("OBJECT")) ||
+			     $conftype eq "BRIGHT");
+
+    # Set the config type in the uhdr for use by _GET_MAKEMAP_CONFIG_,
+    # provided this is not a very short observation
+    unless ($Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "veryshort") {
+      $Frm->uhdr("MAKEMAP_CONFIG_TYPE", lc($conftype));
+    }
     _GET_MAKEMAP_CONFIG_
     $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIG};
   }
