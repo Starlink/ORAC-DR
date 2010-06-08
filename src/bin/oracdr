@@ -65,7 +65,7 @@ use Pod::Usage;
 use Getopt::Long;                       # command line arguments
 
 # check for starlink login
-orac_exit_normally("No starlink login") unless exists $ENV{"STAR_LOGIN"}; 
+orac_exit_normally(message => "No starlink login", err => 1) unless exists $ENV{"STAR_LOGIN"};
 
 ####### C H E C K  E N V I R O N M E N T  V A R I A B L E S ################
 
@@ -160,7 +160,7 @@ $SIG{'PIPE'} = 'IGNORE';
 # Check for ORAC_DIR
 unless (exists $ENV{ORAC_DIR}) {
   orac_err("ORAC_DIR environment variable not defined. Aborting.");
-  orac_exit_normally();
+  orac_exit_normally( err => 1);
 }
 
 # Need to locate the recipe parameters file *before* we chdir to
@@ -184,12 +184,12 @@ if (exists $opt{loop} && defined $opt{loop} && $opt{loop} eq 'task') {
     unless (-d $ENV{ORAC_DATA_IN}) {
 
       orac_err("ORAC_DATA_IN directory ($ENV{ORAC_DATA_IN}) does not exist. Aborting\n");
-      orac_exit_normally();
+      orac_exit_normally( err => 1);
     }
   
   } else {
     orac_err("ORAC_DATA_IN environment variable not set. Aborting\n");
-    orac_exit_normally();
+    orac_exit_normally( err => 1);
   }
 }
 
@@ -198,6 +198,10 @@ if (exists $opt{loop} && defined $opt{loop} && $opt{loop} eq 'task') {
 # $CURRENT_RECIPE is used in Xoracdr and for the recipe progress window
 my ( $CURRENT_RECIPE );
 
+# This variable is used for error messages from exception handlers.
+# undefine it before each try block
+my $ErrText;
+
 # Enable the logging system
 my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
      $PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
@@ -205,17 +209,17 @@ try {
     ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
       $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) = 
 	orac_print_config_with_defaults(\$CURRENT_RECIPE,\@ORAC_ARGS, %opt );
-} catch ORAC::Error::FatalError with {
+} catch ORAC::Error with {
   my $Error = shift;
-  orac_exit_normally( "$Error" );
-} catch ORAC::Error::UserAbort with {
-  my $Error = shift;
-  orac_exit_normally();
+  $ErrText = "$Error";
 } otherwise {
   # this should sucessfully catch croaks
   my $Error = shift;
-  orac_exit_normally( "$Error" );
+  $ErrText = "$Error";
 };
+
+orac_exit_if_error( $ErrText );
+
 $CURRENT_RECIPE = "Starting pipeline";
 
 #########################   U  T    D A T E #################################
@@ -234,51 +238,38 @@ $CURRENT_RECIPE = "Starting pipeline";
 try {
    orac_message_launch( $opt{nomsgtmp}, $opt{verbose} );
 }
-catch ORAC::Error::FatalError with 
+catch ORAC::Error with
 {
    my $Error = shift;
-   orac_print("Error launching the Message System", "red");
-   orac_exit_normally("$Error");
-}
-catch ORAC::Error::UserAbort with 
-{
-   my $Error = shift;
-   orac_print("Abort from launching the Message System", "red");
-   orac_exit_normally();
+   $ErrText = "Error launching the Message System:\n$Error";
 }
 otherwise
 {
    # this should sucessfully catch croaks
    my $Error = shift;
-   orac_exit_normally( "$Error" );
+   $ErrText = "$Error";
 };
+orac_exit_if_error( $ErrText );
 
 ######################## A L G.   E N G I N E S #############################
 
 # start algorithim engines
 my $Mon;
-my $Errmsg;
 try {
    $Mon = orac_start_algorithm_engines( $opt{noeng}, $InstObj );
 }
-catch ORAC::Error::FatalError with 
+catch ORAC::Error with
 {
    my $Error = shift;
-   $Errmsg = "$Error";
-}
-catch ORAC::Error::UserAbort with
-{
-   my $Error = shift;
-   $Errmsg = "$Error";
+   $ErrText = "$Error";
 }
 otherwise
 {
    # this should sucessfully catch croaks
    my $Error = shift;
-   $Errmsg = "$Error";
+   $ErrText = "$Error";
 };
-orac_exit_normally($Errmsg) if defined $Errmsg;
-
+orac_exit_if_error( $ErrText );
 
 ####################### B E E P I N G #######################################
 
@@ -309,26 +300,18 @@ if ( defined $opt{files} ) {
    try {
       @obs = orac_parse_files( $opt{files} );
    }
-   catch ORAC::Error::FatalError with 
+   catch ORAC::Error with
    {
       my $Error = shift;
-
-      ORAC::Error->flush if defined $Error; 
-      orac_exit_normally( "$Error" );
-   }
-   catch ORAC::Error::UserAbort with
-   {
-      my $Error = shift;
-
-      ORAC::Error->flush if defined $Error; 
-      orac_exit_normally();
+      $ErrText = "$Error";
    }
    otherwise
    {
       # this should sucessfully catch croaks
       my $Error = shift;
-      orac_exit_normally( "$Error" );
+      $ErrText = "$Error";
    };
+   orac_exit_if_error( $ErrText );
 }
 
 # parse recsuffix, convert comma separated list to array
@@ -363,48 +346,45 @@ my $Override_Recipe = shift(@ARGV);
 ########################## D A T A   L O O P ################################
 
 # Call the main data processing loop
+my %Stats;
 try {
   # Might want to consider simply passing all of %opt into this function
-  orac_main_data_loop( $opt{batch}, $opt{ut}, $opt{resume}, $opt{skip}, 
-		       $opt{debug}, $opt{recsuffix}, $opt{recpars}, $opt{grptrans},
-                       $loop, $frameclass, $groupclass, 
-		       $instrument, $Mon, $Cal, \@obs, $Display, 
-		       $orac_prt, $ORAC_MESSAGE,
-		       \$CURRENT_RECIPE, $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
-		       $Override_Recipe );
+  %Stats = orac_main_data_loop( $opt{batch}, $opt{ut}, $opt{resume}, $opt{skip},
+                                $opt{debug}, $opt{recsuffix}, $opt{recpars}, $opt{grptrans},
+                                $loop, $frameclass, $groupclass,
+                                $instrument, $Mon, $Cal, \@obs, $Display,
+                                $orac_prt, $ORAC_MESSAGE,
+                                \$CURRENT_RECIPE, $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
+                                $Override_Recipe );
 }
-catch ORAC::Error::FatalError with
+catch ORAC::Error with
 {
    my $Error = shift;
-   ORAC::Error->flush;
-   orac_err( "$Error" );
-   ORAC::Event->mainloop("Tk");
-   orac_exit_normally();
-}
-catch ORAC::Error::UserAbort with
-{
-   my $Error = shift;
-   ORAC::Error->flush;
-   orac_exit_normally();
+   $ErrText = "$Error";
 }
 otherwise
 {
    # this should sucessfully catch croaks
    my $Error = shift;
-   orac_exit_normally( "$Error" );
+   $ErrText = "$Error";
 };
+
+orac_exit_if_error( $ErrText );
 
 ########################## T I D Y  U P #####################################
 
 orac_print ("Pipeline processing complete\n", "green");
 $CURRENT_RECIPE = "Pipeline processing complete";
 
+# Print out the processing summary
+my $exstat = orac_print_recipe_summary( "green", \%Stats );
+
 # If $MW is defined, enter the Tk MainLoop
 # So that the session can be examined before exiting
 ORAC::Event->mainloop("Tk");
 
 # Cleanup
-orac_exit_normally();
+orac_exit_normally( ($exstat == 0 ? () : ( err => 1 ) ) );
 
 # exit
 

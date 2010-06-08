@@ -182,14 +182,14 @@ pod2usage(1) if $opt{help};
 pod2usage(-exitstatus => 0, -verbose => 2) if $opt{man};
 
 # Sanity check since we can assume a Starlink requirement
-orac_exit_normally("No starlink login") unless exists $ENV{"STAR_LOGIN"};
+orac_exit_normally( message => "No starlink login", err => 1) unless exists $ENV{"STAR_LOGIN"};
 
 # Register signal handlers
 $SIG{INT} = \&orac_exit_abnormally;
 $SIG{PIPE} = 'IGNORE';
 
 # Abort if we do not have an ORAC_DIR
-orac_exit_normally("ORAC_DIR environment variable not defined. Aborting")
+orac_exit_normally(message => "ORAC_DIR environment variable not defined. Aborting", err => 1)
   unless exists $ENV{ORAC_DIR};
 
 # Get the recipe name
@@ -198,7 +198,7 @@ my $Recipe = shift(@ARGV);
 # Files to be processed
 my @Files = @ARGV;
 
-orac_exit_normally("Must provide names of files to process")
+orac_exit_normally(message => "Must provide names of files to process", err => 1)
   unless @Files;
 
 # Files are relative to the current directory and not necessarily the
@@ -229,23 +229,22 @@ my $CURRENT_RECIPE = 'Initializing';
 
 # Enable the logging system
 my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
-     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
+     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $ErrText );
 try  {
     ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
       $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
 	  orac_print_config_with_defaults(\$CURRENT_RECIPE,
 					  \@ORAC_ARGS, %opt );
-} catch ORAC::Error::FatalError with {
+} catch ORAC::Error with {
     my $Error = shift;
-    orac_exit_normally( "$Error" );
-} catch ORAC::Error::UserAbort with {
-    my $Error = shift;
-    orac_exit_normally();
+    $ErrText = "$Error";
 } otherwise {
     # this should sucessfully catch croaks
     my $Error = shift;
-    orac_exit_normally( "$Error" );
+    $ErrText = "$Error";
 };
+orac_exit_if_error( $ErrText );
+
 $CURRENT_RECIPE = "Starting pipeline";
 
 # Messaging pre-launch
@@ -255,11 +254,12 @@ try {
   $Mon = orac_start_algorithm_engines( 0, $InstObj );
 } catch ORAC::Error::UserAbort with {
   my $Error = shift;
-  orac_exit_normally();
+  $ErrText = "$Error";
 } otherwise {
   my $Error = shift;
-  orac_exit_normally( "$Error" );
+  $ErrText = "$Error";
 };
+orac_exit_if_error( $ErrText );
 
 ######################## I N I T  D I S P L A Y #############################
 
@@ -279,10 +279,11 @@ if (exists $opt{recsuffix} && defined $opt{recsuffix}) {
 }
 
 
+my %Stats;
 # Enter the main data processing loop. We use the standard
 # ORAC-DR infrastructure but we configure it to suit picard usage
 try {
-  orac_main_data_loop( 1,     # Batch mode
+  %Stats = orac_main_data_loop( 1,     # Batch mode
 		       undef, # No need for UT
 		       0,     # Do not resume group processing
 		       0,     # No skipping requirement
@@ -307,15 +308,25 @@ try {
     );
 } catch ORAC::Error::UserAbort with {
    my $Error = shift;
-   ORAC::Error->flush;
+   $ErrText = "$Error";
 } otherwise {
    my $Error = shift;
-   ORAC::Error->flush;
-   orac_err( "$Error" );
-   ORAC::Event->mainloop("Tk");
+   $ErrText = "$Error";
 };
+orac_exit_if_error( $ErrText );
 
-orac_exit_normally();
+
+orac_print ("Picard processing complete\n", "green");
+
+# Print out the processing summary
+my $exstat = orac_print_recipe_summary( "green", \%Stats );
+
+# If $MW is defined, enter the Tk MainLoop
+# So that the session can be examined before exiting
+ORAC::Event->mainloop("Tk");
+
+# Cleanup
+orac_exit_normally( ($exstat == 0 ? () : ( err => 1 ) ) );
 
 =head1 ENVIRONMENT
 
@@ -346,7 +357,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Science and Technology Facilities Council.
+Copyright (C) 2007-2010 Science and Technology Facilities Council.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under

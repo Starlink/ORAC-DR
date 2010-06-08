@@ -344,7 +344,7 @@ sub orac_chdir_output_dir {
           orac_err( "In many cases the performance degradation on a remote disk is too high.\n");
           orac_err( "Please use a local disk for data processing.\n" );
           orac_err( "If you know you have a high performance NFS system set the ORAC_NFS_OK environment variable to 1\n");
-          orac_exit_normally();
+          orac_exit_normally( err => 1);
         }
       }
     }
@@ -353,12 +353,12 @@ sub orac_chdir_output_dir {
     chdir($ENV{ORAC_DATA_OUT}) ||
       do {
         orac_err("Could not change directory to ORAC_DATA_OUT: $!");
-        orac_exit_normally();
+        orac_exit_normally( err => 1);
       };
 
   } else {
     orac_err("ORAC_DATA_OUT environment variable not set. Aborting\n");
-    orac_exit_normally();
+    orac_exit_normally( err => 1);
   }
   return;
 }
