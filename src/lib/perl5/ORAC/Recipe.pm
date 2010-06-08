@@ -446,6 +446,8 @@ The following classes are avaiable to primitive writers:
 
 Other classes can be loaded from within the recipe as needed.
 
+Returns the recipe exit status or throws an exception.
+
 The objects accessible to the recipe are:
 
 =over 4
@@ -592,6 +594,11 @@ sub execute {
 
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
+
+  # Store the real status here
+  my $recstatus = $status;
+
+  # _TERM is really a good status
   $status = ORAC__OK if $status == ORAC__TERM;
 
   # Some extra info
@@ -655,6 +662,8 @@ sub execute {
     orac_err "Recipe completed with error status = $status\n";
     orac_err "Continuing but this may cause problems during group processing\n";
   }
+
+  return $recstatus;
 }
 
 =item B<_read_recipe>

@@ -84,7 +84,8 @@ use vars qw/$VERSION @EXPORT @ISA /;
              orac_start_algorithm_engines orac_start_display
              orac_calib_override orac_process_argument_list
              orac_main_data_loop orac_parse_files orac_parse_recparams
-             orac_print_config_with_defaults orac_declare_location /;
+             orac_print_config_with_defaults orac_declare_location
+             orac_print_recipe_summary /;
 
 $VERSION = '1.0';
 
@@ -267,6 +268,8 @@ environment. Defaults are provided for Debug and Batch.
 (both false). Those options relate to the C<-debug> and C<-batch>
 command line options.
 
+Returns the recipe exit status or throws an exception.
+
 =cut
 
 sub orac_process_frame {
@@ -346,14 +349,21 @@ sub orac_process_frame {
   $recipe->suffices( @{$args{RecSuffix}}) if exists $args{RecSuffix};
   $recipe->parameters( $args{RecPars} ) if exists $args{RecPars};
 
+  # We will return the recipe status. Default to bad in case an exception
+  # is thrown.
+  my $status = ORAC__ERROR;
+
   # Execute the recipe
   try {
     orac_notify( ORAC::Print::NOT__STARTOBS, "Start reducing observation",
                  "Processing observation ".$Frm->number." with recipe $RecipeName");
-    $recipe->execute( $CURRENT_RECIPE, $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm,
-                      $Grp, $Cal, $Display, $Mon );
+    $status = $recipe->execute( $CURRENT_RECIPE, $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm,
+                                $Grp, $Cal, $Display, $Mon );
     orac_notify( ORAC::Print::NOT__ENDOBS, "Reduced observation",
                  "Observation ".$Frm->number. " has been reduced");
+
+
+
   }
     catch ORAC::Error::FatalError with
       {
@@ -403,6 +413,9 @@ sub orac_process_frame {
   if ( defined $CURRENT_PRIMITIVE && ref($CURRENT_PRIMITIVE) ) {
     $CURRENT_PRIMITIVE = [];
   }
+
+  # Return the exit status so that we can track statistics
+  return $status;
 
 }
 
@@ -1314,6 +1327,10 @@ Batch mode can be turned on with the -batch switch.
 
 =back
 
+Returns a hash containing information on the error status
+from all the frames that were processed. The hash can be
+analyzed using orac_print_recipe_summary.
+
 =cut
 
 sub orac_main_data_loop {
@@ -1326,6 +1343,10 @@ sub orac_main_data_loop {
        $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, $obs,
        $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
        $CURRENT_PRIMITIVE, $Override_Recipe ) = @_;
+
+
+  # Keep track of success and failure
+  my %Stats;
 
   # Default is to process data in order of arrival
   unless ($opt_batch) {
@@ -1373,22 +1394,23 @@ sub orac_main_data_loop {
         # read from the frame object in orac_process_frame
         # may want to revisit this.
         try {
-          orac_process_frame(
-                             CurrentRecipe => $CURRENT_RECIPE,
-                             CurrentPrimitive => $CURRENT_PRIMITIVE,
-                             PrimitiveList => $PRIMITIVE_LIST,
-                             Frame => $Frm,
-                             Group => $Grp,
-                             Calibration => $Cal,
-                             Engines => $Mon,
-                             Display => $Display,
-                             Debug => $opt_debug,
-                             CmdLineRecipe => $Override_Recipe,
-                             Instrument => $instrument,
-                             Batch => 0,
-                             RecSuffix => $recsuffix,
-                             RecPars => $recpars,
-                            );
+          my $status = orac_process_frame(
+                                          CurrentRecipe => $CURRENT_RECIPE,
+                                          CurrentPrimitive => $CURRENT_PRIMITIVE,
+                                          PrimitiveList => $PRIMITIVE_LIST,
+                                          Frame => $Frm,
+                                          Group => $Grp,
+                                          Calibration => $Cal,
+                                          Engines => $Mon,
+                                          Display => $Display,
+                                          Debug => $opt_debug,
+                                          CmdLineRecipe => $Override_Recipe,
+                                          Instrument => $instrument,
+                                          Batch => 0,
+                                          RecSuffix => $recsuffix,
+                                          RecPars => $recpars,
+                                         );
+          orac_store_recipe_status( \%Stats, $status );
         }
           catch ORAC::Error::FatalError with {
             my $Error = shift;
@@ -1461,22 +1483,23 @@ sub orac_main_data_loop {
         # read from the frame object in orac_process_frame
         # may want to revisit this.
         try {
-          orac_process_frame(
-                             CurrentRecipe => $CURRENT_RECIPE,
-                             CurrentPrimitive => $CURRENT_PRIMITIVE,
-                             PrimitiveList => $PRIMITIVE_LIST,
-                             Frame => $Frm,
-                             Group => $Grp,
-                             Calibration => $Cal,
-                             Engines =>$Mon,
-                             Display => $Display,
-                             Debug => $opt_debug,
-                             CmdLineRecipe => $Override_Recipe,
-                             Instrument => $instrument,
-                             Batch => 1,
-                             RecSuffix => $recsuffix,
-                             RecPars => $recpars,
-                            );
+          my $status = orac_process_frame(
+                                          CurrentRecipe => $CURRENT_RECIPE,
+                                          CurrentPrimitive => $CURRENT_PRIMITIVE,
+                                          PrimitiveList => $PRIMITIVE_LIST,
+                                          Frame => $Frm,
+                                          Group => $Grp,
+                                          Calibration => $Cal,
+                                          Engines =>$Mon,
+                                          Display => $Display,
+                                          Debug => $opt_debug,
+                                          CmdLineRecipe => $Override_Recipe,
+                                          Instrument => $instrument,
+                                          Batch => 1,
+                                          RecSuffix => $recsuffix,
+                                          RecPars => $recpars,
+                                         );
+          orac_store_recipe_status( \%Stats, $status );
         }
           catch ORAC::Error::FatalError with {
             my $Error = shift;
@@ -1498,8 +1521,92 @@ sub orac_main_data_loop {
       }
     }
   }
+
   orac_notify( ORAC::Print::NOT__COMPLETE, "ORAC-DR completed",
                "All pipeline processing has completed");
+
+  return %Stats;
+}
+
+=item B<orac_store_recipe_status>
+
+Translates a return status from "orac_process_frame" into a
+hash entry for tracking statistics.
+
+  orac_store_recipe_status( \%ongoing, $status );
+
+=cut
+
+sub orac_store_recipe_status {
+  my $href = shift;
+  my $status = shift;
+
+  # Do not use => in hash contructor since we do not want
+  # ORAC__OK to become "ORAC__OK" we want it to become the value
+  my %lut = (ORAC__OK, "OK",
+             ORAC__TERM, "TERM",
+             ORAC__BADENG, "BADENG");
+
+  # initialise good and bad to make things easier later on
+  for my $k (qw/ GOOD BAD /) {
+    $href->{$k} = 0 unless exists $href->{$k};
+  }
+
+  my $key = "BAD";
+  if (exists $lut{$status}) {
+    $key = $lut{$status};
+  }
+  $href->{$key}++;
+
+  # summarize
+  $href->{TOTAL}++;
+
+  if ($status == ORAC__OK || $status == ORAC__TERM) {
+    $href->{GOOD}++;
+  } elsif ($key ne "BAD") {
+    $href->{BAD}++;
+  }
+}
+
+=item B<orac_print_recipe_summary>
+
+Print out the recipe summary using the hash generated by
+orac_store_recipe_status.
+
+  $exstat = orac_print_recipe_summary( $color, \%Stats );
+
+Returns 0 if all recipes processed successfully and non-zero
+if some failed. This value can be passed directly to exit().
+
+=cut
+
+sub orac_print_recipe_summary {
+  my $color = shift;
+  my $stats = shift;
+  return unless defined $stats;
+  return unless exists $stats->{TOTAL};
+
+  if ($stats->{TOTAL} == 1) {
+    my $text = "which completed successfully";
+    if ( exists $stats->{TERM} && $stats->{TERM} ) {
+      $text = "which was terminated early";
+    } elsif (exists $stats->{BADENG} && $stats->{BADENG}) {
+      $text = "which had a bad algorithm engine";
+    } elsif ( $stats->{GOOD} == 0 ) {
+      $text = "which completed with an error";
+    }
+    orac_print( "Processed one recipe $text\n", $color );
+  } else {
+    my $text = "successfully";
+    if ($stats->{BAD} > 0) {
+      $text = "of which ".$stats->{BAD}. " completed with an error";
+    } elsif (exists $stats->{TERM} && $stats->{TERM} > 0) {
+      $text = "of which ". $stats->{TERM}. " were terminated early";
+    }
+
+    orac_print( "Processed ".$stats->{TOTAL}." recipes $text\n", $color);
+  }
+  return ( $stats->{BAD} == 0 ? 0 : 1 );
 }
 
 =back
@@ -1516,7 +1623,7 @@ Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 2008-2010 Science and Technology Facilities Council.
 Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
