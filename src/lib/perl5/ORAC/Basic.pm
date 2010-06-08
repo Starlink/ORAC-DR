@@ -37,7 +37,7 @@ use ORAC::Inst::SetupEnv;
 @ISA = qw(Exporter);
 
 @EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally
-               orac_force_abspath orac_chdir_output_dir
+               orac_force_abspath orac_chdir_output_dir orac_exit_if_error
             /;
 
 $VERSION = '1.0';
@@ -287,6 +287,27 @@ sub orac_exit_abnormally {
 
 }
 
+=item B<orac_exit_if_error>
+
+Wrapper around orac_exit_normally(). Will flush errors, display the error
+message and exit with bad error status if a defined message is supplied.
+Useful when handling an error from a try block.
+
+  orac_exit_if_error( $errtext );
+
+Does nothing if there is no error text.
+
+=cut
+
+sub orac_exit_if_error {
+  my $ErrText = shift;
+  if (defined $ErrText) {
+    ORAC::Error->flush;
+    ORAC::Event->mainloop("Tk");
+    orac_err($ErrText);
+    orac_exit_normally( err => 1);
+  }
+}
 
 =item B<orac_chdir_output_dir>
 
