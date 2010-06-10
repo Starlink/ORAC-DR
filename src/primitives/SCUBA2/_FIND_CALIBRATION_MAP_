@@ -203,7 +203,7 @@ if ( $proceed ) {
   my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
 
   # Find the peak signal in the image
-  _FIND_MAP_PEAK_ LOGFILE=0 VERBOSE=0 GROUP=$group
+  _FIND_MAP_PEAK_ VERBOSE=0 GROUP=$group
 
   # Retrieve the position - if successful, continue on to derive
   # an FCF
@@ -232,8 +232,18 @@ if ( $proceed ) {
 
     my %fcf;
 
+    # Now run the matched-filter on the calibrator and fit the peak position
+    _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group
+    _FIND_MAP_PEAK_ IMAGE=$_APPLY_MATCHED_FILTER_{OUT} VERBOSE=0 GROUP=$group
+    my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
+    if ($matched_peak) {
+      $results{BEAMMATCH} = $matched_peak;
+    } else {
+      orac_warn "Unable to fit peak to source after matched-filter\n";
+    }
+
     # Loop over the different type of results
-    foreach my $type (keys %results) {
+    foreach my $type (sort keys %results) {
 
       # Type specific configurations
       my ($ismap, $units);
@@ -242,11 +252,11 @@ if ( $proceed ) {
 	$units = "Jy/arcsec**2/$dataunits";
       } else {
 	$units = "Jy/beam/$dataunits";
-	if ($type eq 'BEAM') {
-	  $ismap = 0;
-	} else {
+	if ($type eq 'BEAMEQUIV') {
 	  # Need integrated flux for BEAMEQUIV calibration
 	  $ismap = 1;
+	} else {
+	  $ismap = 0;
 	}
       }
 
