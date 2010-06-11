@@ -45,7 +45,6 @@ __PACKAGE__->CreateBasicAccessors( gains => {},
                                    tausys => {},
 );
 
-
 =head1 METHODS
 
 The following methods are available:
@@ -56,9 +55,8 @@ The following methods are available:
 
 =item B<new>
 
-Sub-classed constructor. Adds knowledge of pointing, reference
-spectrum, beam efficiency, and other ACSIS-specific calibration
-information.
+Sub-classed constructor. Adds knowledge of optical depth and other
+JCMT continuum-specific calibration information.
 
 =cut
 
@@ -587,11 +585,9 @@ sub tau {
 
   # Check tausys
   if ($sys eq 'CSO') {
-
     # Read the value from the header of thing
     my $csotau = $self->thing->{'ORAC_TAU'};
-    ($tau, $status) = get_tau($filt, 'CSO', $csotau);
-
+    ($tau, $status) = $self->_get_tau($filt, 'CSO', $csotau);
     if ($status == -1) {
       orac_warn("Error converting a CSO tau of ".
                 (defined $csotau ? $csotau : "<undef>").
@@ -605,12 +601,12 @@ sub tau {
     # We check for a number - note that this pattern does not match
     # numbers that start with a decimal point.
     # This number is a specific CSO tau
-    ($tau, $status) = get_tau($filt, 'CSO', $sys);
+    ($tau, $status) = $self->_get_tau($filt, 'CSO', $sys);
 
     # Check status
     if ($status == -1) {
       orac_warn("Error converting a supplied CSO tau of ".
-                (defined $sys ? $sys : "<undef>"). 
+                (defined $sys ? $sys : "<undef>").
                 " to an opacity for filter '$filt'\n");
       orac_warn("Setting tau to 0\n");
       $tau = 0.0;
@@ -677,15 +673,15 @@ sub tau {
 
         # Now convert this tau to the requested filter
         # This must be changed to work for 850N as well
-        ($tau, $status) = get_tau($filt, $found, $tau);
+        ($tau, $status) = $self->_get_tau($filt, $found, $tau);
 
         # If there is an error, try going through CSO
         if ($status == -1) {
 
-          (my $intermed_tau, $status) = get_tau('CSO', $found, $tau);
+          (my $intermed_tau, $status) = $self->_get_tau('CSO', $found, $tau);
 
           if ($status != -1) {
-            ($tau, $status) = get_tau($filt, 'CSO', $intermed_tau);
+            ($tau, $status) = $self->_get_tau($filt, 'CSO', $intermed_tau);
 
             # On error - report conversion error then set tau to undef
             # so that we can try to adopt a CSO value
@@ -716,11 +712,11 @@ sub tau {
       orac_print "No suitable skydip found - converting from CSO tau\n";
       # Find CSO
       my $csotau = $self->thing->{'ORAC_TAU'};
-      ($tau, $status) = get_tau($filt, 'CSO', $csotau);
+      ($tau, $status) = $self->_get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
         orac_warn("Error converting a CSO tau of ".
-                  (defined $csotau ? $csotau : "<undef>"). 
+                  (defined $csotau ? $csotau : "<undef>").
                   " to an opacity for filter '$filt'\n");
         $tau = undef;
       }
@@ -733,7 +729,7 @@ sub tau {
     if (defined $csotau) {
 
       # Convert it to the required filter
-      ($tau, $status) = get_tau($filt, 'CSO', $csotau);
+      ($tau, $status) = $self->_get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
         orac_warn("Error converting a fitted CSO tau of ".
@@ -756,7 +752,7 @@ sub tau {
       orac_print( sprintf("WVM data located in frame: %.4f +/- %.4f\n",
                           $wvm, $wvm_err));
 
-      ($tau, $status) = get_tau($filt, 'CSO', $wvm);
+      ($tau, $status) = $self->_get_tau($filt, 'CSO', $wvm);
 
       # Check status
       if ($status == -1) {
@@ -1030,6 +1026,20 @@ sub _get_default_fcf {
 
 }
 
+=item B<_get_tau>
+
+Wrapper for the C<get_tau> method in JCMT::Tau to ensure the correct
+instrument-specific tau relation is used.
+
+  my ($tau_out, $status) = $self->_get_tau( $filter, $tausys, $tau_in );
+
+=cut
+
+sub _get_tau {
+  my $self = shift;
+  # Have to split up @_ due to prototype definition in JCMT::Tau
+  return get_tau($_[0], $_[1], $_[2]);
+}
 
 =back
 

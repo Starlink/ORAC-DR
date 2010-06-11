@@ -44,12 +44,14 @@ use ORAC::Index;                # Use index file
 use ORAC::Print;                # Standardised printing
 
 # External modules
-
 use File::Spec;
 
 $VERSION = '1.0';
 
 use base qw/ORAC::Calib::JCMTCont/;
+
+# Use SCUBA-2 tau relations
+use JCMT::Tau::SCUBA2;
 
 $DEBUG = 0;                     # Turn off debugging mode
 
@@ -549,7 +551,6 @@ sub makemap_config {
 
 =back
 
-
 =head2 Support Methods
 
 The "mask" and "resp" methods have support implementations to obtain
@@ -561,6 +562,35 @@ allowed synonym for "calname".
   $current = $Cal->calcache();
   $index = $Cal->calindex();
   $noup = $Cal->calnoupdate();
+
+=begin __PRIVATE_METHODS__
+
+=head1 PRIVATE METHODS
+
+The following methods are for internal use only.
+
+=cut
+
+=over 4
+
+=item B<_get_tau>
+
+Wrapper for the C<get_tau> method in JCMT::Tau to ensure the correct
+instrument-specific tau relation is used.
+
+  my ($tau_out, $status) = $self->_get_tau( $filter, $tausys, $tau_in );
+
+=cut
+
+sub _get_tau {
+  my $self = shift;
+  # Have to split up @_ due to prototype definition in JCMT::Tau
+  return get_tau($_[0], $_[1], $_[2]);
+}
+
+=back
+
+=end __PRIVATE_METHODS__
 
 =head1 SEE ALSO
 
