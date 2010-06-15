@@ -79,6 +79,10 @@ used in applying the matched filter. Default is 1 (yes).
 Full-width at half-maximum in arcsec of Gaussian used to smooth input
 image and PSF. Default is 30 arcsec.
 
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1 (yes).
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -184,6 +188,9 @@ my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH_FWHM", 30.0);
 $smooth_fwhm = $Frm->uhdr("RECPAR_SMOOTH_FWHM")
   if (defined $Frm->uhdr("RECPAR_SMOOTH_FWHM"));
 
+# Verbose flag
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
 # Create some re-useable temporary files
 my $temp1 = new ORAC::TempFile;
 my $tempfile1 = $temp1->file;
@@ -219,7 +226,7 @@ if (!$psf) {
       # Check that the pixel scales are consistent?
       $psf = $psffile;
     } else {
-      orac_warn "PSF file, $psffile, does not exist: creating one\n";
+      orac_warn "Given PSF file, $psffile, does not exist: creating one\n";
     }
   }
 
@@ -232,16 +239,19 @@ if (!$psf) {
 
     # Use inout method to define a suitable PSF file name
     $psf = $Obj->inout("_psf");
-    _CREATE_PSF_IMAGE_ PSF=$psf PIXSIZE=$pixscale NORM=$norm SMOOTH=$smooth SMOOTH_FWHM=$smooth_fwhm
+    _CREATE_PSF_IMAGE_ PSF=$psf PIXSIZE=$pixscale NORM=$norm SMOOTH=$smooth SMOOTH_FWHM=$smooth_fwhm VERBOSE=$verbose
 
     # Abort with an error if no psf image could be created
     orac_term "Unable to create a PSF image" unless $psf;
   }
 }
 
+orac_print "Applying matched filter to $in..." if ($verbose);
+
 # If desired, smooth input image by gaussian with given FWHM and
 # subtract from original.
 if ($smooth) {
+  orac_print " smoothing and subtracting from original..." if ($verbose);
   my $smooth_pix = $smooth_fwhm / $pixscale;
   $Mon{kappa_mon}->obeyw("gausmooth","in=$in out=$tempfile1 fwhm=$smooth_pix");
   $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tempfile1 out=$tempfile_in");
@@ -281,3 +291,5 @@ $Mon{ndfpack_mon}->obeyw("setvar","ndf=$out from=$tempfile1 comp=data");
 # The output file has no units so set them to the original input units
 my $units = $Frm->uhdr("ORAC_DATA_UNITS");
 $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$units");
+
+orac_print " done\n" if ($verbose);
