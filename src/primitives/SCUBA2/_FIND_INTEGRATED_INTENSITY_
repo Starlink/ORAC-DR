@@ -10,46 +10,21 @@ _FIND_INTEGRATED_INTENSITY_ - aperture photometry of image using statistics
 
  _FIND_INTEGRATED_INTENSITY_ IMAGE=$image XYPOS=\@xy RADIUS=50
 
- _FIND_INTEGRATED_INTENSITY_ IMAGE=$image MASK=0 RADIUS=30
+ _FIND_INTEGRATED_INTENSITY_ IMAGE=$image XYPOS=\@xy RADIUS=50 ESTIMATOR=MEAN
 
 =head1 DESCRIPTION
 
-This primitive calculates the integrated intensity in one of two ways:
-simply sum the signal within a given aperture, or mask the image and
-compute the statistics in order to subtract a constant background.
+This primitive calculates the integrated intensity by summing up
+values within a given aperture. A constant background level may be
+estimated and removed.
 
 The values are returned in whatever units the image is currently
 using, around a single (point) source that is assumed to be the only
-source on the map (so that the sky contribution can be
-calculated). The value is corrected for pixel area and, if masked, has
-a background level subtracted from it. The SKY domain is used
-throughout; the coordinate system used is the current one as obtained
-from the WCS C<system> attribute.
+source on the map (so that the background contribution can be
+calculated). The total value is corrected for the pixel size.
 
 The background is estimated by masking out the source and calculating
-the mean value in the image. This method will work well for
-DREAM/STARE images or SCAN images made with the iterative map-maker
-which have a single point source. The rebinning map maker for SCAN
-data will produce a bowl around a bright source which this method will
-not cope with.
-
-The integrated intensity is calculated using the following procedure:
-
-=over 4
-
-=item 1
-
-Define radius of aperture (input parameter, or default of 20 arcsec)
-
-=item 2
-
-Mask all data outside the calculated radius centred on the given position.
-
-=item 3
-
-Calculate the sum of all valid pixels.
-
-=back
+the mean, median or mode value in the image.
 
 Results are returned in the primitive hash.
 
@@ -59,6 +34,17 @@ The following arguments are supported:
 
 =over 4
 
+=item B<ESTIMATOR>
+
+Choice of background estimation method. May be C<mean>, C<median> or
+C<mode>. Default is C<mode>.
+
+=item B<GROUP>
+
+A flag to denote whether to use the current Group or Frame file. Only
+accessed if B<IMAGE> is not defined. Default is 0 (use the Frame
+file).
+
 =item B<IMAGE>
 
 Input image. No default.
@@ -66,6 +52,11 @@ Input image. No default.
 =item B<RADIUS>
 
 The radius of the aperture in arcsec. Default is 20 arcsec.
+
+=item B<REMOVEBACK>
+
+Flag to denote whether the background should be estimated and
+removed. The default is 1 (yes).
 
 =item B<VERBOSE>
 
@@ -97,11 +88,9 @@ _DEFINE_APERTURE, _FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_, _MASK_IMAGE_
 
 =head1 NOTES
 
-The current coordinate frame must be a SKY frame. No checks are made.
-
-It may be desireable to allow different (e.g. PIXEL) frames to be used.
-
-The peak signal is not defined if using C<APERADD>.
+It is assumed that the current coordinate frame is a SKY frame. No
+checks are made. It may be desireable to allow different (e.g. PIXEL)
+frames to be used.
 
 =head1 OUTPUT DATA
 
@@ -118,10 +107,6 @@ The number of pixels which contribute to the estimate of the flux
 =item NUMPIX
 
 The total number of pixels in the image
-
-=item PEAKFLUX
-
-The peak intensity in the aperture
 
 =item SIGMA
 
@@ -153,7 +138,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2005-2007 Particle Physics and Astronomy Research
-Council. Copyright (C) 2005-2008 University of British Columbia. All
+Council. Copyright (C) 2005-2010 University of British Columbia. All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -174,17 +159,12 @@ USA.
 =cut
 
 # Set the input file name
-my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
-
-unless ( defined ($in) ) {
-  orac_throw "Error: _FIND_INTEGRATED_INTENSITY_ must be supplied with an image\n";
-}
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE",
+		       ($group) ? $Grp->file : $Frm->file);
 
 # Should I be verbose (default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
-
-# Use mask and stats (1), or sum with aperadd (0)
-my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 1 );
 
 # Define X and Y positions
 my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
@@ -196,11 +176,11 @@ if (defined $xypos && ref($xypos) eq 'ARRAY') {
       unless (defined $x && defined $y);
 }
 
-# Set radius of mask - default is 20 arcsec
+# Set radius of aperture - default is 20 arcsec
 my $radius = get_prim_arg( $_PRIM_ARGS_,"RADIUS", 20.0 );
 
 # Initialize entries in primitive hash
-foreach my $item (qw/ PEAKFLUX TOTALFLUX SUM SIGMA NUMGOOD NUMPIX /) {
+foreach my $item (qw/ TOTALFLUX SUM SIGMA NUMGOOD NUMPIX /) {
   $_PRIM_ARGS_->{$item} = undef;
 }
 
@@ -208,31 +188,21 @@ foreach my $item (qw/ PEAKFLUX TOTALFLUX SUM SIGMA NUMGOOD NUMPIX /) {
 _DEFINE_APERTURE_ IMAGE=$in RADIUS=$radius XYPOS=$xypos
 my $aperture = $_DEFINE_APERTURE_{APERTURE};
 
-my ($sum, $maxflux, $ngood, $npix, $sigma);
+# Add up the signal within the given aperture aperture
+my $diam = $aperture->{diam};
+my $centre = "'".$aperture->{coords}."'";
+my $args = "ndf=$in ardfile=! centre=$centre diam=$diam";
 
-if ( $mask ) {
+$Mon{kappa_mon}->obeyw("aperadd","$args");
+my ($ORAC_STATUS, $sum) = $Mon{kappa_mon}->get("aperadd","total");
+($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("aperadd","sigma");
+($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("aperadd","ngood");
+($ORAC_STATUS, my $npix) = $Mon{kappa_mon}->get("aperadd","numpix");
 
-  # Get temporary output file
-  my $outobj = new ORAC::TempFile;
-  my $out = $outobj->file;
-
-  # Mask the input image - mask everything *outside* the aperture
-  _MASK_IMAGE_ IMAGE=$in MASKED=$out XYPOS=$xypos INVERT=1 APERTURE=$aperture
-
-  # Find stats on the masked image to get the flux in the aperture
-  _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
-  $sum     = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
-  $maxflux = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-  $ngood   = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
-  $npix    = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMPIX};
-  $sigma   = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
-
-  # Now repeat for the rest of the image - mask out the central source
-  # and calculate a mean background. Note this will probably only
-  # provide a useful result for images with a single point source in
-  # the centre. The rebinning mapmaker will produce a bowl around a
-  # bright source which this method will not deal with.
-
+# Calculate and remove a constant background if required
+my $removeback = get_prim_arg($_PRIM_ARGS_, "REMOVEBACK", 1);
+if ( $removeback ) {
+  my $estimator = uc(get_prim_arg($_PRIM_ARGS_, "ESTIMATOR", "MODE"));
   # Get a temporary output file
   my $bgoutobj = new ORAC::TempFile;
   my $bgout = $bgoutobj->file;
@@ -240,29 +210,19 @@ if ( $mask ) {
   # Mask the input image - mask everything *inside* the aperture
   _MASK_IMAGE_ IMAGE=$in MASKED=$bgout XYPOS=$xypos INVERT=0 APERTURE=$aperture
 
-  # Now calculate stats of the masked file to get the mean (background)
-  # level outside the source aperture
-  _FIND_IMAGE_STATISTICS_ IMAGE=$bgout VERBOSE=0 HISTAT=0
-  my $meanbg = ($_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD})
-    ? $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN} : 0.0;
+  # Now calculate stats of the masked file to get the background level
+  # outside the source aperture
+  _FIND_IMAGE_STATISTICS_ IMAGE=$bgout VERBOSE=0 HISTAT=1
+  my $background = ($_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD})
+    ? $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator} : 0.0;
 
-  orac_warn "Unable to determine background level: integrated intensity may be over/underestimated\n" unless $meanbg;
-
-  # This is mean value per pixel, so reduce maxflux and sum accordingly
-  $maxflux -= $meanbg;
-  $sum -= ($meanbg * $ngood);
-
-} else {
-  # Just add up the signal within an aperture
-  my $diam = $aperture->{diam};
-  my $centre = "'".$aperture->{coords}."'";
-  my $args = "ndf=$in ardfile=! centre=$centre diam=$diam";
-
-  $Mon{kappa_mon}->obeyw("aperadd","$args");
-  (my $ORAC_STATUS, $sum) = $Mon{kappa_mon}->get("aperadd","total");
-  ($ORAC_STATUS, $sigma) = $Mon{kappa_mon}->get("aperadd","sigma");
-  ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("aperadd","ngood");
-  ($ORAC_STATUS, $npix) = $Mon{kappa_mon}->get("aperadd","numpix");
+  if ($background) {
+    # This is background value per pixel, so multiply by the number of
+    # pixels in the signal aperture and reduce the sum accordingly
+    $sum -= ($background * $ngood);
+  } else {
+    orac_warn "Unable to determine background level: integrated intensity may be over/underestimated\n";
+  }
 }
 
 # Retrieve pixel scale in arcsec so totalflux is returned as a flux
@@ -273,7 +233,6 @@ my $pixarea = $_GET_PIXEL_SCALE_{AREA};
 # Store sum in the hash
 $_PRIM_ARGS_->{TOTALFLUX} = $sum*$pixarea;
 $_PRIM_ARGS_->{SUM} = $sum;
-$_PRIM_ARGS_->{PEAKFLUX} = $maxflux;
 $_PRIM_ARGS_->{SIGMA} = $sigma;
 $_PRIM_ARGS_->{NUMGOOD} = $ngood;
 $_PRIM_ARGS_->{NUMPIX} = $npix;
