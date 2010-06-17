@@ -470,7 +470,8 @@ sub convert_args_to_string {
 =item B<read_file_list>
 
 Given either a filename or an ORAC::TempFile object, read the contents
-(usually filenames) and return a list.
+(usually filenames) and return a list. Comment lines beginning with C<#>
+are ignored.
 
   @files = read_file_list( $listfile );
 
@@ -494,6 +495,7 @@ sub read_file_list {
   }
   my @contents;
   while ( <$fh> ) {
+    next if (/^\#/);		# Skip comment lines
     chomp;
     push( @contents, $_ );
   }
