@@ -1,0 +1,206 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_APERTURE_PHOTOMETRY_ - perform aperture photometry on a source
+
+=head1 SYNOPSIS
+
+ _APERTURE_PHOTOMETRY_
+
+ _APERTURE_PHOTOMETRY_ IMAGE=$Grp->file RADIUS=30
+
+ _APERTURE_PHOTOMETRY_ RADIUS=30 INNER=1.5 OUTER=2.5
+
+=head1 DESCRIPTION
+
+Aperture photometry of a point source.
+
+A sky annulus is defined in terms of multiples of the aperture
+radius. The default is to use an annulus bounded by 1.25 and 2
+aperture radii. The user should take care to ensure the image is large
+enough to encompass the sky annulus.
+
+Currently it is assumed that the source lies close to (0,0) in pixel
+coordinates, though the photometry task calculates the centroid
+position and centres the aperture at that position.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<GROUP>
+
+A flag to denote whether to use the current Group or Frame file. Only
+accessed if B<IMAGE> is not defined. Default is 0 (use the Frame
+file).
+
+=item B<IMAGE>
+
+Name of an image to perform aperture photometry. Default depends on
+choice of the B<GROUP> parameter.
+
+=item B<INNER>
+
+Inner scale factor for annulus in units of the aperture radius.
+Should be >1. Default is 1.25. May be overridden with the recipe
+parameter C<AUTOPHOTOM_INNER>.
+
+=item B<OUTER>
+
+Outer scale factor for annulus in units of the aperture radius. Should
+be greater than B<INNER>. Default is 2.0. May be overridden with the
+recipe parameter C<AUTOPHOTOM_OUTER>.
+
+=item B<RADIUS>
+
+Radius of aperture in arcsec. Default is 20 arcsec.
+
+=item B<VERBOSE>
+
+Flag to denote whether to print additional messages to screen. Default
+is 0 (no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item PHOTOM
+
+AUTOPHOTOM
+
+=item ORAC-DR PRIMITIVES:
+
+_GET_PIXEL_SCALE_
+
+=back
+
+=head1 NOTES
+
+The image size should be at least twice the aperture radius (or
+2*B<OUTER>) but this is currently not verified here.
+
+=head1 OUTPUT DATA
+
+The following entries are returned in the primitive hash
+C<%_APERTURE_PHOTOMETRY_>:
+
+=over 4
+
+=item * TOTALFLUX
+
+Total signal integrated over the aperture in units of signal * arcsec**2.
+
+=item * SUM
+
+Total signal within the aperture in units of the original signal.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1  COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Set the input file name
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE",
+		       ($group) ? $Grp->file : $Frm->file);
+
+# Should I be verbose (default to yes)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+# Set radius of aperture - default is 20 arcsec
+my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS", 20.0 );
+
+# Initialize entries in primitive hash
+foreach my $item (qw/ TOTALFLUX SUM /) {
+  $_PRIM_ARGS_->{$item} = undef;
+}
+
+# Inner and outer scales for annulus - perform some basic sanity checks
+my $inner = get_prim_arg($_PRIM_ARGS_, "INNER", 1.25);
+$inner = $Frm->uhdr("RECPAR_AUTOPHOTOM_INNER")
+  if (defined $Frm->uhdr("RECPAR_AUTOPHOTOM_INNER"));
+if ($inner < 1.0) {
+  $inner = 1.0;
+  orac_warn "INNER smaller than aperture radius: setting to 1\n";
+}
+
+my $outer = get_prim_arg($_PRIM_ARGS_, "OUTER", 2.0);
+$outer = $Frm->uhdr("RECPAR_AUTOPHOTOM_OUTER")
+  if (defined $Frm->uhdr("RECPAR_AUTOPHOTOM_OUTER"));
+if ($outer < $inner) {
+  $outer = $inner + 0.5;
+  orac_warn "OUTER less than INNER: setting to $inner + 0.5\n";
+}
+
+# Retrieve pixel scale in arcsec so totalflux is returned as a flux
+# with units of signal*arcsec^2
+_GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+my $pixarea = $_GET_PIXEL_SCALE_{AREA};
+my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
+
+my $infile = new ORAC::TempFile;
+my $inname = $infile->file;
+my $rpix = $radius / $pixscale;
+# Assume source is in 0,0 pixel but let autophotom find and return the centroid
+print {$infile->handle} "1 0.0 0.0 0.0 0.0 0.0 0.0 OK $rpix 0.0 0.0 annulus circle\n";
+print {$infile->handle} "#ANN 1 $inner $outer\n";
+
+my $outfile = new ORAC::TempFile;
+my $outname = $outfile->file;
+
+my $args = "padu=1 centro biasle=0 photon=3 nousemags positive nousemask";
+$args .= " in=$in infile=$inname outfile=$outname skyest=1";
+$Mon{photom_mon}->obeyw("autophotom","$args");
+
+# Read output file into an array - should only be 1 line so @lines
+# should have a single entry
+my @lines = read_file_list( $outname );
+if (@lines) {
+  my @line = split(/\s+/, $lines[0]);
+  # Pick out the sum
+  my $sum = $line[6];
+
+  if ($sum) {
+    # Store sum in the hash
+    $_PRIM_ARGS_->{TOTALFLUX} = $sum*$pixarea;
+    $_PRIM_ARGS_->{SUM} = $sum;
+  } else {
+    orac_warn "Unable to determine sum from autophotom\n";
+  }
+} else {
+  orac_warn "Unable to obtain results from autophotom\n";
+}
