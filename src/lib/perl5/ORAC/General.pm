@@ -470,8 +470,8 @@ sub convert_args_to_string {
 =item B<read_file_list>
 
 Given either a filename or an ORAC::TempFile object, read the contents
-(usually filenames) and return a list. Comment lines beginning with C<#>
-are ignored.
+(usually filenames) and return a list. Blank lines and anything after
+ a # comment character are ignored.
 
   @files = read_file_list( $listfile );
 
@@ -493,12 +493,16 @@ sub read_file_list {
       return undef;
     }
   }
-  my @contents;
-  while ( <$fh> ) {
-    next if (/^\#/);		# Skip comment lines
-    chomp;
-    push( @contents, $_ );
-  }
+
+  # Strip comments and only store non-blank lines
+  my @contents = grep {
+    length($_) > 0
+  } map {
+    chomp;      # Newline
+    s/\#.*//;   # Trailing comments
+    s/\s*$//;   # Trailing whitespace
+    $_
+  } <$fh>;
 
   return (wantarray ? @contents : \@contents);
 }
