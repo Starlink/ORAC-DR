@@ -55,6 +55,7 @@ $VERSION = '1.0';
 use POSIX qw//;
 use Math::Trig qw/ deg2rad rad2deg /;
 use Text::Balanced qw/ extract_bracketed extract_delimited /;
+use Scalar::Util qw/ blessed /;
 
 =head1 SUBROUTINES
 
@@ -484,12 +485,11 @@ sub read_file_list {
   my $intmp = shift;
 
   my $fh;
-  if (UNIVERSAL::isa( $intmp, "ORAC::TempFile" )) {
+  if (blessed($intmp) && $intmp->can( "handle" )) {
     $fh = $intmp->handle;
+    seek( $fh, 0, 0); # seek to start of file
   } else {
-    if ( -e $intmp ) {
-      open $fh, "< $intmp";
-    } else {
+    if ( ! open $fh, "<", $intmp ) {
       return undef;
     }
   }
