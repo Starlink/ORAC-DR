@@ -293,103 +293,103 @@ if ( $calcnoise ) {
     if ( ($map_wdth < $minmapsize) || ($map_hght < $minmapsize) ) {
       orac_warn "Unable to estimate noise using apertures - map too small ($map_wdth x $map_hght arcsec) or aperture too large ($apdiam arcsec)\n";
     } else {
+      # Now ascertain how many apertures are being used
+      $minmapsize *= 2;
+      my $nxap = ( $map_wdth > $minmapsize ) ? 3 : 2;
+      my $nyap = ( $map_hght > $minmapsize ) ? 3 : 2;
 
-    # Now ascertain how many apertures are being used
-    $minmapsize *= 2;
-    my $nxap = ( $map_wdth > $minmapsize ) ? 3 : 2;
-    my $nyap = ( $map_hght > $minmapsize ) ? 3 : 2;
+      # Obtain the pixel scale, including the pixel-to-sky mapping for later
+      _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0 UNITS=arcsec WANTMAP=1
+      my $pixscale = sqrt( $_GET_PIXEL_SCALE_{AREA} );
+      my $pixdiam = $apdiam / $pixscale;
+      my $pixradius = $radius / $pixscale;
 
-    # Obtain the pixel scale, including the pixel-to-sky mapping for later
-    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0 UNITS=arcsec WANTMAP=1
-    my $pixscale = sqrt( $_GET_PIXEL_SCALE_{AREA} );
-    my $pixdiam = $apdiam / $pixscale;
-    my $pixradius = $radius / $pixscale;
+      # Retrieve bounds in pixel coords - note the implicit assumption
+      # that the NDF has 2 dimensions.
+      $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+      ($ORAC_STATUS, my @lbound) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+      ($ORAC_STATUS, my @ubound) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
 
-    # Retrieve bounds in pixel coords - note the implicit assumption
-    # that the NDF has 2 dimensions.
-    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
-    ($ORAC_STATUS, my @lbound) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
-    ($ORAC_STATUS, my @ubound) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+      # Calculate size of image in pixels...
+      my $xsize = $ubound[0] - $lbound[0] + 1;
+      my $ysize = $ubound[1] - $lbound[1] + 1;
+      # ...and the aperture spacing...
+      my $dx = int($xsize / $nxap);
+      my $dy = int($ysize / $nyap);
+      # ...and the first aperture centre
+      my $xoff = ($dx > $pixdiam) ? $dx/2 : $pixradius;
+      my $yoff = ($dy > $pixdiam) ? $dy/2 : $pixradius;
+      my $x1 = $lbound[0] + $xoff;
+      my $y1 = $lbound[1] + $yoff;
 
-    # Calculate size of image in pixels...
-    my $xsize = $ubound[0] - $lbound[0] + 1;
-    my $ysize = $ubound[1] - $lbound[1] + 1;
-    # ...and the aperture spacing...
-    my $dx = int($xsize / $nxap);
-    my $dy = int($ysize / $nyap);
-    # ...and the first aperture centre
-    my $xoff = ($dx > $pixdiam) ? $dx/2 : $pixradius;
-    my $yoff = ($dy > $pixdiam) ? $dy/2 : $pixradius;
-    my $x1 = $lbound[0] + $xoff;
-    my $y1 = $lbound[1] + $yoff;
-
-    # Define centre positions of the apertures
-    my (@xpixels, @ypixels);
-    my $nap = ($nxap == 3 && $nyap == 3) ? 8 : $nxap * $nyap;
-    my $apindex = -1;
-    for my $i (1..$nxap) {
-      for my $j (1..$nyap) {
-	$apindex++;
-	# Skip the centre position for the 3x3 case as we know it
-	# contains the source
-	next if ($nap == 8 && $apindex == 4);
-	push( @xpixels, $x1 + ($i-1)*$dx );
-	push( @ypixels, $y1 + ($j-1)*$dy );
-      }
-    }
-
-    # Pixel to SKY mapping
-    my $pixtosky = $_GET_PIXEL_SCALE_{MAPPING};
-
-    # Convert pixel positions to sky positions in one call
-    my ($xsky, $ysky) = $pixtosky->Tran2( \@xpixels, \@ypixels, 1 );
-
-    # Calculate number of pixels within an aperture
-    use Astro::SLA qw/ :constants /;
-    my $npix = DPI * $radius*$radius / $_GET_PIXEL_SCALE_{AREA};
-
-    # Now loop over number of apertures
-    orac_print "Looping over $nxap x $nyap apertures\n" if ($verbose);
-    use Astro::Coords;
-    my @imnoise;
-    for my $i (1..$nap) {
-      # Convert X, Y positions to sexagesimal string via an Astro::Coords object
-      my $coords = new Astro::Coords( ra => $xsky->[$i-1], dec => $ysky->[$i-1],
-				      units => 'radians', type => 'J2000' );
-      my @xy = ( $coords->ra(format=>'s'), $coords->dec(format=>'s') );
-      _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy VERBOSE=0
-      my $imnoise = $_FIND_INTEGRATED_INTENSITY_{SIGMA};
-      my $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
-      push(@imnoise, $imnoise) if ($ngood/$npix > 0.5);
-    }
-    use Statistics::Descriptive;
-    my $stats = new Statistics::Descriptive::Full;
-    $stats->add_data(\@imnoise);
-    $sigma = $stats->mean;
-
-    # Throw away the max value if excessive as it likely indicates
-    # presence of another source. If the mean exceeds the median, then
-    # there are values significantly higher than the median. This
-    # could indicate outliers - so check for mean > median. This
-    # method appears to work well enough for the small numbers of
-    # points in these data arrays.
-    my @newnoise;
-    if ($stats->mean > $stats->median) {
-      # If the deviation between the median and the max is greater
-      # than that between the median and the minimum then the max
-      # value is probably too high to be included in the estimate of
-      # the image noise.
-      if (abs($stats->median - $stats->max) > abs($stats->median - $stats->min)) {
-	foreach my $datum (@imnoise) {
-	  push(@newnoise, $datum) if (($datum != $stats->max));
+      # Define centre positions of the apertures
+      my (@xpixels, @ypixels);
+      my $nap = ($nxap == 3 && $nyap == 3) ? 8 : $nxap * $nyap;
+      my $apindex = -1;
+      for my $i (1..$nxap) {
+	for my $j (1..$nyap) {
+	  $apindex++;
+	  # Skip the centre position for the 3x3 case as we know it
+	  # contains the source
+	  next if ($nap == 8 && $apindex == 4);
+	  push( @xpixels, $x1 + ($i-1)*$dx );
+	  push( @ypixels, $y1 + ($j-1)*$dy );
 	}
-	# Recalculate the statistics
-	$stats->clear();
-	$stats->add_data(\@newnoise);
-	$sigma = $stats->mean;
+      }
+
+      # Pixel to SKY mapping
+      my $pixtosky = $_GET_PIXEL_SCALE_{MAPPING};
+
+      # Convert pixel positions to sky positions in one call
+      my ($xsky, $ysky) = $pixtosky->Tran2( \@xpixels, \@ypixels, 1 );
+
+      # Calculate number of pixels within an aperture
+      use Astro::SLA qw/ :constants /;
+      my $npix = DPI * $radius*$radius / $_GET_PIXEL_SCALE_{AREA};
+
+      # Now loop over number of apertures
+      orac_print "Looping over $nxap x $nyap apertures\n" if ($verbose);
+      use Astro::Coords;
+      my @imnoise;
+      for my $i (1..$nap) {
+	# Convert X, Y positions to sexagesimal string via an
+	# Astro::Coords object
+	my $coords = new Astro::Coords( ra => $xsky->[$i-1], dec => $ysky->[$i-1],
+					units => 'radians', type => 'J2000' );
+	my @xy = ( $coords->ra(format=>'s'), $coords->dec(format=>'s') );
+	_FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy VERBOSE=0
+	my $imnoise = $_FIND_INTEGRATED_INTENSITY_{SIGMA};
+	my $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
+	push(@imnoise, $imnoise) if ($ngood/$npix > 0.5);
+      }
+      use Statistics::Descriptive;
+      my $stats = new Statistics::Descriptive::Full;
+      $stats->add_data(\@imnoise);
+      $sigma = $stats->mean;
+
+      # Throw away the max value if excessive as it likely indicates
+      # presence of another source. If the mean exceeds the median, then
+      # there are values significantly higher than the median. This
+      # could indicate outliers - so check for mean > median. This
+      # method appears to work well enough for the small numbers of
+      # points in these data arrays.
+      my @newnoise;
+      if ($stats->mean > $stats->median) {
+	# If the deviation between the median and the max is greater
+	# than that between the median and the minimum then the max
+	# value is probably too high to be included in the estimate of
+	# the image noise.
+	if (abs($stats->median - $stats->max) > abs($stats->median - $stats->min)) {
+	  foreach my $datum (@imnoise) {
+	    push(@newnoise, $datum) if (($datum != $stats->max));
+	  }
+	  # Recalculate the statistics
+	  $stats->clear();
+	  $stats->add_data(\@newnoise);
+	  $sigma = $stats->mean;
+	}
       }
     }
-  }
   } elsif ( $var ) {
     # 3) Use the Variance component within the NDF as a measure of the noise
     _FIND_VARIANCE_ IMAGE=$in COMP=err
