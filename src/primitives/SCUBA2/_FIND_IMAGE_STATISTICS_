@@ -60,6 +60,11 @@ supplied.
 The method used by HISTAT to calculate the mode. The default is
 C<MOMENTS>. Only accessed it B<HISTAT> is true.
 
+=item B<PERCENTILES>
+
+Comma-separated list of percentiles to calculate. Default is the null
+parameter, C<!>, which indicates no percentiles.
+
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
@@ -117,6 +122,9 @@ A reference to a hash containing the following keys and values:
 
 =item MIN     - minimum value
 
+=item PERCENTILES - percentile values, either a scalar or an array
+reference (if multiple values requested)
+
 =back
 
 Unset items are returned as undef.
@@ -135,7 +143,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005-2008 University of British Columbia.  All Rights
+Copyright (C) 2005-2010 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -178,9 +186,15 @@ my $histo = get_prim_arg( $_PRIM_ARGS_, "HISTO", 0 );
 # Do we want to use KAPPA HISTAT or STATS?
 my $histat = get_prim_arg( $_PRIM_ARGS_, "HISTAT", 1 );
 
+# Percentiles
+my $percentiles = get_prim_arg( $_PRIM_ARGS_, "PERCENTILES", "!");
+
 # Declare useful variables
 my $ORAC_STATUS;
 my @params = (qw/ mean median numgood numpix numbad minimum maximum total /);
+# Add perval if not default
+push (@params, "perval") if ($percentiles ne "!");
+
 my %results;
 if ( $histat ) {
   # Set the HISTO argument to false
@@ -191,7 +205,8 @@ if ( $histat ) {
   my $modemethod = get_prim_arg( $_PRIM_ARGS_, "MODE_METHOD", "MOMENTS" );
 
   # Use HISTAT to calculate statistics
-  $Mon{kappa_mon}->obeyw("histat","ndf=$in method=$modemethod comp=$comp");
+  my $args = "ndf=$in method=$modemethod comp=$comp percentiles=[$percentiles]";
+  $Mon{kappa_mon}->obeyw("histat","$args");
   # Retrieve the values
   push ( @params, "mode");
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("histat", @params);
@@ -203,8 +218,9 @@ if ( $histat ) {
 
   # Calculate stats of the masked file to get the mean and the
   # standard deviation
-  my $args = ($clip eq "") ? "" : "clip=[$clip]";
-  $Mon{kappa_mon}->obeyw("stats","ndf=$in $args $order comp=$comp");
+  my $args = "ndf=$in $order comp=$comp percentiles=[$percentiles]";
+  $args .= ($clip eq "") ? "" : " clip=[$clip]";
+  $Mon{kappa_mon}->obeyw("stats","$args");
   push ( @params, "sigma");
   # Retrieve the values
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("stats", @params);
@@ -223,6 +239,7 @@ my $mode   = $results{mode};
 my $ngood  = $results{numgood};
 my $ntotal = $results{numpix};
 my $nbad   = $results{numbad};
+my $perval = $results{perval};
 
 if ($ngood == 0) {
   orac_warn "All pixels in region are bad!\n" if $verbose;
@@ -290,6 +307,7 @@ $_FIND_IMAGE_STATISTICS_{RESULTS} = { MEAN => $avg,
 				      SUM => $sum,
 				      MAX => $max,
 				      MIN => $min,
+				      PERCENTILES => $perval,
 				    };
 $_FIND_IMAGE_STATISTICS_{HISTOMODE} = ($maxval == -1.0e9) ? 0 : 1;
 
