@@ -166,6 +166,8 @@ sub framegroup {
   return @Frms;
 }
 
+=back
+
 =head2 Accessor Methods
 
 The following methods are available for accessing the
