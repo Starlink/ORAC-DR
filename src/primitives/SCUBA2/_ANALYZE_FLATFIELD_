@@ -45,6 +45,24 @@ the responsivity data.
 Flag to denote whether or not to write a log file. Default is 1
 (yes). Log file is called C<log.flatfield>.
 
+=item B<LOGPAR>
+
+Specifies the type of log file to write. May be C<ABS> or C<DIFF>
+depending on whether absolute values from both solutions are required,
+or just those from the new solution and the differences from the
+previous. Default is C<DIFF>.
+
+=item B<PERCENTILES>
+
+Comma-separated list of percentiles to calculate. Default is the null
+parameter, C<!>, which indicates no percentiles.
+
+=item B<RESPRATIO>
+
+A flag to indicate whether an output image is created of the ratio of
+the current and previous responsivities. Default is 0 (do not
+calculate the ratio image).
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -75,8 +93,11 @@ than here.
 The name of each flatfield solution is stored in the calibration
 system in C<index.flat>.
 
-The ratio of the current and previous responsivity images (if they
-exist) is stored as an NDF extension within the flatfield solution.
+The percentage change image is stored as an NDF extension in the
+flatfield file called C<RESP_DELTA> (under .MORE.SMURF).
+
+If the B<RESPRATIO> parameter is true, then the responsivity ratio
+image is also stored as an NDF extension called C<RESP_RATIO>.
 
 =head1 OUTPUT FILES
 
@@ -126,11 +147,22 @@ if ( $Frm->uhdr("OBSEND") ) {
 
   # Which component to analyze?
   my $comp = ( $err ) ? "err" : "data";
+  my $preftext = ( $err ) ? "Uncertainties in" : "Values of";
 
   # Level to clip the data before calculating statistics?
   my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
 
-  my $preftext = ( $err ) ? "Uncertainties in" : "Values of";
+  # Percentiles
+  my $percentiles = get_prim_arg( $_PRIM_ARGS_, "PERCENTILES", "!" );
+
+  # What type of log file should be written? Absolute values or
+  # differences?
+  my $logpar = lc(get_prim_arg( $_PRIM_ARGS_, "LOGPAR", "diff" ));
+  my $abslog = ($logpar eq "abs") ? 1 : 0;
+
+  # Is the responsivity analysis calculating a ratio or a percentage
+  # change image? Default to percentage change.
+  my $respratio = get_prim_arg( $_PRIM_ARGS_, "RESPRATIO", 0 );
 
   # List of flatfield file names for writing to flag (.ok) file
   my @flatfiles;
@@ -183,14 +215,16 @@ if ( $Frm->uhdr("OBSEND") ) {
 
     # Check if we really have a responsivity file
     if ( $respfile && $previous ) {
+      ### Calculate responsivity statistics ###
       # Analyze current resp file - use STATS for sigma-clipping
-      _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0
+      _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 PERCENTILES=$percentiles
       my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-      # Now get the median using HISTAT
+      # Now get the mode using HISTAT
       if ( $results{NUMGOOD} > 0 ) {
-        _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip
-        $results{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+        _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0
+        $results{MODE} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MODE};
       }
+      $results{LABEL} = "END  ";
 
       # Calculate how many values have been dropped due to
       # sigma-clipping and what proportion that represents
@@ -200,70 +234,144 @@ if ( $Frm->uhdr("OBSEND") ) {
       my $dnpc = ($totalgood > 0) ? sprintf "%5.1f", 100.0 * $dn/$totalgood
 	: 100;
 
-      # Obtain statistics for the previous responsivity solution.
-      # Analyze previous resp solution - use STATS to get sigma-clipped statistics
-      _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0
+      # Analyze previous resp solution - use STATS to get
+      # sigma-clipped statistics
+      _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 PERCENTILES=$percentiles
       my %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-      # Now get the median using HISTAT
+      # Now get the mode using HISTAT
       if ( $previous{NUMGOOD} > 0 ) {
-        _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip
-        $previous{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+        _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0
+        $previous{MODE} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MODE};
       }
+      $previous{LABEL} = "START";
 
+      ### Obtain and store the desired statistics for printing/logging ###
       # Print out results from current solution and calculate
       # percentage changes from previous solution
       orac_print ("---- $preftext responsivity fits for subarray $subarray ---- \n", "green");
       orac_print ("---- Clipped at $clip sigma ($dn solutions omitted = $dnpc %) ----\n", "green")
 	if ($clip ne "");
-      my @logparms = ($subarray);
-      foreach my $stat ( qw/ MEDIAN MEAN SIGMA MAX MIN / ) {
-	my $value = sprintf "%11.4f", $results{$stat};
+      # Define two arrays to hold the results for the current and
+      # previous solutions respectively. The `current' array is always
+      # populated, and has diff values included under normal
+      # circumstances. When writing an absolute-value log file (such
+      # as when comparing fast-ramp flatfields), the `previous' array
+      # is populated. Each set of results is written as an entry to
+      # the log file if appropriate.
+      my @curlogpar = ($subarray);
+      my (@prelogpar, @perval, @pervalstrings);
+      # Add extra parameters if an `absolute' logfile is being written
+      if ($abslog) {
+	push(@curlogpar, $results{LABEL});
+	push(@prelogpar, $subarray, $previous{LABEL});
+      }
+      my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
+      # Loop over the statistics calculated above and reformat to
+      # store in the array(s) as necessary
+      foreach my $stat ( qw/ MEDIAN MEAN MODE SIGMA MAX MIN / ) {
+	my $curval = sprintf "%11.4f", $results{$stat};
 	my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
-	my $incdec = ( $diff == 0) ? "change" :
-	  (( $diff > 0 ) ? "increase" : "decrease");
-	my $deltapc = sprintf "%4.1f", 100*abs($diff / $previous{$stat});
-	# Align the output for easy reading
-	my $outstat = sprintf "%-8s", $stat;
 	if ($uselog) {
-	  push (@logparms, $value, $diff);
+	  push (@curlogpar, $curval);
+	  if ($abslog) {
+	    my $preval = sprintf "%11.4f", $previous{$stat};
+	    push (@prelogpar, $preval);
+	  } else {
+	    push (@curlogpar, $diff);
+	  }
 	} else {
-	  orac_print ( " $outstat = $value $units ( $deltapc % $incdec )\n",
+	  my $deltapc = sprintf "%4.1f", 100*abs($diff / $previous{$stat});
+	  my $incdec = ( $diff == 0) ? "change" :
+	    (( $diff > 0 ) ? "increase" : "decrease");
+	  # Align the output for easy reading
+	  my $outstat = sprintf "%-8s", $stat;
+	  orac_print ( " $outstat = $curval $units ( $deltapc % $incdec )\n",
 		       "green");
 	}
 	# Store in uhdr
-	$Frmobj->uhdr( $stat, $value );
+	$Frmobj->uhdr( $stat, $curval );
 	$Frmobj->uhdr( "D".$stat, $diff );
       }
-      # Now print out the change in the number of good solutions
+
+      ### Write results to log file if appropriate ###
+      if ($uselog) {
+	push (@curlogpar, $results{NUMGOOD});
+	my $logtype = "flatfield";
+
+	my @names;
+	my $parlist = "BRIEF";
+	# For absolute log files, the previous details must be written
+	# first
+	if ($abslog) {
+	  $parlist = "FULL";
+	  push (@prelogpar, $previous{NUMGOOD});
+
+	  # Define an anon sub to get the percentiles info
+	  my $get_percentiles = sub {
+	    my ($flatsol, $percentiles) = @_;
+	    my $pervals = $flatsol->{PERCENTILES};
+	    # List of requested percentiles and calculated values
+	    my @pc = split(/\,/, $percentiles);
+	    my @pervals = (ref($pervals) eq "ARRAY") ? @{$pervals} : ($pervals);
+	    # Arrays to store returned values
+	    my (@pervalpar, @pervalstrings);
+	    # Loop over the elements in the arrays
+	    for my $i (0 .. $#pc) {
+	      push(@pervalstrings, "PC_".$pc[$i]);
+	      my $value = sprintf "%11.4f", $pervals[$i];
+	      push(@pervalpar, $value);
+	      push(@pervalstrings, "DELTA_".$pc[$i]);
+	      # Define the DELTA value as the difference between the
+	      # value at the current percentile and the mode, divided
+	      # by sigma
+	      $value = sprintf "%11.4f", ($pervals[$i] - $flatsol->{MODE}) / $flatsol->{SIGMA};
+	      push(@pervalpar, $value);
+	    }
+	    return [ \@pervalpar, \@pervalstrings];
+	  };
+
+	  # Get the percentiles info provided the percentiles
+	  # parameter is not null
+	  if ( $percentiles ne "!" ) {
+	    my $pcresults = $get_percentiles->(\%results, $percentiles);
+	    push(@curlogpar, @{$pcresults->[0]});
+	    push(@pervalstrings, @{$pcresults->[1]});
+
+	    $pcresults = $get_percentiles->(\%previous, $percentiles);
+	    push(@prelogpar, @{$pcresults->[0]});
+	  }
+
+	  @names = ("Subarray", "Fastflat", "Median", "Mean", "Mode", "Sigma", "Max", "Min", "Ngood", @pervalstrings);
+	  _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@prelogpar PARAMS=\@names PARLIST=$parlist
+	} else {
+	  @names = ("Subarray", "Median", "Delta", "Mean", "Delta", "Sigma", "Delta", "Max", "Delta", "Min", "Delta", "Ngood", "Delta");
+	  push(@curlogpar, $numdiff);
+	}
+	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@curlogpar PARAMS=\@names PARLIST=$parlist
+      }
+
+      ### Now print out the change in the number of good solutions ###
       my $numstring = "no change";
-      my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
       # Make sure we don't divide by zero - set a dummy 100% as a default
       my $deltapc = ($previous{NUMGOOD} > 0)
 	? sprintf "%4.1f", 100*abs($numdiff / $previous{NUMGOOD})
-	: 100;
+	  : 100;
       $numstring = abs($numdiff) . " changed : $deltapc % ".
 	($numdiff > 0 ? "increase" : "decrease");
-      if ($uselog) {
-	push (@logparms, $results{NUMGOOD}, $numdiff);
-	my $logtype = "flatfield";
-	my @names = ("Subarray", "Median", "Delta", "Mean", "Delta", "Sigma", "Delta", "Max", "Delta", "Min", "Delta", "Ngood", "Delta");
-	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@logparms PARAMS=\@names PARLIST=BRIEF
-      }
       orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n",
 		  "green");
-
       # Store in uhdr
       $Frmobj->uhdr( "NGOOD", $results{NUMGOOD} );
       $Frmobj->uhdr( "DNGOOD", $numdiff );
 
-      # Next create the `percentage change' image
+      ### Create the `percentage change' image ###
       my $deltafile = $Frmobj->inout("_pcrsp");
       my $exp = "PA*(IA-IB)/IB";
       my $args = "exp=$exp IA=$respfile IB=$previous PA=100.0 out=$deltafile";
       $Mon{kappa_mon}->obeyw("maths","$args");
       # Set the title to something meaningful
-      my $sign = ( $numdiff > 0 ) ? "+" : "-";
-      my $title = "Change (%) / N = ".$Frmobj->uhdr( "NGOOD")." ($sign".abs($numdiff).")";
+      my $sign = ( $Frmobj->uhdr("DNGOOD") > 0 ) ? "+" : "-";
+      my $title = "Change (%) / N = ".$Frmobj->uhdr("NGOOD")." ($sign".abs($Frmobj->uhdr("DNGOOD")).")";
       $args = "ndf=$deltafile title='".$title."'";
       $Mon{ndfpack_mon}->obeyw("settitle","$args");
 
@@ -274,8 +382,23 @@ if ( $Frm->uhdr("OBSEND") ) {
       # change image
       $Frmobj->uhdr("RESP_DELTA", $deltafile);
 
-      # Now display the results
+      # Display the results
       _DISPLAY_RESPONSIVITIES_ FRAME=$Frmobj CLIP=$clip
+
+      # Now create the resposivity ratio image if requested - note
+      # there is no display associated with this image
+      if ($respratio) {
+	my $ratiofile = new ORAC::TempFile;
+	my $title = "Ratio of fastramp flatfields from beginning and end of obs";
+	my $args = "in1=$previous in2=$respfile out=$ratiofile title='".$title."'";
+	$Mon{kappa_mon}->obeyw("div","$args");
+	# Store this as another extension in flatfield file
+	my $respratio = $flatfile.".MORE.SMURF.RESP_RATIO";
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$ratiofile out=$respratio");
+
+	# No display as yet - no entries in disp.dat, will need to
+	# update _DISPLAY_RESPONSIVITIES_ too
+      }
     } else {
       orac_warn "No responsivity file for subarray $subarray\n";
     }
@@ -293,7 +416,6 @@ if ( $Frm->uhdr("OBSEND") ) {
 	unless ( $interfile =~ /.more.smurf.resp/i);
     }
     $Frmobj->intermediates(@newintermediates);
-
   }
   # Now create an ok file to indicate processing is complete.
   if ( @flatfiles ) {
