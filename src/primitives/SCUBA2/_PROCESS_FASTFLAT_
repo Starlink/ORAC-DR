@@ -107,9 +107,32 @@ if (@flats) {
   # Create a temporary override of Frm to allow primitives to work
   my $Frm = $Frm->new(\@flats);
 
+  my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
+  my $offline = ( $nfilespersub > 1 ) ? 1 : 0;
+
   # Copy the raw files so they persist during successive passes
-  # through the recipe
-  _COPY_RAW_DATA_
+  # through the recipe - only done for the QL pipeline as fastflat
+  # processing offline doesn't care about processing the science data
+  if (!$offline) {
+    _COPY_RAW_DATA_
+  }
+
+  my @Frms;
+  if ($offline) {
+    # multiple files per subarray = offline mode
+    # split Frm into Frms with all the same subscan number
+
+    # This method *assumes* that the files are ordered by subarray in
+    # the Frame: ie file1 = sub1_file1, file2 = sub1_file2 etc.
+    for my $i (1 .. $nfilespersub) {
+      my @files = map { $Frm->file($i + ($_ - 1)*$nfilespersub) } (1..$Frm->numsubarrays);
+
+      my $newFrm = $Frm->new( \@files );
+      push(@Frms, $newFrm);
+    }
+  }
+  # Use the last Frame as the current Frm if there are multiple Frames
+  $Frm = $Frms[-1] if (@Frms > 1);
 
   # Retrieve current Group uhdr
   my $uhdr = $Grp->uhdr;
@@ -118,13 +141,40 @@ if (@flats) {
   $Grp->allmembers($Frm);
   $Grp->uhdr(%{$uhdr});
 
-  # Set a FASTFLAT header
+  # Set a FASTFLAT header for subsequent primitives to use
   $Grp->uhdr("FASTFLAT",1);
   # Set the Frame uhdr obsend flag to force flatfield analysis
   $Frm->uhdr("OBSEND",1);
   # Store (copied) raw file names for later retrieval when making a map
   $_PROCESS_FASTFLAT_{FLATS} = [$Frm->files];
 
+  if ( @Frms > 1 ) {
+    # If offline, process the first fast-ramp file to create a
+    # `previous' file
+    { # Localize Grp here just to get the flatfield calculation -
+      # alternative is to patch _CALCULATE_FLATFIELD_ to take a group
+      # object
+      my $Grp = $Grp->new;
+      $Grp->allmembers($Frms[0]);
+      $Grp->uhdr(%{$uhdr});
+
+      # Calculate the flatfield solution
+      _CALCULATE_FLATFIELD_
+
+      # Store results in the previous hash
+
+      # Each Frame will only contain 1 file, the flatfield solution. Take
+      # a copy so it's not overwritten by the second fastflat.
+      foreach my $tmpfrm ($Grp->members) {
+	my $fastflat = $tmpfrm->inout("_fastflat");
+	my $args = "in=".($tmpfrm->file)." out=$fastflat";
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+	$previous{$tmpfrm->hdr("SUBARRAY")} = $fastflat;
+      }
+    }
+    # Store the fastflats for retrieval by the flatfield analysis primitive
+    $Grp->uhdr("FASTFLATSOL",\%previous) if (%previous);
+  }
   # Calculate the flatfield solution
   _CALCULATE_FLATFIELD_
 
@@ -151,8 +201,13 @@ if (@flats) {
     }
   }
 
-  # Analyze and display the results
-  _ANALYZE_FLATFIELD_
+  if ($offline) {
+    # Hard wire some desired percentiles
+    _ANALYZE_FLATFIELD_ PERCENTILES=16,84 RESPRATIO=1 LOGPAR=ABS
+  } else {
+    # Analyze and display the results
+    _ANALYZE_FLATFIELD_
+  }
 
   # Tidy up
   _DELETE_TEMP_FILES_ KEEP=$keep
