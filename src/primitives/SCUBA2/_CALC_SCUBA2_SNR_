@@ -1,0 +1,149 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_SCUBA2_SNR_ - calculate a signal-to-noise ratio image
+
+=head1 SYNOPSIS
+
+ _CALC_SCUBA2_SNR_
+
+ _CALC_SCUBA2_SNR_ GROUP=1 STORE=1
+
+=head1 DESCRIPTION
+
+Creates a signal-to-noise ratio image using the data and variance
+components of a given file. Some basic statistics are reported on
+completion.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<GROUP>
+
+Flag to denote whether to use the current Group or Frame file. Default
+is 0 (use the current Frame).
+
+=item B<IN>
+
+Name of input image. Use file determined by the B<GROUP> parameter
+above if not specified.
+
+=item B<OUT>
+
+Name of output image. Default is to use the C<inout> method to create
+an output file with the suffix C<_snr>.
+
+=item B<STORE>
+
+A flag to denote whether or not the output image is to be stored in
+the current Frame or Group. Default is 0 (no).
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1 (yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+MAKESNR
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+If left to use defaults, creates a file with the suffix
+C<_snr>. Otherwise creates the output file specified by the B<OUT>
+parameter.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Is the input file from the current Frame or Group?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+my $proceed = 1;
+if ( $group ) {
+  $proceed = ($Obj->file_exists) ? 1 : 0;
+}
+
+if ( $proceed ) {
+  # Verbose flag
+  my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+  # Is the output file to be stored in the current object?
+  my $store = get_prim_arg($_PRIM_ARGS_, "STORE", 0);
+
+  # Obtain input image - default to current file in given object
+  my $in = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
+
+  # Obtain output image - use object inout method if not specified
+  my $out = get_prim_arg($_PRIM_ARGS_, "OUT", undef);
+  $out = $Obj->inout("_snr") unless ($out);
+
+  # Only do this if the file actually has a VARIANCE component.
+  $Mon{ndfpack_mon}->obeyw("ndftrace", "ndf=$in");
+  my ($ORAC_STATUS, $hasvar) = $Mon{ndfpack_mon}->get("ndftrace", "variance");
+
+  if( $hasvar eq "TRUE" ) {
+    # Use all data by setting minvar=0
+    $Mon{kappa_mon}->obeyw("makesnr","in=$in out=$out minvar=0");
+
+    # Report some basic statistics
+    _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
+    my %stats = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+    my $min = sprintf "%5.2f", $stats{MIN};
+    my $max = sprintf "%5.2f", $stats{MAX};
+    my $sigma = sprintf "%5.2f", $stats{SIGMA};
+    my $numgood = $stats{NUMGOOD};
+
+    orac_print "SNR image range $min to $max: sigma = $sigma from $numgood pixels\n"
+      if $verbose;
+
+    # Store output file if requested
+    $Obj->files($out) if ($store);
+  } else {
+    orac_warn "No SNR created: input file, $in, has no variance component\n";
+  }
+}
