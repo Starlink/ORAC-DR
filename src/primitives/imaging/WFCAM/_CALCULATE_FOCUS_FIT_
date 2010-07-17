@@ -1,0 +1,234 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_TEMP_2_ONEBYONE_ -- 
+
+=head1 DESCRIPTION
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Makes fwhm measurements from a series of four focus frames and after the
+fourth one produces a .focus file which it then fits to get best focus.
+
+=item *
+
+Basically this combines the SCUBA2 fitpoly method with measurements taken
+in the way of the original WFCAM focus sequence. The two are linked by a
+temporary file (.focus file), named after the group.
+
+=item *
+
+=back
+
+=head1 AUTHOR
+
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+Andy Adamson (JAC) <a.adamson@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+#
+# ... Only do this for FOCUS frames. note - for testing, using OBJECT frames.
+#     Most of this bit is from the readnoise primitive I think.
+#
+
+if( $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq 'FOCUS_FIT' ) {
+
+#
+# ... Set up the fwhm file and find out how far through the focus group we are.
+#
+
+  my $fwhmfile = $Grp->raw . ".focus";
+  open ( MYFOCUSFILE, ">>$fwhmfile" );
+  my $num = $Grp->num + 1;
+
+#
+# ... try loading all of the required Perl modules. Set a
+#     flag if any of them fail.
+#
+
+  my $module_failed = 0;
+  require Starlink::Extractor;
+  if( $@ ) {
+    $module_failed = 1;
+    orac_warn "Could not load the Starlink::Extractor Perl module: $@\n";
+  }
+  require Astro::WaveBand;
+  if( $@ ) {
+    $module_failed = 1;
+    orac_warn "Could not load the Astro::WaveBand Perl module: $@\n";
+  }
+
+#
+# ... If we failed, warn and don't continue with focus reduction.
+#
+
+  if( $module_failed ) {
+     orac_warn "Cannot determine focus.\n";
+  } else {
+    orac_print "Calculating best focus...\n";
+
+#
+# ... Set up some quality-control parameters.
+#
+
+    my $max_ell = 0.5;
+    my $min_area = 15;
+
+#
+# ... Get the input filename and the focus setting.
+#
+
+    my $in = $Frm->file( 1 );
+    orac_print "in is $in \n";
+    my $focus = $Frm->hdr->{"I1"}->{'FOC_OFF'};
+    orac_print "focus is $focus \n";
+    print MYFOCUSFILE "$focus ";
+
+#
+# ... get and show the waveband.
+#
+
+    my $waveband = new Astro::WaveBand( Filter => $Frm->uhdr( "ORAC_FILTER" ) );
+    orac_print "waveband is $waveband \n";
+
+#
+# ... Extract objects. This section is from the existing focus primitive.
+#
+
+    my $ext = new Starlink::Extractor;
+    $ext->detect_thresh( 3.0 );
+    $ext->detect_minarea( 15 );
+    $ext->analysis_thresh( 3.0 );
+    $ext->deblend_nthresh( 32 );
+    $ext->deblend_mincont( 0.1 );
+    $ext->clean( 'Y' );
+    $ext->clean_param( 1.0 );
+    $ext->filter( 'Y' );
+    $ext->filter_name( '$EXTRACTOR_DIR/config/default.conv' );
+
+    my $cat = $ext->extract( frame => $in,
+              filter => $waveband,
+              quality => 0,
+              );
+
+#
+# ... Filter out objects that don't match our criteria.
+#
+
+    my @stars = $cat->filter_by_cb( sub { ( $_[0]->morphology->area->value > $min_area ) && ( $_[0]->morphology->ellipticity->value < $max_ell ) } );
+    my $filtered_cat = new Astro::Catalog( Stars => \@stars );
+
+#
+# ... Calculate the FWHM. Multiply the FWHM by two because EXTRACTOR
+#     calculates the semi-major and semi-minor axes.
+#
+
+    my $fwhm = 0;
+    my $ns = 0;
+    foreach my $star ( $filtered_cat->stars ) {
+      $fwhm += 2 * sqrt( $star->morphology->major_axis_pixel->value * $star->morphology->major_axis_pixel->value +
+                         $star->morphology->minor_axis_pixel->value * $star->morphology->minor_axis_pixel->value );
+      $ns++;
+    } # end the foreach through stars
+
+#
+# ... if no stars, say so. otherwise file the fwhm result
+#
+
+    if( $ns == 0 ) {
+      orac_warn "No objects detected at focus position $focus. Suggest rerunning focus observation.\n";
+      print MYFOCUSFILE "999.9 \n";
+    } else {
+      my $ext_fwhm = $fwhm / $ns;
+      #$fws[$i-1] = $ext_fwhm;
+      my $p_fwhm = sprintf( "%.3f", $ext_fwhm );
+      orac_print "Median FWHM of $ns objects is $p_fwhm at focus position $focus.\n";
+      if( $ns < 15 ) {
+        orac_warn "Fewer than 15 objects were detected at focus position $focus .\n";
+      }
+        print MYFOCUSFILE "$p_fwhm \n";
+    } # end the check for nonzero stars
+  }
+
+#
+# ... if we're on the fourth focus frame, fit the focus values to a parabola
+#     (added later - check for 8 also to allow for 4 sky frames)
+
+  if ( $num == 4 ||
+       $num == 8 ) {
+#
+# ... Convert text array into a 1-D NDF with Figaro ASCIN. Write
+#     uncertainties to file to get a weighted fit from fitpoly.
+#     Most of this is from the SCUBA2 focus primitive. But I
+#     set error column to zero (couldn't get fitpoly to mask otherwise)
+#
+    my $outresfile = new ORAC::TempFile;
+    my $args = "in=".$fwhmfile." out=".$outresfile->file
+                 ." lines=[1,4] colaxes=1 coldata=[2,0]";
+     $Mon{figaro4}->obeyw("ascin","$args");
+
+    $args = "device=! mask1=-2.0 order=2 mask2=2.0 dialog=f logfil=! comp=1 in=".$outresfile->file;
+    $Mon{figaro4}->obeyw("fitpoly","$args");
+    (my $ORAC_STATUS, my @coeffs) = $Mon{figaro4}->get("fitpoly","fitcoeffs");
+
+#
+# ... Now find best-fit position, trap cases when either coefficient is zero
+#
+    my $fmax = ( $coeffs[1] == 0 ) ? 0 :
+    ( ($coeffs[2] == 0 ) ? undef : -$coeffs[1]/(2.*$coeffs[2]) );
+    orac_print ("done\n") ;
+
+#
+# ... Tidy up
+#
+#  undef $inresfile;
+    undef $outresfile;
+    unlink("$fwhmfile");
+
+#
+# ... FOCAXIS is constant for an observation so can just use value in current Frm
+#     Print result for user to see
+#
+
+    if ( defined $fmax ) {
+      $fmax = sprintf "%5.3f", $fmax;
+      orac_print ("\n ******* Best-fit focus offset (foc_off) = $fmax mm \n", "green");
+    } else {
+      orac_warn ("Unable to determine best-fit focus position \n");
+    }
+
+    # Calculate the suggested new focus setting, taking the value from
+    # the TCS_FOC header as a starting point. In the WFCAM case, subtract.
+    # In the telescope case, we add. this is the wfcam case.
+
+    my $tcsfoc = $Frm->hdr("TCS_FOC");
+    $tcsfoc -= $fmax;
+    my $tfstring = sprintf("%.2f", $tcsfoc);
+
+    # Log the suggested focus to disk.
+    #
+    my $camnum = $Frm->hdr("CAMNUM");
+    my $num = $Frm->number;
+    my $tcslogfile = "tcs_focus" . $camnum . "_" . $num . ".log";
+    my $tcslog = new ORAC::LogFile( $tcslogfile );
+    $tcslog->header("#SuggestedFocus");
+    $tcslog->addentry($tcsfoc);
+    # And tell the user what the suggested focus should be.
+    orac_print ( " ******* Suggest setting telescope focus to $tfstring \n", "green" );
+
+# Tidy output and delete the focus file.
+    orac_print "\n";
+  } # end check if modules loaded
+
+} # end of IF FOCUS frame
