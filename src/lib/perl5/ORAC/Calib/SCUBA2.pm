@@ -66,15 +66,15 @@ $DEBUG = 0;                     # Turn off debugging mode
 my %FCFS = ('850' => [             # Assumed to be in date order
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC=> 2.0,
-                    BEAM  => 750,
+                    ARCSEC=> 2.25,
+                    BEAM  => 500,
                    }
                   ],
          '450' => [
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC => 6.0,
-                    BEAM   => 250,
+                    ARCSEC => 6.3,
+                    BEAM   => 400,
                    }
                   ],
         );
