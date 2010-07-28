@@ -72,7 +72,8 @@ require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
              orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp orac_notify
-             orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo orac_term /;
+             orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo orac_term
+             orac_termerr /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -231,6 +232,20 @@ called within a recipe.
 sub orac_term {
   my $prt = __curr_obj;
   $prt->term(@_);
+}
+
+=item orac_termerr( text, [colour])
+
+Identical to C<orac_term> except that an exception of class
+C<ORAC::Error::TermProcessingErr> is thrown to force the current recipe
+to terminate safely but with the error state being remembered when
+the pipeline exits.
+
+=cut
+
+sub orac_termerr {
+  my $prt = __curr_obj;
+  $prt->termerr(@_);
 }
 
 =item orac_debug( text)
@@ -1168,6 +1183,25 @@ Not recommended for use outside the recipe execution environment.
 sub term {
   my $self = shift;
   $self->_throw( "ORAC::Error::TermProcessing", @_);
+}
+
+=item termerr (text,[colour])
+
+  $prt->termerr( "An error message" );
+
+Similar to orac_term but can be used in primitives to throw a
+TermProcessingErr exception to allow the current recipe to be
+stopped. Unlike orac_term the bad error state will be remembered when
+the pipeline exits. Can be used when the pipeline recovered from a
+problem but would like the error to be investigated.
+
+Not recommended for use outside the recipe execution environment.
+
+=cut
+
+sub termerr {
+  my $self = shift;
+  $self->_throw( "ORAC::Error::TermProcessingErr", @_);
 }
 
 =item debug (text)

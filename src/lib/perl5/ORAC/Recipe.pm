@@ -578,14 +578,22 @@ sub execute {
     # if this is a termination request then we do not really care
     # about the exception at this point
     if (defined $error && ref($error) && $error->isa( "ORAC::Error::TermProcessing" )) {
+      if ( $error->isa( "ORAC::Error::TermProcessingErr" ) ) {
+        $status = ORAC__TERMERR;
+      } else {
+        $status = ORAC__TERM;
+      }
       $error = undef;
-      $status = ORAC__TERM;
     }
   }
 
   my $etext = '';
-  if (defined $status && $status == ORAC__TERM) {
-    $etext = ' (recipe terminated early)';
+  if (defined $status) {
+    if ($status == ORAC__TERM) {
+      $etext = ' (recipe terminated early)';
+    } elsif ($status == ORAC__TERMERR) {
+      $etext = ' (recipe terminated early with handled error)';
+    }
   }
 
   my $execute_elapsed = tv_interval( $execute_start );
@@ -660,7 +668,11 @@ sub execute {
   # without a croak - we continue)
   if ($status) {
     orac_err "Recipe completed with error status = $status\n";
-    orac_err "Continuing but this may cause problems during group processing\n";
+    if ($status == ORAC__TERMERR) {
+      orac_err "The error indicates that the pipeline has attempted to handle the issue\n";
+    } else {
+      orac_err "Continuing but this may cause problems during group processing\n";
+    }
   }
 
   return $recstatus;
