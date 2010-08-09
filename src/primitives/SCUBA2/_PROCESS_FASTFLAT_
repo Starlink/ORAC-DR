@@ -86,12 +86,28 @@ USA.
 
 my @flats;
 
-# Pick out the files which have a sequence type of FASTFLAT
-for my $i (1..$Frm->nfiles) {
-  if ($Frm->hdrval("SEQ_TYPE",$i-1) =~ /FASTFLAT/i ) {
-    push(@flats, $Frm->file($i));
+# Have to treat FOCUS observations a little differently because each
+# Frame corresponds to a separate SMU position.
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
+  # Retrieve existing files marked as fast ramps if appropriate
+  if ($Grp->lastmember($Frm)) {
+    @flats = @{$Grp->uhdr("FASTRAMPFLATS")}
+      if (defined $Grp->uhdr("FASTRAMPFLATS"));
+  } else {
+    # Otherwise copy the data so it persists, retrieve any fast ramps
+    # from the current Frame (storing their names in the Grp uhdr),
+    # and terminating the recipe immediately. This block should never
+    # be reached in the QL pipeline because each new file becomes a
+    # new Group and thus the Frame is always the last member.
+    _COPY_RAW_DATA_
+    my @newflats = $Frm->get_fastramp_flats;
+    $Grp->uhdr("FASTRAMPFLATS", \@newflats);
+    return ORAC__TERM;
   }
 }
+# Retrieve and store the fast ramp files
+my @newflats = $Frm->get_fastramp_flats;
+push(@flats, @newflats) if @newflats;
 
 # Retrieve OBSEND from the hdr
 my $obsend_on_entry = $Frm->hdrval("OBSEND",-1);
@@ -107,6 +123,7 @@ if (@flats) {
   # Create a temporary override of Frm to allow primitives to work
   my $Frm = $Frm->new(\@flats);
 
+  # The QL pipeline will only have 1 file per subarray
   my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
   my $offline = ( $nfilespersub > 1 ) ? 1 : 0;
 
