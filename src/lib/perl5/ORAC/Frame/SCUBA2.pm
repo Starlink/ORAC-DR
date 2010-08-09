@@ -922,6 +922,33 @@ sub makemap_args {
   return (wantarray) ? @makemap_args : \@makemap_args;
 }
 
+=item B<get_fastramp_flats>
+
+Retrieve files in the current Frame which have a sequence type of C<FASTFLAT>.
+
+  my @fastramps = $Frm->get_fastramp_flats;
+
+Returns an array, which will be empty if no fast-ramp flatfield files
+could be found.
+
+=cut
+
+sub get_fastramp_flats {
+  my $self = shift;
+
+  my @fastflats;
+
+  for my $i (1..$self->nfiles) {
+    # Must use the hdrval method as sequence types can change during
+    # an observation
+    if ($self->hdrval("SEQ_TYPE",$i-1) =~ /FASTFLAT/i ) {
+      push(@fastflats, $self->file($i));
+    }
+  }
+
+  return @fastflats;
+}
+
 =item B<filter_darks>
 
 Standard image-based DREAM and STARE processing has no need for dark
