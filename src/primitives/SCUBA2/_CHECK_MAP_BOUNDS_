@@ -64,7 +64,8 @@ following keys:
 
 =item NEWBOUNDS
 
-A flag to denote whether new bounds were calculated, 1 if yes, 0 if no.
+A flag to denote whether new bounds were calculated, 1 if yes, 0 if
+no. A value of -1 is used to denote that the map bounds check failed.
 
 =item LBOUND
 
@@ -136,56 +137,61 @@ orac_print "Calculating output map size... ";
 
 # Determine the lower/upper bounds of the output image
 my (@lbound, @ubound);
+my %mons = ( "makemap" => "smurf_mon", "wcsmosaic" => "kappa_mon");
+my $mapszargs;
 if ( $task eq "makemap" ) {
   # Makemap arguments - use default pixel scale
-  my $mapszargs = "in=^$inlist out=! method=rebin";
-
-  $Mon{smurf_mon}->obeyw("makemap","$mapszargs");
-  (my $ORAC_STATUS, @lbound) = $Mon{smurf_mon}->get("makemap","lbound");
-  ($ORAC_STATUS,    @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
-
+  $mapszargs = "in=^$inlist out=! method=rebin";
 } else {
   my $refimage = (defined $Grp->uhdr("REFIMAGE")) ? $Grp->uhdr("REFIMAGE") : "!";
-  my $bndargs = "ref=$refimage method=nearest wlim=0.2 lbnd=! ubnd=! "
+  $mapszargs = "ref=$refimage method=nearest wlim=0.2 lbnd=! ubnd=! "
     ."out=! in=^$inlist";
-  $Mon{kappa_mon}->obeyw("wcsmosaic","$bndargs");
-  (my $ORAC_STATUS, @lbound) = $Mon{kappa_mon}->get("wcsmosaic","lbound");
-  ($ORAC_STATUS,    @ubound) = $Mon{kappa_mon}->get("wcsmosaic","ubound");
 }
 
-# Calculate output image size
-my $xsize = $ubound[0] - $lbound[0] + 1;
-my $ysize = $ubound[1] - $lbound[1] + 1;
-my $outpix = $xsize*$ysize;
-# Reset the bounds if necessary
-if ( $outpix > MAXPIX ) {
-  # Warn user
-  my $scalefactor = sqrt( MAXPIX/$outpix );
-  $scalefactor = sprintf "%5.3f", $scalefactor;
-  $scalefactor *= (100*$scalefactor);
-  orac_print "\n";
-  orac_warn "Size will exceed 2 GB: reducing to include central $scalefactor % of mapped area\n";
+my $MON_STATUS = $Mon{$mons{$task}}->obeyw("$task","$mapszargs");
+if ( $MON_STATUS == ORAC__OK ) {
+  (my $ORAC_STATUS, @lbound) = $Mon{$mons{$task}}->get("$task","lbound");
+  ($ORAC_STATUS,    @ubound) = $Mon{$mons{$task}}->get("$task","ubound");
 
-  my $newxsize = int($xsize * $scalefactor);
-  my $newysize = int($newxsize * $ysize / $xsize);
-  my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
-  my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
-  # Reduce the X, Y bounds equally.
-  $lbound[0] += $dx;
-  $ubound[0] -= $dx;
-  $lbound[1] += $dy;
-  $ubound[1] -= $dy;
+  # Calculate output image size
+  my $xsize = $ubound[0] - $lbound[0] + 1;
+  my $ysize = $ubound[1] - $lbound[1] + 1;
+  my $outpix = $xsize*$ysize;
+  # Reset the bounds if necessary
+  if ( $outpix > MAXPIX ) {
+    # Warn user
+    my $scalefactor = sqrt( MAXPIX/$outpix );
+    $scalefactor = sprintf "%5.3f", $scalefactor;
+    $scalefactor *= (100*$scalefactor);
+    orac_print "\n";
+    orac_warn "Size will exceed 2 GB: reducing to include central $scalefactor % of mapped area\n";
 
-  orac_print "Determining new bounds for output image:\n";
-  orac_print "Old image dimensions are $xsize x $ysize\n";
-  orac_print "New image dimensions are $newxsize x $newysize\n";
+    my $newxsize = int($xsize * $scalefactor);
+    my $newysize = int($newxsize * $ysize / $xsize);
+    my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
+    my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
+    # Reduce the X, Y bounds equally.
+    $lbound[0] += $dx;
+    $ubound[0] -= $dx;
+    $lbound[1] += $dy;
+    $ubound[1] -= $dy;
 
-  # Set some entries in the primitive hash
-  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 1;
-  $_CHECK_MAP_BOUNDS_{LBOUND} = \@lbound;
-  $_CHECK_MAP_BOUNDS_{UBOUND} = \@ubound;
+    orac_print "Determining new bounds for output image:\n";
+    orac_print "Old image dimensions are $xsize x $ysize\n";
+    orac_print "New image dimensions are $newxsize x $newysize\n";
+
+    # Set some entries in the primitive hash
+    $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 1;
+    $_CHECK_MAP_BOUNDS_{LBOUND} = \@lbound;
+    $_CHECK_MAP_BOUNDS_{UBOUND} = \@ubound;
+  } else {
+    # No new bounds were calculated
+    orac_print "Size within limits, no need to tile.\n";
+    $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 0;
+  }
 } else {
-  orac_print "Size within limits, no need to tile.\n";
-  # No new bounds were calculated
-  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 0;
+  # Bounds calculation failed for some reason
+  orac_print "\n";
+  orac_err "Map bounds check failed\n";
+  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = -1;
 }
