@@ -120,23 +120,44 @@ if (@flats) {
   my %previous = %{$Grp->uhdr("FASTFLATSOL")}
     if defined $Grp->uhdr("FASTFLATSOL");
 
+  # Calculate the number of files per subarray in the input Frame:
+  # batch mode processing will have multiple files, QL only 1 - unless
+  # the obs was terminated immediately following the fastramp
+  # measurement...
+  my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
+  my $batch = ($nfilespersub > 1) ? 1 : 0;
+
   # Create a temporary override of Frm to allow primitives to work
   my $Frm = $Frm->new(\@flats);
 
-  # The QL pipeline will only have 1 file per subarray
-  my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
-  my $offline = ( $nfilespersub > 1 ) ? 1 : 0;
+  # The QL pipeline will only have 1 file per subarray, as will
+  # observations which failed in some way (so that the trailing
+  # fastramp was not carried out). How can the two cases be
+  # distinguished so QL processing goes ahead while bad observations
+  # are omitted?
+
+  # If the number of subarrays equals the number of fastramp files
+  # then there are not enough fastramp files to compare so terminate
+  # the recipe
+  if ($batch && @flats == $Frm->numsubarrays) {
+    orac_warn "Observation ".($Frm->uhdr("ORAC_OBSERVATION_NUMBER"))
+      ." likely bad (only 1 fastflat file)\n";
+    return ORAC__TERM;
+  }
+
+  # Hmmm the processing also assumes that there are the same number of
+  # fastramps per subarray - what if 1 subarray has only 1?
 
   # Copy the raw files so they persist during successive passes
   # through the recipe - only done for the QL pipeline as fastflat
-  # processing offline doesn't care about processing the science data
-  if (!$offline) {
+  # processing batch doesn't care about processing the science data
+  if (!$batch) {
     _COPY_RAW_DATA_
   }
 
   my @Frms;
-  if ($offline) {
-    # multiple files per subarray = offline mode
+  if ($batch) {
+    # multiple files per subarray = batch mode
     # split Frm into Frms with all the same subscan number
 
     # This method *assumes* that the files are ordered by subarray in
@@ -166,7 +187,7 @@ if (@flats) {
   $_PROCESS_FASTFLAT_{FLATS} = [$Frm->files];
 
   if ( @Frms > 1 ) {
-    # If offline, process the first fast-ramp file to create a
+    # If batch, process the first fast-ramp file to create a
     # `previous' file
     { # Localize Grp here just to get the flatfield calculation -
       # alternative is to patch _CALCULATE_FLATFIELD_ to take a group
@@ -218,7 +239,7 @@ if (@flats) {
     }
   }
 
-  if ($offline) {
+  if ($batch) {
     # Hard wire some desired percentiles
     _ANALYZE_FLATFIELD_ PERCENTILES=16,84 RESPRATIO=1 LOGPAR=ABS
   } else {
