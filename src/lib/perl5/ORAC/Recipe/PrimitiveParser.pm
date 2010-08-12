@@ -201,6 +201,8 @@ sub nocompile {
 
 =head2 General Methods
 
+=over 4
+
 =item B<find>
 
 Locate the supplied primitive, read it and return the
@@ -230,7 +232,7 @@ sub find {
 
   # read the file
   my $prim = $self->_read_primitive( $prim_name, (defined $dirs ? $dirs : () ) );
-  
+
   # Parse it
   $self->_expand_primitive( $prim );
 
@@ -443,7 +445,7 @@ sub _read_primitive {
   } else {
 
     # list of dirs for error report
-    my @searched; 
+    my @searched;
 
     # search in override path
     if (defined $dirs) {
@@ -545,7 +547,7 @@ sub _retrieve_relevant_file {
             last;
           }
         }
-	
+
         # if it did not match a generic mode it must be a
         # specific observation - call it INST
         $thismode = "INST" unless defined $thismode;
@@ -607,7 +609,7 @@ sub _retrieve_relevant_file {
         return $PRIMCACHE{$foundpath};
       }
     }
-    
+
     # Cache either empty or invalid so we must read the file
     my $contents = $self->_slurp_file($foundpath);
     $PRIMCACHE{$foundpath} = ORAC::Recipe::Primitive->new( original => $contents,
@@ -624,7 +626,7 @@ sub _retrieve_relevant_file {
 =item B<_search_path>
 
 Search for file in search path. Return an array of all the files
-which match the name in the order in which they are located. In 
+which match the name in the order in which they are located. In
 scalar context return the first name.
 
   $first = $parser->_search_path( \@path, $name );
@@ -717,7 +719,7 @@ sub _expand_primitive {
   my @children;
 
   # first thing we have to do is add a subroutine wrapper to the whole thing
-  # and infrastructure for 
+  # and infrastructure for
   my @parsed;
   push(@parsed, "#line 1 ".$prim->name() ."_header");
   push(@parsed, "package ORAC::Recipe::Execution;");
@@ -745,7 +747,7 @@ sub _expand_primitive {
 
   # Sort out precanned variables
   push(@parsed, "my \$ORAC_PRIMITIVE = \"".$prim->name."\";");
-  push(@parsed, "my \$DEBUG = ". 
+  push(@parsed, "my \$DEBUG = ".
        ($self->debug ? 1 : 0) .";"); # burn in debug status
   push(@parsed, "my %". $prim->name ." = \@_;");
   push(@parsed, "my \$_PRIM_ARGS_ = \\%". $prim->name.";");
@@ -800,7 +802,7 @@ sub _expand_primitive {
     }
   }
   # now insert the code to enable each lookup
-  # note that we change the values in the hash to correspond to 
+  # note that we change the values in the hash to correspond to
   # line numbers in @parsed so that they can be located easily
   # later on.
   my %declared_primargs;
@@ -863,7 +865,7 @@ sub _expand_primitive {
 
       # If it turns out we need this primitive results immediately
       # we remove the previous line that was handling the args and
-      # add it here. 
+      # add it here.
       if (exists $inserted_primargs{$primitive_name}) {
         my $earlier;
         if (exists $previous_primargs{$primitive_name}) {
@@ -986,7 +988,7 @@ sub _expand_primitive {
 
       # Add the status checking code
       # unless there is a comment before the ORAC_STATUS
-      push (@parsed, 
+      push (@parsed,
             "#line 1 ". $prim->name() ."_checking_status",
             $self->_check_status_string)
         unless $line =~ /\#.+?\$ORAC_STATUS/;
@@ -1028,7 +1030,7 @@ sub _expand_primitive {
 
 =item B<_compile_primitive>
 
-Compile the expanded and parsed primitive. The result is stored in the 
+Compile the expanded and parsed primitive. The result is stored in the
 C<code> accessor of the Primitive object.
 
   $parser->_compile_primitive( $prim );
@@ -1090,7 +1092,7 @@ in recipes.
 
   $string = $parser->_check_obey_status_string( $obey_line );
 
-Checks also for the special case of ORAC__BADENG as the 
+Checks also for the special case of ORAC__BADENG as the
 return value. In that case, the monolith is removed from
 the message system so that next time it is required
 a new one is launched.
@@ -1128,7 +1130,7 @@ sub _check_obey_status_string {
 	 );
   }
 
-  # finish 
+  # finish
   push (@statuslines,
 	'  return $OBEYW_STATUS;',
 	'}'
@@ -1243,9 +1245,12 @@ sub _parse_prim_arguments {
 }
 
 
-=back
-
 =end __PRIVATE__
+
+# The POD parser seems to need the =back after the =end, even though
+# the =begin comes before the =over.
+
+=back
 
 =head1 NOTES
 

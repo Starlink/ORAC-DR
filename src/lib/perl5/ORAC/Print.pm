@@ -1275,7 +1275,7 @@ sub clearlog {
   return;
 }
 
-=begin PRIVATE METHODS
+=begin __PRIVATE_METHODS__
 
 =item B<_store_msg>
 
@@ -1357,7 +1357,7 @@ sub _throw {
   $class->throw($text);
 }
 
-=end PRIVATE METHODS
+=end __PRIVATE_METHODS__
 
 =back
 
