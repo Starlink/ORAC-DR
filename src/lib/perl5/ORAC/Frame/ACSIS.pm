@@ -269,7 +269,10 @@ sub findgroup {
   # Read extra information required for group disambiguation
   my $restfreq;
   if( defined( $self->hdr( "RESTFREQ" ) ) ) {
-    $restfreq = sprintf( "%.2f", $self->hdr( "RESTFREQ" ) );
+    # We can not sprintf this because the version read from
+    # the WCS is not sprintfed (but it should be). This could
+    # cause problems when rounding through a database.
+    $restfreq = $self->hdr( "RESTFREQ" );
   } elsif( defined( $self->hdr( "FRQSIGLO" ) ) &&
            defined( $self->hdr( "FRQSIGHI" ) ) ) {
     $restfreq = sprintf( "%.2f", ( $self->hdr( "FRQSIGLO" ) +
@@ -281,8 +284,16 @@ sub findgroup {
     $restfreq = $wcs->GetC("RestFreq");
   }
 
+  # IFFREQ needs to be sprintfed but historically we did not so we can
+  # not do it now.  For compatibility with the file headers when doing
+  # a database query we have to convert integers to N.0 format
+  my $iffreq = $self->hdr( "IFFREQ" );
+  if ( int($iffreq) == $iffreq ) {
+    $iffreq = sprintf( "%.1f", $iffreq );
+  }
+
   my $extra =  $self->hdr( "BWMODE" ) .
-    $self->hdr( "IFFREQ" ) .
+    $iffreq .
       $restfreq;
 
   return $self->SUPER::findgroup( $extra );
