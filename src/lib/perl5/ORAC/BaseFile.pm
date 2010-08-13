@@ -573,15 +573,22 @@ sub hdr {
       }
     } else {
 
-      # Since in most cases we will be processing fewer
-      # headers than we already have, it is more efficient
-      # to step through each header in turn rather than
-      # doing a hash push: %a = (%a, %b) although this
-      # has not been verified by benchmarks
       my %new = @_;
-      for my $key (keys %new) {
-        # print "Storing $new{$key} in key $key\n";
-        $hdr->{$key} = $new{$key};
+      if ( scalar keys %$hdr == 0 ) {
+        # if this is a fresh header
+        my $fits = Astro::FITS::Header->new( Hash => \%new );
+        $self->{Header} = undef;
+        $self->fits( $fits );
+      } else {
+        # Since in most cases we will be processing fewer
+        # headers than we already have, it is more efficient
+        # to step through each header in turn rather than
+        # doing a hash push: %a = (%a, %b) although this
+        # has not been verified by benchmarks
+        for my $key (keys %new) {
+          # print "Storing $new{$key} in key $key\n";
+          $hdr->{$key} = $new{$key};
+        }
       }
     }
   } else {
