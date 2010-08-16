@@ -32,6 +32,11 @@ The following arguments are supported:
 Size of square area in pixels in which to carry out the fit. Must be
 at least 10. Default is C<!>, which uses the whole image.
 
+=item B<GAUSSIAN>
+
+If true (non-zero), then the fit is forced to be a gaussian. Default
+is 1 (true).
+
 =item B<IMAGE>
 
 Name of image to fit beam. No default.
@@ -161,6 +166,12 @@ unless (defined $in) {
   return ORAC__TERM;
 }
 
+# Are we forcing a gaussian fit?
+my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
+
+# Convert flag to logical
+$gaussian = ( $gaussian ) ? "true" : "false";
+
 # Fitarea (corresponds to BOX parameter of _FIT_PSF_). Must be greater
 # than 9, so check and set it to the minimum. Note that fitarea may be
 # null, "!", so check that before attempting to do a numerical comparison.
@@ -195,7 +206,8 @@ if ( $numgood >= $minpix ) {
 
   # Use BEAMFIT - define args
   my $var = "false";
-  my $args = "mode=interface pos=$pos variance=$var fitarea=$fitarea";
+  my $args = "mode=interface pos=$pos variance=$var fitarea=$fitarea"
+    ." gauss=$gaussian";
 
   # Call beamfit
   my $BEAM_STATUS = $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
@@ -203,7 +215,7 @@ if ( $numgood >= $minpix ) {
 
   if ( $BEAM_STATUS == ORAC__OK ) {
     # Retrieve fit parameters
-    my @params = (qw/ majfwhm minfwhm orient amp centre back rms /);
+    my @params = (qw/ majfwhm minfwhm orient amp centre back rms gamma /);
     ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
 
     # Read the FWHM and convert to arcsec
@@ -218,6 +230,8 @@ if ( $numgood >= $minpix ) {
     my @amp = @{$bfitres{amp}};
     my @orient = @{$bfitres{orient}};
     my $rms = $bfitres{rms};
+
+    my @gamma = @{$bfitres{gamma}};
 
     # Background level
     my @backgr = @{$bfitres{back}};
@@ -241,6 +255,7 @@ if ( $numgood >= $minpix ) {
     $_FIT_BEAM_{MINFWHM}   = \@minfwhm;
     $_FIT_BEAM_{ORIENT}    = \@orient;
     $_FIT_BEAM_{POSITION}  = \@posn;
+    $_FIT_BEAM_{GAMMA}     = \@gamma;
     $_FIT_BEAM_{TOTALFLUX} = [$totalflux, $fluxerr];
     $_FIT_BEAM_{RMS}       = $rms;
 
@@ -254,6 +269,7 @@ if ( $numgood >= $minpix ) {
       my $fwhm2 = sprintf "%5.2f", $axisr*$fwhm1;
       my $amp1 = sprintf "%5.2e", $amp[0];
       my $flux1 = sprintf "%5.2e", $totalflux;
+      my $gamma = sprintf "%5.2f", $gamma[0];
 
       # Report correct units for total fluxes if data are calibrated
       # in (say) mJy/beam, and correct the reported total flux for the
@@ -271,7 +287,7 @@ if ( $numgood >= $minpix ) {
 	$totalunits = $units . " arcsec**2";
       }
       orac_print "Successful fit:\n"
-	."  FWHM = $fwhm1 x $fwhm2 arcsec**2, ORIENT = $orient deg\n"
+	."  FWHM = $fwhm1 x $fwhm2 arcsec**2, ORIENT = $orient deg, GAMMA = $gamma\n"
 	."  AMP  = $amp1 $units, TOTAL FLUX = $flux1 ($totalunits)\n";
     }
   } elsif ( $BEAM_STATUS == 234127368 ) {
