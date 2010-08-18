@@ -57,6 +57,7 @@ use ORAC::Recipe;
 use ORAC::Loop;                 # Loop control
 use ORAC::Event;                # Tk event
 use ORAC::General;              # parse_* routines
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/; # ORAC status varaibles
 use ORAC::Recipe::Parameters;
@@ -1271,10 +1272,7 @@ sub orac_process_argument_list {
 
 This routine handles the main data processing
 
-  orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume,
-                       $opt_skip, $opt_debug, $recsuffix, $recpars,
-                       $grptrans, $loop, $frameclass, $groupclass,
-                       $instrument, $Mon, $Cal, \@obs,
+  orac_main_data_loop( \%options, $loop, $instrument, \@obs,
                        $Display, $orac_prt,
                        $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST,
                        $CURRENT_PRIMITIVE, $Override_Recipe );
@@ -1335,15 +1333,49 @@ analyzed using orac_print_recipe_summary.
 
 sub orac_main_data_loop {
 
-  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $recpars, $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
-    unless scalar(@_) == 22;
+  croak 'Usage: orac_main_data_loop( \%options, $loop, $instrument, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
+    unless scalar(@_) == 11;
 
   # Read the argument list
-  my ( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $recpars,
-       $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, $obs,
+  my ( $opts, $loop, $instrument, $obs,
        $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
        $CURRENT_PRIMITIVE, $Override_Recipe ) = @_;
 
+  # Read options
+  my $opt_batch = $opts->{batch};
+  my $opt_ut = $opts->{ut};
+  my $opt_resume = $opts->{resume};
+  my $opt_skip = $opts->{skip};
+  my $opt_verbose = $opts->{verbose};
+  my $opt_debug = $opts->{debug};
+  my $opt_calib = $opts->{calib};
+  my $opt_nomsgtmp = $opts->{nomsgtmp};
+  my $opt_noeng = $opts->{noeng};
+  my $recsuffix = $opts->{recsuffix};
+  my $recpars = $opts->{recpars};
+  my $grptrans = $opts->{grptrans};
+
+  # If recsuffix has not been converted to a array ref yet do it here
+  if (defined $recsuffix && ! ref($recsuffix) ) {
+    $recsuffix = [ split /,/, $recsuffix];
+  } else {
+    $recsuffix = [];
+  }
+
+  # Given the instrument name derive all the classes
+
+  # Initialise for this "instrument" and create a basic instrument object
+  my ($frameclass, $groupclass, $calclass, $instclass) =
+    orac_determine_inst_classes( $instrument );
+  die "Could not determine core classes from instrument name $instrument"
+    unless defined $frameclass;
+
+  my $InstObj = $instclass->new();
+  my $Cal = orac_calib_override( $calclass, @$opt_calib );
+
+  # Message system
+  orac_message_launch( $opt_nomsgtmp, $opt_verbose );
+  my $Mon = orac_start_algorithm_engines( $opt_noeng, $InstObj );
 
   # Keep track of success and failure
   my %Stats;

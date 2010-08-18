@@ -167,6 +167,7 @@ $ENV{ORAC_INSTRUMENT} = "<not required>";
 
 # Parse arguments
 my %opt;
+$opt{calib} = []; # Want to support multiple --calib options
 my $status = GetOptions(
     "log=s" => \$opt{log},
     "man"   => \$opt{man},
@@ -176,6 +177,7 @@ my $status = GetOptions(
     "verbose" => \$opt{verbose},
     "recsuffix=s" => \$opt{recsuffix},
     "recpars=s" => \$opt{recpars},
+    "calib=s"   => \$opt{calib},
     );
 
 pod2usage(1) if $opt{help};
@@ -216,14 +218,6 @@ $ENV{ORAC_DATA_OUT} = File::Spec->curdir
   unless exists $ENV{ORAC_DATA_OUT};
 orac_chdir_output_dir();
 
-# Initialise for this "instrument" and create a basic instrument object
-my ($frameclass, $groupclass, $calclass, $instclass) =
-  orac_determine_inst_classes( 'PICARD' );
-die "Could not determine PICARD core classes"
-  unless defined $frameclass;
-
-my $InstObj = $instclass->new();
-
 # Global variables for XORAC-DR (if we ever enable it from picard)
 my $CURRENT_RECIPE = 'Initializing';
 
@@ -247,56 +241,28 @@ orac_exit_if_error( $ErrText );
 
 $CURRENT_RECIPE = "Starting pipeline";
 
-# Messaging pre-launch
-my $Mon;
-try {
-  orac_message_launch( 0, $opt{verbose} );
-  $Mon = orac_start_algorithm_engines( 0, $InstObj );
-} catch ORAC::Error::UserAbort with {
-  my $Error = shift;
-  $ErrText = "$Error";
-} otherwise {
-  my $Error = shift;
-  $ErrText = "$Error";
-};
-orac_exit_if_error( $ErrText );
-
 ######################## I N I T  D I S P L A Y #############################
 
 # start the display
 my $Display = orac_start_display( $opt{nodisplay} );
 
-######################## C A L I B R A T I O N ##############################
-
-# Calibration frame overrides
-my $Cal = orac_calib_override( $calclass );
-
-# parse recsuffix, convert comma separated list to array
-if (exists $opt{recsuffix} && defined $opt{recsuffix}) {
-  $opt{recsuffix} = [ split /,/, $opt{recsuffix}];
-} else {
-  $opt{recsuffix} = [];
-}
-
+# Add special PICARD options
+%opt = (%opt,
+        batch => 1,
+        resume => 0, # Do not resume group processing
+        skip => 0,   # No need to skip
+        nomsgtmp => 0,
+        noeng => 0,
+        grptrans => -1, # everything goes in one group
+);
 
 my %Stats;
 # Enter the main data processing loop. We use the standard
 # ORAC-DR infrastructure but we configure it to suit picard usage
 try {
-  %Stats = orac_main_data_loop( 1,     # Batch mode
-		       undef, # No need for UT
-		       0,     # Do not resume group processing
-		       0,     # No skipping requirement
-		       $opt{debug},
-           $opt{recsuffix},
-           $opt{recpars},
-           -1,     # Everything goes in one group.
+  %Stats = orac_main_data_loop( \%opt,
 		       "orac_loop_file", # We already know the files
-		       $frameclass,
-		       $groupclass,
 		       "PICARD", # Instrument name
-		       $Mon,
-		       $Cal,
 		       \@Files,  # The files to be processed
 		       $Display,
 		       $orac_prt,

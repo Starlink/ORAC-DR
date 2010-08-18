@@ -80,15 +80,6 @@ unless (exists $ENV{ORAC_INSTRUMENT}) {
 
 my $instrument = uc($ENV{ORAC_INSTRUMENT});
 
-# Get class definitions for this instrument
-my ($frameclass, $groupclass, $calclass, $instclass) =
-  orac_determine_inst_classes( $instrument );
-die "Could not translate $instrument to class hierarchy"
-  unless defined $frameclass;
-
-# Create a new instrument object
-my $InstObj = new $instclass;
-
 ############# C O M M A N D  L I N E  A R G U M E N T S ###################
 
 # configure prefix for print messages
@@ -232,45 +223,6 @@ $CURRENT_RECIPE = "Starting pipeline";
 
 };
 
-######################## M E S S A G E  S Y S T E M S #######################
-
-# pre-launch message system
-try {
-   orac_message_launch( $opt{nomsgtmp}, $opt{verbose} );
-}
-catch ORAC::Error with
-{
-   my $Error = shift;
-   $ErrText = "Error launching the Message System:\n$Error";
-}
-otherwise
-{
-   # this should sucessfully catch croaks
-   my $Error = shift;
-   $ErrText = "$Error";
-};
-orac_exit_if_error( $ErrText );
-
-######################## A L G.   E N G I N E S #############################
-
-# start algorithim engines
-my $Mon;
-try {
-   $Mon = orac_start_algorithm_engines( $opt{noeng}, $InstObj );
-}
-catch ORAC::Error with
-{
-   my $Error = shift;
-   $ErrText = "$Error";
-}
-otherwise
-{
-   # this should sucessfully catch croaks
-   my $Error = shift;
-   $ErrText = "$Error";
-};
-orac_exit_if_error( $ErrText );
-
 ####################### B E E P I N G #######################################
 
 # Beeping
@@ -284,11 +236,6 @@ if ($opt{beep}) {
 
 # start the display
 my $Display = orac_start_display( $opt{nodisplay} );
-
-######################## C A L I B R A T I O N ##############################
-
-# Calibration frame overrides
-my $Cal = orac_calib_override( $calclass, @{$opt{calib}} );
 
 ################## P R O C E S S  A R G U M E N T  L I S T ##################
 
@@ -314,13 +261,6 @@ if ( defined $opt{files} ) {
    orac_exit_if_error( $ErrText );
 }
 
-# parse recsuffix, convert comma separated list to array
-if (exists $opt{recsuffix} && defined $opt{recsuffix}) {
-  $opt{recsuffix} = [ split /,/, $opt{recsuffix}];
-} else {
-  $opt{recsuffix} = [];
-}
-
 # Check onegroup. If it's there, set grptrans to -1.
 if( exists( $opt{onegroup} ) && defined( $opt{onegroup} ) ) {
   $opt{grptrans} = -1;
@@ -330,6 +270,9 @@ if( exists( $opt{onegroup} ) && defined( $opt{onegroup} ) ) {
 orac_declare_location( %opt );
 
 ##################### L O O P I N G  S C H E M E ############################
+
+# We need the frame class to sort out the looping option
+my $frameclass = orac_determine_inst_classes( $instrument );
 
 # Generate list of observation numbers if @obs isn't defined to be processed
 # This is related to looping scheme
@@ -349,10 +292,7 @@ my $Override_Recipe = shift(@ARGV);
 my %Stats;
 try {
   # Might want to consider simply passing all of %opt into this function
-  %Stats = orac_main_data_loop( $opt{batch}, $opt{ut}, $opt{resume}, $opt{skip},
-                                $opt{debug}, $opt{recsuffix}, $opt{recpars}, $opt{grptrans},
-                                $loop, $frameclass, $groupclass,
-                                $instrument, $Mon, $Cal, \@obs, $Display,
+  %Stats = orac_main_data_loop( \%opt, $loop, $instrument, \@obs, $Display,
                                 $orac_prt, $ORAC_MESSAGE,
                                 \$CURRENT_RECIPE, $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
                                 $Override_Recipe );
@@ -704,10 +644,6 @@ pipelines are running using this flag.
 
 =back
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu),
@@ -717,7 +653,7 @@ Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2010 Science and Technology Facilities Council.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under

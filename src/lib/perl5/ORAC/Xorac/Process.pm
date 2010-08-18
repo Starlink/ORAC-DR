@@ -62,6 +62,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2010 Science and Technology Facilities Council.
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
@@ -129,14 +130,6 @@ sub xorac_start_process {
   }
 
   my $instrument = uc($ENV{"ORAC_INSTRUMENT"});
-
-  # Get class definitions for this instrument
-  my ($frameclass, $groupclass, $calclass, $instclass) =
-                         orac_determine_inst_classes( $instrument );
-  return unless defined $frameclass;
-
-  # Create a new instrument object
-  my $InstObj = new $instclass;
 
   ############# O P T I O N  H A N D L I N G #################################
 
@@ -243,52 +236,6 @@ sub xorac_start_process {
   };
   $$CURRENT_RECIPE = "Starting pipeline";
 
-  ######################## M E S S A G E  S Y S T E M S #######################
-
-  # pre-launch message system
-  try {
-     orac_message_launch( ${$options}{"nomsgtmp"}, ${$options}{"verbose"} );
-  }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  otherwise
-  {
-     my $Error = shift;
-     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-  };
-
-  ######################## A L G.   E N G I N E S #############################
-
-  # start algorithim engines
-  my $Mon;
-
-  try {
-     $Mon = orac_start_algorithm_engines( ${$options}{"noeng"}, $InstObj );
-  }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  otherwise
-  {
-     my $Error = shift;
-     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-  };
-
   ####################### B E E P I N G #######################################
 
   # Beeping
@@ -303,12 +250,10 @@ sub xorac_start_process {
   # start the display
   my $Display = orac_start_display( ${$options}{"nodisplay"} );
 
-  ######################## C A L I B R A T I O N ##############################
-
-  # Calibration frame overrides
-  my $Cal = orac_calib_override($calclass, ${$options}{"calib"} );
-
   ################## P R O C E S S  A R G U M E N T  L I S T ##################
+
+  # We need the frame class to sort out the looping option
+  my $frameclass = orac_determine_inst_classes( $instrument );
 
   # Generate list of observation numbers to be processed
   # This is related to looping scheme
@@ -332,11 +277,8 @@ sub xorac_start_process {
 
   # Call the main data processing loop
   try {
-     orac_main_data_loop( ${$options}{"batch"}, ${$options}{"ut"},
-                          ${$options}{"resume"}, ${$options}{"skip"},
-	   	          ${$options}{"debug"}, $options->{recsuffix},
-                          $options->{grptrans},$loop, $frameclass, $groupclass,
-		          $instrument, $Mon, $Cal, $obs, $Display, $orac_prt,
+     orac_main_data_loop( $options, $loop,
+                          $instrument, $obs, $Display, $orac_prt,
 		          $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
 			  $CURRENT_PRIMITIVE, $Use_Recipe );
      orac_print ("Pipeline processing complete\n", "green");
