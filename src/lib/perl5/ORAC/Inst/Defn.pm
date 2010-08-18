@@ -340,6 +340,8 @@ The function dies if the classes can not be used.
 An empty list is returned if the instrument is not known
 to the system.
 
+Returns the Frame class in scalar context.
+
 =cut
 
 sub orac_determine_inst_classes {
@@ -539,7 +541,11 @@ sub orac_determine_inst_classes {
   croak "Error importing $instclass:\n$@\n" if ($@);
 
   # Return the class names
-  return ($frameclass, $groupclass, $calclass, $instclass);
+  if (wantarray) {
+    return ($frameclass, $groupclass, $calclass, $instclass);
+  } else {
+    return $frameclass;
+  }
 }
 
 
