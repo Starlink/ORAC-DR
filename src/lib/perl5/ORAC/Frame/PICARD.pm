@@ -40,7 +40,7 @@ those available from B<ORAC::Frame::NDF>.
 
 =item B<new>
 
-Simple constructor. 
+Simple constructor.
 
   $Frm = new ORAC::Frame::PICARD( \@files );
 

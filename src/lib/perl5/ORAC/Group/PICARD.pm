@@ -83,7 +83,7 @@ sub file_from_bits {
   # Get the next number
   $max++;
 
-  return sprintf("pg%05d", $max); 
+  return sprintf("pg%05d", $max);
 
 }
 

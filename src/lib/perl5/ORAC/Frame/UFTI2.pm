@@ -68,7 +68,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::UFTI("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
-'f' prefix although these can be overriden with the 
+'f' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut
@@ -127,7 +127,7 @@ sub flag_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
-  # It is almost possible to derive the flag name from the 
+  # It is almost possible to derive the flag name from the
   # file name but not quite. In the UFTI case the flag name
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
 

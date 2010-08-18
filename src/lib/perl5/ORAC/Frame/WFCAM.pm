@@ -220,26 +220,26 @@ sub mergehdr {
     my $nfits;
     dat_get1c($xloc, $dim[0], @fitsA, $nfits, $status)
       if $status == &NDF::SAI__OK; # -w protection
-		
+
     # Close the NDF file
     dat_annul($xloc, $status);
     ndf_annul($indf, $status);
-		
+
     # Now we need to open the input file and modify the FITS entries
     ndf_open(&NDF::DAT__ROOT, $new, 'UPDATE', 'OLD', $indf, my $place,
              $status);
-		
+
     # Check to see if there is a FITS component in the output file
     ndf_xstat($indf, 'FITS', my $there, $status);
     my @fitsB = ();
     if (($status == &NDF::SAI__OK) && ($there)) {
-			
+
       # Get the fits locator (note the deja vu)
       ndf_xloc($indf, 'FITS', 'UPDATE', $xloc, $status);
-			
+
       # Find out how many entries we have
       dat_shape($xloc, $maxdim, @dim, $ndim, $status);
-			
+
       # Must be 1D
       if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
         $status = &NDF::SAI__ERROR;
@@ -248,11 +248,11 @@ sub mergehdr {
                 $status
                );
       }
-			
+
       # Read the second FITS array
       dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status)
         if $status == &NDF::SAI__OK; # -w protection
-			
+
       # Annul the locator
       dat_annul($xloc, $status);
       ndf_xdel($indf,'FITS', $status);
@@ -271,15 +271,15 @@ sub mergehdr {
     $nfits = scalar(@fitsA);
     my @nfits = ($nfits);
     ndf_xnew($indf, 'FITS', '_CHAR*80', $ndim, @nfits, $xloc, $status);
-		
+
     # Upload the FITS entries
     dat_put1c($xloc, $nfits, @fitsA, $status);
-		
+
     # Shutdown
     dat_annul($xloc, $status);
     ndf_annul($indf, $status);
     ndf_end($status);
-		
+
     if ($status != &NDF::SAI__OK) {
       err_flush($status);
       err_end($status);
@@ -399,7 +399,7 @@ my @ehukeys = ("INHERIT","DETECTOR","DETECTID","DROWS","DCOLUMNS",
 
 =item B<phukeys>
 
-Returns the list of primary header unit keywords 
+Returns the list of primary header unit keywords
     @phukeys = $Frm->phukeys;
 
 =cut
@@ -412,7 +412,7 @@ sub phukeys {
 
 =item B<ehukeys>
 
-Returns the list of extension header unit keywords 
+Returns the list of extension header unit keywords
     @ehukeys = $Frm->ehukeys;
 
 =cut

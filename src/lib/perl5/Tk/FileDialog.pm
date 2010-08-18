@@ -1,7 +1,7 @@
 
 # M O D U L E  D O C U M E N T I O N -----------------------------------------
 
-#+ 
+#+
 #  Name:
 #    Tk::FileDialog
 
@@ -32,26 +32,26 @@
 #	 Fixed dialogue box creation.
 #        Added option for selecting directories.
 #   29-Feb-96 BBP:
-#        Rewrote and componentized, and added a bunch of options.  
+#        Rewrote and componentized, and added a bunch of options.
 #        Now requires perl 5.002gamma
 #   30-May-96 MKR:
-#        Add support for single character navigation within lists, 
+#        Add support for single character navigation within lists,
 #        e.g. typing G in list will navigate to first entry starting with G
 #   30-May-96 MKR:
 #        Fixed problem with click in empty file list
 #   31-May-96 BBP:
-#        refixed problem with click in empty list (couldn't click the 
+#        refixed problem with click in empty list (couldn't click the
 #        first entry in list box). Altered single character navigation to
 #        prevent nudging the mouse while in an entry from grabbing focus.
-#	 Altered single character navigation to go from first to next to next 
+#	 Altered single character navigation to go from first to next to next
 #        to first (et al) & Finished keyboard navigation with tabs.
 #   03-Jun-96 BBP:
 #        Version 1.2: Added Version, ship
-#   09-Jun-96 BBP:	
-#        Version 1.3: Added Version, and then fixed the Makefile.PM#   
+#   09-Jun-96 BBP:
+#        Version 1.3: Added Version, and then fixed the Makefile.PM#
 #   09-Sep-01 AA:
 #        Version 1.4: Modified for use in FITS Editor, customised to
-#        blend in with GUI style, added packForget() lines for File label 
+#        blend in with GUI style, added packForget() lines for File label
 #        (FEF) and File Entry (FileEntry) widgets if -SelDir option enabled.
 #   10-Sep-01 AA:
 #        Version 1.4.1: Reformated POD documentation. Turned selection in
@@ -68,7 +68,7 @@
 
 =head1 NAME
 
-Tk::FileDialog - A highly configurable File Dialog widget for Perl/Tk.  
+Tk::FileDialog - A highly configurable File Dialog widget for Perl/Tk.
 
 =head1 DESCRIPTION
 
@@ -660,12 +660,12 @@ sub Show {
 	$self->{'SABox'}->configure(-state => 'normal');
 	$self->{'TabSel'}->{'SABox'} = 1;
     }
-    
+
     # Fix the fonts for FileEntry, DirEntry and PatEntry
     $self->{'FileEntry'}->configure(-font => $self->{Configure}{-Font});
     $self->{'DirEntry'}->configure(-font => $self->{Configure}{-Font});
     $self->{'PatEntry'}->configure(-font => $self->{Configure}{-Font});
-										
+
     ## Enable or disable the file entry box
     if ($self->{Configure}{-SelDir}) {
 	$self->{Configure}{-File} = '';
@@ -673,14 +673,14 @@ sub Show {
 	                                -font => $self->{Configure}{-Font},
 					-foreground => $self->{'inactivefore'});
 	$self->{'FileList'}->configure(-selectforeground => $self->{'inactivefore'});
-        
+
         # we have -DirSel forget the file entry widget
         $self->{'FEF'}->packForget();
         $self->{'FileEntry'}->packForget();
         # and turn off selection to the FileList
         $self->{'FileList'}->configure(-takefocus => 0,
                               -selectbackground => $self->{'backgroundcol'});
-        
+
 	$self->{'FileList'}->configure(-foreground => $self->{'inactivefore'});
 	$self->{'TabSel'}->{'FileEntry'} = $self->{'TabSel'}->{'FileList'} = 0;
     } else {
@@ -801,7 +801,7 @@ sub SetTabs {
 	next if (!defined($self->{$_}) ||
 		 !ref $self->{$_} ||
 		 !$self->{$_}->IsWidget);
-    
+
 	$self->{$_}->bind("<Tab>", sub {\&TabNext($self, 1);});
 	$self->{$_}->bind("<Shift-Tab>", sub {\&TabNext($self, -1);});
     }
@@ -839,7 +839,7 @@ sub BuildListBox {
 
 sub DirSel {
     my($self, $lbdir) = @_;
-    
+
     my($np) = $lbdir->curselection;
     return if !defined($np);
     $np = $lbdir->get($np);
@@ -866,7 +866,7 @@ sub BindDir {
 
     # binding to take focus if clicked
     $lbdir->bind("<1>", sub{$self->{'DirList'}->focus;});
-    
+
     # binding to attract focus if mouse over list
     $lbdir->bind("<Enter>", sub{&listFocus($self, 'DirList');});
 
@@ -892,9 +892,9 @@ sub FileSel {
 sub BindFile {
     ### Set up the bindings for the file selection list box
     my($self) = @_;
-    
+
     $self->{'FileList'}->configure( -selectforeground => 'white');
-    
+
     ## A single click selects the file...
     $self->{'FileList'}->bind("<ButtonRelease-1>", sub {
 	if (!$self->{Configure}{-SelDir}) {
@@ -983,9 +983,9 @@ sub BuildListBoxes {
 		      'DirList','left','top');
 	&BindDir($self);
     }
-    
+
     $self->{'FileList'}->configure(-selectforeground => 'white' );
-    
+
 }
 
 sub BuildFDWindow {
@@ -1013,7 +1013,7 @@ sub BuildFDWindow {
                               -font                => $self->{Configure}{-Font},
 			       -selectbackground    => 'blue',
 			       -selectforeground    => 'white',
-			       -justify             => 'left', 
+			       -justify             => 'left',
                              -textvariable => \$self->{Configure}{-FPat})
 	    ->pack(@leftPack, @expand, @xfill);
     $self->{'PatEntry'}->bind("<Return>",sub {\&RescanFiles($self);});
@@ -1160,7 +1160,7 @@ sub GetReturn {
 
     if ($self->{Configure}{-SelDir}) {
 	$fname = $self->{'DirList'};
-      
+
 	if (defined($fname->curselection)) {
 	    $fname = $fname->get($fname->curselection);
 	} else {
@@ -1216,11 +1216,11 @@ sub list_see{
     if (exists($see->{$char})) {     # line with char there?
 	## Yes, it is...
 	my ($ndx) = $see->{$char};
-	
+
 	## Is it already selected?
 	my($cs) = $list->curselection;
 	if (defined($cs)) {
-	    
+
 	    if (($cs == $ndx) ||
 		(substr($list->get($cs),0,1) eq $char)) {
 		## does the next in the list start with the same char?
@@ -1246,7 +1246,7 @@ sub list_see{
 # 	} else {
 # 	    $list->bell;
 	}
-    }   
+    }
 }
 
 

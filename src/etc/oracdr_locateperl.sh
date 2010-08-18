@@ -26,7 +26,7 @@
 #  Notes:
 #     - ORAC_PERLBIN perl is preferred
 #     - Then starperl if it is in the path
-#     - Path relative to $ORAC_DIR (if it is being distributed with 
+#     - Path relative to $ORAC_DIR (if it is being distributed with
 #       Starlink software)
 #     - Then Starlink perl derived from environment variables
 #        STARLINK_DIR, STARLINK, STARCONF_DEFAULT_STARLINK
@@ -83,7 +83,7 @@ else
     # if all else fails take a stab at looking relative to KAPPA
     if test ! -z "${KAPPA_DIR}"; then
 	paths="${paths} ${KAPPA_DIR}/../.."
-    fi 
+    fi
     # Panic and try /star
     paths="${paths} /star /stardev"
 

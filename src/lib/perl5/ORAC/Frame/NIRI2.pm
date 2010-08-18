@@ -44,7 +44,7 @@ $fname = $Frm->file_from_bits($prefix, $obsnum);
 
 =cut
 
-sub file_from_bits { 
+sub file_from_bits {
 
 # Obtain object and arguments.
    my $self = shift;
@@ -94,7 +94,7 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 Science & Technology Facilities Council. 
+Copyright (C) 2008 Science & Technology Facilities Council.
 Copyright (C) 2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 

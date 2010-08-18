@@ -18,7 +18,7 @@ ORAC::Group::UIST - UIST class for dealing with observation groups in ORAC-DR
 This module provides methods for handling group objects that
 are specific to UIST. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::UIST> objects. 
+to B<ORAC::Group::UIST> objects.
 
 =cut
 
@@ -119,5 +119,5 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
- 
+
 1;

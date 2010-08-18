@@ -23,7 +23,7 @@
 #     UT = INTEGER (Given)
 #        UT date of interest. This should be in YYYYMMDD format.
 #        It is used to set the location of the input and output
-#        data directories. Assumes that the data are located in 
+#        data directories. Assumes that the data are located in
 #        a directory structure similar to that used at UKIRT.
 #        Also sets an appropriate alias for ORAC-DR itself.
 #        If no value is specified, the current UT is used.

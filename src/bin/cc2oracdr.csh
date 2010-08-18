@@ -16,7 +16,7 @@
 
 #  Description:
 #     This script processes all the ir*.FITS files in the current
-#     working directory each forming an NDF suitable for use by the 
+#     working directory each forming an NDF suitable for use by the
 #     ORAC-DR imaging pipeline.
 #
 #     The NDFs are named cc<date>_<observation_number>.  The UT
@@ -31,7 +31,7 @@
 #     Three FITS headers are written in each NDF: the observation number
 #     in OBSNUM, the group number in GRPNUM, and the number of offsets
 #     (number of group members plus one) in NOFFSETS.  The group number
-#     is equated to the observation number when any of four main headers: 
+#     is equated to the observation number when any of four main headers:
 #     object name, filter, exposure time, quadrant---changes value.
 #     The group number is unchanged until the next group is located.
 #
@@ -61,7 +61,7 @@
 
 #  Interruption causes exit.
     onintr EXIT
-      
+
 # Define KAPPA and CONVERT commands, but hide reports from view.
     alias echo 'echo >/dev/null'
     convert
@@ -215,8 +215,8 @@
 # the group members.
           set grpnum = $obsnum
           echo "Starting a new group $grpnum"
-          
-          set noffsets = 1 
+
+          set noffsets = 1
 
 # Keep a count of the number of group members.
        else
@@ -229,7 +229,7 @@
        set c_exptime = $exptime
        set c_quad = $quad
        set c_obsnum = $obsnum
-       
+
 # Convert the FITS file to a simple NDF.  Redirect the information
 # about the number of files processed to the bin.
        fits2ndf $file $name > /dev/null

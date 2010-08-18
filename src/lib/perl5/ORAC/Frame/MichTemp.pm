@@ -2,7 +2,7 @@ package ORAC::Frame::MichTemp;
 
 =head1 NAME
 
-ORAC::Frame::MichTemp - class for dealing with temporary Michelle observation files 
+ORAC::Frame::MichTemp - class for dealing with temporary Michelle observation files
 
 =head1 SYNOPSIS
 
@@ -69,7 +69,7 @@ when arguments are supplied.  The object identifier is returned.
    $Frm = new ORAC::Frame::MichTemp("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
-'M' prefix although these can be overriden with the 
+'M' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut
@@ -140,7 +140,7 @@ sub file_from_bits {
 Find the recipe name. If a recipe name can not be found in the
 header (searching for 'RECIPE') the 'ARRAY_ENG' recipe is assumed.
 
-The recipe name stored in the object is automatically updated using 
+The recipe name stored in the object is automatically updated using
 this value.
 
 =cut
@@ -155,7 +155,7 @@ sub findrecipe {
   # if not try to make something up
   if ($recipe !~ /./) {
     $recipe = 'ARRAY_ENG';
-  } 
+  }
   $self->recipe($recipe);
 
   return $recipe;
@@ -185,7 +185,7 @@ Would change the current file to match "something_number_flat".
 Essentially this simply means that the number in the template
 is changed to the number of the current frame object.
 
-This method replaces the number in the supplied string with 
+This method replaces the number in the supplied string with
 the current frame number (padded with zeroes up to a length
 of 5).
 
@@ -229,5 +229,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

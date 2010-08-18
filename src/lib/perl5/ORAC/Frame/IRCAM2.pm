@@ -71,7 +71,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::IRCAM2("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
-'i' prefix although these can be overriden with the 
+'i' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut
@@ -95,12 +95,12 @@ sub new {
   $self->rawsuffix('.sdf');
   $self->rawformat('HDS');
   $self->format('NDF');
- 
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
   $self->configure(@_) if @_;
- 
+
   return $self;
 
 }
@@ -279,5 +279,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

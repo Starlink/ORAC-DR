@@ -72,7 +72,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::IRIS2("UT","number");
 
 The constructor hard-wires the '.fits' rawsuffix and the
-'f' prefix although these can be overriden with the 
+'f' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut
@@ -161,7 +161,7 @@ Returns group name from header.  For dark observations the current obs
 number is returned if the group number is not defined or is set to zero
 (the usual case with IRCAM)
 
-The group name stored in the object is automatically updated using 
+The group name stored in the object is automatically updated using
 this value.
 
 =cut
@@ -328,7 +328,7 @@ sub inout {
   my $suffix = shift;
 
   # Read the number
-  my $num = 1; 
+  my $num = 1;
   if (@_) { $num = shift; }
 
   my $infile = $self->file($num);

@@ -18,7 +18,7 @@ ORAC::Group::INGRID - INGRID class for dealing with observation groups in ORAC-D
 This module provides methods for handling group objects that
 are specific to INGRID. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::INGRID> objects. 
+to B<ORAC::Group::INGRID> objects.
 
 =cut
 
@@ -107,5 +107,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

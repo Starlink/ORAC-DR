@@ -379,7 +379,7 @@ and C<engine_id> method to register the messaging name (if
 appropriate).
 
 If a request is made to launch an engine that has been launched
-previously the request returns the current engine object. Use 
+previously the request returns the current engine object. Use
 C<detach> to force a reload.
 
 =cut

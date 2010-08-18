@@ -1,5 +1,5 @@
 #!/bin/csh -f
-#+ 
+#+
 #  Name:
 #    xoracdr_start.csh
 
@@ -96,7 +96,7 @@ if (-e $STARPERL ) then
   if ( $#args > 0  ) then
     while ( $#args > 0 )
        set oracdr_args = "${oracdr_args} $args[1]"
-       shift args       
+       shift args
     end
   endif
 

@@ -16,7 +16,7 @@
 
 #  Description:
 #     This script processes all the SOFI*.FITS files in the current
-#     working directory each forming an NDF suitable for use by the 
+#     working directory each forming an NDF suitable for use by the
 #     ORAC-DR imaging pipeline.
 #
 #     The NDFs are named sofi<date>_<observation_number>.  The UT
@@ -62,7 +62,7 @@
 
 #  Interruption causes exit.
     onintr EXIT
-      
+
 # Define KAPPA and CONVERT commands, but hide reports from view.
     alias echo 'echo >/dev/null'
     convert
@@ -98,8 +98,8 @@
     if ( $no_files[1] == 0 ) then
        echo "Aborting, as there are no uncompressed SOFI FITS files present."
        exit
-    endif              
-    
+    endif
+
 # Process all the SOFI FITS files in the current directory.
     foreach file ( SOFI*.fits )
        echo ""
@@ -126,7 +126,7 @@
        set hour = `echo $arcname | awk '{print substr($0,17,2)}'`
        set min = `echo $arcname | awk '{print substr($0,20,2)}'`
        set sec = `echo $arcname | awk '{print substr($0,23,6)}'`
-       set htime = `calc \"$hour+$min/60.0+$sec/3600.0\"` 
+       set htime = `calc \"$hour+$min/60.0+$sec/3600.0\"`
        echo "Date is $date   Time is $htime"
 
        if ( $first == 1 ) then
@@ -244,7 +244,7 @@ EOF
        @ obsnum++
        set prevdate = $date
     end
-    
+
 EXIT:
 
 #  Remove any intermediate files.

@@ -107,7 +107,7 @@ sub polrefang {
 =item B<referenceoffset>
 
 Determine the pixel offsets of the reference pixel with respect to the
-frame centre to be used for the current observation.  This allows for 
+frame centre to be used for the current observation.  This allows for
 the source to be placed away from the centre avoiding defects and the
 joins of quadrants.
 
@@ -259,7 +259,7 @@ allowed synonym for "calname".
 =head1 SEE ALSO
 
 L<ORAC::Calib::OIR> and
-L<ORAC::Calib::Spectroscopy> 
+L<ORAC::Calib::Spectroscopy>
 
 =head1 AUTHORS
 

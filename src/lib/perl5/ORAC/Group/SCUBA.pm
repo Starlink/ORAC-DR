@@ -88,9 +88,9 @@ sub new {
 
 This is an extension to the default file() method.
 This method accepts a root name for the group file
-(independent of sub-instrument) - same as for the base 
+(independent of sub-instrument) - same as for the base
 class. If a number is supplied the root name is returned
-with the appropriate extension relating to the 
+with the appropriate extension relating to the
 sub-instrument order in the current frame.
 
 The number to sub-instrument conversion uses the last frame in the
@@ -106,7 +106,7 @@ sub file {
 
   if (@_) {
     # There is either a string here or a number.
-    my $arg = shift; 
+    my $arg = shift;
 
     # Now check to see if we have a number
     if ($arg =~ /^\d+$/) {
@@ -128,7 +128,7 @@ sub file {
       return $file;
 
     } else {
-      # No number so we just assume this is a root name 
+      # No number so we just assume this is a root name
       # and set it
       $self->{File} = $self->stripfname($arg);
     }
@@ -237,9 +237,9 @@ sub gui_id {
 
 This method returns the number of files currently associated
 with the group. What this in fact means is that it returns
-the number of files associated with the last member of the 
+the number of files associated with the last member of the
 group (since that is how I construct output names in the
-first place). grpoutsub() method is responsible for 
+first place). grpoutsub() method is responsible for
 converting this number into a filename via the file() method.
 
 =cut
@@ -381,19 +381,19 @@ The frames should be able to invoke the subs() method.
 
 sub subs {
   my $self = shift;
-  
+
   my %subs = ();
-  
+
 
   # Loop over each member
   foreach my $frm ($self->members) {
-    
+
     # Now store the keys
     foreach  my $sub ($frm->subs) {
       $subs{$sub}++;
     }
   }
-  
+
   # Return the keys
   return keys %subs;
 
@@ -423,5 +423,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

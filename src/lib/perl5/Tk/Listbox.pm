@@ -15,7 +15,7 @@
 # 27-JAN-2001 Alasdair Allan
 #    Modified for local use by adding tied scalar and arrays
 #    Implemented TIESCALAR, TIEARRAY, FETCH, FETCHSIZE, STORE, CLEAR & EXTEND
-# 31-JAN-2001 Alasdair Allan 
+# 31-JAN-2001 Alasdair Allan
 #    Made changes suggested by Tim Jenness
 # 03-FEB-2001 Alasdair Allan
 #    Modified STORE for tied scalars to clear and select elements
@@ -31,7 +31,7 @@
 #    Added flag to FETCH for tied scalars, modified to return hashes
 # 24-FEB-2001 Alasdair Allan
 #    Updated Pod documentation
-#    
+#
 
 package Tk::Listbox;
 
@@ -147,12 +147,12 @@ tie commands:
 
    my @list = ( "a", "b", "c", "d", "e", "f" );
    $lbox->insert('end', @list );
-   
+
    tie @array, "Tk::Listbox", $lbox
    tie $scalar, "Tk::Listbox", $lbox;
    tie $other, "Tk::Listbox", $lbox, %options;
 
-currently only one modifier is implemented, a 3 way flag for tied scalars 
+currently only one modifier is implemented, a 3 way flag for tied scalars
 "ReturnType" which can have values "element", "index" or "both". The default
 is "element".
 
@@ -182,12 +182,12 @@ and then apply the delete function, e.g.
 
      my @list = ( 1, 2, 4, 12, 20 );
      my @remove = reverse sort { $a <=> $b } @list;
-     delete @array[@remove]; 
+     delete @array[@remove];
 
 would safely remove indices 20, 12, 4, 2 and 1 from the Listbox without
 problems. It should also be noted that a similar warning applies to the
 splice function (which would normally be used in this context to perform
-the same job).     
+the same job).
 
 =cut
 
@@ -195,25 +195,25 @@ sub TIEARRAY {
   my ( $class, $obj, %options ) = @_;
   return bless {
 	    OBJECT => \$obj,
-	    OPTION => \%options }, $class;  
+	    OPTION => \%options }, $class;
 }
 
 =item Tied Scalars
 
 Unlike tied arrays, if you tie a scalar to the Listbox you can retrieve the
-currently selected elements in the box as an array referenced by the scalar, 
+currently selected elements in the box as an array referenced by the scalar,
 for instance
 
     my @list = ( "a", "b", "c", "d", "e", "f" );
     $lbox->insert('end', sort @list );
-    $lbox->selectionSet(1);  
+    $lbox->selectionSet(1);
 
 inserts @list as elements in an already existing listbox and selects the
-element at index 1, which is "b". If we then 
+element at index 1, which is "b". If we then
 
      print @$selected;
 
-this will return the currently selected elements, in this case "b". 
+this will return the currently selected elements, in this case "b".
 
 However, if the "ReturnType" arguement is passed when tying the Listbox to the
 scalar with value "index" then the indices of the selected elements will be
@@ -225,7 +225,7 @@ Importantly, if a value "both" is given the scalar will not be tied to an
 array, but instead to a hash, with keys being the indices and values being
 the elements at those indices
 
-You can also manipulate the selected items using the scalar. Equating the 
+You can also manipulate the selected items using the scalar. Equating the
 scalar to an array reference will select any elements that match elements
 in the Listbox, non-matching array items are ignored, e.g.
 
@@ -245,7 +245,7 @@ Again, if the "index" we indicate we want to use indices in the options hash
 then the indices are use instead of elements, e.g.
 
     @array = ( 0, 1, 5 );
-    $selected = \@array;    
+    $selected = \@array;
 
 would have the same effect, selecting elements "a", "b" and "f" if the
 $selected variable was tied with %options = ( ReturnType => "index" ).
@@ -275,47 +275,47 @@ sub TIESCALAR {
 # FETCH
 # -----
 # Return either the full contents or only the selected items in the
-# box depending on whether we tied it to an array or scalar respectively 
+# box depending on whether we tied it to an array or scalar respectively
 sub FETCH {
   my $class = shift;
-  
+
   my $self = ${$class->{OBJECT}};
   my %options = %{$class->{OPTION}} if defined $class->{OPTION};;
-    
+
   # Define the return variable
   my $result;
-  
+
   # Check whether we are have a tied array or scalar quantity
   if ( @_ ) {
-     my $i = shift;    
+     my $i = shift;
      # The Tk:: Listbox has been tied to an array, we are returning
      # an array list of the current items in the Listbox
      $result = $self->get($i);
   } else {
-     # The Tk::Listbox has been tied to a scalar, we are returning a 
+     # The Tk::Listbox has been tied to a scalar, we are returning a
      # reference to an array or hash containing the currently selected items
      my ( @array, %hash );
-     
+
      if ( defined $options{ReturnType} ) {
-     
+
         # THREE-WAY SWITCH
         if ( $options{ReturnType} eq "index" ) {
            $result = [$self->curselection];
         } elsif ( $options{ReturnType} eq "element" ) {
 	   foreach my $selection ( $self->curselection ) {
-              push(@array,$self->get($selection)); }      
-           $result = \@array; 
+              push(@array,$self->get($selection)); }
+           $result = \@array;
 	} elsif ( $options{ReturnType} eq "both" ) {
 	   foreach my $selection ( $self->curselection ) {
-              %hash = ( %hash, $selection => $self->get($selection)); }      
-           $result = \%hash; 	
+              %hash = ( %hash, $selection => $self->get($selection)); }
+           $result = \%hash;
 	}
      } else {
         # return elements (default)
         foreach my $selection ( $self->curselection ) {
-           push(@array,$self->get($selection)); }      
-        $result = \@array; 
-     }	
+           push(@array,$self->get($selection)); }
+        $result = \@array;
+     }
   }
   return $result;
 }
@@ -333,58 +333,58 @@ sub FETCHSIZE {
 # If tied to an array we will modify the Listbox contents, while if tied
 # to a scalar we will select and clear elements.
 sub STORE {
- 
+
   if ( scalar(@_) == 2 ) {
      # we have a tied scalar
      my ( $class, $selected ) = @_;
      my $self = ${$class->{OBJECT}};
      my %options = %{$class->{OPTION}} if defined $class->{OPTION};;
-     
+
      # clear currently selected elements
      $self->selectionClear(0,'end');
-     
+
      # set selected elements
      if ( defined $options{ReturnType} ) {
-        
+
         # THREE-WAY SWITCH
         if ( $options{ReturnType} eq "index" ) {
            for ( my $i=0; $i < scalar(@$selected) ; $i++ ) {
               for ( my $j=0; $j < $self->size() ; $j++ ) {
                   if( $j == $$selected[$i] ) {
-	             $self->selectionSet($j); last; } 
-              }		   
-           }	
+	             $self->selectionSet($j); last; }
+              }
+           }
         } elsif ( $options{ReturnType} eq "element" ) {
            for ( my $k=0; $k < scalar(@$selected) ; $k++ ) {
               for ( my $l=0; $l < $self->size() ; $l++ ) {
                  if( $self->get($l) eq $$selected[$k] ) {
-	            $self->selectionSet($l); last; }   
+	            $self->selectionSet($l); last; }
               }
-           }  	 
+           }
 	} elsif ( $options{ReturnType} eq "both" ) {
            foreach my $key ( keys %$selected ) {
               $self->selectionSet($key)
 	              if $$selected{$key} eq $self->get($key);
-	   }	
-	}	     
+	   }
+	}
      } else {
         # return elements (default)
         for ( my $k=0; $k < scalar(@$selected) ; $k++ ) {
            for ( my $l=0; $l < $self->size() ; $l++ ) {
               if( $self->get($l) eq $$selected[$k] ) {
-	         $self->selectionSet($l); last; }   
+	         $self->selectionSet($l); last; }
            }
-        }  
-     } 
-       
+        }
+     }
+
   } else {
      # we have a tied array
      my ( $class, $index, $value ) = @_;
      my $self = ${$class->{OBJECT}};
-     
+
      # check size of current contents list
      my $sizeof = $self->size();
-     
+
      if ( $index <= $sizeof ) {
         # Change a current listbox entry
         $self->delete($index);
@@ -395,8 +395,8 @@ sub STORE {
            $self->insert($index, $value);
         } else {
            $self->insert("end", $value);
-        } 
-     }     
+        }
+     }
    }
 }
 
@@ -406,7 +406,7 @@ sub STORE {
 sub CLEAR {
   my $class = shift;
   ${$class->{OBJECT}}->delete(0, 'end');
-}  
+}
 
 # EXTEND
 # ------
@@ -427,30 +427,30 @@ sub PUSH {
 sub POP {
    my $class = shift;
 
-   my $value = ${$class->{OBJECT}}->get('end'); 
+   my $value = ${$class->{OBJECT}}->get('end');
    ${$class->{OBJECT}}->delete('end');
    return $value;
-}   
-  
+}
+
 # SHIFT
 # -----
 # Removes the first element and returns it
 sub SHIFT {
    my $class = shift;
 
-   my $value = ${$class->{OBJECT}}->get(0); 
+   my $value = ${$class->{OBJECT}}->get(0);
    ${$class->{OBJECT}}->delete(0);
    return $value
 }
- 
+
 # UNSHIFT
 # -------
 # Insert elements at the beginning of the Listbox
 sub UNSHIFT {
    my ( $class, @list ) = @_;
    ${$class->{OBJECT}}->insert(0, @list);
-} 
-   
+}
+
 # DELETE
 # ------
 # Delete element at specified index
@@ -477,7 +477,7 @@ sub SPLICE {
    my $class = shift;
 
    my $self = ${$class->{OBJECT}};
-   
+
    # check for arguments
    my @elements;
    if ( scalar(@_) == 0 ) {
@@ -496,14 +496,14 @@ sub SPLICE {
             $self->delete($start,'end');
 	    return wantarray ? @elements : $elements[scalar(@elements)-1];
          } else {
-            return undef;	       
+            return undef;
 	 }
       } else {
-	 @elements = $self->get($offset,'end');      
+	 @elements = $self->get($offset,'end');
          $self->delete($offset,'end');
          return wantarray ? @elements : $elements[scalar(@elements)-1];
       }
-      
+
    } elsif ( scalar(@_) == 2 ) {
       # $offset and $length
       my ( $offset, $length ) = @_;
@@ -515,16 +515,16 @@ sub SPLICE {
             $self->delete($start,$end);
 	    return wantarray ? @elements : $elements[scalar(@elements)-1];
          } else {
-            return undef;	       
+            return undef;
 	 }
       } else {
-	 @elements = $self->get($offset,$offset+$length-1);      
+	 @elements = $self->get($offset,$offset+$length-1);
          $self->delete($offset,$offset+$length-1);
          return wantarray ? @elements : $elements[scalar(@elements)-1];
       }
 
    } else {
-      # $offset, $length and @list 
+      # $offset, $length and @list
       my ( $offset, $length, @list ) = @_;
       if ( $offset < 0 ) {
          my $start = $self->size() + $offset;
@@ -535,10 +535,10 @@ sub SPLICE {
 	    $self->insert($start,@list);
 	    return wantarray ? @elements : $elements[scalar(@elements)-1];
          } else {
-            return undef;	       
+            return undef;
 	 }
       } else {
-	 @elements = $self->get($offset,$offset+$length-1);      
+	 @elements = $self->get($offset,$offset+$length-1);
          $self->delete($offset,$offset+$length-1);
 	 $self->insert($offset,@list);
          return wantarray ? @elements : $elements[scalar(@elements)-1];
@@ -547,7 +547,7 @@ sub SPLICE {
 }
 
 # ----
-   
+
 1;
 __END__
 

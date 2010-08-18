@@ -2,7 +2,7 @@ package Astro::FITS::Editor::Xeditor;
 
 # ---------------------------------------------------------------------------
 
-#+ 
+#+
 #  Name:
 #    Astro::FITS::Editor::Xeditor
 
@@ -13,7 +13,7 @@ package Astro::FITS::Editor::Xeditor;
 #    Perl module
 
 #  Description:
-#    This module contains the routines called from FITS Editor and handles 
+#    This module contains the routines called from FITS Editor and handles
 #    most of the GUI functionality
 
 #  Authors:
@@ -68,13 +68,13 @@ All Rights Reserved.
 
 =cut
 
-# L O A D  M O D U L E S --------------------------------------------------- 
+# L O A D  M O D U L E S ---------------------------------------------------
 
 #
 # General modules
 #
 use Tk;
-use Astro::FITS::Header::CFITSIO; 
+use Astro::FITS::Header::CFITSIO;
 use Astro::FITS::Header::NDF 0.02 ();
 use NDF;
 use File::Spec;
@@ -115,12 +115,12 @@ sub editor_about {
     unless scalar(@_) == 3 ;
 
   my ( $editor_version, $MW, $font ) = @_;
-  
+
   # top level frame
   my $top_level = $MW->Toplevel();
   $top_level->title("About FITS Editor");
   $top_level->positionfrom("user");
-  $top_level->geometry("+80+80");  
+  $top_level->geometry("+80+80");
   $top_level->configure( -cursor => "tcross" );
 
   # about frame
@@ -130,61 +130,61 @@ sub editor_about {
 
   # logo
   my $image_frame = $about_frame->Frame( -relief      => 'flat',
-                                       -borderwidth => 10 ); 
-				        
+                                       -borderwidth => 10 );
+
   my $orac_logo = $image_frame->Photo(
                      -file=>"$ENV{ORAC_DIR}/images/orac_logo.gif");
   my $starlink_logo = $image_frame->Photo(
-                     -file=>"$ENV{ORAC_DIR}/images/starlink_logo.gif");				  
+                     -file=>"$ENV{ORAC_DIR}/images/starlink_logo.gif");
   my $image1 = $image_frame->Label( -image  => $orac_logo,
                                    -relief => 'flat',
 		  		   -anchor => 'n');
-  $image1->grid( -column => 0, -row => 0, -sticky => 'nsew' );		 
-  
+  $image1->grid( -column => 0, -row => 0, -sticky => 'nsew' );
+
   my $image2 = $image_frame->Label( -image  => $starlink_logo,
                                    -relief => 'flat',
 		  		   -anchor => 'n');
-  $image2->grid( -column => 1, -row => 0, -sticky => 'nsew' );		
-   
-  $image_frame->grid( -column => 0, -row => 0, -sticky => 'nsew' );  
+  $image2->grid( -column => 1, -row => 0, -sticky => 'nsew' );
+
+  $image_frame->grid( -column => 0, -row => 0, -sticky => 'nsew' );
   # text
   my $string;
   $string = "\nFITS Editor $editor_version\nPerl Version $]\nTk version $Tk::VERSION\n";
-    
+
   my $foot = $about_frame->Label( -textvariable    => \$string,
                                   -relief  => 'flat',
-	  			  -font    => $font, 
+                                  -font    => $font,
 				  -justify => 'center',
 				  -anchor  => 'n',
 				  -borderwidth => 5 );
-  $foot->grid( -column => 1, -row => 0, -sticky => 'nsew' );		 
+  $foot->grid( -column => 1, -row => 0, -sticky => 'nsew' );
 
   # credits
   my $credits = $about_frame->Label( -text  => "\nAlasdair Allan (aa\@astro.ex.ac.uk)\nCopyright (C) 2001 Particle Physics and Astronomy Research Council.",
-                                  -relief  => 'flat',
-	  			  -font    => $font, 
-				  -justify => 'center',
-				  -anchor  => 'n',
-				  -borderwidth => 5 );
-  $credits->grid( -column => 0, -row => 1, -columnspan => 2, -sticky => 'nsew');	
+                                     -relief  => 'flat',
+                                     -font    => $font,
+                                     -justify => 'center',
+                                     -anchor  => 'n',
+                                     -borderwidth => 5 );
+  $credits->grid( -column => 0, -row => 1, -columnspan => 2, -sticky => 'nsew');
   # license
   my $gpl = $about_frame->Label( -text => "\nThis program is free software; you can redistribute it and/or modify it under the\nterms of the GNU General Public License as published by the Free Software\nFoundation; either version 3 of the License, or (at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,but WITHOUT ANY\nWARRANTY; without even the implied warranty of MERCHANTABILITY or\nFITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License\nfor more details.\n\nYou should have received a copy of the GNU General Public License along with\n this program; if not, write to the Free Software Foundation, Inc., 59 Temple Place,\n Suite 330, Boston, MA  02111-1307, USA",
                                  -relief  => 'flat',
-	  			  -font    => $font, 
-				  -justify => 'left',
-				  -anchor  => 'n',
-				  -borderwidth => 5 );
-  $gpl->grid( -column => 0, -row => 2, -columnspan => 2, -sticky => 'nsew');	  
+                                 -font    => $font,
+                                 -justify => 'left',
+                                 -anchor  => 'n',
+                                 -borderwidth => 5 );
+  $gpl->grid( -column => 0, -row => 2, -columnspan => 2, -sticky => 'nsew');
 
   # close button
   my $close_button = $top_level->Button( -text    => "Close",
                                          -font    => $font,
 					 -activeforeground => 'white',
                                          -activebackground => 'blue',
-                                         -command => 
+                                         -command =>
 					    sub { $top_level->destroy } );
   $close_button->grid( -column => 0, -row => 3, -sticky => 'e' );
-  
+
 }
 
 # editor_open_header() -------------------------------------------------------
@@ -202,17 +202,17 @@ sub editor_open_header {
     unless scalar(@_) == 5;
 
   my ( $file_select, $working_directory, $FILE_TYPE, $MW, $font ) = @_;
-  
+
   # declare variables
-  my ($file_type);  
-  
+  my ($file_type);
+
   # decide whether it is an NDF or raw FITS file from extension
   if( $$file_select[0] =~ ".sdf" ) {
      # we must have an NDF file
-     $file_type = "NDF"; $$FILE_TYPE = "File: NDF";  
+     $file_type = "NDF"; $$FILE_TYPE = "File: NDF";
   } elsif ( $$file_select[0] =~ ".fit" || $$file_select[0] =~ ".fits" ) {
      # we must have a FITS file
-     $file_type = "FIT"; $$FILE_TYPE = "File: FIT"; 
+     $file_type = "FIT"; $$FILE_TYPE = "File: FIT";
   } elsif ( $$file_select[0] =~ ".raw" ) {
      # we must have an ARK file
      $file_type = "ARK"; $$FILE_TYPE = "File: ARK";
@@ -224,7 +224,7 @@ sub editor_open_header {
 		 -font => $font)->Show;
      return;
   }
-  
+
   # open file if it exists
   my $filename = File::Spec->catfile( $working_directory, $$file_select[0] );
   unless ( open ( FH, $filename ) )
@@ -235,10 +235,10 @@ sub editor_open_header {
 		  -font => $font)->Show;
      return;
   }
-  
+
   # declare variables
   my ( $header );
-  
+
   # create appropriate header
   if ( $file_type eq "NDF" ) {
 
@@ -258,7 +258,7 @@ sub editor_open_header {
   } elsif ( $file_type eq "FIT" ) {
      $header = new Astro::FITS::Header::CFITSIO( File => $filename );
   } else {
-     $header = new Astro::FITS::Header::CFITSIO( File => $filename );     
+     $header = new Astro::FITS::Header::CFITSIO( File => $filename );
   }
   if ( ! defined $header ) {
 
@@ -267,8 +267,8 @@ sub editor_open_header {
    	          -bitmap => 'error',
 		  -font => $font)->Show;
      return;
-  }  
-      
+  }
+
   return ( $header, $filename );
 }
 
@@ -300,25 +300,25 @@ sub editor_display_header {
   for my $i ( 0 .. scalar(@$cards)-1 ) {
      $header_keyword[$i] = $$cards[$i]->keyword();
      $header_value[$i] = $$cards[$i]->value();
-     $header_comment[$i] = $$cards[$i]->comment(); 
+     $header_comment[$i] = $$cards[$i]->comment();
      $header_type[$i] = $$cards[$i]->type();
   }
 
-  # declare variables 
+  # declare variables
   my ( @number, @key, @value, @comment, $blank );
-	
+
   # create widgets, loop over the @cards array
   for my $i ( 0 .. $#header_keyword ) {
      push (@number, $keyword_widget->Label( -text    => $i,
-	  		                      -relief  => 'flat',
-	  	                              -font    => $font, 
-		                              -justify => 'left',
-			                      -anchor  => 'w',
-				              -width   => 3,
-		                              -borderwidth => 2 ) );
+                                            -relief  => 'flat',
+                                            -font    => $font,
+                                            -justify => 'left',
+                                            -anchor  => 'w',
+                                            -width   => 3,
+                                            -borderwidth => 2 ) );
      push (@key, $keyword_widget->Label( -text    => $header_keyword[$i],
 	  		                 -relief  => 'flat',
-	  	                         -font    => $font, 
+                                         -font    => $font,
 		                         -justify => 'left',
 			                 -anchor  => 'w',
 				         -width   => 15,
@@ -326,28 +326,28 @@ sub editor_display_header {
      $number[$i]->grid( -column => 0, -row => $i+1, -sticky => 'ew' );
      $key[$i]->grid( -column => 1, -row => $i+1, -sticky => 'ew' );
      if( $header_type[$i] eq "COMMENT" ) {
-        push ( @comment, $keyword_widget->Entry( 
+        push ( @comment, $keyword_widget->Entry(
 	                                  -exportselection     => 1,
                                           -font                => $font,
 				          -selectbackground    => 'blue',
 				          -selectforeground    => 'white',
 				          -justify             => 'left',
 					 -textvariable => \$header_comment[$i],
-				          -width               => 80 ) ); 	
+				          -width               => 80 ) );
        $comment[$i]->grid( -columnspan => 2, -column => 2, -row => $i+1,
-	                    -sticky => 'ew' );          
+	                    -sticky => 'ew' );
      } elsif ( $header_type[$i] eq "END" ) {
          $blank = $keyword_widget->Label( -text    => " ",
-	  		                      -relief  => 'groove',
-	  	                              -font    => $font, 
-		                              -justify => 'left',
-			                      -anchor  => 'w',
-				              -width   => 80,
-		                              -borderwidth => 2 );
-         $blank->grid( -columnspan => 2, -column => 2, -row => $i+1, 
-                         -sticky => 'ew' ); 
+                                          -relief  => 'groove',
+                                          -font    => $font,
+                                          -justify => 'left',
+                                          -anchor  => 'w',
+                                          -width   => 80,
+                                          -borderwidth => 2 );
+         $blank->grid( -columnspan => 2, -column => 2, -row => $i+1,
+                         -sticky => 'ew' );
      } else {
-         $value[$i] = $keyword_widget->Entry( 
+         $value[$i] = $keyword_widget->Entry(
 	                                  -exportselection     => 1,
                                           -font                => $font,
 				          -selectbackground    => 'blue',
@@ -355,19 +355,19 @@ sub editor_display_header {
 				          -justify             => 'left',
 					  -textvariable => \$header_value[$i],
 				          -width               => 30 );
-         push ( @comment, $keyword_widget->Entry( 
+         push ( @comment, $keyword_widget->Entry(
 	                                  -exportselection     => 1,
                                           -font                => $font,
 				          -selectbackground    => 'blue',
 				          -selectforeground    => 'white',
 				          -justify             => 'left',
 					 -textvariable => \$header_comment[$i],
-				          -width               => 50 ) ); 
+				          -width               => 50 ) );
          $value[$i]->grid( -column => 2, -row => $i+1, -sticky => 'ew' );
          $comment[$i]->grid( -column => 3, -row => $i+1, -sticky => 'ew' );
      }
-  }     
-  return (\@number, \@key, \@value, \@comment, \$blank, 
+  }
+  return (\@number, \@key, \@value, \@comment, \$blank,
           \@header_value, \@header_comment );
 }
 

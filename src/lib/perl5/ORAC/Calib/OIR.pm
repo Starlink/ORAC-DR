@@ -92,7 +92,7 @@ sub bias {
 
 =item B<dark>
 
-Return (or set) the name of the current dark - 
+Return (or set) the name of the current dark -
 checks suitability on return.
 
 =cut
@@ -129,7 +129,7 @@ sub default_mask {
 
 =item B<mask>
 
-Return (or set) the name of the bad pixel mask. If a mask is to be returned 
+Return (or set) the name of the bad pixel mask. If a mask is to be returned
 every effrort is made to guarantee that the mask is suitable for use.
 
   $mask = $Cal->mask;
@@ -212,7 +212,7 @@ allowed synonym for "calname".
 =head1 SEE ALSO
 
 L<ORAC::Calib>, L<ORAC::Calib::Spectroscopy> and
-L<ORAC::Calib::Imaging> 
+L<ORAC::Calib::Imaging>
 
 =head1 AUTHORS
 

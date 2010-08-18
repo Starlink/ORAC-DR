@@ -15,7 +15,7 @@
 #  Description:
 #     This script initialises the environment variables and command
 #     aliases required to run the ORAC-DR pipeline with the UKIRT wavefront
-#     sensor data. An optional argument is the UT date. This is used to 
+#     sensor data. An optional argument is the UT date. This is used to
 #     configure the input and output data directories but assumes a UKIRT
 #     style directory configuration.
 
@@ -23,7 +23,7 @@
 #     UT = INTEGER (Given)
 #        UT date of interest. This should be in YYYYMMDD format.
 #        It is used to set the location of the input and output
-#        data directories. Assumes that the data are located in 
+#        data directories. Assumes that the data are located in
 #        a directory structure similar to that used at UKIRT.
 #        Also sets an appropriate alias for ORAC-DR itself.
 #        If no value is specified, the current UT is used.

@@ -23,7 +23,7 @@
 #     UT = INTEGER (Given)
 #        UT date of interest.  This should be in YYYYMMDD format.
 #        It is used to set the location of the input and output
-#        data directories.  Assumes that the data are located in 
+#        data directories.  Assumes that the data are located in
 #        a directory structure similar to that used at UKIRT.
 #        Also sets an appropriate alias for ORAC-DR itself.
 #        If no value is specified, the current UT is used.
@@ -42,7 +42,7 @@
 #     oracdr_ingrid
 #        Will set the variables assuming the current UT date.
 #     oracdr_ingrid 20030201
-#        Use UT data 
+#        Use UT data
 
 #  Notes:
 #     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR

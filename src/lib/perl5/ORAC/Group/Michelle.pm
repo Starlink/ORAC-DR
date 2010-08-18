@@ -18,7 +18,7 @@ ORAC::Group::Michelle - Michelle class for dealing with observation groups in OR
 This module provides methods for handling group objects that
 are specific to Michelle. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::Michelle> objects. 
+to B<ORAC::Group::Michelle> objects.
 
 =cut
 

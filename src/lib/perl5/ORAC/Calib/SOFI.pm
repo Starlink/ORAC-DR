@@ -41,7 +41,7 @@ $VERSION = '1.0';
 =head2 Index and Rules files
 
 For SOFI some of the rules files are keyed on the current value of
-the HIERARCH.ESO.DPR.TECH FITS header item.  This sub-class 
+the HIERARCH.ESO.DPR.TECH FITS header item.  This sub-class
 automatically changes the rules file of the underlying index object.
 
 =over 4

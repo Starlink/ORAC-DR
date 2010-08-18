@@ -27,7 +27,7 @@ The main steps are as follows.
 
 Open the FITS file.  You must have write access.
 
-=item 2. 
+=item 2.
 
 Read the relevant headers, one or more of OBSTYPE, OBSNUM, GRPNUM,
 GRPMEM, and RECIPE.  The code and comments explain these further.
@@ -65,7 +65,7 @@ examples.
 
 =head1 REQUIREMENTS
 
-The Astro::FITS::CFITSIO Perl module, available from http://www.cpan.org/.  
+The Astro::FITS::CFITSIO Perl module, available from http://www.cpan.org/.
 This may already be installed at your site.
 
 =head1 AUTHOR
@@ -112,7 +112,7 @@ Malcolm J. Currie (JAC)
 # given by the frame number (OBSNUM) of its first member.
        $fitsfile->read_key( TINT, "GRPNUM", $grpnum, $numcomment, $status );
 
-# Obtain the GRPMEM integer value and associated comment.  GRPMEM 
+# Obtain the GRPMEM integer value and associated comment.  GRPMEM
 # specifies the sequence number within the group, counting from 1.
        $fitsfile->read_key( TINT, "GRPMEM", $grpmem, $memcomment, $status );
 
@@ -154,7 +154,7 @@ Malcolm J. Currie (JAC)
 # A dark in this example implies that a wrong frame was selected.
           print "Warning obsnum $obsnum is a dark.  Exiting\n";
           exit;
- 
+
        } else {
 
 # Replace the revised group number and group sequence number.

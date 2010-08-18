@@ -147,17 +147,17 @@ my $status = GetOptions("dir=s" => \$opt{"dir"},
 $working_directory = $opt{"dir"} if defined $opt{"dir"};
 
 # Change font size
-if ( defined $opt{"font"} ) { 
+if ( defined $opt{"font"} ) {
    $font = $opt{"font"};
-} else { 
-   $font = "Helvetica"; 
+} else {
+   $font = "Helvetica";
 }
 
 # Change font size
-if ( defined $opt{"pt"} ) { 
+if ( defined $opt{"pt"} ) {
    $font = "$font $opt{pt}";
-} else { 
-   $font = "$font 10"; 
+} else {
+   $font = "$font 10";
 }
 
 # B U I L D  M E N U  B A R -------------------------------------------------
@@ -167,7 +167,7 @@ my ( @menus );
 my ( $file_menu, $options_menu, $help_menu );
 
 # Frame for menu bar
-my $menu_frame = $MW->Frame( -relief      =>'raised', 
+my $menu_frame = $MW->Frame( -relief      =>'raised',
                              -borderwidth => 1);
 
 foreach ( qw/File Options Help/ )
@@ -181,7 +181,7 @@ $help_menu = $menus[2]->Menu( -tearoff => 0, -font => $font );
 $menus[2]->configure( -menu => $help_menu );
 
 $menus[2]->menu()->add( "command", -label => "Help",
-                        -command => sub { } );				
+                        -command => sub { } );
 $menus[2]->menu()->add( "separator" );
 $menus[2]->menu()->add( "command", -label => "About FITS Editor",
                         -command => [ \&editor_about, $VERSION, $MW, $font ] );
@@ -190,7 +190,7 @@ $menus[2]->menu()->add( "command", -label => "About FITS Editor",
 $menus[2]->menu()->entryconfigure(0, -state => 'disabled' );
 
 # File menu
-$menus[0]->pack( -side => 'left'); 
+$menus[0]->pack( -side => 'left');
 $file_menu = $menus[0]->Menu( -tearoff => 0, -font => $font );
 
 $menus[0]->configure( -menu => $file_menu );
@@ -201,8 +201,8 @@ $menus[0]->menu()->add( "command", -label => "Open Directory",
 
 $menus[0]->menu()->add( "command", -label => "Commit Changes",
                         -state => 'disabled',
-                        -command => sub { &$commit_changes } );			
-			
+                        -command => sub { &$commit_changes } );
+
 $menus[0]->menu()->add( "separator" );
 
 $menus[0]->menu()->add( "command", -label => "Exit",
@@ -217,7 +217,7 @@ $menus[1]->configure( -menu => $options_menu );
 $menus[1]->menu()->add( "separator" );
 # Calls Editor::editor_prefs() to do set user preferences
 $menus[1]->menu()->add( "command",
-                        -label   => "Preferences", 
+                        -label   => "Preferences",
                         -command => sub { editor_prefs(); });
 
 # Options menu unused at present
@@ -226,17 +226,17 @@ $menus[1]->configure( -state => 'disabled' );
 # B U I L D   L A B E L -----------------------------------------------------
 
 # Frame for top label
-my $label_frame = $MW->Frame( -relief      =>'groove', 
+my $label_frame = $MW->Frame( -relief      =>'groove',
                               -borderwidth => 1 );
-			      
+
 # Status label
 my $top_label = $label_frame->Label( -textvariable => \$CURRENT_DIRECTORY,
                                          -font         => $font,
 					 -foreground   => 'blue');
 #$top_label->grid( -column => 0, -row => 0, -sticky => 'we' );
 $top_label->pack( -side => 'left' );
-$CURRENT_DIRECTORY = "Working directory: ";			        
-		
+$CURRENT_DIRECTORY = "Working directory: ";
+
 my $directory_entry = $label_frame->Entry( -exportselection     => 1,
                             -font                => $font,
 		            -selectbackground    => 'blue',
@@ -261,17 +261,17 @@ $save_button->pack( -side => 'right' );
 # M A I N   F R A M E -------------------------------------------------------
 
 # Holding frame
-my $main_frame = $MW->Frame( -relief      =>'flat', 
+my $main_frame = $MW->Frame( -relief      =>'flat',
                              -borderwidth => 1 );
 
 # Frame for keyword panel
-my $right_frame = $main_frame->Frame( -relief      =>'flat', 
+my $right_frame = $main_frame->Frame( -relief      =>'flat',
                               -borderwidth => 1 );
 $right_frame->grid( -column => 2, -row => 0, -sticky => 'nsew');
-				
+
 # B U I L D   F I L E   P A N E L -------------------------------------------
 
-			       
+
 # Listbox for file selection
 my $left_scrollbar = $main_frame->Scrollbar();
 my $files = $main_frame->Listbox( -borderwidth         => 1,
@@ -281,11 +281,11 @@ my $files = $main_frame->Listbox( -borderwidth         => 1,
 				  -font                => $font,
 				  -width               => 30,
 				  -yscrollcommand => ['set'=>$left_scrollbar]);
-			       	
+
 $left_scrollbar->configure(-command=>['yview'=>$files]);
 $left_scrollbar->grid( -column => 1, -row => 0, -sticky => 'nsew');
 
-# Fill the listbox if we already have a working directory 
+# Fill the listbox if we already have a working directory
 $files->insert('end', sort @file_list);
 $files->grid( -column => 0, -row => 0, -sticky => 'nsew');
 
@@ -295,14 +295,14 @@ $main_frame->bind("Listbox", "<B2-Motion>",['scan','dragto',Ev('x'),Ev('y')]);
 
 # Tie the Listbox to the @file_list array, note that this currently uses
 # a locally modified copy of Tk::Listbox since by default the Listbox
-# widget doesn't come with tied variables. 
+# widget doesn't come with tied variables.
 tie @file_list, "Tk::Listbox", $files;
 
 # Tie the Listbox to the $file_select scalar, note that this currently
 # uses a locally modifed copy of Tk::Listbox since by default the Listbox
 # widget doesn't come with tied variables.
 tie $file_select, "Tk::Listbox", $files;
-				       
+
 # B U I L D   K E Y W O R D   P A N E L -------------------------------------
 
 # Create scrollable widget frame using Tk::Pane
@@ -332,7 +332,7 @@ my ( $new_keyword, $new_value, $new_comment );
 my $add_label = $add_keyword_frame->Label( -text => "New Header Card",
                                          -font         => $font );
 
-my $keyword_entry = $add_keyword_frame->Entry( 
+my $keyword_entry = $add_keyword_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
@@ -340,7 +340,7 @@ my $keyword_entry = $add_keyword_frame->Entry(
 				          -justify             => 'left',
 					  -textvariable => \$new_keyword,
 				          -width               => 8 );
-my $value_entry = $add_keyword_frame->Entry( 
+my $value_entry = $add_keyword_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
@@ -348,7 +348,7 @@ my $value_entry = $add_keyword_frame->Entry(
 				          -justify             => 'left',
 					  -textvariable => \$new_value,
 				          -width               => 20 );
-my $comment_entry = $add_keyword_frame->Entry( 
+my $comment_entry = $add_keyword_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
@@ -363,7 +363,7 @@ my $add_button = $add_keyword_frame->Button(-text             => 'Add',
                                         -activebackground => 'blue',
 					-state            => 'disabled'
 					 );
-					 
+
 # Sub-frame for the insert checkbuttons
 my $add_sub_frame = $add_keyword_frame->Frame( -relief      => 'flat',
                                                -borderwidth => 1 );
@@ -374,13 +374,15 @@ my $add_type_frame = $add_keyword_frame->Frame( -relief      => 'flat',
 
 # pack them
 $add_label->grid( -column => 0, -row => 0, -sticky => 'e');
-$keyword_entry->grid( -column => 1, -row => 0, -sticky => 'ew');                 $value_entry->grid( -column => 2, -row => 0, -sticky => 'ew');                 $comment_entry->grid( -column => 3, -row => 0, -sticky => 'ew'); 
-$add_button->grid( -column => 4, -row => 0, -sticky => 'ew'); 
-$add_sub_frame->grid( -columnspan => 4, 
+$keyword_entry->grid( -column => 1, -row => 0, -sticky => 'ew');
+$value_entry->grid( -column => 2, -row => 0, -sticky => 'ew');
+$comment_entry->grid( -column => 3, -row => 0, -sticky => 'ew');
+$add_button->grid( -column => 4, -row => 0, -sticky => 'ew');
+$add_sub_frame->grid( -columnspan => 4,
                       -column => 0, -row => 1, -sticky => 'nsew' );
-$add_type_frame->grid( -columnspan => 4, 
+$add_type_frame->grid( -columnspan => 4,
                       -column => 0, -row => 2, -sticky => 'nsew' );
-		      
+
 # insert "after X" checkbuttons
 my ( $insert_flag, $after_index, $after_key );
 
@@ -394,9 +396,9 @@ my $insert_checkbutton = $add_sub_frame->Checkbutton( -anchor      => 'w',
 						    -onvalue     => 'plain',
 				           -variable => \$insert_flag,
 					   -command => sub {  });
-					   
+
 $insert_checkbutton->grid( -column => 0, -row => 0, -sticky => 'ew' );
-          
+
 my $afterindex_checkbutton = $add_sub_frame->Checkbutton( -anchor  => 'w',
                                                   -font        => $font,
 						-text  => 'Insert before index',
@@ -404,18 +406,18 @@ my $afterindex_checkbutton = $add_sub_frame->Checkbutton( -anchor  => 'w',
 						    -onvalue     => 'index',
 				           -variable => \$insert_flag,
 					   -command => sub { });
-					   
-$afterindex_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );	
-my $index_entry = $add_sub_frame->Entry( 
+
+$afterindex_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );
+my $index_entry = $add_sub_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
 				          -selectforeground    => 'white',
 				          -justify             => 'left',
 					  -textvariable => \$after_index,
-				          -width               => 4 ); 
+				          -width               => 4 );
 
-$index_entry->grid( -column => 2, -row => 0, -sticky => 'ew' );	 	         
+$index_entry->grid( -column => 2, -row => 0, -sticky => 'ew' );
 my $afterkey_checkbutton = $add_sub_frame->Checkbutton( -anchor  => 'w',
                                                     -font        => $font,
 					-text  => 'Insert after keyword',
@@ -423,28 +425,28 @@ my $afterkey_checkbutton = $add_sub_frame->Checkbutton( -anchor  => 'w',
 						    -onvalue     => 'key',
 				           -variable => \$insert_flag,
 					   -command => sub { });
-					   
+
 $afterkey_checkbutton->grid( -column => 3, -row => 0, -sticky => 'ew' );
-	
-my $key_entry = $add_sub_frame->Entry( 
+
+my $key_entry = $add_sub_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
 				          -selectforeground    => 'white',
 				          -justify             => 'left',
 					  -textvariable => \$after_key,
-				          -width               => 8 ); 
+				          -width               => 8 );
 
-$key_entry->grid( -column => 4, -row => 0, -sticky => 'ew' );	 
- 
-# keyword type sub-frame 
+$key_entry->grid( -column => 4, -row => 0, -sticky => 'ew' );
+
+# keyword type sub-frame
 
 # Declare variables
 my ( $type_flag );
 
 my $type_label = $add_type_frame->Label( -text => "Type:",
                                          -font         => $font );
-$type_label->grid( -column => 0, -row => 0, -sticky => 'ew' ); 
+$type_label->grid( -column => 0, -row => 0, -sticky => 'ew' );
 
 my $int_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
                                                     -font        => $font,
@@ -452,12 +454,12 @@ my $int_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'int',
 				           -variable => \$type_flag,
-					   -command => sub { 
+					   -command => sub {
 			if( defined $new_keyword && defined $new_value
-			     ) {		   
+			     ) {
 				$add_button->configure( -state => 'normal' ); }
 					    });
-					   
+
 $int_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );
 
 my $float_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
@@ -466,12 +468,12 @@ my $float_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'float',
 				           -variable => \$type_flag,
-					   -command => sub { 
+					   -command => sub {
 			if( defined $new_keyword && defined $new_value
-			     ) {		 
+			     ) {
 			        $add_button->configure( -state => 'normal'); }
-					    }); 
-					   
+					    });
+
 $float_checkbutton->grid( -column => 2, -row => 0, -sticky => 'ew' );
 
 my $string_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
@@ -480,11 +482,11 @@ my $string_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'string',
 				           -variable => \$type_flag,
-					   -command => sub { 
+					   -command => sub {
 			if( defined $new_keyword && defined $new_value
-			     ) {		 
+			     ) {
 				$add_button->configure( -state => 'normal'); }
-					    });					   
+					    });
 $string_checkbutton->grid( -column => 3, -row => 0, -sticky => 'ew' );
 
 my $logical_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
@@ -495,11 +497,11 @@ my $logical_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 				           -variable => \$type_flag,
 					   -command => sub {
 			if( defined $new_keyword && defined $new_value
-			     ) {		 
+			     ) {
 				$add_button->configure( -state => 'normal'); }
 					    });
-					   
-$logical_checkbutton->grid( -column => 4, -row => 0, -sticky => 'ew' );          
+
+$logical_checkbutton->grid( -column => 4, -row => 0, -sticky => 'ew' );
 my $comment_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
                                                     -font        => $font,
 						    -text        => 'COMMENT',
@@ -507,12 +509,12 @@ my $comment_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 						    -onvalue     => 'comment',
 				           -variable => \$type_flag,
 					   -command => sub {
-			if( defined $new_keyword 
-			    && defined $new_comment ) {		 
+			if( defined $new_keyword
+			    && defined $new_comment ) {
 				$add_button->configure( -state => 'normal'); }
 					    });
-					   
-$comment_checkbutton->grid( -column => 5, -row => 0, -sticky => 'ew' );     
+
+$comment_checkbutton->grid( -column => 5, -row => 0, -sticky => 'ew' );
 
 # D E L E T E   K E Y W O R D   P A N E L  -----------------------------------
 
@@ -525,14 +527,14 @@ $del_keyword_frame->grid( -column => 1, -row => 1, -sticky => 'nsew' );
 # Widgets and stuff
 my $del_label = $del_keyword_frame->Label( -text => "Delete Header Card",
                                          -font         => $font );
- 
+
 
 my $del_button = $del_keyword_frame->Button(-text             => 'Delete',
                                         -font             => $font,
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
 					-state            => 'disabled'
-					 ); 
+					 );
 
 # Sub-frame for the insert checkbuttons
 my $del_sub_frame = $del_keyword_frame->Frame( -relief      => 'flat',
@@ -540,8 +542,8 @@ my $del_sub_frame = $del_keyword_frame->Frame( -relief      => 'flat',
 
 # pack them
 $del_label->grid( -column => 0, -row => 0, -sticky => 'e');
-$del_button->grid( -column => 1, -row => 0, -sticky => 'ew'); 
-$del_sub_frame->grid( -columnspan => 2, 
+$del_button->grid( -column => 1, -row => 0, -sticky => 'ew');
+$del_sub_frame->grid( -columnspan => 2,
                       -column => 0, -row => 1, -sticky => 'nsew' );
 
 # Declare variables
@@ -559,19 +561,19 @@ my $byindex_checkbutton = $del_sub_frame->Checkbutton( -anchor  => 'w',
 						    -onvalue     => 'index',
 				           -variable => \$delete_flag,
 					   -command => sub { });
-					   
+
 $byindex_checkbutton->grid( -column => 0, -row => 0, -sticky => 'ew' );
-	
-my $byindex_entry = $del_sub_frame->Entry( 
+
+my $byindex_entry = $del_sub_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
 				          -selectforeground    => 'white',
 				          -justify             => 'left',
 					  -textvariable => \$by_index,
-				          -width               => 4 ); 
+				          -width               => 4 );
 
-$byindex_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );	 	         
+$byindex_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );
 my $bykey_checkbutton = $del_sub_frame->Checkbutton( -anchor  => 'w',
                                                     -font        => $font,
 					-text  => 'by name',
@@ -579,46 +581,46 @@ my $bykey_checkbutton = $del_sub_frame->Checkbutton( -anchor  => 'w',
 						    -onvalue     => 'key',
 				           -variable => \$delete_flag,
 					   -command => sub { });
-					   
+
 $bykey_checkbutton->grid( -column => 0, -row => 1, -sticky => 'ew' );
-	
-my $bykey_entry = $del_sub_frame->Entry( 
+
+my $bykey_entry = $del_sub_frame->Entry(
 	                                  -exportselection     => 1,
                                           -font                => 'Fixed',
 				          -selectbackground    => 'blue',
 				          -selectforeground    => 'white',
 				          -justify             => 'left',
 					  -textvariable => \$by_key,
-				          -width               => 8 ); 
+				          -width               => 8 );
 
-$bykey_entry->grid( -column => 1, -row => 1, -sticky => 'ew' );	 
-      			       
+$bykey_entry->grid( -column => 1, -row => 1, -sticky => 'ew' );
+
 # B U I L D   S T A T U S   B A R --------------------------------------------
 
 # Frame for status bar
-my $status_frame = $MW->Frame( -relief      =>'flat', 
+my $status_frame = $MW->Frame( -relief      =>'flat',
                                -borderwidth => 1 );
 
 # Status label
 my $status_label = $status_frame->Label( -textvariable => \$CURRENT_STATUS,
                                          -font         => $font,
 					 -foreground   => 'blue');
-$status_label->pack( -side => 'left'); 
+$status_label->pack( -side => 'left');
 
 my $file_type = $status_frame->Label( -textvariable => \$FILE_TYPE,
                                          -font         => $font,
 					 -foreground   => 'red');
 
-$file_type->pack( -side => 'right'); 
+$file_type->pack( -side => 'right');
 
 # B I N D   B U T T O N ,   T E X T   E N T R Y   &   L I S T B O X ---------
 
 # Declare header variable and reference to header contents
-# F I T S   C A R D S   D E F I N E D   H E R E 
+# F I T S   C A R D S   D E F I N E D   H E R E
 my ( $header, $filename, @cards );
 
 # Bind the directory entry widget to create a file list
-$directory_entry->bind( "<Return>", 
+$directory_entry->bind( "<Return>",
      sub { unless ( opendir ( DIR, $working_directory ) ) {
                 $MW->Dialog(-title => 'Error',
 			  -text => "Directory $working_directory not found\n",
@@ -630,10 +632,10 @@ $directory_entry->bind( "<Return>",
 	   @file_list = grep !/^\./, readdir *DIR;
            @file_list = sort ( @file_list );
 	   closedir *DIR;
-           $old_directory = $working_directory;     
+           $old_directory = $working_directory;
      } );
 
-# Bind the new keyword, value and comment entry widgets to enable the 
+# Bind the new keyword, value and comment entry widgets to enable the
 # add new keyword button if the $type_flag is defined
 $keyword_entry->bind("<KeyPress>",
   sub { $add_button->configure( -state => 'normal' ) if defined $type_flag; });
@@ -649,14 +651,14 @@ my ( $number, $key_widget, $val_widget, $com_widget, $blank );
 my ( $header_value, $header_comment );
 
 # Bind the left mouse button click to the Tk::Listbox to do file stuff
-$files->bind( "<Double-1>", sub { &$read_file });      	 
+$files->bind( "<Double-1>", sub { &$read_file });
 
 # enable the DELETE button when an index or keyword is entered
 $byindex_entry->bind( "<Key>",
      sub { $del_button->configure( -state => 'normal' ) if defined $header; });
-     
+
 $bykey_entry->bind( "<Key>",
-     sub { $del_button->configure( -state => 'normal' ) if defined $header; }); 
+     sub { $del_button->configure( -state => 'normal' ) if defined $header; });
 
 
 # Declare variables
@@ -666,7 +668,7 @@ my @card;  # Card(s?) returned after deletion
 $add_button->bind( "<ButtonPress>",
         sub {
 	 # create a new FITS card
-	 my $item = new Astro::FITS::Header::Item( 
+	 my $item = new Astro::FITS::Header::Item(
 	                                 Keyword => uc( $new_keyword ),
 					 Value   => $new_value,
 					 Comment => $new_comment,
@@ -675,7 +677,7 @@ $add_button->bind( "<ButtonPress>",
          # modify the status line
          $CURRENT_STATUS = "FITS Editor $VERSION - " .
 	                   "Adding keyword " . uc($new_keyword);
-	 $MW->update;					 
+	 $MW->update;
 
 	 # add by index or keyword
 	 if ( $insert_flag eq "plain" ) {
@@ -683,7 +685,7 @@ $add_button->bind( "<ButtonPress>",
 	    $header->insert( $after_index, $item ) if defined $item;
 	 } elsif ( $insert_flag eq "index" ) {
 	    $header->insert( $after_index, $item ) if defined $item;
-	 } elsif ( $insert_flag eq "key" ) {    
+	 } elsif ( $insert_flag eq "key" ) {
  	    my @index = $header->index( uc($after_key ) );
 	    $header->insert( $index[0]+1, $item ) if defined $item;
 	 }
@@ -694,37 +696,37 @@ $add_button->bind( "<ButtonPress>",
          # modify the status line
          $CURRENT_STATUS = "FITS Editor $VERSION - " .
                 File::Spec->catfile($working_directory, $$file_select[0]);
-  	 $MW->update;					
+         $MW->update;
 
 	});
-	
+
 # Remove header card
-$del_button->bind( "<ButtonPress>", 
-        sub {	
+$del_button->bind( "<ButtonPress>",
+        sub {
 
            # modify the status line
            $CURRENT_STATUS = "FITS Editor $VERSION - " .
 	                     "Deleting keyword " . uc($new_keyword);
-	   $MW->update;					 
+	   $MW->update;
 
            # delete by index or keyword
 	   if ( $delete_flag eq "index" ) {
-	       @card = $header->remove($by_index);	   
-	   } elsif ( $delete_flag eq "key" ) {  
+	       @card = $header->remove($by_index);
+	   } elsif ( $delete_flag eq "key" ) {
 	       @card = $header->removebyname(uc($by_key) );
 	   }
-	   
+
 	   # update
 	   &$update_window;
 
            # modify the status line
            $CURRENT_STATUS = "FITS Editor $VERSION - " .
                   File::Spec->catfile($working_directory, $$file_select[0]);
-  	   $MW->update;					
+           $MW->update;
 
-	} );     	 
+	} );
 
-# Save button 
+# Save button
 $save_button->bind( "<ButtonPress>",  sub { &$commit_changes } );
 
 # A N O N Y M O U S  S U B - R O U T I N E -----------------------------------
@@ -734,11 +736,11 @@ $commit_changes = sub {
 
         if( $save_button->cget( -state ) eq 'active' ||
             $save_button->cget( -state ) eq 'normal' ) {
-                  
+
            # modify the status line
            $CURRENT_STATUS = "FITS Editor $VERSION - " .
 	                     "Saving changes to $filename";
-	   $MW->update;	
+	   $MW->update;
 
 	   # committ changes to file
 	   $header->writehdr( File => $filename ) if defined $header;
@@ -746,9 +748,9 @@ $commit_changes = sub {
            # modify the status line
            $CURRENT_STATUS = "FITS Editor $VERSION - " .
                   File::Spec->catfile($working_directory, $$file_select[0]);
-  	   $MW->update;	
-           
-        }				
+           $MW->update;
+
+        }
 	$save_button->configure( -state => 'disabled' );
         $menus[0]->menu()->entryconfigure( 1, -state => 'disabled' );
 
@@ -757,14 +759,14 @@ $commit_changes = sub {
 # anonymous sub-routine to open a (modified) Tk::FileDialog
 $file_request = sub {
            $old_directory = $working_directory;
-           	   
+
            # Create a Tk:FileDialog so we can pop it up when needed
            my $file_chooser = $MW->FileDialog( -Title => 'FITS Editor',
-                                               -Create => 0, 
+                                               -Create => 0,
 				               -SelDir => 1,
 					       -Font => $font);
            ($working_directory, my $fname ) = $file_chooser->Show();
- 
+
            unless ( opendir ( DIR, $working_directory ) ) {
                 $MW->Dialog(-title => '',
 			  -text => "Directory $working_directory not found\n",
@@ -775,13 +777,13 @@ $file_request = sub {
            @file_list = ();
 	   @file_list = grep !/^\./, readdir *DIR;
            @file_list = sort( @file_list );
-	   closedir *DIR; 
-           $old_directory = $working_directory;    
+	   closedir *DIR;
+           $old_directory = $working_directory;
 };
 
 # anonymous sub-routine to read a file
 $read_file = sub {
-	   # modify the status line			
+	   # modify the status line
 	   $status_label->configure( -foreground => 'red' );
 	   $CURRENT_STATUS = "FITS Editor $VERSION - " .
 	                     "Reading file, please wait";
@@ -789,7 +791,7 @@ $read_file = sub {
 
            # update the window
 	   $MW->update;
-	   
+
 	   # check to see if we have previously displayed a FITS header
 	   # and if so delete all the widgets
            if ( defined $number ) {
@@ -800,13 +802,13 @@ $read_file = sub {
                  $$val_widget[$i]->destroy if defined $$val_widget[$i];
 	         $$com_widget[$i]->destroy if defined $$com_widget[$i];
               }
-		 
+
               # disable the "Save Changes" button on the keyword_widget
               # since we now have a fresh header and no changes have
 	      # been made as yet.
-              $save_button->configure( -state => 'disabled' );               
+              $save_button->configure( -state => 'disabled' );
               $menus[0]->menu()->entryconfigure( 1, -state => 'disabled' );
-              
+
 	      # undef the destroyed widgets in case we're changing directory
 	      # so we don't try and destroy them again when the next file
 	      # is selected.
@@ -815,35 +817,35 @@ $read_file = sub {
 	      @$val_widget = ();
 	      @$com_widget = ();
 	      $blank = ();
-		 
+
 	      # undef $header
 	      undef $header;
 	   }
 
            # check we have a file
 	   if ( -f File::Spec->catfile($working_directory,$$file_select[0]))
-	   {		 
+	   {
 	      # open the new header, returning the contents in array
-	      ( $header, $filename) = 
+	      ( $header, $filename) =
 		editor_open_header( $file_select, $working_directory,
 		                    \$FILE_TYPE, $MW, $font );
-		
+
 	      if ( defined $header ) {
- 
+
 	         # enable DELETE button
 		 if ( defined $by_index || defined $by_key ) {
 		    $del_button->configure( -state => 'normal' ); }
-		    
+
                  # pull the FITS cards from the header
                  @cards = $header->allitems();
 		 $FILE_TYPE = $FILE_TYPE . ", Cards: " . $#cards . ' ';
-		    
-	         # display the header inside the keyword_widget Tk::Pane	
+
+	         # display the header inside the keyword_widget Tk::Pane
 	         ( $number, $key_widget, $val_widget, $com_widget, $blank,
 		   $header_value, $header_comment ) =
 	              editor_display_header( \@cards, $keyword_widget, $font );
-                 
-	         # modify the status line			
+
+	         # modify the status line
 	         $status_label->configure( -foreground => 'blue' );
                  $CURRENT_STATUS = "FITS Editor $VERSION - " .
 	           File::Spec->catfile($working_directory, $$file_select[0]);
@@ -853,40 +855,40 @@ $read_file = sub {
                  for my $i ( 0 .. scalar(@$number)-1 ) {
 
                     # value widgets
-                    $$val_widget[$i]->bind( "<Return>", 
-                    sub {	
-	
+                    $$val_widget[$i]->bind( "<Return>",
+                    sub {
+
 	               $cards[$i]->value($$header_value[$i]);
 
 	               # rebuild the keyword widget
                        &$update_window;
-           
+
 	            } ) if defined $$val_widget[$i];
 
-                    # comment widgets	
-                    $$com_widget[$i]->bind( "<Return>", 
-                    sub {	
-	
+                    # comment widgets
+                    $$com_widget[$i]->bind( "<Return>",
+                    sub {
+
 	               $cards[$i]->comment($$header_comment[$i]);
 
 	               # rebuild the keyword widget
                        &$update_window;
-	   
+
 	            } )  if defined $$com_widget[$i];
                  }
-		    
+
               } else {
 		 # modify the status line
 		 $CURRENT_STATUS = "FITS Editor $VERSION - " .
 		    "Unable to load selected file";
 	         $MW->update;
-              }		
+              }
 	 }
-	 # or a directory 
+	 # or a directory
 	 elsif ( -d File::Spec->catfile($working_directory,$$file_select[0]))
 	 {
 	      # its a directory, open it
-              my $new_directory = 
+              my $new_directory =
 		  File::Spec->catfile( $working_directory,$$file_select[0] );
               unless ( opendir ( DIR, $new_directory ) ) {
                 $MW->Dialog(-title => 'Error',
@@ -895,23 +897,23 @@ $read_file = sub {
 			  -font => $font)->Show;
                 $working_directory = $old_directory;
                 return; };
-                 
+
 	      # modify the status line
-              $status_label->configure( -foreground => 'blue' ); 		
+              $status_label->configure( -foreground => 'blue' );
 	      $CURRENT_STATUS = "FITS Editor $VERSION - " .
 	                        "no file selected";
               $MW->update;
-		 
+
               # grab a new file list
 	      @file_list = ();
 	      @file_list = grep !/^\./, readdir *DIR;
               @file_list = sort ( @file_list );
               $working_directory = $new_directory;
               $old_directory = $working_directory;
-	      closedir *DIR; 
-	 }	 	  
+	      closedir *DIR;
+	 }
 };
-	    
+
 # anonymous sub-routine to update the header pane
 $update_window = sub {
 
@@ -922,32 +924,32 @@ $update_window = sub {
            for my $i ( 0 .. scalar(@$number)-1 ) {
 
               # value widgets
-              $$val_widget[$i]->bind( "<Return>", 
-              sub {	
-	
+              $$val_widget[$i]->bind( "<Return>",
+              sub {
+
 	         $cards[$i]->value($$header_value[$i]);
 
 	         # rebuild the keyword widget
                  &$update_window;
-           
+
 	      } ) if defined $$val_widget[$i];
 
-              # comment widgets	
-              $$com_widget[$i]->bind( "<Return>", 
-              sub {	
-	
+              # comment widgets
+              $$com_widget[$i]->bind( "<Return>",
+              sub {
+
 	         $cards[$i]->comment($$header_comment[$i]);
 
 	         # rebuild the keyword widget
                  &$update_window;
-	   
+
 	      } )  if defined $$com_widget[$i];
            }
-                 	
+
            # activate the "Commit Changes" button
 	   $save_button->configure( -state => 'normal' );
            $menus[0]->menu()->entryconfigure( 1, -state => 'normal' );
-	   	   
+
 };
 
 
@@ -961,23 +963,23 @@ $rebuild_widgets = sub {
       $$val_widget[$i]->destroy if defined $$val_widget[$i];
       $$com_widget[$i]->destroy if defined $$com_widget[$i];
    }
-   # undef the destroyed widgets 
+   # undef the destroyed widgets
    @$number = ();
    @$key_widget = ();
-   @$val_widget = (); 
+   @$val_widget = ();
    @$com_widget = ();
    $blank = ();
-    
+
    # pull the FITS cards from the header
    @cards = $header->allitems();
    ( $FILE_TYPE, my $dummy ) = split( /,/, $FILE_TYPE );
    $FILE_TYPE = $FILE_TYPE . ', Cards: ' . $#cards . ' ';
-    	   
-   # display the header inside the keyword_widget Tk::Pane	  
+
+   # display the header inside the keyword_widget Tk::Pane
    ( $number, $key_widget, $val_widget, $com_widget, $blank,
      $header_value, $header_comment  ) =
 	        editor_display_header( \@cards, $keyword_widget, $font );
-                 	
+
 };
 
 # P A C K  M A I N  W I N D O W ---------------------------------------------
@@ -1010,16 +1012,16 @@ if ( defined $opt{"dir"} ) {
    @file_list = grep !/^\./, readdir *DIR;
    @file_list = sort ( @file_list );
    closedir *DIR;
-   $old_directory = $working_directory;     
+   $old_directory = $working_directory;
 };
 
 
 # Set selected file if -file option used
 if ( defined $opt{"file"} ) {
     $file_select = [ $opt{"file"} ];
-    &$read_file 
-}; 
-    
+    &$read_file
+};
+
 # Enter the Tk mainloop
 MainLoop();
 

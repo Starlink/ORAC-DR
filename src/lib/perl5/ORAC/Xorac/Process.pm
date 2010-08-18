@@ -2,7 +2,7 @@ package ORAC::Xorac::Process;
 
 # ---------------------------------------------------------------------------
 
-#+ 
+#+
 #  Name:
 #    ORAC::Xorac::Process
 
@@ -33,7 +33,7 @@ package ORAC::Xorac::Process;
 use warnings;
 use strict;                  # smack! Don't do it again!
 use Carp;                    # Transfer the blame to someone else
-  
+
 # P O D  D O C U M E N T A T I O N ------------------------------------------
 
 =head1 NAME
@@ -67,7 +67,7 @@ All Rights Reserved.
 
 =cut
 
-# L O A D  M O D U L E S --------------------------------------------------- 
+# L O A D  M O D U L E S ---------------------------------------------------
 
 #
 #  ORAC modules
@@ -116,41 +116,41 @@ sub xorac_start_process {
     unless scalar(@_) == 6;
 
   # Read the argument list
-  my ( $options, $inst_select, $CURRENT_RECIPE, 
+  my ( $options, $inst_select, $CURRENT_RECIPE,
        $Override_Recipe, $obs, $fatal_dialog ) = @_;
 
   ####### C H E C K  E N V I R O N M E N T  V A R I A B L E S ################
 
   # Simply exit if the environment variable is not set, this should not occur
-  unless (exists $ENV{"ORAC_INSTRUMENT"}) 
+  unless (exists $ENV{"ORAC_INSTRUMENT"})
   {
      orac_err(" No instrument specified in \$ORAC_INSTRUMENT.\n");
      return;
   }
-  
+
   my $instrument = uc($ENV{"ORAC_INSTRUMENT"});
 
   # Get class definitions for this instrument
   my ($frameclass, $groupclass, $calclass, $instclass) =
                          orac_determine_inst_classes( $instrument );
   return unless defined $frameclass;
-  
+
   # Create a new instrument object
   my $InstObj = new $instclass;
- 
+
   ############# O P T I O N  H A N D L I N G #################################
- 
+
   # Turn on -w supprt
-  if ( ${$options}{"warn"} ) {  
+  if ( ${$options}{"warn"} ) {
     $^W=1;
     if (${$options}{"verbose"}) {
        eval "use diagnostics;";
     }
   }
- 
+
   ########## O R A C - D R  C O N F I G U R A T I O N ########################
 
-  unless (exists $ENV{"ORAC_DIR"}) 
+  unless (exists $ENV{"ORAC_DIR"})
   {
      orac_err(" ORAC_DIR environment variable not defined. Aborting.");
      return;
@@ -162,30 +162,30 @@ sub xorac_start_process {
 
      # change to output  dir
      chdir($ENV{"ORAC_DATA_OUT"}) ||
-       do { 
+       do {
          orac_err(" Could not change directory to ORAC_DATA_OUT: $!");
          return;
        };
 
-  } 
-  else 
+  }
+  else
   {
      orac_err(" ORAC_DATA_OUT environment variable not set. Aborting\n");
      return;
   }
-  
+
   ############### C H E C K  I N P U T  D I R E C T O R Y ####################
 
-  if (exists $ENV{"ORAC_DATA_IN"}) 
+  if (exists $ENV{"ORAC_DATA_IN"})
   {
-     unless (-d $ENV{"ORAC_DATA_IN"}) 
+     unless (-d $ENV{"ORAC_DATA_IN"})
      {
      orac_err(" ORAC_DATA_IN directory ($ENV{ORAC_DATA_IN}) does not exist.\n");
      return;
      }
-  
-  } 
-  else 
+
+  }
+  else
   {
      orac_err(" ORAC_DATA_IN environment variable not set. Aborting\n");
      return;
@@ -199,34 +199,34 @@ sub xorac_start_process {
   $log_options = $log_options . "f" if( ${$options}{"log_file"} == 1);
   $log_options = $log_options . "s" if( ${$options}{"log_screen"} == 1);
   $log_options = $log_options . "x" if( ${$options}{"log_xwin"} == 1);
-    
-  # create a new toplevel window for the log frames 
+
+  # create a new toplevel window for the log frames
   if ( $log_options =~ /x/ )
   {
       $TL = ORAC::Event->query("Tk")->Toplevel();
       ORAC::Event->register("TL"=>$TL);
-      $win_str = "TL";   
+      $win_str = "TL";
       $TL->title("Xoracdr Log Window");
       $TL->iconname("Log Window");
       $TL->geometry("+160+60");
   }
 
   # start print system, pass $TL
-  my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+  my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
        $PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
 
-  try 
+  try
   {
-    ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+    ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
       $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
         orac_print_configuration(
-				 $log_options, $win_str, 
+				 $log_options, $win_str,
 				 $CURRENT_RECIPE,
 				 [ 'xoracdr' ],
 				 %$options
 				);
   }
-  catch ORAC::Error::FatalError with 
+  catch ORAC::Error::FatalError with
   {
       my $Error = shift;
       $Error->throw;
@@ -242,14 +242,14 @@ sub xorac_start_process {
      throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
   };
   $$CURRENT_RECIPE = "Starting pipeline";
-  
+
   ######################## M E S S A G E  S Y S T E M S #######################
 
   # pre-launch message system
   try {
      orac_message_launch( ${$options}{"nomsgtmp"}, ${$options}{"verbose"} );
   }
-  catch ORAC::Error::FatalError with 
+  catch ORAC::Error::FatalError with
   {
      my $Error = shift;
      $Error->throw;
@@ -264,19 +264,19 @@ sub xorac_start_process {
      my $Error = shift;
      throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
   };
-    
+
   ######################## A L G.   E N G I N E S #############################
 
   # start algorithim engines
   my $Mon;
-  
+
   try {
      $Mon = orac_start_algorithm_engines( ${$options}{"noeng"}, $InstObj );
   }
-  catch ORAC::Error::FatalError with 
+  catch ORAC::Error::FatalError with
   {
      my $Error = shift;
-     $Error->throw;     
+     $Error->throw;
   }
   catch ORAC::Error::UserAbort with
   {
@@ -302,37 +302,37 @@ sub xorac_start_process {
 
   # start the display
   my $Display = orac_start_display( ${$options}{"nodisplay"} );
-  
+
   ######################## C A L I B R A T I O N ##############################
 
   # Calibration frame overrides
   my $Cal = orac_calib_override($calclass, ${$options}{"calib"} );
-  
+
   ################## P R O C E S S  A R G U M E N T  L I S T ##################
 
   # Generate list of observation numbers to be processed
   # This is related to looping scheme
-  my $loop =  
+  my $loop =
     orac_process_argument_list( $frameclass, $obs, %$options );
- 
+
   ##################### L O O P I N G  S C H E M E ############################
 
   # Decide on a looping scheme
   $loop = "orac_loop_" . ${$options}{"loop"} if defined ${$options}{"loop"};
 
   ########################## D A T A   L O O P ################################
- 
-  # Over ride recipe 
+
+  # Over ride recipe
   my $Use_Recipe;
   if ( defined $options->{override} && ${$options}{"override"} == 1 ) {
      $Use_Recipe = $$Override_Recipe;
   } else {
-     undef $Use_Recipe; 
+     undef $Use_Recipe;
   }
-      
+
   # Call the main data processing loop
   try {
-     orac_main_data_loop( ${$options}{"batch"}, ${$options}{"ut"}, 
+     orac_main_data_loop( ${$options}{"batch"}, ${$options}{"ut"},
                           ${$options}{"resume"}, ${$options}{"skip"},
 	   	          ${$options}{"debug"}, $options->{recsuffix},
                           $options->{grptrans},$loop, $frameclass, $groupclass,
@@ -342,7 +342,7 @@ sub xorac_start_process {
      orac_print ("Pipeline processing complete\n", "green");
      return;
   }
-  catch ORAC::Error::FatalError with 
+  catch ORAC::Error::FatalError with
   {
      my $error = shift;
      $fatal_dialog->configure( -text => "Error: $error" );
@@ -351,20 +351,20 @@ sub xorac_start_process {
   }
   catch ORAC::Error::UserAbort with
   {
-  
+
      my $error = shift;
      return;
   }
   otherwise
   {
      my $error = shift;
-     
+
      $fatal_dialog->configure( -text => "Croak: $error" );
      $fatal_dialog->Show;
      return;
   };
 
- 
+
 }
 
 =back

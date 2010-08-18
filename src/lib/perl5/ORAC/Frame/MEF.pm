@@ -18,9 +18,9 @@ knowledge of the MEF file format rather than generic methods or
 methods that require knowledge of a specific instrument.  In general,
 the specific instrument sub-classes will inherit from the file type
 (which inherits from ORAC::Frame) rather than directly from
-ORAC::Frame. 
+ORAC::Frame.
 
-The format specific sub-classes do not contain constructors; they 
+The format specific sub-classes do not contain constructors; they
 should be defined in either the base class or the instrument specific
 sub-class.
 
@@ -103,10 +103,10 @@ sub new {
     # Currently the argument will be the filename.
     # If there are two args this becomes a prefix and number
     $self->configure(@_) if @_;
- 
+
    return $self;
- 
-}                    
+
+}
 
 =back
 
@@ -154,11 +154,11 @@ sub subfrmnumber {
 
 =head2 General Methods
 
-=over 4    
+=over 4
 
 =item B<file_exists>
 
-Checks for the existence of the frame file(). 
+Checks for the existence of the frame file().
 
   $exists = $Frm->file_exists()
 
@@ -213,7 +213,7 @@ is the prefix and argument 2 is the observation number.
 sub configure {
     my $self = shift;
 
-    # If two arguments (prefix and number) 
+    # If two arguments (prefix and number)
     # have to find the raw filename first
     # else assume we are being given the raw filename
 
@@ -226,27 +226,27 @@ sub configure {
     } else {
 	croak 'Wrong number of arguments to configure: 1 or 2 args only';
     }
-    
+
     # Set the filename
 
     $self->file($fname);
 
     # Set the raw data file name
-    
+
     $self->raw($fname);
 
     # Populate the header
-    
+
     $self->readhdr;
 
     # Right, how many extensions where there?  Get the FITS header structure
-    # from this file.  Look at the number of sub-images. 
+    # from this file.  Look at the number of sub-images.
 
     my $fitsobj = $self->fits;
     my @allextn = $fitsobj->subhdrs;
     my $nsubs = @allextn;
 
-    # If there are no sub-images, then you have a simple fits file here.  
+    # If there are no sub-images, then you have a simple fits file here.
     # Create a duplicate of the PHU in the first extension.  This simplifies
     # recipes that loop over all image extensions
 
@@ -276,9 +276,9 @@ sub configure {
     }
     $self->findgroup;
     $self->findrecipe;
-        
+
     # Return something
-    
+
     return 1;
 }
 
@@ -328,7 +328,7 @@ sub findnsubs {
 =head1 PRIVATE METHODS
 
 The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
+They are included here so that authors of derived classes are
 aware of them.
 
 =over 4

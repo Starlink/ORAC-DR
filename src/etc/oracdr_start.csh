@@ -144,7 +144,7 @@ if ( -e $starperl ) then
     # Extract the document numbers.
     set doc_numbers = `echo ${ORAC_SUN} | awk '{i=1;while(i<=split($0,a,",")){print a[i];i++}}'`
 
-    # Form concatenated instruction giving options for finding documentation. 
+    # Form concatenated instruction giving options for finding documentation.
     set doc_command = "'showme sun$doc_numbers[1]'"
     shift doc_numbers
     foreach doc ( $doc_numbers )

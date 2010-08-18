@@ -177,13 +177,13 @@ sub skydipindex {
 
 Set (or retrieve) the name of the system to be used for
 tau determination. Allowed values are 'CSO', 'SKYDIP',
-'850SKYDIP' or a number. Currently the number is assumed to be the 
+'850SKYDIP' or a number. Currently the number is assumed to be the
 CSO tau since this number is independent of wavelength.
 'INDEX' is an allowed synonym for 'SKYDIP'. '850SKYDIP'
 mode uses the results of 850 micron skydips from index
 files to derive the opacity for the requested wavelength.
 
-Additionally, modes 'DIPINTERP' and '850DIPINTERP' can be 
+Additionally, modes 'DIPINTERP' and '850DIPINTERP' can be
 used to interpolate the current tau from skydips taken
 either side of the current observation.
 
@@ -257,7 +257,7 @@ Return the flux of a calibrator source
   $flux = $Cal->fluxcal("sourcename", "filter", $ismap);
 
 The optional third argument is used to specify whether a map
-flux (ie total integrated flux) is required (true), or 
+flux (ie total integrated flux) is required (true), or
 simply a flux in beam (used for photometry). Default is to
 return flux in beam. This should return the same answer if the
 calibrator is a point source.
@@ -372,7 +372,7 @@ sub fluxcal {
 
 =item B<gain>
 
-Method to return the current gain (aka 'flux conversion factor') 
+Method to return the current gain (aka 'flux conversion factor')
 for the specified filter that is usable for the current frame.
 
 C<undef> is returned if no gain can be determined.
@@ -390,7 +390,7 @@ gain is lower than jiggle map gain).
 
 If gains() is set to INDEX the index will be searched for a calibration
 observation that matches the observation mode (ie Chop throw, sample
-mode, observing mode agree). 
+mode, observing mode agree).
 
 The current index system refuses to continue if a calibration can
 not be found. In future this may well be changed so that the
@@ -641,7 +641,7 @@ sub tau {
       # Need to loop over all 850 filters until we find one that
       # returns a match. In principal, we should search for all filters
       # and then determine the closest (either by using a clever rules
-      # file or by searching multiple times and storing the time 
+      # file or by searching multiple times and storing the time
       # difference). In practice, you very really mix 850W skydips with
       # 850N skydips within a single night.
 
@@ -919,14 +919,14 @@ sub _search_skydip_index {
     } else {
 
       orac_warn "Cannot interpolate - can not find suitable skydips on both sides of this observation\nUsing a single value...\n";
-	
+
       # If only one is defined, use that tau
       $tau = undef;
       $tau = $low_ent->{TAUZ} if defined $low_ent;
       $tau = $high_ent->{TAUZ} if defined $high_ent;
 
       # If none are defined - tau is undef anyway
-	
+
     }
 
 
@@ -993,7 +993,7 @@ sub _get_default_fcf {
   # Get the array
   my $details = $FCFS{$filter};
 
-  # Now we step through the array until we find an entry that 
+  # Now we step through the array until we find an entry that
   # corresponds to the requested time
   my $match;
   my $infstart = 19900101; # infinity low and high

@@ -33,5 +33,5 @@ Malcolm J. Currie <mjc@star.rl.ac.uk>
 
 =cut
 
- 
+
 1;

@@ -194,7 +194,7 @@ to launching a new display device (ie running up GAIA itself).
 For GAIA (V E<lt>= 2.3-2) the device name ($name) must be an integer.
 (enforced if the newdev() method is used).
 
-ORAC status is returned. 
+ORAC status is returned.
 
 =cut
 
@@ -213,7 +213,7 @@ sub create_dev {
   # With v2.3-2 of GAIA the automatic naming of clones does not
   # work correctly so we must name them explicitly. Integers are expected.
   # Now clone the window and grab the result
-  my ($status, $clone) = 
+  my ($status, $clone) =
     $self->send_to_gaia("$base noblock_clone $name $image");
 
   if ($status != ORAC__OK) {
@@ -223,7 +223,7 @@ sub create_dev {
     return ORAC__ERROR;
   } else {
     # Now store the clone window
-    $self->dev($win, $clone);    
+    $self->dev($win, $clone);
   }
 
   # Wait for GAIA to configure itself
@@ -353,8 +353,8 @@ sub _open_gaia_socket {
       print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
       close $fh;
 
-      # We are allowed to try and connect to this gaia if we 
-      # can talk to remote gaias or if the host mentioned in the 
+      # We are allowed to try and connect to this gaia if we
+      # can talk to remote gaias or if the host mentioned in the
       # file matches the host we are running on
       if ($self->use_remote_gaia || $host =~ /$localhost/) {
 
@@ -410,7 +410,7 @@ Returns ORAC status.
 sub configure {
 
   my $self = shift;
-  
+
   my $startup = "$ENV{ORAC_DIR}/images/orac_start.sdf";
 
   # Need to retrieve the name of the default window from
@@ -424,7 +424,7 @@ sub configure {
     return ORAC__ERROR;
   }
 
-  # Now we need to split this return string on spaces and 
+  # Now we need to split this return string on spaces and
   # get the first image name
   my $default = (split(/\s+/,$gaia_objects))[0];
 
@@ -457,7 +457,7 @@ sub configure {
   }
 
 
-  # Expect $default to have the form .xxxn.image where 
+  # Expect $default to have the form .xxxn.image where
   # .nnn is .rtdN for older gaias and .gaiaN for newer
   # versions (those with contouring >= 2.3-0). Split on second '.'
   # Use split rather than substr since we cant guarantee the length
@@ -586,7 +586,7 @@ sub send_to_gaia {
 
     ($status, my $nbytes) = split /\s/, $result,2;
     print "completed receive of status and byte length...\n" if $DEBUG;
-    print "Command number = $i  Status $status NBytes $nbytes\n" 
+    print "Command number = $i  Status $status NBytes $nbytes\n"
       if $DEBUG;
 
 
@@ -623,7 +623,7 @@ sub send_to_gaia {
     push (@results, $message);
     print "results received for command $i: $message\n" if $DEBUG;
   }
-  
+
   # Translate status code
   if ($status == 0) {
     $status = ORAC__OK;
@@ -701,7 +701,7 @@ sub image {
 
 
   # Check file for extension. If this is a MEF then escape the square brackets
-  # so that the extension number is interpreted properly. Also bump up the 
+  # so that the extension number is interpreted properly. Also bump up the
   # value of the extension number as GAIA starts from 1 rather than 0 like
   # everyone else...
 
@@ -716,7 +716,7 @@ sub image {
     }
   }
 
-  # We probably should append the full path since we dont know 
+  # We probably should append the full path since we dont know
   # which directory gaia will use be default
   # Check for a leading '/' indicating a full path name
   # use getcwd because cwd sometimes doesn't work on alpha
@@ -751,7 +751,7 @@ sub image {
   # and convert it into a device id
   my $device = $self->window_dev($window);
 
-  # Need to test that the device actually exists even if gaia 
+  # Need to test that the device actually exists even if gaia
   # is running
   my ($status, $exists) = $self->send_to_gaia("winfo exists $device");
 
@@ -785,7 +785,7 @@ sub image {
     $device = $self->window_dev($window); # Get an updated device name
   }
 
-  
+
   # We now need to retrieve the image id associated with this
   # clone from gaia
   ($status, my $image) = $self->send_to_gaia("$device get_image");

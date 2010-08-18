@@ -58,7 +58,7 @@ GetOptions( "date1:s" => \$before,
             "date2:s" => \$after );
 
 # Validate that two dates were supplied.
-unless ( defined( $before ) && defined( $after ) ) { 
+unless ( defined( $before ) && defined( $after ) ) {
    die "Two dates should be supplied on the command line using " .
        "--date1 and --date2 options.\n";
 }

@@ -71,7 +71,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::CGS4("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
-'c' prefix although these can be overriden with the 
+'c' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut
@@ -151,7 +151,7 @@ sub configure {
   $self->raw($fname);
 
   # The number of sub frames is difficult. The .HEADER should not be
-  # included but in chopped observations we want to use .INBEAMA/B 
+  # included but in chopped observations we want to use .INBEAMA/B
   # instead of just .I1. To get around this problem findubs() populates
   # an internal data structure that will contain all the names we are
   # interested in.

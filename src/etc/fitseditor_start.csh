@@ -1,5 +1,5 @@
 
-#+ 
+#+
 #  Name:
 #    fitseditor_start.csh
 
@@ -72,7 +72,7 @@ if (-e $STARPERL ) then
   if ( $#args > 0  ) then
     while ( $#args > 0 )
        set editor_args = "${editor_args} $args[1]"
-       shift args       
+       shift args
     end
   endif
 

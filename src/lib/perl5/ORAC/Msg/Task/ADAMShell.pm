@@ -24,12 +24,12 @@ ORAC::Msg::Task::ADAMShell - Run ADAM tasks from unix shell
 
 Run ADAM tasks from the unix shell. Does not use a messaging system
 but does attempt to provide a standard ORAC messaging interface.
-This is intended as a test system to show the flexibility of the 
+This is intended as a test system to show the flexibility of the
 interface and as a backup if ADAM messaging is unavailable for some
 reason.
 
 The main limitation is that status handling is very poor.
-Can only check for shell bad status since Starlink tasks do 
+Can only check for shell bad status since Starlink tasks do
 not return bad status when run from the unix shell.
 
 =head1 METHODS
@@ -118,7 +118,7 @@ private.
 # Store and access the messaging name
 # Not overly useful but keep it any way
 
-sub name {  
+sub name {
   my $self = shift;
   if (@_) { $self->{Name} = shift; }
   return $self->{Name};
@@ -151,7 +151,7 @@ should operate.
   ($cwd, $status) = $obj->cwd("newdir")
   ($cwd, $status) = $obj->cwd;
 
-If the specified directory does not exist, bad status is 
+If the specified directory does not exist, bad status is
 returned and the cwd is not changed.
 
 =cut
@@ -161,12 +161,12 @@ sub cwd {
   my $status = ORAC__OK;
 
   # Supply an argument
-  if (@_) { 
+  if (@_) {
     my $cwd = shift;
 
     # Check that the directory exists
     if (-d $cwd) {
-      $self->{Cwd} = $cwd; 
+      $self->{Cwd} = $cwd;
     } else {
       $status = ORAC__ERROR;
     }
@@ -188,7 +188,7 @@ sub cwd {
 =item B<load>
 
 Initialise the monolith into the object. What this really
-does is store the directory of the monolith 
+does is store the directory of the monolith
 so that it can be run and so that we can determine
 which tasks are linked to it.
 
@@ -205,7 +205,7 @@ sub load {
   $self->name($name);
 
   # A further argument (optional) will be the monolith name
-  if (@_) { 
+  if (@_) {
     my $monolith = shift;
 
     # Need to separate monolith name from the path
@@ -234,12 +234,12 @@ Return the shell exit status.
 
   $status = obeyw("task", "arguments");
 
-Full path to "task" is not required since this was setup 
+Full path to "task" is not required since this was setup
 when the object was initialised via load().
 
 Note that currently we have no control over the output
 messages. It is conceivable that I could at least
-redirect to /dev/null if a flag was set in the 
+redirect to /dev/null if a flag was set in the
 ControlSH module.
 
 =cut
@@ -278,7 +278,7 @@ sub obeyw {
   # A more general answer using minimal matching is
 
   # dont know what happens if you didnt want your single quote quoted :-)
-  $args =~ s/\'(.*?)\'/\"$&\"/g; 
+  $args =~ s/\'(.*?)\'/\"$&\"/g;
 
   my $exstat = system("$command $args");
 
@@ -449,7 +449,7 @@ Requires the C<NDF>, C<Cwd> and C<File::Basename> modules.
 
 =head1 SEE ALSO
 
-L<perl>, 
+L<perl>,
 L<ORAC::Msg::Task::ADAM>
 
 =head1 COPYRIGHT

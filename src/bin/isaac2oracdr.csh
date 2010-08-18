@@ -16,7 +16,7 @@
 
 #  Description:
 #     This script processes all the ISAAC*.FITS files in the current
-#     working directory each forming an NDF suitable for use by the 
+#     working directory each forming an NDF suitable for use by the
 #     ORAC-DR imaging pipeline.
 #
 #     The NDFs are named isaac<date>_<observation_number>.  The UT
@@ -121,7 +121,7 @@
        set hour = `echo $arcname | awk '{print substr($0,18,2)}'`
        set min = `echo $arcname | awk '{print substr($0,21,2)}'`
        set sec = `echo $arcname | awk '{print substr($0,24,6)}'`
-       set htime = `calc \"$hour+$min/60.0+$sec/3600.0\"` 
+       set htime = `calc \"$hour+$min/60.0+$sec/3600.0\"`
        echo "Date is $date   Time is $htime"
 
 # Determine the file name (from UT date and observation number).
@@ -337,7 +337,7 @@ EOF
        set previous_type = $type
        set previous_name = $name
     end
-    
+
 EXIT:
 
 #  Remove any intermediate files.

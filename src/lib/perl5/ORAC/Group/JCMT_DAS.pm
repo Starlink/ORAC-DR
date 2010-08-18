@@ -87,9 +87,9 @@ sub new {
 
 This is an extension to the default file() method.
 This method accepts a root name for the group file
-(independent of sub-instrument) - same as for the base 
+(independent of sub-instrument) - same as for the base
 class. If a number is supplied the root name is returned
-with the appropriate extension relating to the 
+with the appropriate extension relating to the
 sub-instrument order in the current frame.
 
 The number to sub-instrument conversion uses the last frame in the
@@ -214,9 +214,9 @@ sub gui_id {
 
 This method returns the number of files currently associated
 with the group. What this in fact means is that it returns
-the number of files associated with the last member of the 
+the number of files associated with the last member of the
 group (since that is how I construct output names in the
-first place). grpoutsub() method is responsible for 
+first place). grpoutsub() method is responsible for
 converting this number into a filename via the file() method.
 
 =cut

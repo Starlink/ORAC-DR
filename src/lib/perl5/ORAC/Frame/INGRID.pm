@@ -35,7 +35,7 @@ use ORAC::General;
 # Let the object know that it is derived from ORAC::Frame;
 use base  qw/ORAC::Frame::CGS4/;
 
-# NDF module and object-copying task for inout. 
+# NDF module and object-copying task for inout.
 use NDF;
 use Starlink::HDSPACK qw/copobj/;
 
@@ -225,7 +225,7 @@ sub inout {
    my $suffix = shift;
 
 # Read the number.
-   my $num = 1; 
+   my $num = 1;
    if (@_) { $num = shift; }
 
    my $infile = $self->file($num);

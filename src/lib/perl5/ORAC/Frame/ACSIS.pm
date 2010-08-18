@@ -306,13 +306,13 @@ Similar to base class except the frame number is appended to the output suffix.
 =cut
 
 sub inout {
-  my $self = shift;                     
-  my $suffix = shift;      
+  my $self = shift;
+  my $suffix = shift;
   my $number = shift;
   if (defined $number) {
-    $suffix .= sprintf( "%03d", $number );                                                        
+    $suffix .= sprintf( "%03d", $number );
   }
-  return $self->SUPER::inout( $suffix, (defined $number ? $number : () ) );             
+  return $self->SUPER::inout( $suffix, (defined $number ? $number : () ) );
 }
 
 =item B<pattern_from_bits>

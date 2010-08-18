@@ -1,5 +1,5 @@
 
-#+ 
+#+
 #  Name:
 #    picard_start.sh
 
@@ -61,7 +61,7 @@ if test -z "${ORAC_LOGDIR}"; then
 fi
 
 if test -e $starperl; then
-  
+
   exec $starperl ${ORAC_DIR}/bin/picard ${1+"$@"}
 
 else

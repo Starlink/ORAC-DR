@@ -45,7 +45,7 @@ The routine returns when all the last monolith can be contacted
 (so requires that messaging has been initialised before this
 routine is called).
 
-IRCAM uses PHOTOM (photom_mon), CCDPACK (ccdpack_red, ccdpack_res, 
+IRCAM uses PHOTOM (photom_mon), CCDPACK (ccdpack_red, ccdpack_res,
 ccdpack_reg), KAPPA (kappa_mon, ndfpack_mon), POLPACK (polpack_mon),
 CURSA (catselect) and PISA (pisa_mon).
 

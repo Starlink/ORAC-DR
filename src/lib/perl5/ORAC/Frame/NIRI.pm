@@ -72,7 +72,7 @@ sub new {
   # the rawfixedpart and rawsuffix will be undefined.
   my $self = $class->SUPER::new();
 
-  # Configure initial state - could pass these in with 
+  # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
   $self->rawfixedpart('N');
@@ -131,7 +131,7 @@ sub configure {
   $self->raw($fname);
 
   # The number of sub frames is difficult. The .HEADER should not be
-  # included but in chopped observations we want to use .INBEAMA/B 
+  # included but in chopped observations we want to use .INBEAMA/B
   # instead of just .I1. To get around this problem findubs() populates
   # an internal data structure that will contain all the names we are
   # interested in.
@@ -286,7 +286,7 @@ sub flag_from_bits {
   my $obsnum = shift;
 
 
-  # It is almost possible to derive the flag name from the 
+  # It is almost possible to derive the flag name from the
   # file name but not quite. In the NIRI case the flag name
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
 
@@ -354,7 +354,7 @@ and both can be used interchangably for the NIRI subclass.
 
 =cut
 
-sub file_from_bits { 
+sub file_from_bits {
   my $self = shift;
 
   my $prefix = shift;

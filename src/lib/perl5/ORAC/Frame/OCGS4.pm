@@ -70,7 +70,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::OCGS4("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
-'c' prefix although these can be overriden with the 
+'c' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut

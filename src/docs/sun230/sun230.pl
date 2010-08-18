@@ -32,7 +32,7 @@ foreach my $line (<MASTER>) {
 
     my ($key,$doc) = split (':',$line,2);
     chomp($doc);
-    
+
     if ($key =~/HOWTO/) {
 
       copy ($ENV{ORAC_DIR}."/howto/".$doc,"$doc$pod");

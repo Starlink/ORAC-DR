@@ -132,7 +132,7 @@ sub configure {
   $self->raw($fname);
 
   # The number of sub frames is difficult. The .HEADER should not be
-  # included but in chopped observations we want to use .INBEAMA/B 
+  # included but in chopped observations we want to use .INBEAMA/B
   # instead of just .I1. To get around this problem findubs() populates
   # an internal data structure that will contain all the names we are
   # interested in.
@@ -259,7 +259,7 @@ sub flag_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
-  # It is almost possible to derive the flag name from the 
+  # It is almost possible to derive the flag name from the
   # file name but not quite. In the GMOS case the flag name
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
 
@@ -327,7 +327,7 @@ and the two may be used interchangably for GMOS.
 
 =cut
 
-sub file_from_bits { 
+sub file_from_bits {
   my $self = shift;
 
   my $prefix = shift;
@@ -389,7 +389,7 @@ sub inout {
   my $suffix = shift;
 
   # Read the number
-  my $num = 1; 
+  my $num = 1;
   if (@_) { $num = shift; }
 
   my $infile = $self->file($num);

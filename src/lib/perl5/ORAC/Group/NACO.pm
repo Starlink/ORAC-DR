@@ -18,7 +18,7 @@ ORAC::Group::NACO - NACO class for dealing with observation groups in ORAC-DR
 This module provides methods for handling group objects that
 are specific to NACO. It provides a class derived from B<ORAC::Group::ESO>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::NACO> objects. 
+to B<ORAC::Group::NACO> objects.
 
 =cut
 
@@ -53,7 +53,7 @@ sub _to_DEC_SCALE {
    } elsif ( exists ( $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) ) {
       $scale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
    }
-   $scale = defined( $scale ) ? $scale: $scale_def; 
+   $scale = defined( $scale ) ? $scale: $scale_def;
    return $scale;
 }
 
@@ -98,7 +98,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $decoffset = -$x_as * $sinrot + $y_as * $cosrot;
    }
-              
+
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
    return -1.0 * $decoffset;
@@ -171,7 +171,7 @@ sub _to_RA_SCALE {
    } elsif ( exists ( $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) ) {
       $scale = - $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
    }
-   $scale = defined( $scale ) ? $scale: $scale_def; 
+   $scale = defined( $scale ) ? $scale: $scale_def;
    return $scale;
 }
 
@@ -216,7 +216,7 @@ sub _to_RA_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $raoffset = -$x_as * $cosrot + $y_as * $sinrot;
    }
-              
+
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
    return -1.0 * $raoffset;
@@ -315,7 +315,7 @@ sub _to_SPEED_GAIN {
    my $self = shift;
    my $spd_gain = "HighSens";
    my $detector_mode = exists( $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} ) ?
-                       $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} : $spd_gain; 
+                       $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} : $spd_gain;
    if ( $detector_mode eq "HighSensitivity" ) {
       $spd_gain = "HighSens";
    } elsif ( $detector_mode eq "HighDynamic" ) {
@@ -409,5 +409,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

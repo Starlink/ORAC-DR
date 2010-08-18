@@ -94,7 +94,7 @@ Malcolm J. Currie (mjc@star.rl.ac.uk)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2003 Particle Physics and Astronomy Research Council. 
+Copyright (C) 2003 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
 =cut

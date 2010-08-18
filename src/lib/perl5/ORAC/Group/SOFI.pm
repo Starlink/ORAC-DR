@@ -18,7 +18,7 @@ ORAC::Group::SOFI - SOFI class for dealing with observation groups in ORAC-DR
 This module provides methods for handling group objects that
 are specific to SOFI. It provides a class derived from B<ORAC::Group::ESO>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::SOFI> objects. 
+to B<ORAC::Group::SOFI> objects.
 
 =cut
 
@@ -68,7 +68,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $decoffset = -$x_as * $sinrot + $y_as * $cosrot;
    }
-              
+
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
    return -1.0 * $decoffset;
@@ -144,7 +144,7 @@ sub _to_GRATING_DISPERSION {
       }
    }
    return $dispersion;
-}     
+}
 
 sub _to_GRATING_NAME{
    my $self = shift;
@@ -154,7 +154,7 @@ sub _to_GRATING_NAME{
 
 # Name is missing for low resolution.
    } elsif ( $self->_to_FILTER =~ /^G[BR]F/ ) {
-      $name = "LR"; 
+      $name = "LR";
    }
    return $name;
 }
@@ -167,9 +167,9 @@ sub _to_GRATING_WAVELENGTH{
 
 # Wavelength is missing for low resolution.
    } elsif ( $self->_to_FILTER =~ /^GBF/ ) {
-      $wavelength = 1.3; 
+      $wavelength = 1.3;
    } elsif ( $self->_to_FILTER =~ /^GRF/ ) {
-      $wavelength = 2.0; 
+      $wavelength = 2.0;
    }
    return $wavelength;
 }
@@ -181,8 +181,8 @@ sub _to_NUMBER_OF_READS {
       $number = $self->hdr->{"HIERARCH.ESO.DET.NCORRS"};
    }
    return $number;
-}   
-   
+}
+
 # Cater for OBJECT keyword with unhelpful value.
 sub _to_OBJECT {
    my $self = shift;
@@ -255,7 +255,7 @@ sub _to_RA_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $raoffset = -$x_as * $cosrot + $y_as * $sinrot;
    }
-              
+
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
    return -1.0 * $raoffset;
@@ -452,5 +452,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

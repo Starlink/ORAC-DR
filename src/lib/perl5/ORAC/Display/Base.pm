@@ -73,7 +73,7 @@ sub new {
 
 =item B<dev>
 
-Method for handling the hash of device name mapping. ie Which 
+Method for handling the hash of device name mapping. ie Which
 device name (as required for each Display interface, eg '.rtd0',
 'xwindows;$$') is associated with the ORAC name (eg '0','1','default').
 
@@ -95,7 +95,7 @@ Undefined values are accepted.
 =cut
 
 sub dev {
-  
+
   my $self = shift;
 
   # look for arguments
@@ -104,11 +104,11 @@ sub dev {
     my $key = shift;
 
     # look for a value
-    if (@_) {  
-      $self->{Dev}->{$key} = shift; 
+    if (@_) {
+      $self->{Dev}->{$key} = shift;
     }
 
-    # Return the value - stop it creating undef keys 
+    # Return the value - stop it creating undef keys
     if (exists $self->{Dev}->{$key}) {
       return $self->{Dev}->{$key};
     } else {
@@ -140,7 +140,7 @@ their user-defined name with the actual window name.
 
   $name = $self->window_dev('win');
 
-If the windows were launched with bad status we should 
+If the windows were launched with bad status we should
 set the device name to something recognisable as bad
 since status is not returned.
 
@@ -148,14 +148,14 @@ since status is not returned.
 
 sub window_dev {
   my $self = shift;
-  
+
   croak 'Usage: window_dev(win)' unless scalar(@_) == 1;
 
   my $win = shift;
 
   my ($dev, $status);
   $status = ORAC__OK;
-  
+
   # If the key exists already just return the value
   if (defined $self->dev($win)) {
     return $self->dev($win);
@@ -171,7 +171,7 @@ sub window_dev {
   if ($ndev == 1) {
     # We already have a device open.
     # but this window does not map to it
-    
+
     # If the 'default' exists then return that one and associate new
     # window with it
     if (defined $self->dev('default')){
@@ -186,7 +186,7 @@ sub window_dev {
       # and launch it...
       $status = $self->create_dev($win, $dev);
 
-    }  
+    }
   } else {
     # Need to create a new device
     # New device

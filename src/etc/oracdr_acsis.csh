@@ -52,14 +52,14 @@
 #     may have to be set manually after this command is issued.
 #     - aliases are set in the oracdr_start.csh script sourced by
 #     this routine.
- 
- 
+
+
 #  Authors:
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 #     {enter_new_authors_here}
- 
+
 #  History:
 #     07-JUN-2004 (BRADC):
 #        Initial import
@@ -78,12 +78,12 @@
 #        set ORAC_DATA_IN to spectra directory
 #     04-MAY-2007 (TIMJ):
 #        Use of /sbin/ip is non-portable
- 
+
  #  Copyright:
 #     Copyright (C) 1998-2004,2006 Particle Physics and Astronomy Research
 #     Council. Copyright (C) 2007 Science and Technology Facilities
 #     Council. All Rights Reserved.
- 
+
 #-
 
 setenv ORAC_INSTRUMENT ACSIS

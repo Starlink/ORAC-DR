@@ -1,8 +1,8 @@
 #!/bin/csh -f
 
-# Simple script to generate the class documentation from the 
+# Simple script to generate the class documentation from the
 # pods in the correct format. Requires the pod2latex command
-# found in perl 5.7.0 and above (Pod::LaTeX 
+# found in perl 5.7.0 and above (Pod::LaTeX
 # written by Tim Jenness)
 
 # When run, the relevant files are processed by pod2latex into

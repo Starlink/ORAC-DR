@@ -20,7 +20,7 @@ the specific instrument sub-classes will inherit from the file type
 ORAC::Group. For JCMT and UKIRT the group files are based on NDFs and
 inherit from this class.
 
-The format specific sub-classes do not contain constructors; they 
+The format specific sub-classes do not contain constructors; they
 should be defined in either the base class or the instrument specific
 sub-class.
 

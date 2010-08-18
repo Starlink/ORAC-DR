@@ -192,7 +192,7 @@ Obtain the value of a parameter
 
 sub get {
   # Check number of arguments
-  if (scalar(@_) != 3) { 
+  if (scalar(@_) != 3) {
     croak 'get: Wrong number of arguments. Usage: $task->get(\'task\', \'param\')';
   }
 
@@ -259,7 +259,7 @@ Set the value of a parameter
 
 sub set {
   # Check number of arguments
-  if (scalar(@_) != 4) { 
+  if (scalar(@_) != 4) {
     croak 'get: Wrong number of arguments. Usage: $task->set(\'task\', \'param\', \'newvalue\')';
   }
 
@@ -302,7 +302,7 @@ sub control {
   my ($value, $status);
   my $self = shift;
 
-  if (@_) { 
+  if (@_) {
     ($value, $status) = $self->obj->control(@_);
 
     # Convert from ADAM to ORAC status

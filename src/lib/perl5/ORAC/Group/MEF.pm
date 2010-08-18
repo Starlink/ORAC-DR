@@ -17,9 +17,9 @@ knowledge of the MEF file format rather than generic methods or
 methods that require knowledge of a specific instrument.  In general,
 the specific instrument sub-classes will inherit from the file type
 (which inherits from ORAC::Group) rather than directly from
-ORAC::Group. 
+ORAC::Group.
 
-The format specific sub-classes do not contain constructors; they 
+The format specific sub-classes do not contain constructors; they
 should be defined in either the base class or the instrument specific
 sub-class.
 

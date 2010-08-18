@@ -129,7 +129,7 @@ if test "$comma_index" -gt 0; then
    doc_numbers=`echo ${ORAC_SUN} | sed -e 's/,/ /g'`
    doc_num_array=($doc_numbers)
 
-# Form concatenated instruction giving options for finding documentation. 
+# Form concatenated instruction giving options for finding documentation.
    doc_command="'showme sun${doc_num_array[0]}'"
    element_count=${#doc_num_array[@]}
    index=1

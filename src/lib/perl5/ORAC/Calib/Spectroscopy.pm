@@ -174,9 +174,9 @@ sub rows {
 
      my $entry = $self->rowindex->indexentry($rowname);
      # Sanity check
-     croak "BEAMS could not be found in index entry $rowname\n" 
+     croak "BEAMS could not be found in index entry $rowname\n"
        unless (exists $entry->{BEAMS});
-     croak "NBEAMS could not be found in index entry $rowname\n" 
+     croak "NBEAMS could not be found in index entry $rowname\n"
        unless (exists $entry->{NBEAMS});
      $nbeams = $entry->{NBEAMS};
      @beams = @{$entry->{BEAMS}};

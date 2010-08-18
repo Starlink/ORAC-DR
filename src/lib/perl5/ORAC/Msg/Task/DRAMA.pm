@@ -229,7 +229,7 @@ sub obeyw {
 		 -info => \&cbinfo,
 		 -infofull => \&cbinfofull,
 		 -success => sub { $status = ORAC__OK; },
-		 -error => sub { 
+		 -error => sub {
 		   # need to trap BadEng status
 		   $status = _translate_err( $_[2] );
 		   &cberror( $_[1] );
@@ -282,15 +282,15 @@ sub get {
 			     {
 			      -info => \&cbinfo,
 			      -infofull => \&cbinfofull,
-			      -error => sub { 
+			      -error => sub {
 				$status = _translate_err( $_[2] );
-				&cberror( $_[1] ); 
+				&cberror( $_[1] );
 			      },
 			      -timeout => $timeout,
 			     });
 
   # error?
-  return ( wantarray ? ( defined $status ? $status : ORAC__ERROR) : undef ) 
+  return ( wantarray ? ( defined $status ? $status : ORAC__ERROR) : undef )
     if (defined $status || !defined $result);
 
   # reset the status
@@ -351,7 +351,7 @@ sub set {
 		-info => \&cbinfo,
 		-infofull => \&cbinfofull,
 		-timeout => $timeout,
-		-error => sub { 
+		-error => sub {
 		  $status = _translate_err($_[2]);
 		  &cberror( $_[1] );
 		},
@@ -469,7 +469,7 @@ it was started by this object.
 sub DESTROY {
   local($., $@, $!, $^E, $?);
   my $self = shift;
-#  print "IN DESTROY WITH : ". $self->taskname . " using ". 
+#  print "IN DESTROY WITH : ". $self->taskname . " using ".
 #    (defined $self->_pid ? $self->_pid : "<NOT STARTED>") ."\n";
   if (defined $self->_pid) {
     my $pid = $self->_pid;

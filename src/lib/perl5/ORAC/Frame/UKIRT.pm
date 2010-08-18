@@ -167,7 +167,7 @@ sub inout {
   my $suffix = shift;
 
   # Read the number
-  my $num = 1; 
+  my $num = 1;
   if (@_) { $num = shift; }
 
   my $infile = $self->file($num);
@@ -260,5 +260,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

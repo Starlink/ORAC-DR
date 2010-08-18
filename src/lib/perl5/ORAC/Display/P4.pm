@@ -96,7 +96,7 @@ sub new {
   # goes out of scope the P4 monolith will be killed.
   # The assumption is that if the P4 monolith had problems there
   # is no point keeping it around.
-  # A related problem is that once we have tried to launch P4 
+  # A related problem is that once we have tried to launch P4
   # (and managed to start a monolith the first time) the messaging
   # system never gets informed that the monolith died so next time
   # you try it the system thinks P4 is running and so doesn't launch
@@ -174,7 +174,7 @@ each 'win'.
 sub newdev {
   my $self = shift;
   my $win = shift;
-  
+
   my $dev = "xwindows;$$" . "$win" ."xwin";
 
 }
@@ -199,7 +199,7 @@ and allow us to set the window name.
 
 ORAC status is returned.
 
-It may be simpler to just die() if the colour table 
+It may be simpler to just die() if the colour table
 setting fails (ie the device is no good to us).
 
 
@@ -209,7 +209,7 @@ sub create_dev {
   my $self = shift;
   my $window = shift;
 
-  
+
   my $device = $self->window_dev($window);
 
   # Set the device for port_0 for our default display
@@ -229,7 +229,7 @@ sub create_dev {
      die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
 
   }
- 
+
   return ORAC__OK;
 
 }
@@ -283,39 +283,39 @@ sub configure {
 
   # Now configure the noticeboard
   orac_print("Configuring P4 NBS ($nbsname)...",'blue');
- 
+
   $status = $self->obj->obeyw("open_nb","noticeboard=$nbsname reset");
   if ($status != ORAC__OK) {
     orac_err ("Error opening noticeboard\n");
     return $status;
   }
- 
+
   $status = $self->obj->obeyw("restore","file=$ENV{P4_CONFIG}/default.p4 port=-1");
   if ($status != ORAC__OK) {
     orac_err("Error configuring noticeboard\n");
     return $status;
   }
- 
+
   # Print completion message
   orac_print("Done\n",'blue');
- 
+
   # Open local version of noticeboard
   my $Nbs = new Starlink::NBS ($nbsname);
- 
+
   # Check notice board status
   unless ($Nbs->isokay) {
     orac_err("Error opening noticeboard\n");
     return ORAC__ERROR;
   }
- 
+
   # Store the noticeboard object in the object
   $self->nbs($Nbs);
 
   # Set some local values
- 
+
   my $startup = '$ORAC_DIR/images/orac_start';
   $Nbs->poke(".port_0.display_type", "IMAGE");
-  $Nbs->poke(".port_0.display_data", "$startup"); 
+  $Nbs->poke(".port_0.display_data", "$startup");
   $Nbs->poke(".port_1.display_data", '$P4_CT/cgs4');
   $Nbs->poke(".port_2.display_data", '$P4_CT/cgs4');
   $Nbs->poke(".port_3.display_data", '$P4_CT/cgs4');
@@ -328,20 +328,20 @@ sub configure {
   $Nbs->poke(".port_0.plot_axes","0");
 
   # Set the device for port_0 for our default display
-  # This will trigger a launch of the display and 
+  # This will trigger a launch of the display and
   # setting of the LUT.
   my $device = $self->window_dev('default');
   $Nbs->poke(".port_0.device_name", "$device");
 
- 
+
   # Load the colour table and plot the ramp
 #  $status = $self->obj->obeyw("lut","port=0");
 #  if ($status != ORAC__OK) {
 #    orac_err("Error configuring default LUT\n");
 #    return $status;
 #  }
- 
- 
+
+
   my ($data) = $Nbs->peek(".port_0.display_data");  # We know what this is!
 
   # Check for possible corruption of noticeboard
@@ -352,10 +352,10 @@ sub configure {
     orac_err("P4 noticeboard could be corrupt. Continuing...\n");
     $data = $startup;
   }
- 
+
   # Replace $ with \$ for eval during obeyw()
-  $data =~ s/\$/\\\$/g;  
- 
+  $data =~ s/\$/\\\$/g;
+
   # Ask P4 to display
   # This could be done by the 'image' method...
 
@@ -364,17 +364,17 @@ sub configure {
     orac_err("Error displaying startup image\n");
     orac_err("Trying to execute: display data=$data\n");
   }
- 
+
   $status = $self->obj->obeyw("status");
   if ($status != ORAC__OK) {
     orac_err("Error determining P4 status\n");
   }
- 
+
   # Put axes back on the plot
   $Nbs->poke(".port_0.plot_axes", "1");
 
   return $status;
-  
+
 }
 
 
@@ -433,7 +433,7 @@ sub process_options {
   # and convert it into a device id
   my $device = $self->window_dev($window);
 
-  
+
   # Okay so we now have a valid port number
   # construct the noticeboard entry
   my $nbs_name = ".port_$port";
@@ -475,7 +475,7 @@ sub process_options {
     $key eq 'CONTTYPE' && ($$href{'CONTOUR_TYPE'} = $options{CONTTYPE});
 
   }
-  
+
   return $port;
 
 }
@@ -528,7 +528,7 @@ and NDF is assumed.
 sub image {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -539,7 +539,7 @@ sub image {
       %options = %{$opt};
     }
   }
-  
+
   my $port = $self->process_options(%options);
 
   orac_print("IMAGE:....Port is $port\n",'cyan') if $DEBUG;
@@ -571,7 +571,7 @@ and NDF is assumed.
 sub graph {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -582,7 +582,7 @@ sub graph {
       %options = %{$opt};
     }
   }
-  
+
   my $port = $self->process_options(%options);
 
   orac_print("GRAPH:....Port is $port\n",'cyan') if $DEBUG;
@@ -614,7 +614,7 @@ and NDF is assumed.
 sub histogram {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -625,7 +625,7 @@ sub histogram {
       %options = %{$opt};
     }
   }
-  
+
   my $port = $self->process_options(%options);
 
   orac_print("HISTOGRAM:....Port is $port\n",'cyan') if $DEBUG;
@@ -657,7 +657,7 @@ and NDF is assumed.
 sub overgraph {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -668,7 +668,7 @@ sub overgraph {
       %options = %{$opt};
     }
   }
-  
+
   my $port = $self->process_options(%options);
 
   orac_print("OVERGRAPH:....Port is $port\n",'cyan') if $DEBUG;
@@ -700,7 +700,7 @@ and NDF is assumed.
 sub surface {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -711,7 +711,7 @@ sub surface {
       %options = %{$opt};
     }
   }
-  
+
   my $port = $self->process_options(%options);
 
   orac_print("SURFACE:....Port is $port\n",'cyan') if $DEBUG;
@@ -743,7 +743,7 @@ and NDF is assumed.
 sub contour {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -754,7 +754,7 @@ sub contour {
       %options = %{$opt};
     }
   }
-  
+
   my $port = $self->process_options(%options);
 
   orac_print("CONTOUR:....Port is $port\n",'cyan') if $DEBUG;

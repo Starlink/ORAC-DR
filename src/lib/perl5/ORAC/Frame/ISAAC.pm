@@ -91,7 +91,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $decoffset = -$x_as * $sinrot + $y_as * $cosrot;
    }
-              
+
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
    return -1.0 * $decoffset;
@@ -175,23 +175,23 @@ sub _to_GRATING_DISPERSION {
                $dispersion = 7.8e-5;
             } elsif ( $order == 2 ) {
                $dispersion = 1.21e-4;
-            } elsif ( $order == 1 ) {    
-               if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {       
+            } elsif ( $order == 1 ) {
+               if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {
                   my $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"};
                   if ( $filter =~/SL/ ) {
                      $dispersion = 2.52e-4;
-                  } else {       
+                  } else {
                      $dispersion = 2.39e-4;
                   }
                } else {
                  $dispersion = 2.46e-4;
                }
-            }   
+            }
          }
       }
 #   }
    return $dispersion;
-}     
+}
 
 # If the telescope offset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
@@ -235,7 +235,7 @@ sub _to_RA_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $raoffset = -$x_as * $cosrot + $y_as * $sinrot;
    }
-              
+
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
    return -1.0 * $raoffset;

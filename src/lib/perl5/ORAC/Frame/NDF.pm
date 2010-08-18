@@ -20,7 +20,7 @@ the specific instrument sub-classes will inherit from the file type
 ORAC::Frame. For JCMT and UKIRT the group files are based on NDFs and
 inherit from this class.
 
-The format specific sub-classes do not contain constructors; they 
+The format specific sub-classes do not contain constructors; they
 should be defined in either the base class or the instrument specific
 sub-class.
 
@@ -105,7 +105,7 @@ sub erase {
     # does not exist. Assume HDS path
     $status = delete_hdsobj( $file );
 
-    # if this went okay we have to make sure that 
+    # if this went okay we have to make sure that
     # we remove the parent file if this has resulted
     # in an empty HDS container. Only worth checking if
     # we have only 1 dot in the name
@@ -126,7 +126,7 @@ sub erase {
       # Should probably factor this code out of here and ORAC::Frame::CGS4
       hds_open($hdsfile, 'READ', my $loc, $hdsstat);
       if ($hdsstat == &NDF::SAI__OK) {
-	
+
 	# Find out how many we have
 	dat_ncomp($loc, my $ncomp, $hdsstat);
 

@@ -40,7 +40,7 @@ use ORAC::General;
 
 # Let the object know that it is derived from ORAC::Frame::UKIRT;
 use base qw/ORAC::Frame::UKIRT/;
- 
+
 $VERSION = '1.0';
 
 # Create an alias for file_from_bits().
@@ -75,7 +75,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::IRCAM("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
-'ro' prefix although these can be overriden with the 
+'ro' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
 
 =cut
@@ -99,12 +99,12 @@ sub new {
   $self->rawsuffix('.sdf');
   $self->rawformat('NDF');
   $self->format('NDF');
- 
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number.
   $self->configure(@_) if @_;
- 
+
   return $self;
 }
 
@@ -162,9 +162,9 @@ sub flag_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
-  
+
   # flag files for IRCAM of the type .42_ok
-  
+
   my $flag = ".".$obsnum."_ok";
 
 }
@@ -198,5 +198,5 @@ Council. All Rights Reserved.
 
 =cut
 
- 
+
 1;

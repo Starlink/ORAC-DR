@@ -18,7 +18,7 @@ ORAC::Group::CGS4 - CGS4 class for dealing with observation groups in ORAC-DR
 This module provides methods for handling group objects that
 are specific to CGS4. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::CGS4> objects. 
+to B<ORAC::Group::CGS4> objects.
 
 =cut
 

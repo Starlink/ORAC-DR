@@ -51,7 +51,7 @@ use vars qw/ @ISA @EXPORT_OK $VERSION $DEBUG/;
 $DEBUG = 0;
 
 @ISA = qw/ Exporter /;
-@EXPORT_OK = qw/ 
+@EXPORT_OK = qw/
   orac_determine_inst_classes
   orac_determine_initial_algorithm_engines
   orac_determine_recipe_search_path
@@ -101,7 +101,7 @@ END {
 # These should be set to directories that have been created
 # by File::Temp so that they will be tidied automatically
 
-BEGIN { 
+BEGIN {
   # A kluge - for some reason kapview does not pick up the
   # correct environment if I leave out the BEGIN block
   # dont understand since the environment is passed to the forked
@@ -1159,7 +1159,7 @@ sub orac_determine_initial_algorithm_engines {
 
 =item B<orac_configure_for_instrument>
 
-This routines configures the user environment (e.g. %ENV) for the instrument, 
+This routines configures the user environment (e.g. %ENV) for the instrument,
 it is called by Xoracdr to replace functionality present in the c-shell setup scripts.
 
    orac_configure_for_instrument( $instrument, \%options );

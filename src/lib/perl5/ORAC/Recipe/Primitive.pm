@@ -86,7 +86,7 @@ compiled.
 
 sub code {
   my $self = shift;
-  if( @_ ) { 
+  if( @_ ) {
     my $c = shift;
     croak "Not a coderef" unless ref($c) eq "CODE";
     $self->{Code} = $c;
@@ -133,7 +133,7 @@ include any expanded macros inserted by the parser).
 
 sub content {
   my $self = shift;
-  if (@_) { 
+  if (@_) {
     my @lines;
     if (ref($_[0]) && ref($_[0]) eq 'ARRAY') {
       @lines = @{$_[0]};
@@ -157,7 +157,7 @@ Interface is identical to C<content>
 
 sub original {
   my $self = shift;
-  if (@_) { 
+  if (@_) {
     my @lines;
     if (ref($_[0]) && ref($_[0]) eq 'ARRAY') {
       @lines = @{$_[0]};

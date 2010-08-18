@@ -230,7 +230,7 @@ sub messys_active {
 This method is used to set or retrieve the C<preserve> flag. The
 C<preserve> flag controls whether the messys environment variables
 should be left unchanged for initialisation or whether the system
-should be initialised such that it does not interfere with 
+should be initialised such that it does not interfere with
 non-ORAC-DR environments.
 
 The default is that the message system should be initialised such
@@ -364,7 +364,7 @@ sub init_messys {
 
 	# Store it
 	$self->messys( $name, $obj );
-	
+
 	# Configure it
 	$self->configure_messys( $name );
 
