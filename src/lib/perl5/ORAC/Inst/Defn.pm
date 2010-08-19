@@ -593,6 +593,9 @@ to locate recipes for the specified instrument.
 Root location is specified by the C<ORAC_DIR> environment
 variable.
 
+Any instruments that start with "PICARD" will only include
+the PICARD search paths.
+
 =cut
 
 sub orac_determine_recipe_search_path {
@@ -731,7 +734,7 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "SPEX" ) );
     push( @path, $imaging_root );
 
-  } elsif ($inst eq 'PICARD') {
+  } elsif ($inst =~ /^PICARD/) {
     push( @path, File::Spec->catdir( $root, "PICARD" ) );
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
@@ -769,6 +772,14 @@ sub orac_determine_primitive_search_path {
   my $general_root =  File::Spec->catdir( $root, "general" );
   my $casu_root    =  File::Spec->catdir( $root, "casu");
   my $jsa_root     =  File::Spec->catdir( $root, "JSA");
+
+  # If we have a PICARD prefix we put the picard directories
+  # at the start of the search path.
+  my $prepend_picard;
+  if ( $inst =~ /^PICARD_/) {
+    $inst =~ s/^PICARD_//;
+    $prepend_picard = 1;
+  }
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
@@ -912,12 +923,19 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
-  } elsif ($inst eq 'PICARD') {
-    push( @path, File::Spec->catdir( $root, "PICARD" ) );
-    push( @path, File::Spec->catdir( $root, 'SCUBA2') );
-    push( @path, $het_root );
-    push( @path, $jsa_root );
-    push( @path, $general_root );
+  }
+
+  if ($inst eq 'PICARD' || $prepend_picard ) {
+    # Picard on front
+    unshift( @path, File::Spec->catdir( $root, "PICARD" ) );
+
+    # General always comes at end unless it has already been
+    # added
+    my %paths = map { $_, undef } @path;
+
+    push( @path, $general_root )
+      unless exists $paths{$general_root};
+
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }

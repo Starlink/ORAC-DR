@@ -57,7 +57,7 @@ use ORAC::Recipe;
 use ORAC::Loop;                 # Loop control
 use ORAC::Event;                # Tk event
 use ORAC::General;              # parse_* routines
-use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes orac_guess_instrument /;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/; # ORAC status varaibles
 use ORAC::Recipe::Parameters;
@@ -1499,6 +1499,36 @@ sub orac_main_data_loop {
       }
 
     }
+
+    # if we are running PICARD mode we now need to go through each Frame
+    # to see if they are associated with a single known instrument or just
+    # generic
+    if ( $instrument eq 'PICARD' ) {
+      my %instrume_hdr;
+      my $undef_inst = "__UNDEF__";
+      for my $Grp ( @Groups ) { # Should be only one
+        for my $Frm ($Grp->members) {
+          my $inst = orac_guess_instrument( $Frm );
+          print "GUESSED $inst instrument\n";
+          $inst = $undef_inst unless defined $inst;
+          $instrume_hdr{$inst}++;
+        }
+      }
+      my @all_insts = keys %instrume_hdr;
+      if (scalar @all_insts == 1 && $all_insts[0] ne $undef_inst ) {
+        # this is the instrument we should recommend using
+        # But we prefix with "PICARD_" to ensure that the search path
+        # for primitives will include the picard search tree
+        $instrument = "PICARD_". $all_insts[0];
+        $ENV{ORAC_INSTRUMENT} = $instrument;
+
+        # So redefine the calibration object
+        $Cal = orac_calib_override( $calclass, @$opt_calib );
+
+        orac_print( "Overriding PICARD instrument class to $ENV{ORAC_INSTRUMENT}\n", "yellow");
+      }
+    }
+
 
     # Now loop over groups and frames
     foreach my $Grp (@Groups) {
