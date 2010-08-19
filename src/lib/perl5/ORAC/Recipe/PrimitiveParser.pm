@@ -507,7 +507,20 @@ file. Ambiguities are resolved by using the Frame object.
 
 sub _retrieve_relevant_file {
   my $self = shift;
-  my @found = @_;
+  my @allfound = @_;
+
+  # Remove any duplicates
+  my %dupes = map { $_, undef } @allfound;
+
+  # and reconstruct @allfound (retaining order)
+  my @keys = keys %dupes;
+  my @found;
+  for my $f (@allfound) {
+    if (exists $dupes{$f}) {
+      push(@found, $f);
+      delete $dupes{$f};
+    }
+  }
 
   # We now have an array of all possible primitives/recipes that match
   # this name. If we only have one match we can read it without
@@ -587,7 +600,7 @@ sub _retrieve_relevant_file {
         if (exists $best{$obsmode}) {
           $foundpath = $best{$obsmode};
         } else {
-          throw ORAC::Error::FatalError("There were ambiguities in file selection that could not be resolved by an observation mode of '$obsmode'");
+          throw ORAC::Error::FatalError("There were ambiguities in file selection that could not be resolved by an observation mode of '$obsmode' when looking for\n" . join("\n",@_));
         }
 
       }
