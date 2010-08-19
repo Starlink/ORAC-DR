@@ -966,6 +966,9 @@ sub orac_determine_calibration_search_path {
     croak "Unable to determine ORAC_CAL_ROOT location";
   }
 
+  # Remove any PICARD_ prefix
+  $inst =~ s/^PICARD_//;
+
   my $general_ir_root = File::Spec->catdir( $root, "general-IR" );
   my $general_submm_root = File::Spec->catdir( $root, "general-submm" );
   my $general_root = File::Spec->catdir( $root, "general" );
