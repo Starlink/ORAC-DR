@@ -61,6 +61,7 @@ $DEBUG = 0;
   orac_messys_description
   orac_configure_for_instrument
   orac_list_generic_observing_modes
+  orac_guess_instrument
  /;
 
 $VERSION = '1.0';
@@ -1317,6 +1318,59 @@ sub orac_configure_for_instrument {
     $ENV{$k} = $env{$k};
   }
   return;
+}
+
+=item B<orac_guess_instrument>
+
+Given a Frame object (assumed to be a generic type frame with
+a translated FITS header) make a guess at the corresponding
+ORAC_INSTRUMENT that should be used.
+
+  $guess = orac_guess_instrument( $Frm );
+
+Useful for converting a base class or a PICARD variant to
+a specific type.
+
+Returns undef if none can be guessed.
+
+=cut
+
+sub orac_guess_instrument {
+  my $Frm = shift;
+  return unless defined $Frm;
+
+  # Get the instrument name and the backend
+  my $instrument = $Frm->uhdr( "ORAC_INSTRUMENT" );
+  return unless defined $instrument;
+
+  my $backend = $Frm->uhdr( "ORAC_BACKEND" );
+
+  my $oa;
+  if (defined $backend &&
+      ($backend eq 'ACSIS' || $backend eq 'DAS' || $backend eq 'AOSC')) {
+    $oa = "ACSIS";
+  } elsif ($instrument eq 'SCUBA-2') {
+    $oa = 'SCUBA2';
+
+    # Need to know the subsystem which is not a translated property
+    my $hdr = $Frm->hdr;
+    my $subsysnr;
+    if( exists $hdr->{SUBSYSNR} && defined $hdr->{SUBSYSNR}) {
+      $subsysnr = $hdr->{SUBSYSNR};
+    } elsif (exists $hdr->{WAVELEN} && defined $hdr->{WAVELEN} ) {
+      if ( $hdr->{WAVELEN} > 600e-6 ) {
+        $subsysnr = "850";
+      } else {
+        $subsysnr = "450";
+      }
+    }
+    $oa .= "_$subsysnr" if defined $subsysnr;
+  } else {
+    # go with instrument. We can add more clauses as we come across more issues
+    $oa = $instrument;
+  }
+
+  return $oa;
 }
 
 =item B<orac_engine_description>
