@@ -1509,7 +1509,7 @@ sub orac_main_data_loop {
       for my $Grp ( @Groups ) { # Should be only one
         for my $Frm ($Grp->members) {
           my $inst = orac_guess_instrument( $Frm );
-          print "GUESSED $inst instrument\n";
+          orac_debug( "Guessed $inst instrument\n");
           $inst = $undef_inst unless defined $inst;
           $instrume_hdr{$inst}++;
         }
@@ -1522,7 +1522,12 @@ sub orac_main_data_loop {
         $instrument = "PICARD_". $all_insts[0];
         $ENV{ORAC_INSTRUMENT} = $instrument;
 
+        # Override some  class definitions
+        my ($nframeclass, $ngroupclass, $ncalclass, $ninstclass) =
+          orac_determine_inst_classes( $instrument );
+
         # So redefine the calibration object
+        $calclass = $ncalclass;
         $Cal = orac_calib_override( $calclass, @$opt_calib );
 
         orac_print( "Overriding PICARD instrument class to $ENV{ORAC_INSTRUMENT}\n", "yellow");

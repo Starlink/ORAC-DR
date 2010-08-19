@@ -353,6 +353,14 @@ sub orac_determine_inst_classes {
   # The return variables
   my ($frameclass, $groupclass, $calclass, $instclass);
 
+  # If we have a PICARD prefix we put the picard directories
+  # at the start of the search path.
+  my $have_picard;
+  if ( $inst =~ /^PICARD_/) {
+    $inst =~ s/^PICARD_//;
+    $have_picard = 1;
+  }
+
   # Now check for our instrument
   if ($inst eq 'IRCAM') {
     $groupclass = "ORAC::Group::IRCAM";
@@ -529,6 +537,15 @@ sub orac_determine_inst_classes {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
   }
+
+  # if we are in PICARD mode we currently use PICARD
+  # classes for some items. This may change with experience.
+  if ($have_picard) {
+    $groupclass = "ORAC::Group::PICARD";
+    $frameclass = "ORAC::Frame::PICARD";
+    $instclass  = "ORAC::Frame::PICARD";
+  }
+
 
   # The instrument name was valid so
   # read in the instrument specific classs
