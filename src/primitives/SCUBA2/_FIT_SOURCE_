@@ -1,0 +1,392 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_FIT_SOURCE_ - Fit a 2-D profile to a source
+
+=head1 SYNOPSIS
+
+ _FIT_SOURCE_ IMAGE=$Frm->file
+
+ _FIT_SOURCE_ IMAGE=$image XYPOS=\@xypos METHOD=PSF GAUSSIAN=0
+
+=head1 DESCRIPTION
+
+This primitive carries out a fit to a source at a given position using
+either KAPPA C<BEAMFIT> or C<PSF>. The user can also specify the size
+of the fitting area and whether or not to force a Gaussian fit.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<BOX>
+
+Size of square area in pixels in which to carry out the fit. Default
+depends on B<METHOD>. Must be at least 9 for C<BEAMFIT> or 6 for
+C<PSF>.
+
+=item B<GAUSSIAN>
+
+If true (non-zero), then the fit is forced to be a gaussian. Default
+is 1 (true).
+
+=item B<IMAGE>
+
+Name of image to fit source. No default.
+
+=item B<METHOD>
+
+Method for fitting the source. Valid options are C<BEAMFIT> or
+C<PSF>. Default is C<BEAMFIT>. In practice, anything other than C<PSF>
+will implies C<BEAMFIT>.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (print messages).
+
+=item B<XYPOS>
+
+An array reference containing the formatted X, Y coordinates in the
+chosen frame. Default position is (0,0), only useful for images using
+offset coordinate systems.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used.
+
+=over 4
+
+=item KAPPA
+
+BEAMFIT, MATHS, NDFTRACE, PSF
+
+=item ORAC-DR PRIMITIVES
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+Using coordinate frames other than AzEl may cause the fit orientation
+to rotate during the course of an observation.
+
+PSF does not return uncertainties so the results should be examined
+carefully. The RMS of the fit is calculated by this primitive and
+returned in the primitive hash.
+
+=head1 OUTPUT DATA
+
+The following keys are returned in the primitive hash if the fit was
+successful.
+
+=over 4
+
+=item AMPLITUDE
+
+Array reference with the peak signal and its uncertainty in the
+current units.
+
+=item AXISR
+
+Axial ratio of the fit.
+
+=item FIT
+
+Contains 1 on success, 0 on failure. Will be the only entry defined on
+failure.
+
+=item MAJFWHM
+
+Array reference with the FWHM of the major axis and its uncertainty.
+
+=item MINFWHM
+
+Array reference with the FWHM of the minor axis and its uncertainty.
+
+=item ORIENT
+
+Array reference with the fit orientation and its uncertainty, in
+degrees east of north in current coordinate frame
+
+=item POSITION
+
+The X,Y position at which the fit is centred (array reference).
+
+=item RMS
+
+The RMS of the fit, in the current units.
+
+=item TOTALFLUX
+
+Array reference with the total area under fit and its uncertainty, in
+units of AMP*FWHM^2.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+use Astro::SLA qw/ :constants /;
+
+# Mandatory input image
+my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
+# Go no further if no input image was given
+unless (defined $in) {
+  orac_err "Error: _FIT_SOURCE_ requires an image file as input\n";
+  return ORAC__TERM;
+}
+
+# Which method is being used?
+my $fit_method = lc(get_prim_arg($_PRIM_ARGS_, "METHOD", "beamfit"));
+my $use_beamfit = ($fit_method eq "beamfit") ? 1 : 0;
+
+# Size of the region used to carry out the fit. For beamfit, box
+# corresponds directly to the FITAREA parameter, while for psf divide
+# by 2 (and round up) to get the ISIZE parameter. Define the possible
+# default values.
+my $box_default;
+if ($use_beamfit) {
+  $box_default = "!";
+} else {
+  $box_default = 15;
+}
+my $box = get_prim_arg($_PRIM_ARGS_, "BOX", $box_default);
+
+# Check that we have enough good values in the image before attempting
+# to fit the source
+my $minpix;
+_FIND_IMAGE_STATISTICS_ IMAGE=$in
+my $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+my $numpix = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMPIX};
+if ( $box ne "!") {
+  # Check for minimum values
+  if ($use_beamfit) {
+    $box = 9 if ( $box < 9 );
+  } else {
+    $box = 3 if ( $box < 3 );
+  }
+
+  # Define the minimum number of useful pixels as ($box+1)^2
+  $minpix = ($box+1)*($box+1);
+  # Make sure it lies within the bounds of the image though!
+  $minpix = $numpix if ( $minpix > $numpix );
+} else {
+  $minpix = $numgood;
+}
+
+# Should we be verbose? (Default to yes)
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# We now attempt to fit the source
+if ( $numgood >= $minpix ) {
+
+  # Are we forcing a gaussian fit?
+  my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
+
+  # Convert flag to logical
+  $gaussian = ( $gaussian ) ? "true" : "false";
+
+  # Introduce ourselves...
+  orac_print "Fitting source with $fit_method... " if $verbose;
+
+  # Estimated source position - default to 0,0 (inadvisable for
+  # non-offset coordinate systems...)
+  my $xypos = get_prim_arg($_PRIM_ARGS_, "XYPOS", [0,0]);
+
+  # Some temp files required by PSF
+  my $coordfile = new ORAC::TempFile;
+  my $cofile = $coordfile->file;
+  my $psf = new ORAC::TempFile;
+
+  # Set up arguments and parameters to retrieve
+  my @params;
+  my $args = "gauss=$gaussian";
+  if ($use_beamfit) {
+    # Beamfit
+    my $pos = '"'.$xypos->[0].", ".$xypos->[1].'"';
+    my $var = "false";
+    $args .= " ndf=$in mode=interface pos=$pos variance=$var fitarea=$box";
+    @params = qw/ majfwhm minfwhm orient amp centre sum rms gamma /;
+  } else {
+    # PSF
+    my $isize = ($box %2 == 0) ? $box/2 : ($box/2) + 1;
+    print { $coordfile->handle } $xypos->[0]." ".$xypos->[1]. "\n";
+    $coordfile->handle->close;
+    $args .= " norm=no in=$in incat=! device=! isize=$isize cofile=$cofile out=$psf";
+    @params = qw/ fwhm axisr orient amp1 xcen ycen total gamma /;
+  }
+
+  # Run the fitting task
+  my $METHOD_STATUS = $Mon{kappa_mon}->obeyw("$fit_method","$args");
+  my $ORAC_STATUS;
+
+  # Check return status for errors
+  if ( $METHOD_STATUS == ORAC__OK ) {
+    # Retrieve fit parameters
+    ($ORAC_STATUS, my %fitresults) = $Mon{kappa_mon}->mget("$fit_method",@params);
+
+    # Results to store in the primitive hash
+    my (@majfwhm, @minfwhm, @amp, @orient, @gamma, @total, @posn, $axisr, $rms);
+
+    # Format and store the results
+    if ($use_beamfit) {
+      # Beamfit
+      # Read the FWHM and convert to arcsec
+      @majfwhm = map {$_ * DR2AS} @{$fitresults{majfwhm}};
+      @minfwhm = map {$_ * DR2AS} @{$fitresults{minfwhm}};
+
+      orac_err "Beamfit appeared to be successful but no FWHM was derived"
+	if (!defined $minfwhm[0] || !defined $majfwhm[0]);
+
+      # Set axisr to a non-physical value if no fwhm could be obtained
+      $axisr = ( $minfwhm[0] > 0 ) ? $majfwhm[0] / $minfwhm[0] : -1;
+
+      # Amplitude, RMS and orientation with error
+      @amp = @{$fitresults{amp}};
+      @orient = @{$fitresults{orient}};
+      @gamma = @{$fitresults{gamma}};
+      @posn = split(/\s+/, $fitresults{centre}->[0], 2);
+      $rms = $fitresults{rms};
+
+      # Estimate error in total flux assuming uncertainties add in quadrature
+      my $fluxerr = $fitresults{sum} * ( $amp[1]*$amp[1]/($amp[0]*$amp[0]) +
+					 $minfwhm[1]*$minfwhm[1]/($minfwhm[0]*$minfwhm[0]) +
+					 $majfwhm[1]*$majfwhm[1]/($majfwhm[0]*$majfwhm[0])
+				       );
+      @total = ($fitresults{sum}, $fluxerr);
+
+    } else {
+      # PSF - doesn't return errors so assume they're zero
+      @amp = ($fitresults{amp1}, 0);
+      @orient = ($fitresults{orient},0);
+      @gamma = ($fitresults{gamma}, 0);
+      @posn = ($fitresults{xcen}, $fitresults{ycen});
+      $axisr = $fitresults{axisr};
+      # PSF returns FWHM in arcsec
+      @minfwhm = ($fitresults{fwhm}, 0);
+      @majfwhm = ($axisr * $fitresults{fwhm}, 0);
+      @total = ($fitresults{total}, 0);
+
+      # Calculate RMS of PSF fit
+      my $subsq = new ORAC::TempFile;
+      my $exp = "(ia-ib)*(ia-ib)";
+      my $args = "ia=$in ib=$psf out=$subsq exp=$exp";
+      $Mon{kappa_mon}->obeyw("maths","$args");
+      _FIND_IMAGE_STATISTICS_ IMAGE=$subsq VERBOSE=0
+      $rms = sqrt($_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN});
+    }
+
+    # Store results in primitive hash
+    $_PRIM_ARGS_->{AMPLITUDE} = \@amp;
+    $_PRIM_ARGS_->{AXISR}     = $axisr;
+    $_PRIM_ARGS_->{MAJFWHM}   = \@majfwhm;
+    $_PRIM_ARGS_->{MINFWHM}   = \@minfwhm;
+    $_PRIM_ARGS_->{ORIENT}    = \@orient;
+    $_PRIM_ARGS_->{POSITION}  = \@posn;
+    $_PRIM_ARGS_->{GAMMA}     = \@gamma;
+    $_PRIM_ARGS_->{TOTALFLUX} = \@total;
+    $_PRIM_ARGS_->{RMS}       = $rms;
+
+    # Tell user of success if requested
+    if ($verbose) {
+      $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+      ($ORAC_STATUS, my $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+      $units = "unknown" if (!defined $units);
+      my $fwhm1 = sprintf "%5.2f", $minfwhm[0];
+      my $orient = sprintf "%5.2f", $orient[0];
+      my $fwhm2 = sprintf "%5.2f", $axisr*$fwhm1;
+      my $amp1 = sprintf "%5.2e", $amp[0];
+      my $flux1 = sprintf "%5.2e", $total[0];
+      my $gamma = sprintf "%5.2f", $gamma[0];
+
+      # Report correct units for total fluxes if data are calibrated
+      # in (say) mJy/beam, and correct the reported total flux for the
+      # beam area in square arcsec.
+      my $totalunits;
+      if ($units =~ /beam/i) {
+	$totalunits = $units;
+	$totalunits =~ s/\/beam//;
+	# Beam FWHM
+	my $fwhm = $Cal->fwhm;
+	# Beam area in square arcsec
+	my $beamarea = DPI * $fwhm * $fwhm / 4.0;
+	$flux1 = sprintf "%5.2e", ($total[0] / $beamarea);
+      } else {
+	$totalunits = $units . " arcsec**2";
+      }
+      orac_print "Successful fit:\n"
+	."  FWHM = $fwhm1 x $fwhm2 arcsec**2, ORIENT = $orient deg, GAMMA = $gamma\n"
+	."  AMP  = $amp1 $units, TOTAL FLUX = $flux1 ($totalunits)\n"
+	  if ($verbose);
+    }
+    $_PRIM_ARGS_->{FIT} = 1;
+  } elsif ( $METHOD_STATUS == 234127368 ) {
+    # Beamfit error
+    # PDA error status: PDA__FICMX: Failed to invert the curvature
+    # matrix to derive fit errors
+    orac_warn "Fit with $fit_method failed: unable to determine fit errors\n";
+    $_PRIM_ARGS_->{FIT} = 0;
+  } elsif ( $METHOD_STATUS == 233209874 ) {
+    # Beamfit error
+    # PSX error status: PSX__NOALL: Null pointer returned on memory
+    # allocation
+    orac_warn "Fit with $fit_method failed: unable to allocate memory\n";
+    $_PRIM_ARGS_->{FIT} = 0;
+  } elsif ( $METHOD_STATUS == 257327122 ) {
+    # PSF error
+    # KAP__PSFSN: Gaussian fit normal-equation matrix is singular
+    orac_warn "Unable to fit a PSF profile in the current image\n"
+      if $verbose;
+    $_PRIM_ARGS_->{FIT} = 0;
+  } elsif ( $METHOD_STATUS == 257327130 ) {
+    # PSF error
+    # KAP__PSFNO: PSF fit failed because no star(s) were found at the
+    # supplied position(s)
+    orac_warn "No source found at supplied position in the current image\n"
+      if $verbose;
+    $_PRIM_ARGS_->{FIT} = 0;
+  } else {
+    orac_err "Fit with $fit_method failed in an unexpected manner\n";
+    $_PRIM_ARGS_->{FIT} = 0;
+    $ORAC_STATUS = $METHOD_STATUS;
+  }
+
+} else {
+  orac_warn "Insufficient number of good values to fit a profile in the current image\n"
+    if $verbose;
+  $_PRIM_ARGS_->{FIT} = 0;
+}
