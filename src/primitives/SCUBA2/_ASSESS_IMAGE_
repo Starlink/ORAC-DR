@@ -11,13 +11,12 @@ _ASSESS_IMAGE_ GROUP=1
 =head1 DESCRIPTION
 
 This primitive performs a simple analysis of an image which is
-expected to contain a point source near the origin in world
-coordinates. The image should be in an offset coordinate frame. The
-user may choose to determine the centroid if a suitable source is
-found.
+expected to contain a point source near the origin in pixel
+coordinates (so the input coordinate system is irrelevant). The user
+may choose to determine the centroid if a suitable source is found.
 
 The assessment proceeds as follows. A search region is defined using
-the B<SIZE> parameter below. If the peak signal-to-noise ratio in that
+the B<BOX> parameter below. If the peak signal-to-noise ratio in that
 region exceeds 15 then the search region is thresholded at half the
 peak signal. Simple analysis shows that for an image with a pixel size
 of one-third the resolution, a point source should have significant
@@ -40,6 +39,10 @@ The following arguments are supported:
 
 =over 4
 
+=item B<BOX>
+
+Diameter of region to analyze in pixels. Default is 9.
+
 =item B<CENTROID>
 
 Flag to specify whether or not to determine the centroid
@@ -60,10 +63,6 @@ Flag to denote whether to use the current Group file. Default is 0
 
 Name of image to analyze. Default is to use the current file in either
 the Frame or Group (see B<GROUP> parameter).
-
-=item B<SIZE>
-
-Diameter of region to analyze in arcsec. Default is 30.
 
 =item B<SNTHRESH>
 
@@ -171,9 +170,8 @@ my $Obj = ($group) ? $Grp : $Frm;
 # Obtain the image, either specified or use current object file
 my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file );
 
-# Get size of region to query - default to 30 arcsec
-my $size = get_prim_arg($_PRIM_ARGS_, "SIZE", 30.0);
-$size .= "s";
+# Get size of region to query - default to 9 pixels
+my $box = get_prim_arg($_PRIM_ARGS_, "BOX", 9);
 
 # Estimator - default is MEDIAN
 my $estimator = uc(get_prim_arg( $_PRIM_ARGS_, "ESTIMATOR", "MEDIAN" ));
@@ -187,22 +185,7 @@ unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" 
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Define a region according to SIZE
-my $args = "ndf=$image mode=get name=system(1)";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-my ($ORAC_STATUS, $system) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-
-my $ndfsection;
-if ( $system eq "AZEL" || $system eq "GALACTIC" ) {
-  $ndfsection = "0.0~$size,0.0~$size,";
-} else {
-  # assume anything else is an RA/Dec frame
-  $ndfsection = "00h00m00s~$size,00d00m00s~$size,";
-}
-
-my $region = "$image($ndfsection)";
-
-# Find statistics on the centre region
-my $histat = ($estimator eq "MODE") ? 1 : 0;
+my $region = "$image(0~$box,0~$box,)";
 
 # Obtain noise/sigma from variance in given image
 _FIND_IMAGE_STATISTICS_ IMAGE=$region COMP=ERR VERBOSE=0
@@ -240,7 +223,7 @@ if ( $peak_sn > $sn_thresh ) {
   my $thresh = $max / 2;
   my $threshed = new ORAC::TempFile;
   my $thrfile = $threshed->file;
-  $args = "in=$region out=$thrfile thrlo=$thresh thrhi=$max newlo=bad newhi=$max";
+  my $args = "in=$region out=$thrfile thrlo=$thresh thrhi=$max newlo=bad newhi=$max";
   $Mon{kappa_mon}->obeyw("thresh","$args");
   _FIND_IMAGE_STATISTICS_ IMAGE=$thrfile VERBOSE=0
   my %thresults = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
