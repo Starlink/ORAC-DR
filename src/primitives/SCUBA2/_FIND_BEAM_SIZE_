@@ -33,8 +33,8 @@ The following arguments are supported:
 
 =item B<GAUSSIAN>
 
-A flag to indicate whether the fit is forced to be gaussian. The
-default is 0 (no). Only accessed if B<METHOD> is C<PSF>.
+A flag to indicate whether the fit is forced to be Gaussian. The
+default is 1 (yes).
 
 =item B<GROUP>
 
@@ -85,12 +85,11 @@ user. Default is 1 (print messages).
 
 =item KAPPA:
 
-BEAMFIT, WCSATTRIB
+WCSATTRIB
 
 =item ORAC-DR PRIMITIVES:
 
-_CENTROID_IMAGE_, _FIT_BEAM_, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_,
-_GET_LOG_PARAMETERS_
+_ASSESS_BEAM_FIT_, _ASSESS_IMAGE_, _CENTROID_IMAGE_, _FIT_SOURCE_
 
 =back
 
@@ -238,15 +237,18 @@ if ( $group ) {
 # Should I be verbose? (Default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 
-# Are we writing an entry to a log file? Default Yes
+# Are we writing an entry to a log file? Default Yes, but allow
+# override with recipe parameter
 my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+$uselog = $Frm->uhdr("RECPAR_LOGFILE") if (defined $Frm->uhdr("RECPAR_LOGFILE"));
 
 # Has the user said to wait until the observation is complete before
 # fitting?
 my $dofit = get_prim_arg( $_PRIM_ARGS_, "OBSEND", 1 );
 # Retrieve the OBSEND flag
-my $obsend = $Frm->uhdr("OBSEND");
-$dofit = ( $dofit && $obsend ) ? 1 : 0;
+my $obsend = ($Frm->uhdr("OBSEND")) ? 1 : 0;
+# Always proceed if the observation has ended
+$dofit = ( $dofit == $obsend || $obsend ) ? 1 : 0;
 
 # Unset dofit if the input file does not exist
 $dofit = 0 unless ( -e "$in.sdf" );
@@ -264,6 +266,8 @@ if ($calib && $dofit) {
 
   # Do we want to use BEAMFIT or PSF? Default BEAMFIT
   my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "BEAMFIT" );
+  # Override with recipe parameter
+  $method = $Frm->uhdr("RECPAR_FIT_METHOD") if (defined $Frm->uhdr("RECPAR_FIT_METHOD"));
 
   # Set usepsf flag
   my $usepsf = ( $method eq "PSF" ) ? 1 : 0;
@@ -332,41 +336,26 @@ if ($calib && $dofit) {
     orac_print "Deriving the beam in the $fitcosys coordinate system using $method\n";
 
     my (@amp, @majfwhm, @minfwhm, $axisr, @orient, @totalflux, @posn, $goodbeam);
-    # Now fit the source using PSF or BEAMFIT
-    if ( $usepsf ) {
-      # Use PSF
-      orac_warn "Note that PSF does not return uncertainties - check results carefully\n";
-      # Are we forcing a gaussian fit?
-      my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 0);
 
-      # Fit the source with a PSF
-      _FIT_PSF_ IMAGE=$in XYPOS=\@xy GAUSSIAN=$gaussian BOX=9
-      # Check if psf succeeded
-      if ( $_FIT_PSF_{FIT} == 1 ) {
-	# Retrieve parameters - set error array elements to 0
-	@amp = ( $_FIT_PSF_{AMPLITUDE}, 0.0 );
-	$axisr = $_FIT_PSF_{AXISR};
-	@minfwhm = ( $_FIT_PSF_{FWHM}, 0.0 );
-	@majfwhm = ( $minfwhm[0] * $axisr, 0.0 );
-	@orient = ( $_FIT_PSF_{ORIENT}, 0.0 );
-	@totalflux = ( $_FIT_PSF_{TOTALFLUX}, 0.0 );
-      }
-      $goodbeam = $_FIT_PSF_{FIT};
-    } else {
-      # Use BEAMFIT
-      _FIT_BEAM_ IMAGE=$in XYPOS=\@xy BOX=9
-      # Check if beamfit succeeded
-      if ( $_FIT_BEAM_{FIT} == 1 ) {
-	@amp = @{ $_FIT_BEAM_{AMPLITUDE} };
-	$axisr = $_FIT_BEAM_{AXISR};
-	@majfwhm = @{ $_FIT_BEAM_{MAJFWHM} };
-	@minfwhm = @{ $_FIT_BEAM_{MINFWHM} };
-	@orient = @{ $_FIT_BEAM_{ORIENT} };
-	@posn = @{ $_FIT_BEAM_{POSITION} };
-	@totalflux = @{ $_FIT_BEAM_{TOTALFLUX} };
-      }
-      $goodbeam = $_FIT_BEAM_{FIT};
+    # Are we forcing a gaussian fit?
+    my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
+    # Override with recipe parameter
+    $gaussian = $Frm->uhdr("RECPAR_FIT_GAUSSIAN")
+      if (defined $Frm->uhdr("RECPAR_FIT_GAUSSIAN"));
+
+    # Carry out the fit
+    _FIT_SOURCE_ METHOD=$method GAUSSIAN=$gaussian IMAGE=$in XYPOS=\@xy BOX=9
+    # Check if fit succeeded
+    if ( $_FIT_SOURCE_{FIT} == 1 ) {
+      @amp = @{ $_FIT_SOURCE_{AMPLITUDE} };
+      $axisr = $_FIT_SOURCE_{AXISR};
+      @majfwhm = @{ $_FIT_SOURCE_{MAJFWHM} };
+      @minfwhm = @{ $_FIT_SOURCE_{MINFWHM} };
+      @orient = @{ $_FIT_SOURCE_{ORIENT} };
+      @posn = @{ $_FIT_SOURCE_{POSITION} };
+      @totalflux = @{ $_FIT_SOURCE_{TOTALFLUX} };
     }
+    $goodbeam = $_FIT_SOURCE_{FIT};
 
     # If the fit was successful, check the quality of the fit
     if ( $goodbeam ) {
@@ -426,4 +415,3 @@ if ($calib && $dofit) {
     $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=mset setting='$attrs'");
   }
 }
-
