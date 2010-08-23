@@ -940,8 +940,15 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'PICARD') {
+    # Placeholder to allow PICARD to be recognized as a valid
+    # instrument - setting the path is done in the block below
+  } else {
+    croak "Primitives: Unrecognised instrument: $inst\n";
   }
 
+  # Treat the PICARD path separately to ensure it gets added in
+  # addition to any instrument-specific paths
   if ($inst eq 'PICARD' || $prepend_picard ) {
     # Picard on front
     unshift( @path, File::Spec->catdir( $root, "PICARD" ) );
@@ -952,9 +959,6 @@ sub orac_determine_primitive_search_path {
 
     push( @path, $general_root )
       unless exists $paths{$general_root};
-
-  } else {
-    croak "Primitives: Unrecognised instrument: $inst\n";
   }
 
   return @path;
