@@ -940,7 +940,9 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
-  } elsif ($inst eq 'PICARD' || $prepend_picard ) {
+  }
+
+  if ($inst eq 'PICARD' || $prepend_picard ) {
     # Picard on front
     unshift( @path, File::Spec->catdir( $root, "PICARD" ) );
 
