@@ -82,6 +82,22 @@ my $outfile;
 # Only do this processing if we have KAPPA v1.10 or greater.
 if( starversion_gt( 'KAPPA', 'v1.10-0' ) ) {
 
+  # Use stats to flag if this is not a frame with constant values.
+  # Set min and max to some range, since a 0-range stretch can
+  # crash the display routines.
+  my $zerorange = 0;
+  $Mon{kappa_mon}->obeyw("stats","ndf=$file");
+  my $ORAC_STATUS;
+  ($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+  ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
+  ($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
+  if ($sigma == 0) {
+    $min += -1;
+    $max +=  1;
+    $zerorange = 1;
+    orac_warn "...All pixels in ${file} have the same value.";
+  }
+
   if( $addres ) {
     if( $xres == $yres ) {
       $outfile = "${file}_$xres." . lc( $type );
@@ -107,12 +123,18 @@ if( starversion_gt( 'KAPPA', 'v1.10-0' ) ) {
   my @nondegen = grep { $_ != 1 } @$dims;
   if( $#nondegen == 0 ) {
 
-    my $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram";
+    my $minmax = "";
+    $minmax = "ybot=${min} ytop=${max}" if ($zerorange);
+
+    my $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram $minmax";
     $Mon{'kapview_mon'}->obeyw( "linplot", "$params" );
 
   } elsif( $#nondegen == 1 ) {
 
-    my $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no mode=faint lut=$ENV{KAPPA_DIR}/bgyrw_lut.sdf reset";
+    my $minmax = "faint";
+    $minmax = "scale low=${min} high=${max}" if ($zerorange);
+
+    my $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no mode=${minmax} lut=$ENV{KAPPA_DIR}/bgyrw_lut.sdf reset";
     $Mon{'kapview_mon'}->obeyw( "display", "$params" );
 
   } else {
