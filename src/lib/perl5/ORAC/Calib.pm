@@ -185,6 +185,14 @@ sub find_file {
   croak "No file supplied to find_file() method"
     if ! defined $file;
 
+  if (File::Spec->file_name_is_absolute( $file ) ) {
+    # can't be in a search path
+    return $file if -e $file;
+
+    croak "Could not find '$file' given as a full path";
+
+  }
+
   # Get the search path and also look in ORAC_DATA_OUT
   my @directories = ($ENV{ORAC_DATA_OUT},
                      orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} ));
