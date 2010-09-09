@@ -249,7 +249,7 @@ sub readhdr {
         $hdrs{$f} = Astro::FITS::Header::NDF->new( File => $f );
       };
       if ($@) {
-        push(@errors, $@);
+        push(@errors, "Error reading FITS header of file $f", $@);
       }
     }
 
