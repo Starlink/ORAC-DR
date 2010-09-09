@@ -229,8 +229,12 @@ sub readhdr {
 
     # Locate NDFs inside HDS containers
     my @ndfs = $self->_find_ndf_children( @files );
-    die "We were given ".@files." file(s) but asked to open ".scalar(@ndfs).
-      " headers!" if @ndfs == 0;
+
+    my $suffixa = ( @files != 1 ? "s" : "");
+    my $suffixb = ( @ndfs != 1 ? "s" : "");
+
+    die "We were given ".@files." file$suffixa but asked to open ".scalar(@ndfs).
+      " header$suffixb!" if @ndfs == 0;
 
     # are we merging? The option for not merging is only relevant
     # if we have one input file that becomes
@@ -668,6 +672,7 @@ sub _find_ndf_children {
     # open the file
     # Now need to find the NDFs in the output HDS file
     my $status = &NDF::SAI__OK;
+    err_begin($status);
     hds_open($f, 'READ', my $loc, $status);
 
     # find the type - if it is an NDF just store it and try the next
@@ -680,41 +685,50 @@ sub _find_ndf_children {
       $type = 'NDF' if $isthere;
     }
 
-    if ($type eq 'NDF') {
-      push(@out,$f) unless $opts->{compnames};
-    } else {
+    if ($status == &NDF::SAI__OK) {
+      if ($type eq 'NDF') {
+        push(@out,$f) unless $opts->{compnames};
+      } else {
 
-      # Find out how many we have
-      dat_ncomp($loc, my $ncomp, $status);
+        # Find out how many we have
+        dat_ncomp($loc, my $ncomp, $status);
 
-      # Get all the component names
-      for my $i (1..$ncomp) {
+        # Get all the component names
+        for my $i (1..$ncomp) {
 
-        # Get locator to component
-        dat_index($loc, $i, my $cloc, $status);
+          # Get locator to component
+          dat_index($loc, $i, my $cloc, $status);
 
-        # get the type
-        dat_type( $cloc, my $ctype, $status);
+          # get the type
+          dat_type( $cloc, my $ctype, $status);
 
-        if ($ctype eq 'NDF') {
+          if ($ctype eq 'NDF') {
 
-          # Find its name
-          dat_name($cloc, my $name, $status);
+            # Find its name
+            dat_name($cloc, my $name, $status);
 
-          my $result = $name;
-          $result = $f.".$name" unless $opts->{compnames};
-          push(@out, $result) if $status == &NDF::SAI__OK;
+            my $result = $name;
+            $result = $f.".$name" unless $opts->{compnames};
+            push(@out, $result) if $status == &NDF::SAI__OK;
+          }
+
+          # Release locator
+          dat_annul($cloc, $status);
+
+          last if $status != &NDF::SAI__OK;
         }
-
-        # Release locator
-        dat_annul($cloc, $status);
-
-        last if $status != &NDF::SAI__OK;
       }
     }
 
     dat_annul($loc, $status);
 
+    if ($status != &NDF::SAI__OK) {
+      my $errstr = err_flush_to_string( $status );
+      err_end($status);
+      croak "Error examining NDF children of file $f: $errstr\n";
+    }
+
+    err_end($status);
   }
 
   return @out;
