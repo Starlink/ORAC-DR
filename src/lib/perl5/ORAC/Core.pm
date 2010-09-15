@@ -1668,7 +1668,8 @@ sub orac_print_recipe_summary {
     if ($stats->{BAD} > 0) {
       $text = "of which ".$stats->{BAD}. " completed with an error";
     } elsif (exists $stats->{TERM} && $stats->{TERM} > 0) {
-      $text = "of which ". $stats->{TERM}. " were terminated early";
+      my $waswere = ($stats->{TERM} == 1) ? "was" : "were";
+      $text = "of which ". $stats->{TERM}. " $waswere terminated early";
     }
 
     orac_print( "Processed ".$stats->{TOTAL}." recipes $text\n", $color);
