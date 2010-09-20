@@ -949,6 +949,64 @@ sub get_fastramp_flats {
   return @fastflats;
 }
 
+=item B<duration_science>
+
+The difference between the end of the last science sequence and the
+start of the first science sequence. This is not quite the same as the
+duration of the observation because it will not include initial/trailing
+darks and ramps.
+
+  $dur = $Frm->duration_science();
+
+Returns the duration in seconds.
+
+To calculate the duration of the observation as a whole use ORAC_UTSTART
+and ORAC_UTEND uhdrs.
+
+=cut
+
+sub duration_science {
+  my $self = shift;
+
+  my $mindate = undef;
+  my $maxdate = undef;
+
+  require Astro::FITS::HdrTrans::FITS;
+  for my $i (1..$self->nfiles) {
+    # Must use the hdrval method as sequence types can change during
+    # an observation and we have to parse the FITS format string.
+    my $seq_type = $self->hdrval( "SEQ_TYPE", $i-1);
+    my $obs_type = $self->hdrval( "OBS_TYPE", $i-1);
+
+    # if we do not have a seq_type we assume it is obs_type
+    # which won't be true for 2009 data.
+    $seq_type = $obs_type unless defined $seq_type;
+
+    if ($seq_type eq $obs_type) {
+      my %headers = (
+                     "DATE-OBS" => $self->hdrval("DATE-OBS", $i-1),
+                     "DATE-END" => $self->hdrval("DATE-END", $i-1),
+                    );
+      my $date_obs_obj = Astro::FITS::HdrTrans::FITS->to_UTSTART( \%headers );
+      my $date_end_obj = Astro::FITS::HdrTrans::FITS->to_UTEND( \%headers );
+
+      if (!defined $mindate || $mindate > $date_obs_obj) {
+        $mindate = $date_obs_obj;
+      }
+      if (!defined $maxdate || $maxdate < $date_end_obj) {
+        $maxdate = $date_end_obj;
+      }
+    }
+  }
+
+  # If still undef we did not get a real observation
+  if (!defined $mindate || !defined $maxdate) {
+    return 0;
+  }
+  return ($maxdate - $mindate);
+
+}
+
 =item B<filter_darks>
 
 Standard image-based DREAM and STARE processing has no need for dark
