@@ -151,17 +151,23 @@ to an association identifier.
 The association id will not be prefixed according to mode since the frame
 or group does not know the processing mode.
 
+Returns undef if no association could be identified.
+
 =cut
 
 sub asn_id {
   my $self = shift;
   my $asn_txt = '';
+
   if ($self->is_frame) {
     $asn_txt = $self->group;
   } else {
     $asn_txt = $self->groupid;
   }
-  return md5_hex( $asn_txt );
+  if (defined $asn_txt) {
+    return md5_hex( $asn_txt );
+  }
+  return;
 }
 
 =back

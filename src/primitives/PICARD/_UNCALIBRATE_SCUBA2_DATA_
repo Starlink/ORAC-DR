@@ -1,0 +1,112 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_UNCALIBRATE_SCUBA2_DATA_ - undo default SCUBA-2 calibration
+
+=head1 SYNOPSIS
+
+_UNCALIBRATE_SCUBA2_DATA_
+
+=head1 DESCRIPTION
+
+Undo the default calibration of SCUBA-2 data. This primitive checks
+the input units and divides by the appropriate default FCF to return
+the data to units of pW.
+
+Uncalibrated input files are copied to output files.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+CDIV, NDFTRACE, SETUNITS
+
+=back
+
+=head1 OUTPUT DATA
+
+The Frame is updated to contain the uncalibrated data files.
+
+=head1 OUTPUT FILES
+
+Creates output files with the suffix C<_uncal>.
+
+=head1 NOTES
+
+Ideally the history should be searched and the exact FCF used, but for
+now assume that the default calibration was applied.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Uncalibrated data files
+my @uncal;
+
+# Loop over files in the Frame
+for my $i (1 .. $Frm->nfiles) {
+  # Obtain the current units for the input file to determine the FCF
+  # calibration type
+  my ($in, $out) = $Frm->inout("_uncal", $i);
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+  my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+  if ($units eq "pW") {
+    # Make a copy of uncalibrated data files - not strictly necessary
+    orac_print "File $in already contains uncalibrated data";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+    # Add to uncal array so it's stored in the Frame
+    push(@uncal, $in);
+    next;
+  }
+
+  my $fcf_units = ($units =~ /beam/) ? "BEAM" : "ARCSEC";
+  # Assume units of Jy if not mJy
+  my $mult = ($units =~ /^mJy/) ? 1000.0 : 1.0;
+
+  # Undo the calibration of SCUBA-2 data files - assume default
+  # calibration and that data are in mJy/beam
+  my $fcf = $mult * $Cal->gain($Frm->uhdr("ORAC_FILTER"), $fcf_units);
+
+  my $args = "in=$in out=$out scalar=$fcf";
+  $Mon{kappa_mon}->obeyw("cdiv","$args");
+
+  # Change units to pW
+  $args = "ndf=$out units=pW";
+  $Mon{ndfpack_mon}->obeyw("setunits","$args");
+
+  push(@uncal, $out);
+}
+
+# Store in the current Frame object
+$Frm->files(@uncal);
