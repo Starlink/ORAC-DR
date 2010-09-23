@@ -1,0 +1,219 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SHIFT_IMAGES_ - shift the WCS of images to a common position
+
+=head1 SYNOPSIS
+
+ _SHIFT_IMAGES_ IMAGES=\@images
+
+=head1 DESCRIPTION
+
+This primitive shifts the input images so that the source position is
+the same in each. The reference position is defined as follows:
+
+=over 4
+
+=item *
+
+For calibrators, the images are shifted to coincide with the SkyRef
+attribute in the WCS.
+
+=item *
+
+For other sources, the peak position of the first file is located and
+all subsequent images are shifted to that. Processing is terminated
+immediately if no peak could be located near the image centre.
+
+=item *
+
+For images in offset coordinate systems, the images are shifted to
+(0,0).
+
+=back
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item IMAGES
+
+Reference to an array of file names. No default.
+
+=item VERBOSE
+
+Flag to indicate whether the shifts should be reported. Default is 0
+(no reporting).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+WCSSLIDE
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_MAP_PEAK_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+None, but the WCS is updated for the input files.
+
+=head1 NOTES
+
+The list of files should be of the same source and all should be in
+the same coordinate system. The WCS info for the first file in the
+list is used to obtain the reference position.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Reference to array of images
+my $imageref = get_prim_arg($_PRIM_ARGS_, "IMAGES", undef);
+
+# Verbosity flag - default to false
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+
+if ( $imageref && (ref($imageref) eq "ARRAY") ) {
+  # Define a new Frame object
+  my $Frmobj = $Frm->new($imageref);
+
+  # Assumptions:
+  # - images are all of same source
+  # - images have same wcs info so only need to use one
+  # - images are all in same coordinate system
+
+  # Obtain WCS from first image
+  my $wcs = $Frmobj->read_wcs( $Frmobj->file(1) );
+  my $isoffset = $wcs->Get("AlignOffset");
+  my $system = lc($wcs->Get("System(1)"));
+  my $cosys = ($system eq "fk5") ? "J2000" : $system;
+  my $units;
+  # Units for Astro::Coords objects
+  if ($cosys eq "J2000") {
+    # HMS/DMS for RA/Dec
+    $units = "sexagesimal";
+  } else {
+    # Degrees for AzEl and Galactic
+    $units = "degrees";
+  }
+
+  my ($refcoords, $register_to_first);
+  if ( $isoffset ) {
+    orac_print "Shifting images relative to (0,0)\n";
+  } else {
+    my ($skyref, @refpos);
+    # Use the SkyRef position for calibrators since they are known
+    if ( $Cal->iscalsource($Frm->hdr("OBJECT"))) {
+      $skyref = $wcs->Get("SkyRef");
+      $skyref =~ s/,//g;
+      @refpos = split(/\s+/, $skyref);
+      orac_print "Shifting images relative to sky reference position\n";
+    } else {
+      # Otherwise use the peak position of the first file, assumed to
+      # be close to the map centre
+      my $image = $Frmobj->file(1);
+      _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
+      my $posn = $_FIND_MAP_PEAK_{POSITION};
+      if ( $posn ) {
+	@refpos = @{$posn};
+	$register_to_first = 1;
+      } else {
+	orac_warn "Unable to locate a peak to register images\n";
+	return ORAC__OK;
+      }
+      orac_print "Shifting images relative to $image\n";
+    }
+    $refcoords = new Astro::Coords( ra => $refpos[0], dec => $refpos[1],
+				    type => $cosys, units => "sexagesimal");
+  }
+
+  my (@dx, @dy);
+  foreach my $image ($Frmobj->files) {
+    if ($register_to_first) {
+      $register_to_first = 0;
+      next;
+    }
+    # Find the peak
+    _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
+    my $posn = $_FIND_MAP_PEAK_{POSITION};
+
+    # Shift image from current position to new position
+    my ($dx, $dy, $dxas, $dyas);
+    if ($isoffset) {
+      # In offset coord systems we can shift by the fitted offsets directly
+      my $centre = ( $units eq "sexagesimal" ) ? "00:00:00.0,00:00:00.0"
+	: "0.0,0.0";
+      my $args = "stype=relative fid='".$centre.",0' obj='"
+	.$posn->[0].",".$posn->[1].",0' ndf=$image";
+      $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    } else {
+      my $coords = new Astro::Coords( ra => $posn->[0], dec => $posn->[1],
+				      type => $cosys, units => $units );
+      # Calculate the distance between this position and the reference
+      ($dx, $dy) = $refcoords->distance( $coords );
+      # Retrieve offsets in arcsec
+      ($dxas, $dyas) = ($dx->arcsec, $dy->arcsec);
+      my $args = "stype=absolute abs=[$dxas,$dyas,0] ndf=$image";
+      $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    }
+
+    # Report the shifts for each image if requested
+    if ( $verbose ) {
+      if ( $isoffset ) {
+	my $x_off = ( $units eq "sexagesimal" ) ?
+	  new Astro::Coords::Angle::Hour($posn->[0], units => $units)
+	    : new Astro::Coords::Angle($posn->[0], units => $units);
+	my @off = ( $x_off,
+		    new Astro::Coords::Angle($posn->[1], units => $units) );
+	use Astro::Coords::Offset;
+	my $coords = new Astro::Coords::Offset( @off, system => $cosys );
+	($dx, $dy) = $coords->offsets;
+	($dxas, $dyas) = (-$dx->arcsec, -$dy->arcsec);
+      }
+      orac_print " Shifting $image by ".(sprintf "%4.2f", $dxas).", "
+	.(sprintf "%4.2f", $dyas)." arcsec\n";
+    }
+  }
+
+} else {
+  # Just warn the user that nothing happened
+  orac_warn "No images given or input not an array reference\n";
+}
