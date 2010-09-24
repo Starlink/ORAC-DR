@@ -39,6 +39,10 @@ The following arguments are supported:
 
 =over 4
 
+=item FRAME
+
+An ORAC-DR Frame object containing the images to shift. No default.
+
 =item IMAGES
 
 Reference to an array of file names. No default.
@@ -105,115 +109,138 @@ USA.
 
 =cut
 
-# Reference to array of images
-my $imageref = get_prim_arg($_PRIM_ARGS_, "IMAGES", undef);
+# Input Frame object
+my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", undef);
+
+my $have_data = 0;
+if ($Frmobj) {
+  $have_data = 1 if ($Frmobj->isa("ORAC::Frame"));
+} else {
+  # Alternatively, get reference to array of images
+  my $imageref = get_prim_arg($_PRIM_ARGS_, "IMAGES", undef);
+  if ( $imageref && (ref($imageref) eq "ARRAY") ) {
+    # Define a new Frame object
+    $Frmobj = $Frm->new($imageref);
+    $have_data = 1;
+  } else {
+    # Just warn the user that nothing happened - the rest of the
+    # primitive will be a no-op
+    orac_warn "No images given or input not an array reference\n";
+  }
+}
+
+return ORAC__OK unless ($have_data);
 
 # Verbosity flag - default to false
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
 
-if ( $imageref && (ref($imageref) eq "ARRAY") ) {
-  # Define a new Frame object
-  my $Frmobj = $Frm->new($imageref);
+# Assumptions:
+# - images are all of same source
+# - images have same wcs info so only need to use one
+# - images are all in same coordinate system
 
-  # Assumptions:
-  # - images are all of same source
-  # - images have same wcs info so only need to use one
-  # - images are all in same coordinate system
-
-  # Obtain WCS from first image
-  my $wcs = $Frmobj->read_wcs( $Frmobj->file(1) );
-  my $isoffset = $wcs->Get("AlignOffset");
-  my $system = lc($wcs->Get("System(1)"));
-  my $cosys = ($system eq "fk5") ? "J2000" : $system;
-  my $units;
-  # Units for Astro::Coords objects
-  if ($cosys eq "J2000") {
-    # HMS/DMS for RA/Dec
-    $units = "sexagesimal";
-  } else {
-    # Degrees for AzEl and Galactic
-    $units = "degrees";
-  }
-
-  my ($refcoords, $register_to_first);
-  if ( $isoffset ) {
-    orac_print "Shifting images relative to (0,0)\n";
-  } else {
-    my ($skyref, @refpos);
-    # Use the SkyRef position for calibrators since they are known
-    if ( $Cal->iscalsource($Frm->hdr("OBJECT"))) {
-      $skyref = $wcs->Get("SkyRef");
-      $skyref =~ s/,//g;
-      @refpos = split(/\s+/, $skyref);
-      orac_print "Shifting images relative to sky reference position\n";
-    } else {
-      # Otherwise use the peak position of the first file, assumed to
-      # be close to the map centre
-      my $image = $Frmobj->file(1);
-      _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
-      my $posn = $_FIND_MAP_PEAK_{POSITION};
-      if ( $posn ) {
-	@refpos = @{$posn};
-	$register_to_first = 1;
-      } else {
-	orac_warn "Unable to locate a peak to register images\n";
-	return ORAC__OK;
-      }
-      orac_print "Shifting images relative to $image\n";
-    }
-    $refcoords = new Astro::Coords( ra => $refpos[0], dec => $refpos[1],
-				    type => $cosys, units => "sexagesimal");
-  }
-
-  my (@dx, @dy);
-  foreach my $image ($Frmobj->files) {
-    if ($register_to_first) {
-      $register_to_first = 0;
-      next;
-    }
-    # Find the peak
-    _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
-    my $posn = $_FIND_MAP_PEAK_{POSITION};
-
-    # Shift image from current position to new position
-    my ($dx, $dy, $dxas, $dyas);
-    if ($isoffset) {
-      # In offset coord systems we can shift by the fitted offsets directly
-      my $centre = ( $units eq "sexagesimal" ) ? "00:00:00.0,00:00:00.0"
-	: "0.0,0.0";
-      my $args = "stype=relative fid='".$centre.",0' obj='"
-	.$posn->[0].",".$posn->[1].",0' ndf=$image";
-      $Mon{kappa_mon}->obeyw("wcsslide","$args");
-    } else {
-      my $coords = new Astro::Coords( ra => $posn->[0], dec => $posn->[1],
-				      type => $cosys, units => $units );
-      # Calculate the distance between this position and the reference
-      ($dx, $dy) = $refcoords->distance( $coords );
-      # Retrieve offsets in arcsec
-      ($dxas, $dyas) = ($dx->arcsec, $dy->arcsec);
-      my $args = "stype=absolute abs=[$dxas,$dyas,0] ndf=$image";
-      $Mon{kappa_mon}->obeyw("wcsslide","$args");
-    }
-
-    # Report the shifts for each image if requested
-    if ( $verbose ) {
-      if ( $isoffset ) {
-	my $x_off = ( $units eq "sexagesimal" ) ?
-	  new Astro::Coords::Angle::Hour($posn->[0], units => $units)
-	    : new Astro::Coords::Angle($posn->[0], units => $units);
-	my @off = ( $x_off,
-		    new Astro::Coords::Angle($posn->[1], units => $units) );
-	use Astro::Coords::Offset;
-	my $coords = new Astro::Coords::Offset( @off, system => $cosys );
-	($dx, $dy) = $coords->offsets;
-	($dxas, $dyas) = (-$dx->arcsec, -$dy->arcsec);
-      }
-      orac_print " Shifting $image by ".(sprintf "%4.2f", $dxas).", "
-	.(sprintf "%4.2f", $dyas)." arcsec\n";
-    }
-  }
-
+# Obtain WCS from first image
+my $wcs = $Frmobj->read_wcs( $Frmobj->file(1) );
+my $isoffset = $wcs->Get("AlignOffset");
+my $system = lc($wcs->Get("System(1)"));
+my $cosys = ($system eq "fk5") ? "J2000" : $system;
+my $units;
+# Units for Astro::Coords objects
+if ($cosys eq "J2000") {
+  # HMS/DMS for RA/Dec
+  $units = "sexagesimal";
 } else {
-  # Just warn the user that nothing happened
-  orac_warn "No images given or input not an array reference\n";
+  # Degrees for AzEl and Galactic
+  $units = "degrees";
+}
+
+my ($refcoords, $register_to_first);
+if ( $isoffset ) {
+  orac_print "Shifting images relative to (0,0)\n";
+} else {
+  my ($skyref, @refpos);
+  # Use the SkyRef position for calibrators since they are known
+  if ( $Cal->iscalsource($Frm->hdr("OBJECT"))) {
+    $skyref = $wcs->Get("SkyRef");
+    $skyref =~ s/,//g;
+    @refpos = split(/\s+/, $skyref);
+    orac_print "Shifting images relative to sky reference position\n";
+  } else {
+    # Otherwise use the peak position of the first file, assumed to
+    # be close to the map centre
+    my $image = $Frmobj->file(1);
+    _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
+      my $posn = $_FIND_MAP_PEAK_{POSITION};
+    if ( $posn ) {
+      @refpos = @{$posn};
+      $register_to_first = 1;
+    } else {
+      orac_warn "Unable to locate a peak to register images\n";
+      return ORAC__OK;
+    }
+    orac_print "Shifting images relative to $image\n";
+  }
+  $refcoords = new Astro::Coords( ra => $refpos[0], dec => $refpos[1],
+				  type => $cosys, units => "sexagesimal");
+}
+
+my (@dx, @dy);
+foreach my $image ($Frmobj->files) {
+  if ($register_to_first) {
+    $register_to_first = 0;
+    next;
+  }
+  # Apply the matched filter to improve S/N
+  my $image_mf = new ORAC::TempFile;
+  _APPLY_MATCHED_FILTER_ IN=$image OUT=$image_mf STORE=0 VERBOSE=0
+
+  # Find the peak
+  _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image_mf VERBOSE=0
+  my $posn = $_FIND_MAP_PEAK_{POSITION};
+
+  # Skip to next file if no position could be found. In principle,
+  # any file for which no peak could be found could be removed from
+  # the coadd list, but that would require some work on the
+  # interface.
+  unless ($posn) {
+    orac_warn "Unable to find a peak for $image - will not shift WCS\n";
+    next;
+  }
+
+  # Shift image from current position to new position
+  my ($dx, $dy, $dxas, $dyas);
+  if ($isoffset) {
+    # In offset coord systems we can shift by the fitted offsets directly
+    my $centre = ( $units eq "sexagesimal" ) ? "00:00:00.0,00:00:00.0"
+      : "0.0,0.0";
+    my $args = "stype=relative fid='".$centre.",0' obj='"
+      .$posn->[0].",".$posn->[1].",0' ndf=$image";
+    $Mon{kappa_mon}->obeyw("wcsslide","$args");
+  } else {
+    my $coords = new Astro::Coords( ra => $posn->[0], dec => $posn->[1],
+				    type => $cosys, units => $units );
+    # Calculate the distance between this position and the reference
+    ($dx, $dy) = $refcoords->distance( $coords );
+    # Retrieve offsets in arcsec
+    ($dxas, $dyas) = ($dx->arcsec, $dy->arcsec);
+    my $args = "stype=absolute abs=[$dxas,$dyas,0] ndf=$image";
+    $Mon{kappa_mon}->obeyw("wcsslide","$args");
+  }
+
+  # Report the shifts for each image if requested
+  if ( $verbose ) {
+    if ( $isoffset ) {
+      my $x_off = ( $units eq "sexagesimal" ) ?
+	new Astro::Coords::Angle::Hour($posn->[0], units => $units)
+	  : new Astro::Coords::Angle($posn->[0], units => $units);
+      my @off = ( $x_off,
+		  new Astro::Coords::Angle($posn->[1], units => $units) );
+      use Astro::Coords::Offset;
+      my $coords = new Astro::Coords::Offset( @off, system => $cosys );
+      ($dx, $dy) = $coords->offsets;
+      ($dxas, $dyas) = (-$dx->arcsec, -$dy->arcsec);
+    }
+    orac_print " Shifting $image by ".(sprintf "%4.2f", $dxas).", "
+      .(sprintf "%4.2f", $dyas)." arcsec\n";
+  }
 }
