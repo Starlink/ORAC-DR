@@ -1261,7 +1261,7 @@ sub calc_orac_headers {
       @files = $self->raw unless @files;
       my $text = '';
       if (@files) {
-        $text = ' associated with file';
+        $text = 'associated with file';
         if (@files == 1) {
           $text .= $files[0];
         } else {
