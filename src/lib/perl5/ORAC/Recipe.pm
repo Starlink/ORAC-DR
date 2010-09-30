@@ -664,6 +664,9 @@ sub execute {
     }
   }
 
+  # Check group membership following this execution
+  $Grp->check_membership();
+
   # Check for bad status from the recipe (this is a bad status
   # without a croak - we continue)
   if ($status) {
