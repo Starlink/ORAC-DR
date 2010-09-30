@@ -696,6 +696,9 @@ sub check_membership {
   # Array of bad frames
   my @bad = ();
 
+  # Get the previously good members
+  my @prevgood = $self->members;
+
   # Need to loop over all members of the group
   foreach my $member ($self->allmembers) {
 
@@ -725,17 +728,26 @@ sub check_membership {
       unless (defined $badobs) {
         push (@good, $member);
       } else {
-        orac_warn "Removing observation ". $member->number ." from group\n";
         push @bad, $member;
       }
 
     } else {
 
-      orac_warn "Removing observation " . $member->number . " from group\n";
       push @bad, $member;
 
     }
 
+  }
+
+  # For each bad observation see if it was previously good so that we
+  # can report.
+  for my $member (@bad) {
+    for my $weregood (@prevgood) {
+      if ($member == $weregood) {
+        orac_warn "Removing observation ". $member->number . " from group\n";
+        last;
+      }
+    }
   }
 
   # Use the reference accessor so that an empty array will be accepted
