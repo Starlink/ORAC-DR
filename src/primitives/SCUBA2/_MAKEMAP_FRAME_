@@ -295,13 +295,7 @@ if ($newimage) {
   my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 
   # Check for SMF__NOMEM return status
-  if ( $SMURF_STATUS == 235176770 ) {
-    # Since makemap failed mark this frame as BAD so it's not included
-    # in further processing. Throw an error to skip the rest of the recipe.
-    $Frm->isgood(0);
-    $newimage = 0;
-    $msg = "Output image will exceed maximum size 2 GB - will not continue\n";
-  } elsif ( $SMURF_STATUS == ORAC__OK ) {
+  if ( $SMURF_STATUS == ORAC__OK ) {
     # Check that an output file was actually created - in some
     # instances bad data can be dealt with by makemap which then exits
     # with good status and no output file.
@@ -339,14 +333,23 @@ if ($newimage) {
       # the recipe. The only reason we would be here is that the data
       # are bad/corrupt.
       $Frm->isgood(0);
-
+      $newimage = 0;
       $msg = "Makemap failed to create an output file (corrupt data): data from this Frame will be ignored.\n\n$fault_msg";
     }
   } else {
-    # If makemap failed for any other reason, mark this frame as
-    # BAD. Throw an error to skip the rest of the recipe.
+    # OK we have bad exit status - check for known reasons
+    if ( $SMURF_STATUS == 235176770 ) {
+      # SMF__NOMEM: Memory allocation error
+      $msg = "Output image will exceed maximum size 2 GB - will not continue\n";
+    } elsif ( $SMURF_STATUS == 235176794 ) {
+      # SMF__INSMP: insufficient samples for statistics
+      $msg = "All data flagged bad; insufficient samples available for calculating statistics - will not continue\n";
+    } else {
+      # Everything else...
+      $msg = "Makemap failed for an unknown reason: data from this Frame will be ignored\n$fault_msg";
+    }
     $Frm->isgood(0);
-    $msg = "Makemap failed: data from this Frame will be ignored\n$fault_msg";
+    $newimage = 0;
   }
 }
 
