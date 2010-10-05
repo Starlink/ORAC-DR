@@ -36,7 +36,7 @@ require Exporter;
 %EXPORT_TAGS = (
                 'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG
                                ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR
-                               ORAC__TERM ORAC__TERMERR / ],
+                               ORAC__TERM ORAC__TERMERR ORAC__BADFRAME / ],
                 'badvalues' => [qw/ VAL__BADD / ],
                );
 
@@ -122,6 +122,15 @@ a handled error.
 =cut
 
 use constant ORAC__TERMERR => -6;
+
+=item B<ORAC__BADFRAME>
+
+This constant denotes that the recipe was completed with the
+frame marked bad.
+
+=cut
+
+use constant ORAC__BADFRAME => -7;
 
 =item B<VAL__BADD>
 
