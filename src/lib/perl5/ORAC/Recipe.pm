@@ -587,12 +587,20 @@ sub execute {
     }
   }
 
+  if (!$Frm->isgood) {
+    if (!defined $status || $status != ORAC__TERMERR ) {
+      $status = ORAC__BADFRAME;
+    }
+  }
+
   my $etext = '';
   if (defined $status) {
     if ($status == ORAC__TERM) {
       $etext = ' (recipe terminated early)';
     } elsif ($status == ORAC__TERMERR) {
       $etext = ' (recipe terminated early with handled error)';
+    } elsif ($status == ORAC__BADFRAME) {
+      $etext = ' (recipe completed but frame was marked bad)';
     }
   }
 
@@ -608,6 +616,9 @@ sub execute {
 
   # _TERM is really a good status
   $status = ORAC__OK if $status == ORAC__TERM;
+
+  # And BADFRAME can be TERMERR
+  $status = ORAC__TERMERR if $status == ORAC__BADFRAME;
 
   # Some extra info
   if ($self->debug) {
