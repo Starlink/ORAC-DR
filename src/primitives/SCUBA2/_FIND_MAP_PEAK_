@@ -12,7 +12,10 @@ Finds the peak signal of a point source located at the map origin.
 No attempt is made to search for sources not located at approximately
 the map centre.
 
-The peak signal is determined by fitting a 2-D Gaussian function.
+The peak signal is determined by fitting a 2-D Gaussian function, or
+from a centroid if the fit failed. The user can control whether or not
+the fallback centroid results are acceptable via the B<USECENTROID>
+parameter.
 
 =head1 ARGUMENTS
 
@@ -34,10 +37,17 @@ If true, the group file is used rather than the frame file.
 Name of input image. Default is to use the file obtained from Grp or
 Frm depending on the value of B<GROUP>.
 
+=item B<USECENTROID>
+
+A flag to denote whether the centroid position is a good enough
+approximation for the map peak. If true, then the centroid position
+and flux density at that position are returned if the 2-D fit
+fails. Default is 1 (yes).
+
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
-user. Default is verbose (true).
+user. Default is 1 (be verbose).
 
 =back
 
@@ -53,11 +63,14 @@ STATS
 
 =item ORAC-DR PRIMITIVES:
 
-_CENTROID_IMAGE_, _FIT_SOURCE_
+_ASSESS_BEAM_FIT_, _CENTROID_IMAGE_, _FIT_SOURCE_
 
 =back
 
 =head1 NOTES
+
+The fit undergoes an assessment for C<point-like> properties and
+returns an error if the fit looks poor.
 
 =head1 OUTPUT DATA
 
@@ -74,7 +87,8 @@ complete sucessfully.
 =item POSITION
 
 The position of the peak. Reference to an array of x, y coordinates in
-the current coordinate frame.
+the current coordinate frame (which will be empty if the calculation
+failed).
 
 =back
 
@@ -132,45 +146,61 @@ if ( defined $xy[0] && defined $xy[1] ) {
   # Are we forcing a gaussian fit?
   my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
 
+  # Sometimes centroid isn't good enough
+  my $usecen = get_prim_arg($_PRIM_ARGS_, "USECENTROID", 1);
+
   # Fit a 2-d gaussian to the source to determine the peak signal
   _FIT_SOURCE_ IMAGE=$in XYPOS=\@xy BOX=9 VERBOSE=$verbose GAUSSIAN=$gaussian
 
   # Proceed if the fit was successful
+  my $beamfit = 0;
   if ( $_FIT_SOURCE_{FIT} ) {
-
-    # Retrieve fit parameters
+    # Although it's for assessing beam fits, we can use it here to
+    # ensure that the fit is reasonable
     my $amp = $_FIT_SOURCE_{AMPLITUDE};
-    $posn = $_FIT_SOURCE_{POSITION};
-
-    $peak = $amp->[0];
-    my %fitpars = %_FIT_SOURCE_;
-    $_PRIM_ARGS_->{BEAM} = \%fitpars;
-
-  } else {
-    # If not, use peak from stats
-    orac_warn "Fit to beam failed - using peak at centroid position for $in instead.\n";
-    # Note the position is in a colon-delimited format, so specify a
-    # 1-pixel search region to ensure the NDF section is interpreted
-    # correctly.
-    my $pos = $xy[0]."~1,".$xy[1]."~1";
-    $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
-    (my $ORAC_STATUS, $peak) = $Mon{kappa_mon}->get("stats","maximum");
-    $posn = \@xy;
+    my $major = $_FIT_SOURCE_{MAJFWHM};
+    my $minor = $_FIT_SOURCE_{MINFWHM};
+    my $axisr = $_FIT_SOURCE_{AXISR};
+    _ASSESS_BEAM_FIT_ AMP=$amp MAJOR=$major MINOR=$minor AXISR=$axisr
+    $beamfit = $_ASSESS_BEAM_FIT_{BEAM};
   }
 
-  if ($verbose) {
+  # If the fit looks good, retrieve fit parameters
+  if ($beamfit) {
+    my $amp = $_FIT_SOURCE_{AMPLITUDE};
+    $peak = $amp->[0];
+    $posn = $_FIT_SOURCE_{POSITION};
+    my %fitpars = %_FIT_SOURCE_;
+    $_PRIM_ARGS_->{BEAM} = \%fitpars;
+  } else {
+    if ($usecen) {
+      # If using centroid is OK use peak from stats
+      orac_warn "Fit to source failed - using peak at centroid position instead\n";
+      # Note the position is in a colon-delimited format, so specify a
+      # 1-pixel search region to ensure the NDF section is interpreted
+      # correctly.
+      my $pos = $xy[0]."~1,".$xy[1]."~1";
+      $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
+      (my $ORAC_STATUS, $peak) = $Mon{kappa_mon}->get("stats","maximum");
+      $posn = \@xy;
+    } else {
+      # If not, issue an error and leave results undefined
+      orac_err "Fit to source failed - ignoring $in\n";
+      $peak = undef;
+      $posn = [];
+    }
+  }
+
+  if ($verbose && defined $peak) {
     my $outpeak = sprintf "%5.3e", $peak;
-    orac_print "Calculated peak signal from map of $outpeak "
+    orac_print "Calculated peak signal from $in of $outpeak "
       .($Frm->uhdr("ORAC_DATA_UNITS"))."\n";
   }
 
 } else {
-  orac_warn "Unable to locate map peak\n";
-
-  # Return undef
+  orac_err "Unable to locate map peak\n";
   $peak = undef;
   $posn = [];
-
 }
 
 # Store the result in the hash
