@@ -203,7 +203,7 @@ if ( $proceed ) {
   my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
 
   # Find the peak signal in the image
-  _FIND_MAP_PEAK_ GROUP=$group
+  _FIND_MAP_PEAK_ GROUP=$group USECENTROID=0
 
   # Retrieve the position - if successful, continue on to derive
   # an FCF
@@ -293,12 +293,8 @@ if ( $proceed ) {
       }
 
       # Now get the flux for this filter
-      my $flux;
-      if ( defined $sourceflux ) {
-	$flux = $sourceflux;
-      } else {
-	$flux = $Cal->fluxcal($src, $filter, $ismap);
-      }
+      my $flux = (defined $sourceflux) ? $sourceflux
+	: $Cal->fluxcal($src, $filter, $ismap);
 
       # If we have a flux, store the FCF in the calibration system
       if (defined $flux) {
@@ -315,7 +311,7 @@ if ( $proceed ) {
 	  # Set the current gain - add to index file
 	  # This means that we have to create a hash with the
 	  # new keyword GAIN and the selected filter FILTER
-	  $Obj->uhdr("GAIN",$fcf);
+	  $Obj->uhdr("GAIN", $fcf);
 	  $Obj->uhdr("UNITS", $type);
 	  $Obj->uhdr("FWHM", $fwhm);
 
@@ -341,13 +337,26 @@ if ( $proceed ) {
     # Store results in primitive hash
     $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
   } else {
-    # If this is a Frame object and no FCF could be determined then
-    # the data are undoubtedly bad and should be ignored. In this case
-    # terminate the recipe - there is no need to do anything more.
     if ( !$group ) {
-      $Obj->isgood(0);
-      $Grp->check_membership;
-      orac_term "Unable to determine a FCF for this observation\n";
+      # If this is a Frame object and no FCF could be determined then
+      # check if the image has enough s/n to detect it
+      my $text = "";
+      # Find the peak in a 30x30 pixel square box
+      my $image = $Frm->file . "(~30,~30)";
+      _FIND_IMAGE_STATISTICS_ IMAGE=$image VERBOSE=0
+      _CALC_IMAGE_NOISE_ VERBOSE=0 LOGFILE=0
+      my $snr = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX} / $_CALC_IMAGE_NOISE_{SIGMA};
+
+      if ( $snr < 5 ) {
+	$text = ": source too weak to locate\n";
+      } else {
+	$text = ": bad data?";
+	$Obj->isgood(0);
+	# Check Grp membership unless it's the last one so subsequent
+	# calls to lastmember will still work as expected
+	$Grp->check_membership unless ( $Grp->lastmember($Frm) );
+      }
+      orac_err "Unable to determine a FCF for this observation$text\n";
     } else {
       # Just issue a warning otherwise
       orac_warn "Unable to determine a FCF for this observation\n";
