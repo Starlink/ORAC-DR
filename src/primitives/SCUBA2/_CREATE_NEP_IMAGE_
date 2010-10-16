@@ -1,0 +1,224 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_NEP_IMAGE_ - calculate an effective NEP image for each subarray
+
+=head1 SYNOPSIS
+
+_CREATE_NEP_IMAGE_
+
+=head1 DESCRIPTION
+
+This primitive creates an image of the effective NEP as a function of
+the pixel heater and detector bias settings.
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=over 4
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+NDFTRACE, SETMAGIC, TRANDAT
+
+=item ORAC-DR PRIMITIVES
+
+_CALCULATE_EFFECTIVE_NEP_
+
+=back
+
+=head1 OUTPUT DATA
+
+The Group uhdr contains an entry C<EFFNEP> which is the hash of
+effective NEPs indexed by subarray, heater and bias settings.
+
+=head1 OUTPUT FILES
+
+One file per subarray with the effective NEP as a function of the
+heater and bias settings.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Should we be verbose (default to no)?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+
+# Proceed with the creation of the effective NEP images if the
+# observation has ended, otherwise just calculate the effective NEP
+# and store it
+my $proceed = ($Frm->uhdr("OBSEND")) ? 1 : 0;
+
+# Flag to indicate whether the data are being processed in batch mode.
+my $batch = $Frm->uhdr("BATCH");
+
+# Obtain the NEP units
+my $file = $Frm->file;
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
+my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+my $nepunits = $units;
+$nepunits =~ s/pA/W/;
+
+# Tell the user what's happening
+my @subarrays = $Frm->subarrays;
+my $subinfostr;
+if ( $#subarrays == 0 ) {
+  $subinfostr = "subarray $subarrays[0]";
+} else {
+  $subinfostr = "subarrays ".join(", ",@subarrays);
+}
+orac_print "Calculating effective NEPs for $subinfostr...\n";
+
+# Now calculate the effective NEP for each subarray and store in a
+# hash indexed by the heater and bias settings
+my %effnep = %{$Grp->uhdr("EFFNEP")} if (defined $Grp->uhdr("EFFNEP"));
+for my $i ( 1 .. $Frm->nfiles ) {
+  my $noisefile = $Frm->file($i);
+  my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
+
+  my $nepfile = $noisefile . ".more.smurf.nep";
+  _CALCULATE_EFFECTIVE_NEP_ IN=$nepfile
+  my $effnep = $_CALCULATE_EFFECTIVE_NEP_{EFFNEP};
+  if ( $effnep ) {
+    orac_print " NEP_eff ($subarray) = ".(sprintf "%5.3e", $effnep)
+      ."  $nepunits\n", "green";
+  } else {
+    orac_warn "Bad NEP_eff for $noisefile\n";
+    $effnep = -1;
+  }
+
+  my $key = join("_", $subarray, $Frm->hdrval("PIXHEAT",$i-1),
+		 $Frm->hdrval("DETBIAS",$i-1));
+  $effnep{$key} = $effnep;
+}
+
+# Store effective NEP values in Grp uhdr
+$Grp->uhdr("EFFNEP", \%effnep);
+
+if ( $proceed ) {
+  # OK now we have the %effnep info, write an ascii file and convert
+  # it to an NDF
+  my $images = ($Frm->numsubarrays == 1) ? "image" : "images";
+  orac_print "Creating $images of effective NEP as function of heater/bias settings\n";
+
+  # Probably don't need to do this, but just in case...
+  %effnep = %{$Grp->uhdr("EFFNEP")};
+
+  # In QL/summit mode, the heater and bias value arrays have to filled
+  # the hard way; in batch mode use hdrvals.
+  my (@heat, @bias);
+  if ($batch) {
+    @heat = $Frm->hdrvals("PIXHEAT");
+    @bias = $Frm->hdrvals("DETBIAS");
+  } else {
+    my @array = sort grep { $subarrays[0] } keys %effnep;
+    # Obtain the array of heater and bias settings - the elements will
+    # alternate: heater1, bias1, heater2, bias2, ..., heaterN, biasN
+    my @heat_bias = map { grep { /^\d+/ } split(/\_/, $_) } @array;
+
+    my $npts = @heat_bias / 2;
+    if (@heat_bias % 2 != 0) {
+      orac_err "Something went wrong - badly wrong!\n";
+    }
+    my $j = 0;
+    my (%heat, %bias);
+    for my $i ( 0 .. $npts-1 ) {
+      $heat{$heat_bias[$i + $j]} = 1
+	unless (defined $heat{$heat_bias[$i + $j]});
+      $bias{$heat_bias[$i + 1 + $j]} = 1
+	unless (defined $bias{$heat_bias[$i + 1 + $j]});
+      $j++;
+    }
+    @heat = sort keys %heat;
+    @bias = sort keys %bias;
+  }
+
+  # Number of heater/bias settings
+  my $nx = @heat;
+  my $ny = @bias;
+  # Assume the heater and bias increments are the same as the first one
+  my $dx = $heat[1] - $heat[0];
+  my $dy = $bias[1] - $bias[0];
+  # Define arguments for trandat common to all subarrays
+  my $baseargs = "dtype='_double' shape=[$nx,$ny] auto=false bad=true poscols=[1,2] valcol=3 pscale=[$dx,$dy]";
+
+  my @outfiles;
+  my $fitshdr = $Frm->fits;
+  orac_print "Writing: ";
+  foreach my $subarray ( @subarrays ) {
+
+    # Create the ASCII file, each row is: heater bias NEP_eff
+    my @entries;
+    foreach my $bias (@bias) {
+      foreach my $heat (@heat) {
+	my $key = join("_", $subarray, $heat, $bias);
+	 push(@entries, "$heat $bias $effnep{$key}\n");
+      }
+    }
+    my $entries = write_file_list(@entries);
+
+    # Construct output file name by hand
+    my $outndf = $subarray . $Frm->hdr("UTDATE") . "_".
+      (sprintf "%05d", $Frm->hdr("OBSNUM")) ."_effnep";
+
+    # Convert ASCII file to NDF
+    my $title = "Effective NEP for $subarray";
+    my $temp = new ORAC::TempFile;
+    my $tranargs = $baseargs . " freename=$entries ndf=$temp title='$title'";
+    $Mon{kappa_mon}->obeyw("trandat","$tranargs");
+
+    # Now replace any bad entries with real bad values
+    orac_print "$outndf ";
+    my $args = "in=$temp out=$outndf repval=-1";
+    $Mon{kappa_mon}->obeyw("setmagic","$args");
+
+    # Add WCS info
+
+
+    # Add the FITS header
+    $fitshdr->writehdr( File => $outndf );
+
+    push(@outfiles, $outndf);
+  }
+  orac_print "\n";
+
+  # Store the output files
+  $Frm->files(@outfiles);
+}
