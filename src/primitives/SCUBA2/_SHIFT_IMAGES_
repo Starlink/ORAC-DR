@@ -133,7 +133,7 @@ if ($Frmobj) {
 return ORAC__OK unless ($have_data);
 
 # Verbosity flag - default to false
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Assumptions:
 # - images are all of same source
@@ -168,22 +168,34 @@ if ( $isoffset ) {
     $skyref = $wcs->Get("SkyRef");
     $skyref =~ s/,//g;
     @refpos = split(/\s+/, $skyref);
-    orac_print "Shifting images relative to sky reference position\n";
+    orac_print "Shifting images relative to sky reference position: $refpos[0], $refpos[1]\n" if ($verbose);
   } else {
     # Otherwise use the peak position of the first file, assumed to
     # be close to the map centre
-    my $image = $Frmobj->file(1);
-    _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
-    my $posn = $_FIND_MAP_PEAK_{POSITION};
-    if ( @$posn ) {
-      @refpos = @{$posn};
-      $register_to_first = 1;
-      orac_print "Shifting images relative to $image\n" if ($verbose);
-      push(@shifted, $image);
+    if (defined $Frm->uhdr("RECPAR_REGISTER_RA") &&
+	defined $Frm->uhdr("RECPAR_REGISTER_DEC")) {
+      # Note that the RA, Dec values must be of the form HH:MM:SS.S,
+      # DD:MM:SS.S but no checking is done until the Astro::Coords
+      # object is created later
+      @refpos = ($Frm->uhdr("RECPAR_REGISTER_RA"),
+		 $Frm->uhdr("RECPAR_REGISTER_DEC"));
+      orac_print "Registering to given reference position: $refpos[0], $refpos[1]\n" if ($verbose);
     } else {
-      # Try next file or give up?
-      orac_err "Unable to locate a peak to register images\n";
-      return ORAC__OK;
+      my $image = $Frmobj->file(1);
+      _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
+      my $posn = $_FIND_MAP_PEAK_{POSITION};
+      if ( @$posn ) {
+	@refpos = @{$posn};
+	$register_to_first = 1;
+	orac_print "Shifting images relative to $image\n"
+	          ."Registering to source found at $refpos[0], $refpos[1]\n"
+	    if ($verbose);
+	push(@shifted, $image);
+      } else {
+	# Try next file or give up?
+	orac_err "Unable to locate a peak to register images\n";
+	return ORAC__OK;
+      }
     }
   }
   $refcoords = new Astro::Coords( ra => $refpos[0], dec => $refpos[1],
@@ -246,10 +258,10 @@ foreach my $image ($Frmobj->files) {
       use Astro::Coords::Offset;
       my $coords = new Astro::Coords::Offset( @off, system => $cosys );
       ($dx, $dy) = $coords->offsets;
-      ($dxas, $dyas) = (-$dx->arcsec, -$dy->arcsec);
+      ($dxas, $dyas) = ($dx->arcsec, $dy->arcsec);
     }
-    orac_print " Shifting $image by ".(sprintf "%4.2f", $dxas).", "
-      .(sprintf "%4.2f", $dyas)." arcsec\n", "green";
+    orac_print " Shifting $image by ".(sprintf "%4.2f", -$dxas).", "
+      .(sprintf "%4.2f", -$dyas)." arcsec\n", "green";
   }
 }
 
