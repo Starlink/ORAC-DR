@@ -8,6 +8,8 @@ _SHIFT_IMAGES_ - shift the WCS of images to a common position
 
  _SHIFT_IMAGES_ IMAGES=\@images
 
+ _SHIFT_IMAGES_ FRAME=$Frm INITPOS=\@radec
+
 =head1 DESCRIPTION
 
 This primitive shifts the input images so that the source position is
@@ -28,10 +30,18 @@ immediately if no peak could be located near the image centre.
 
 =item *
 
+Alternatively the images are shifted to a given reference position
+(passed in via recipe parameters).
+
+=item *
+
 For images in offset coordinate systems, the images are shifted to
 (0,0).
 
 =back
+
+Copies of the original files are made if the recipe parameter
+C<REGISTER_NOREPLACE> is true.
 
 =head1 ARGUMENTS
 
@@ -79,11 +89,17 @@ None.
 If a Frame object is given, it will contain only those files for which
 a solution could be found. The WCS is amended for those files.
 
+If the user requested that the original filesnot be shifted, then the
+shifted (registered) files will have the suffix C<_reg>.
+
 =head1 NOTES
 
 The list of files should be of the same source and all should be in
 the same coordinate system. The WCS info for the first file in the
 list is used to obtain the reference position.
+
+If used C<blind> (i.e. with B<INITPOS> unset) then the brightest
+object in each image must be the same source.
 
 =head1 AUTHOR
 
@@ -116,6 +132,17 @@ my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", undef);
 my $have_data = 0;
 if ($Frmobj) {
   $have_data = 1 if ($Frmobj->isa("ORAC::Frame"));
+  # Make a copy of the input files if the user does not want to
+  # shift the originals
+  if ( $Frmobj->uhdr("RECPAR_REGISTER_NOREPLACE") ) {
+    my @out;
+    foreach my $i (1 .. $Frmobj->nfiles) {
+      my ($in, $out) = $Frmobj->inout("_reg", $i);
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+      push(@out, $out);
+    }
+    $Frmobj->files(@out);
+  }
 } else {
   # Alternatively, get reference to array of images
   my $imageref = get_prim_arg($_PRIM_ARGS_, "IMAGES", undef);
@@ -137,6 +164,7 @@ my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Assumptions:
 # - images are all of same source
+# - the brightest source in the images is the one to register to
 # - images have same wcs info so only need to use one
 # - images are all in same coordinate system
 
@@ -156,13 +184,13 @@ if ($cosys eq "J2000") {
   $units = "degrees";
 }
 
-my @shifted;
+my (@shifted, @refpos);
 
 my ($refcoords, $register_to_first);
 if ( $isoffset ) {
   orac_print "Shifting images relative to (0,0)\n";
 } else {
-  my ($skyref, @refpos);
+  my $skyref;
   # Use the SkyRef position for calibrators since they are known
   if ( $Cal->iscalsource($Frm->hdr("OBJECT")) ) {
     $skyref = $wcs->Get("SkyRef");
@@ -181,6 +209,8 @@ if ( $isoffset ) {
 		 $Frm->uhdr("RECPAR_REGISTER_DEC"));
       orac_print "Registering to given reference position: $refpos[0], $refpos[1]\n" if ($verbose);
     } else {
+      # Find the peak in the first image - assume it will be the same
+      # in all images!
       my $image = $Frmobj->file(1);
       _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0
       my $posn = $_FIND_MAP_PEAK_{POSITION};
@@ -202,24 +232,21 @@ if ( $isoffset ) {
 				  type => $cosys, units => "sexagesimal");
 }
 
+# Now shift images to reference position determined above
 my (@dx, @dy);
 foreach my $image ($Frmobj->files) {
+  # Skip the first file if it's used to register the others
   if ($register_to_first) {
     $register_to_first = 0;
     next;
   }
-  # Apply the matched filter to improve S/N
-  my $image_mf = new ORAC::TempFile;
-  _APPLY_MATCHED_FILTER_ IN=$image OUT=$image_mf STORE=0 VERBOSE=0
 
-  # Find the peak
-  _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image_mf VERBOSE=0
+  # Find the peak nearest the reference position
+  _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0 INITPOS=\@refpos
   my $posn = $_FIND_MAP_PEAK_{POSITION};
 
-  # Skip to next file if no position could be found. In principle,
-  # any file for which no peak could be found could be removed from
-  # the coadd list, but that would require some work on the
-  # interface.
+  # Skip to next file if no position could be found; do not store
+  # name of unshifted files
   unless (@$posn) {
     orac_warn "Unable to find a peak for $image - will not shift WCS\n";
     next;
@@ -266,12 +293,13 @@ foreach my $image ($Frmobj->files) {
 }
 
 if (@shifted) {
-  if (@shifted == 1) {
+  if (@shifted == 1 && $Frmobj->nfiles > 1) {
     orac_warn "Only 1 of ".($Frmobj->nfiles)." images shifted - check other input images for sources\n";
     orac_warn "Frame object will not be updated\n" if ($verbose);
   } else {
-    # Store the shifted files in the Frame object
+    # Store the number of shifted files in the global Frame object
     $Frm->uhdr("NSHIFT", scalar(@shifted));
+    # Store the shifted files in the given Frame object
     $Frmobj->files(@shifted);
   }
 } else {
