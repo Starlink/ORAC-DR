@@ -900,7 +900,7 @@ sub subarrays {
     push( @subarrays, $self->hdr("SUBARRAY") );
   }
 
-  return @subarrays;
+  return sort @subarrays;
 }
 
 =item B<makemap_args>
