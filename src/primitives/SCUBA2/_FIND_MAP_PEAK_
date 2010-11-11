@@ -2,26 +2,40 @@
 
 =head1 NAME
 
-_FIND_MAP_PEAK_ - Determine the peak signal of a point source
+_FIND_MAP_PEAK_ - Determine the peak signal of the brightest source
 
 =head1 SYNOPSIS
 
+ _FIND_MAP_PEAK_ IMAGE=$image
+
+ _FIND_MAP_PEAK_ GROUP=1 INITPOS=\@radec
+
 =head1 DESCRIPTION
 
-Finds the peak signal of a point source located at the map origin.
-No attempt is made to search for sources not located at approximately
-the map centre.
+Finds the location and value of the brightest source in the given
+image. The user can optionally provide an initial position which is
+used to narrow down the search to a 2x2 arcmin^2 region centred on
+that position. If desired, the best-fit source position can be derived
+by fitting a 2-d profile. The peak value is then the maximum from this
+fit.
 
-The peak signal is determined by fitting a 2-D Gaussian function, or
-from a centroid if the fit failed. The user can control whether or not
-the fallback centroid results are acceptable via the B<USECENTROID>
-parameter.
+The primitive works by first creating a signal-to-noise image. If the
+peak S/N exceeds 5, the primitive goes on to apply a matched filter
+and the peak value and position are derived from the filtered image.
+
+The primitive returns C<undef> values if no 5-sigma or greater peak
+could be located.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
+
+=item B<FITPEAK>
+
+A flag to denote whether the peak position should be refined by fitting
+a 2-d function. Default is 1 (yes).
 
 =item B<GAUSSIAN>
 
@@ -30,19 +44,19 @@ default is 0 (no).
 
 =item B<GROUP>
 
-If true, the group file is used rather than the frame file.
+If true, the Group file is used rather than the Frame file. Default is
+false (0).
 
 =item B<IMAGE>
 
 Name of input image. Default is to use the file obtained from Grp or
 Frm depending on the value of B<GROUP>.
 
-=item B<USECENTROID>
+=item B<INITPOS>
 
-A flag to denote whether the centroid position is a good enough
-approximation for the map peak. If true, then the centroid position
-and flux density at that position are returned if the 2-D fit
-fails. Default is 1 (yes).
+Optional reference to an array containing the X, Y coordinate to be
+used as the initial estimate of the peak position. If not given, the
+entire image will be searched for the brightest peak.
 
 =item B<VERBOSE>
 
@@ -59,11 +73,11 @@ The following external tasks are used:
 
 =item KAPPA:
 
-STATS
+NDFCOPY, NDFTRACE, STATS, THRESH
 
 =item ORAC-DR PRIMITIVES:
 
-_ASSESS_BEAM_FIT_, _CENTROID_IMAGE_, _FIT_SOURCE_
+_APPLY_MATCHED_FILTER_, _ASSESS_BEAM_FIT_, _FIT_SOURCE_
 
 =back
 
@@ -130,27 +144,79 @@ my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Which object?
 my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
+
 # Input file
 my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
+# Image to use for finding the peak value and position
+my $image = new ORAC::TempFile;
 
-# Peak position and reference to array with X,Y position
-my ($peak, $posn);
+# Fit the peak position - if false then the peak position and signal
+# from KAPPA stats will be used
+my $fitpeak = get_prim_arg($_PRIM_ARGS_, "FITPEAK", 1);
 
-# Determine centroid position
-_CENTROID_IMAGE_ IMAGE=$in
-my @xy = (defined $_CENTROID_IMAGE_{RESULTS}->[0] &&
-	  defined $_CENTROID_IMAGE_{RESULTS}->[1]) ?
-  @{ $_CENTROID_IMAGE_{RESULTS} } : ();
+# Initial position
+my $initpos = get_prim_arg($_PRIM_ARGS_, "INITPOS", undef);
 
-if ( defined $xy[0] && defined $xy[1] ) {
+# If an initial position is given, copy out a 2x2 arcmin^2 box centred
+# on that position
+if ($initpos) {
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+  my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+  ($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+  my $pixscale = 0.5*($pixscale[0] + $pixscale[1]);
+
+  # Use a 2-arcmin image for speed
+  my $minmapsize = 120.0;
+  my $region = int($minmapsize / $pixscale);
+  # Copy out a box centred on the source if the map is larger than the
+  # minimum
+  if ($region < $dims[0] && $region < $dims[1]) {
+    my ($x, $y) = ($initpos->[0], $initpos->[1]);
+    my $infile = $in. "($x~$region,$y~$region,)";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$infile out=$image");
+  } else {
+    $image = $in;
+  }
+}
+
+# Now find the position of the brightest peak in the map
+my $temp1 = new ORAC::TempFile;
+my $temp2 = new ORAC::TempFile;
+# Make snr image
+$Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$temp1");
+
+# Check that SNR image has >5 sigma peaks
+$Mon{kappa_mon}->obeyw("stats","ndf=$temp1");
+my ($ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
+my ($peakval, @xy, $peak, $posn);
+if ( $peaksn > 5 ) {
+
+  _APPLY_MATCHED_FILTER_ IN=$temp1 OUT=$temp2 STORE=0 VERBOSE=0
+
+  # Find position of max value
+  $Mon{kappa_mon}->obeyw("stats","ndf=$temp2");
+  ($ORAC_STATUS, my $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
+  # Split into coordinates
+  @xy = split(/\,\s+/, $pkpos);
+
+  # Now find the value in the original image at the maximum
+  $in = $image."($xy[0]~1,$xy[1]~1,)";
+  $Mon{kappa_mon}->obeyw("stats","ndf=$image");
+  ($ORAC_STATUS, $peakval) = $Mon{kappa_mon}->get("stats", "maximum");
+
+} else {
+  orac_warn "Image $in has no significant maximum\n";
+  @xy = ();
+  $fitpeak = 0;
+}
+
+# Fit the peak position if desired
+if ($fitpeak) {
   # Are we forcing a gaussian fit?
   my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
 
-  # Sometimes centroid isn't good enough
-  my $usecen = get_prim_arg($_PRIM_ARGS_, "USECENTROID", 1);
-
   # Fit a 2-d gaussian to the source to determine the peak signal
-  _FIT_SOURCE_ IMAGE=$in XYPOS=\@xy BOX=9 VERBOSE=$verbose GAUSSIAN=$gaussian
+  _FIT_SOURCE_ IMAGE=$image XYPOS=\@xy BOX=12 VERBOSE=$verbose GAUSSIAN=$gaussian
 
   # Proceed if the fit was successful
   my $beamfit = 0;
@@ -164,8 +230,8 @@ if ( defined $xy[0] && defined $xy[1] ) {
     _ASSESS_BEAM_FIT_ AMP=$amp MAJOR=$major MINOR=$minor AXISR=$axisr
     $beamfit = $_ASSESS_BEAM_FIT_{BEAM};
   }
-
-  # If the fit looks good, retrieve fit parameters
+  # If the fit looks good, retrieve fit parameters, otherwise use the
+  # maximum derived above
   if ($beamfit) {
     my $amp = $_FIT_SOURCE_{AMPLITUDE};
     $peak = $amp->[0];
@@ -173,34 +239,11 @@ if ( defined $xy[0] && defined $xy[1] ) {
     my %fitpars = %_FIT_SOURCE_;
     $_PRIM_ARGS_->{BEAM} = \%fitpars;
   } else {
-    if ($usecen) {
-      # If using centroid is OK use peak from stats
-      orac_warn "Fit to source failed - using peak at centroid position instead\n";
-      # Note the position is in a colon-delimited format, so specify a
-      # 1-pixel search region to ensure the NDF section is interpreted
-      # correctly.
-      my $pos = $xy[0]."~1,".$xy[1]."~1";
-      $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
-      (my $ORAC_STATUS, $peak) = $Mon{kappa_mon}->get("stats","maximum");
-      $posn = \@xy;
-    } else {
-      # If not, issue an error and leave results undefined
-      orac_err "Fit to source failed - ignoring $in\n";
-      $peak = undef;
-      $posn = [];
-    }
+    orac_warn "Fit to source failed - using peak position instead\n;";
   }
-
-  if ($verbose && defined $peak) {
-    my $outpeak = sprintf "%5.3e", $peak;
-    orac_print "Calculated peak signal from $in of $outpeak "
-      .($Frm->uhdr("ORAC_DATA_UNITS"))."\n";
-  }
-
 } else {
-  orac_err "Unable to locate map peak\n";
-  $peak = undef;
-  $posn = [];
+  $peak = $peakval;
+  $posn = \@xy;
 }
 
 # Store the result in the hash
