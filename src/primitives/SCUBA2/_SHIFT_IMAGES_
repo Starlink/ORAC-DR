@@ -40,8 +40,8 @@ For images in offset coordinate systems, the images are shifted to
 
 =back
 
-Copies of the original files are made if the recipe parameter
-C<REGISTER_NOREPLACE> is true.
+Copies of the original files are made unless the B<INPLACE> flag is
+true.
 
 =head1 ARGUMENTS
 
@@ -49,15 +49,20 @@ The following arguments are supported:
 
 =over 4
 
-=item FRAME
+=item B<FRAME>
 
 An ORAC-DR Frame object containing the images to shift. No default.
 
-=item IMAGES
+=item B<IMAGES>
 
 Reference to an array of file names. No default.
 
-=item VERBOSE
+=item B<INPLACE>
+
+Flag to denote that the WCS should be modified in place. Default is 0
+(do not modify in place).
+
+=item B<VERBOSE>
 
 Flag to indicate whether the shifts should be reported. Default is 0
 (no reporting).
@@ -89,7 +94,7 @@ None.
 If a Frame object is given, it will contain only those files for which
 a solution could be found. The WCS is amended for those files.
 
-If the user requested that the original filesnot be shifted, then the
+If the user requested that the original files not be shifted, then the
 shifted (registered) files will have the suffix C<_reg>.
 
 =head1 NOTES
@@ -100,6 +105,9 @@ list is used to obtain the reference position.
 
 If used C<blind> (i.e. with B<INITPOS> unset) then the brightest
 object in each image must be the same source.
+
+The B<INPLACE> parameter should be true for the pipeline, false for
+PICARD.
 
 =head1 AUTHOR
 
@@ -131,10 +139,12 @@ my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", undef);
 
 my $have_data = 0;
 if ($Frmobj) {
+  # Are the images to be shifted `in place' or are copies to be made?
+  my $modify_in_place = get_prim_arg($_PRIM_ARGS_, "INPLACE", 0);
   $have_data = 1 if ($Frmobj->isa("ORAC::Frame"));
   # Make a copy of the input files if the user does not want to
   # shift the originals
-  if ( $Frmobj->uhdr("RECPAR_REGISTER_NOREPLACE") ) {
+  unless ( $modify_in_place ) {
     my @out;
     foreach my $i (1 .. $Frmobj->nfiles) {
       my ($in, $out) = $Frmobj->inout("_reg", $i);
@@ -242,7 +252,7 @@ foreach my $image ($Frmobj->files) {
   }
 
   # Find the peak nearest the reference position
-  _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image VERBOSE=0 INITPOS=\@refpos
+  _FIND_MAP_PEAK_ GAUSSIAN=0 IMAGE=$image INITPOS=\@refpos
   my $posn = $_FIND_MAP_PEAK_{POSITION};
 
   # Skip to next file if no position could be found; do not store
@@ -270,6 +280,8 @@ foreach my $image ($Frmobj->files) {
     ($dx, $dy) = $refcoords->distance( $coords );
     # Retrieve offsets in arcsec
     ($dxas, $dyas) = ($dx->arcsec, $dy->arcsec);
+    # The shift in Dec is +ve or -ve depending on the sign of the Dec
+    $dyas = ($coords->dec > 0) ? $dyas : -$dyas;
     my $args = "stype=absolute abs=[$dxas,$dyas,0] ndf=$image";
     $Mon{kappa_mon}->obeyw("wcsslide","$args");
   }
