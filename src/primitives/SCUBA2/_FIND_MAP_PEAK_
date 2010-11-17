@@ -180,21 +180,21 @@ if ($initpos) {
 }
 
 # Now find the position of the brightest peak in the map
-my $temp1 = new ORAC::TempFile;
-my $temp2 = new ORAC::TempFile;
+my $image_snr = new ORAC::TempFile;
 # Make snr image
-$Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$temp1");
+$Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$image_snr");
 
 # Check that SNR image has >5 sigma peaks
-$Mon{kappa_mon}->obeyw("stats","ndf=$temp1");
+$Mon{kappa_mon}->obeyw("stats","ndf=$image_snr");
 my ($ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
 my ($peakval, @xy, $peak, $posn);
 if ( $peaksn > 5 ) {
 
-  _APPLY_MATCHED_FILTER_ IN=$temp1 OUT=$temp2 STORE=0 VERBOSE=0
+  my $image_mf = new ORAC::TempFile;
+  _APPLY_MATCHED_FILTER_ IN=$image OUT=$image_mf STORE=0 VERBOSE=0
 
   # Find position of max value
-  $Mon{kappa_mon}->obeyw("stats","ndf=$temp2");
+  $Mon{kappa_mon}->obeyw("stats","ndf=$image_mf");
   ($ORAC_STATUS, my $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
   # Split into coordinates
   @xy = split(/\,\s+/, $pkpos);
@@ -213,10 +213,10 @@ if ( $peaksn > 5 ) {
 # Fit the peak position if desired
 if ($fitpeak) {
   # Are we forcing a gaussian fit?
-  my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
+  my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 0);
 
   # Fit a 2-d gaussian to the source to determine the peak signal
-  _FIT_SOURCE_ IMAGE=$image XYPOS=\@xy BOX=12 VERBOSE=$verbose GAUSSIAN=$gaussian
+  _FIT_SOURCE_ IMAGE=$image XYPOS=\@xy BOX=15 VERBOSE=0 GAUSSIAN=$gaussian
 
   # Proceed if the fit was successful
   my $beamfit = 0;
@@ -236,10 +236,14 @@ if ($fitpeak) {
     my $amp = $_FIT_SOURCE_{AMPLITUDE};
     $peak = $amp->[0];
     $posn = $_FIT_SOURCE_{POSITION};
+    orac_print " Fitted peak at $posn->[0], $posn->[1]\n" if ($verbose);
     my %fitpars = %_FIT_SOURCE_;
     $_PRIM_ARGS_->{BEAM} = \%fitpars;
   } else {
     orac_warn "Fit to source failed - using peak position instead\n;";
+    $peak = $peakval;
+    $posn = \@xy;
+    orac_print " Found peak at $posn->[0], $posn->[1]\n" if ($verbose);
   }
 } else {
   $peak = $peakval;
