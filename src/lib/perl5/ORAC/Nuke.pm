@@ -138,7 +138,7 @@ sub orac_proc_kill {
         if ($pid =~ /^\d+$/) {
 
           # Now kill the relevant PID
-          kill 'KILL', $pid
+          kill 'ABRT', $pid
             unless $pid == $$;
 
         } else {
