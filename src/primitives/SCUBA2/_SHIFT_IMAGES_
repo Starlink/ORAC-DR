@@ -242,6 +242,10 @@ if ( $isoffset ) {
 				  type => $cosys, units => "sexagesimal");
 }
 
+# Need to slide the WCS for the exp_time and weights components as
+# well
+my @comps = ("data", ".more.smurf.exp_time", ".more.smurf.weights");
+
 # Now shift images to reference position determined above
 my (@dx, @dy);
 foreach my $image ($Frmobj->files) {
@@ -270,9 +274,16 @@ foreach my $image ($Frmobj->files) {
     # In offset coord systems we can shift by the fitted offsets directly
     my $centre = ( $units eq "sexagesimal" ) ? "00:00:00.0,00:00:00.0"
       : "0.0,0.0";
-    my $args = "stype=relative fid='".$centre.",0' obj='"
-      .$posn->[0].",".$posn->[1].",0' ndf=$image";
-    $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    foreach my $comp (@comps) {
+      my ($ndf, $dz) = ($image, 0);
+      if ($comp ne "data") {
+	$ndf .= $comp;
+	$dz = "";
+      }
+      my $args = "stype=relative ndf=$ndf fid='".$centre.",0' obj='"
+	.$posn->[0].",".$posn->[1].",$dz'";
+      $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    }
   } else {
     my $coords = new Astro::Coords( ra => $posn->[0], dec => $posn->[1],
 				    type => $cosys, units => $units );
@@ -282,8 +293,15 @@ foreach my $image ($Frmobj->files) {
     ($dxas, $dyas) = ($dx->arcsec, $dy->arcsec);
     # The shift in Dec is +ve or -ve depending on the sign of the Dec
     $dyas = ($coords->dec > 0) ? $dyas : -$dyas;
-    my $args = "stype=absolute abs=[$dxas,$dyas,0] ndf=$image";
-    $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    foreach my $comp (@comps) {
+      my ($ndf, $dz) = ($image, 0);
+      if ($comp ne "data") {
+	$ndf .= $comp;
+	$dz = "";
+      }
+      my $args = "stype=absolute abs=[$dxas,$dyas,$dz] ndf=$ndf";
+      $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    }
   }
 
   # Report the shifts for each image if requested
