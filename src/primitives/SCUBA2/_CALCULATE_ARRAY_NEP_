@@ -2,26 +2,33 @@
 
 =head1 NAME
 
-_CALCULATE_EFFECTIVE_NEP_ - derive an effecitve NEP for an array
+_CALCULATE_ARRAY_NEP_ - derive the effective or RMS NEP for a subarray
 
 =head1 SYNOPSIS
 
- _CALCULATE_EFFECTIVE_NEP_ IN=$nepfile
+ _CALCULATE_ARRAY_NEP_ IN=$nepfile
+
+ _CALCULATE_ARRAY_NEP_ IN=$nepfile NEPVAL=rms
 
 =head1 DESCRIPTION
 
-This primitive calculates the effective NEP given an image containing
-NEP values. The effective NEP is defined as the square-root of the
-reciprocal of the sum of the reciprocal squares of the NEP values:
+This primitive calculates the RMS or effective NEP given an image
+containing NEP values. The effective NEP is defined as the square-root
+of the reciprocal of the sum of the reciprocal squares of the NEP
+values:
 
-NEP_eff = sqrt( 1 / sum_i (1/NEFD_i)**2  )
+NEP_eff = sqrt( N_bol / sum_i (1/NEP_i)**2  )
 
 where NEP_i is the NEP for bolometer i and the sum is over all
-bolometers.
+bolometers (1 to N_bol).
+
+The RMS NEP is simply:
+
+NEP_rms = sqrt( (sum_i (NEP_i)**2) / N_bol  )
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 4
 
@@ -29,6 +36,11 @@ The following argument is supported:
 
 Name of input NEP file. No default. Note this must be the name of the
 NEP file itself, not the top-level container NDF.
+
+=item B<NEPTYPE>
+
+Type of NEP to return (effective or RMS). May be C<eff> or
+C<rms>. Default is C<eff>.
 
 =back
 
@@ -50,8 +62,8 @@ _FIND_IMAGE_STATISTICS_
 
 =head1 OUTPUT DATA
 
-The primitive hash, C<%_CALCULATE_EFFECTIVE_NEP_> contains a single
-key on exit called C<EFFNEP> which contains the value of the effective
+The primitive hash, C<%_CALCULATE_ARRAY_NEP_> contains a single
+key on exit called C<NEPVAL> which contains the value of the effective
 NEP derived in this primitive. The value is C<undef> if the
 calculation failed.
 
@@ -89,19 +101,33 @@ USA.
 =cut
 
 my $nepfile = get_prim_arg($_PRIM_ARGS_, "IN", undef);
-orac_err "_CALCULATE_EFFECTIVE_NEP_ requires in input file"
+orac_err "_CALCULATE_ARRAY_NEP_ requires in input file"
   unless defined $nepfile;
 
-# First step - take the reciprocal of the NEP image and square it
+my $result = lc(get_prim_arg($_PRIM_ARGS_, "NEPTYPE", "eff"));
+
+# Calculate the square or the reciprocal square of the NEP image
+my $exp = ($result eq "rms") ? "(ia**2)" : "(1./ia**2)";
 my $out = new ORAC::TempFile;
 my $outfile = $out->file;
-my $args = "ia=$nepfile exp=(1./ia**2) out=$outfile";
+my $args = "ia=$nepfile exp=$exp out=$outfile";
 $Mon{kappa_mon}->obeyw("maths","$args");
 
 # Then calculate sum of the pixels in that image
 _FIND_IMAGE_STATISTICS_ HISTAT=0 IMAGE=$outfile VERBOSE=0
 my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
 
-my $effnep = ( $results{SUM} != 0 ) ? sqrt( $results{NUMGOOD} / $results{SUM} ) : undef;
+# Set the numerator and denominator accordingly
+my ($num, $denom);
+if ($result eq "rms") {
+  $num = $results{SUM};
+  $denom = $results{NUMGOOD};
+} else {
+  $num = $results{NUMGOOD};
+  $denom = $results{SUM};
+}
 
-$_CALCULATE_EFFECTIVE_NEP_{EFFNEP} = $effnep;
+# Protect against divide-by-zero
+my $nep = ( $denom != 0 ) ? sqrt( $num / $denom ) : undef;
+
+$_CALCULATE_ARRAY_NEP_{NEPVAL} = $nep;
