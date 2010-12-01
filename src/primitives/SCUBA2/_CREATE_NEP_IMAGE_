@@ -10,14 +10,28 @@ _CREATE_NEP_IMAGE_
 
 =head1 DESCRIPTION
 
-This primitive creates an image of the effective NEP as a function of
-the pixel heater and detector bias settings.
+This primitive creates an image of the effective or RMS NEP as a
+function of the pixel heater and detector bias settings.
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 4
+
+=item B<GROUP>
+
+Group object to retrieve Frames from. Default is $Grp.
+
+=item B<GRPSTORE>
+
+Flag to denote whether the results should be stored in the Frame or
+Group object. Default is 0 (store in Frame).
+
+=item B<NEPTYPE>
+
+Type of NEP image to create. May be C<eff> or C<rms> for the
+effective or RMS NEPs respectively.
 
 =item B<VERBOSE>
 
@@ -38,19 +52,22 @@ NDFTRACE, SETMAGIC, TRANDAT
 
 =item ORAC-DR PRIMITIVES
 
-_CALCULATE_EFFECTIVE_NEP_
+_CALCULATE_ARRAY_NEP_
 
 =back
 
 =head1 OUTPUT DATA
 
-The Group uhdr contains an entry C<EFFNEP> which is the hash of
-effective NEPs indexed by subarray, heater and bias settings.
+The Group uhdr contains entries C<EFFNEP> and C<RMSNEP> which are hash
+of effective and RMS NEPs respectively, indexed by subarray, heater
+and bias settings.
+
+The files are stored in the given Group object.
 
 =head1 OUTPUT FILES
 
-One file per subarray with the effective NEP as a function of the
-heater and bias settings.
+One file per subarray with the RMS or effective NEP as a function of
+the heater and bias settings.
 
 =head1 AUTHOR
 
@@ -81,74 +98,98 @@ USA.
 # Should we be verbose (default to no)?
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
-# Proceed with the creation of the effective NEP images if the
-# observation has ended, otherwise just calculate the effective NEP
-# and store it
-my $proceed = ($Frm->uhdr("OBSEND")) ? 1 : 0;
+# Group object to retrieve Frame objects from
+my $Grpobj = get_prim_arg( $_PRIM_ARGS_, "GROUP", $Grp );
+
+# NEP type to calculate: RMS or effective
+my $neptype = lc(get_prim_arg( $_PRIM_ARGS_, "NEPTYPE", "eff"));
+
+my $type = "effective";
+my $uhdrnep = "EFFNEP";
+my $NEP = "NEP_eff";
+if ($neptype eq "rms") {
+  $type = "RMS";
+  $uhdrnep = "RMSNEP";
+  $NEP = "NEP_rms";
+}
+
+my $Frmobj;
+if ($Frm->uhdr("NOISE")) {
+  $Frmobj = $Frm;
+} else {
+  $Frmobj = $Grpobj->frame(-1);
+}
+
+# Proceed with the creation of the NEP images if the observation has
+# ended, otherwise just calculate the rms/effective NEP and store it
+my $proceed = ($Frmobj->uhdr("OBSEND")) ? 1 : 0;
 
 # Flag to indicate whether the data are being processed in batch mode.
 my $batch = $Frm->uhdr("BATCH");
 
 # Obtain the NEP units
-my $file = $Frm->file;
+my $file = $Frmobj->file;
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
 my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
 my $nepunits = $units;
 $nepunits =~ s/pA/W/;
 
 # Tell the user what's happening
-my @subarrays = $Frm->subarrays;
+my @subarrays = $Frmobj->subarrays;
 my $subinfostr;
 if ( $#subarrays == 0 ) {
   $subinfostr = "subarray $subarrays[0]";
 } else {
   $subinfostr = "subarrays ".join(", ",@subarrays);
 }
-orac_print "Calculating effective NEPs for $subinfostr...\n";
+orac_print "Calculating $type NEPs for $subinfostr...\n";
 
-# Now calculate the effective NEP for each subarray and store in a
+# Now calculate the rms/effective NEP for each subarray and store in a
 # hash indexed by the heater and bias settings
-my %effnep = %{$Grp->uhdr("EFFNEP")} if (defined $Grp->uhdr("EFFNEP"));
-for my $i ( 1 .. $Frm->nfiles ) {
-  my $noisefile = $Frm->file($i);
-  my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
+my %nep = %{$Grpobj->uhdr($uhdrnep)} if (defined $Grpobj->uhdr($uhdrnep));
+my @frames = ($batch) ? $Grpobj->members : ($Frm);
+foreach my $Frmobj (@frames) {
+  for my $i ( 1 .. $Frmobj->nfiles ) {
+    my $noisefile = $Frmobj->file($i);
+    my $subarray = $Frmobj->hdrval("SUBARRAY",$i-1);
 
-  my $nepfile = $noisefile . ".more.smurf.nep";
-  _CALCULATE_EFFECTIVE_NEP_ IN=$nepfile
-  my $effnep = $_CALCULATE_EFFECTIVE_NEP_{EFFNEP};
-  if ( $effnep ) {
-    orac_print " NEP_eff ($subarray) = ".(sprintf "%5.3e", $effnep)
-      ."  $nepunits\n", "green";
-  } else {
-    orac_warn "Bad NEP_eff for $noisefile\n";
-    $effnep = -1;
+    my $nepfile = $noisefile . ".more.smurf.nep";
+    _CALCULATE_ARRAY_NEP_ IN=$nepfile NEPTYPE=$neptype
+    my $nep = $_CALCULATE_ARRAY_NEP_{NEPVAL};
+    if ( $nep ) {
+      orac_print " $NEP ($subarray) = ".(sprintf "%5.3e", $nep)
+	."  $nepunits\n", "green";
+    } else {
+      orac_warn "Bad $NEP for $noisefile\n";
+      $nep = -1;
+    }
+
+    my $key = join("_", $subarray, $Frmobj->hdrval("PIXHEAT",$i-1),
+		   $Frmobj->hdrval("DETBIAS",$i-1));
+    $nep{$key} = $nep;
   }
-
-  my $key = join("_", $subarray, $Frm->hdrval("PIXHEAT",$i-1),
-		 $Frm->hdrval("DETBIAS",$i-1));
-  $effnep{$key} = $effnep;
 }
 
-# Store effective NEP values in Grp uhdr
-$Grp->uhdr("EFFNEP", \%effnep);
+# Store NEP values in Grpobj uhdr
+$Grpobj->uhdr($uhdrnep, \%nep);
 
 if ( $proceed ) {
-  # OK now we have the %effnep info, write an ascii file and convert
+  # OK now we have the %nep info, write an ascii file and convert
   # it to an NDF
-  my $images = ($Frm->numsubarrays == 1) ? "image" : "images";
-  orac_print "Creating $images of effective NEP as function of heater/bias settings\n";
+  my $images = ($Frmobj->numsubarrays == 1) ? "image" : "images";
+  orac_print "Creating $images of $type NEP as function of heater/bias settings\n";
 
   # Probably don't need to do this, but just in case...
-  %effnep = %{$Grp->uhdr("EFFNEP")};
+  %nep = %{$Grpobj->uhdr($uhdrnep)};
 
   # In QL/summit mode, the heater and bias value arrays have to filled
-  # the hard way; in batch mode use hdrvals.
+  # the hard way; in batch mode get hdrvals from Frm.
   my (@heat, @bias);
   if ($batch) {
-    @heat = $Frm->hdrvals("PIXHEAT");
-    @bias = $Frm->hdrvals("DETBIAS");
+    @heat = sort($Frm->hdrvals("PIXHEAT"));
+    @bias = sort($Frm->hdrvals("DETBIAS"));
   } else {
-    my @array = sort grep { $subarrays[0] } keys %effnep;
+    my @array = sort grep { $subarrays[0] } keys %nep;
     # Obtain the array of heater and bias settings - the elements will
     # alternate: heater1, bias1, heater2, bias2, ..., heaterN, biasN
     my @heat_bias = map { grep { /^\d+/ } split(/\_/, $_) } @array;
@@ -180,7 +221,7 @@ if ( $proceed ) {
   my $baseargs = "dtype='_double' shape=[$nx,$ny] auto=false bad=true poscols=[1,2] valcol=3 pscale=[$dx,$dy]";
 
   my @outfiles;
-  my $fitshdr = $Frm->fits;
+  my $fitshdr = $Frmobj->fits;
   orac_print "Writing: ";
   foreach my $subarray ( @subarrays ) {
 
@@ -189,17 +230,18 @@ if ( $proceed ) {
     foreach my $bias (@bias) {
       foreach my $heat (@heat) {
 	my $key = join("_", $subarray, $heat, $bias);
-	 push(@entries, "$heat $bias $effnep{$key}\n");
+	push(@entries, "$heat $bias $nep{$key}\n");
       }
     }
     my $entries = write_file_list(@entries);
 
-    # Construct output file name by hand
-    my $outndf = $subarray . $Frm->hdr("UTDATE") . "_".
-      (sprintf "%05d", $Frm->hdr("OBSNUM")) ."_effnep";
+    # Set output file name
+    my $outndf = $Frmobj->inout("_".$neptype."nep");
+    $outndf = $Frmobj->strip_subscan($outndf);
 
     # Convert ASCII file to NDF
-    my $title = "Effective NEP for $subarray";
+    $type = "\u$type" if ($neptype eq "eff");
+    my $title = "$type NEP for $subarray";
     my $temp = new ORAC::TempFile;
     my $tranargs = $baseargs . " freename=$entries ndf=$temp title='$title'";
     $Mon{kappa_mon}->obeyw("trandat","$tranargs");
@@ -209,8 +251,23 @@ if ( $proceed ) {
     my $args = "in=$temp out=$outndf repval=-1";
     $Mon{kappa_mon}->obeyw("setmagic","$args");
 
-    # Add WCS info
-
+    # Add WCS info - first define a Frame for the heater/bias axes
+    $args = "naxes=2 result=nepframe$$.ast options='Title=Heater and Bias settings,Label(1)=Pixel heater,Label(2)=Detector bias,Unit(1)=pW,Unit(2)=pW,Domain=NEP'";
+    $Mon{atools_mon}->obeyw("astframe","$args");
+    # Define the mapping from grid to heater/bias
+    $args = "ncoord=2 ina=[1,1] inb=[$nx,$ny] outa=[$heat[0],$bias[0]] outb=[$heat[-1],$bias[-1]] options=! result=nepmapping$$.ast";
+    $Mon{atools_mon}->obeyw("astwinmap","$args");
+    # Create an empty GRID frame
+    $args = "naxes=2 options='Domain=GRID' result=grid$$.ast";
+    $Mon{atools_mon}->obeyw("astframe","$args");
+    # Add it to a skeleton FrameSet
+    $args = "frame=grid$$.ast options=! result=nepwcs$$.ast";
+    $Mon{atools_mon}->obeyw("astframeset","$args");
+    # Now add the frameset to the output image
+    $args = "this=nepwcs$$.ast iframe=ast__base map=nepmapping$$.ast frame=nepframe$$.ast result=$outndf";
+    $Mon{atools_mon}->obeyw("astaddframe","$args");
+    # Remove all of the .ast text files with the mapping/frame info
+    unlink glob( "*$$.ast" );
 
     # Add the FITS header
     $fitshdr->writehdr( File => $outndf );
@@ -219,6 +276,8 @@ if ( $proceed ) {
   }
   orac_print "\n";
 
-  # Store the output files
-  $Frm->files(@outfiles);
+  # Store the output files in the current Frame or Group object
+  my $groupstore = get_prim_arg($_PRIM_ARGS_, "GRPSTORE", 0);
+  my $Obj = ($groupstore) ? $Grpobj : $Frmobj;
+  $Obj->files(@outfiles);
 }
