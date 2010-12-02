@@ -10,7 +10,14 @@ _ADD_LOG_ENTRY_ - write a log entry to disk
 
 =head1 DESCRIPTION
 
-Write a single log entry containing the results
+Write a single log entry containing the given results. The results and
+the header labels are passed in via array references. This primitive
+knows of a variety of standard SCUBA-2 log files and will write
+appropriate header information based on the given B<LOGFILE>.
+
+Additional parameters pertaining to the current observations may also
+be written, the amount of information is controlled with the
+B<PARLIST> argument.
 
 =head1 ARGUMENTS
 
@@ -40,8 +47,9 @@ default.
 =item B<PARLIST>
 
 A string to denote how much standard information to write to the log
-file. May be C<FULL> or C<BRIEF>. Default is C<FULL>. See the entry on
-log file format below.
+file. May be C<FULL>, C<BRIEF> or C<NONE>. C<NONE> is supported to
+allow generic results to be logged. Default is C<FULL>. See the entry
+on log file format below.
 
 =back
 
@@ -67,7 +75,7 @@ title will be used.
 =head1 OUTPUT FILES
 
 The results are written to a log file prefixed by C<log> with the same
-extension as given in the B<LOGFILE> parameter.
+extension as given in the B<LOGFILE> parameter (e.g. log.pointing).
 
 =head1 LOGFILE FORMAT
 
@@ -190,8 +198,12 @@ my $usegroup = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0);
 my $time = gmtime();
 
 # Entry names - define base list and add given names
-my $entry_names = ($paramlist eq "BRIEF") ? "UT   HST  Obs  " :
-  "UT   HST  Obs  Source  Mode  Filter  El  CSO  Tau  Seeing  ";
+my $entry_names;
+if ($paramlist eq "BRIEF") {
+  $entry_names = "UT   HST  Obs  ";
+} elsif ($paramlist eq "FULL") {
+  $entry_names = "UT   HST  Obs  Source  Mode  Filter  El  CSO  Tau  Seeing  ";
+}
 
 $entry_names .= join("  ",@params);
 
@@ -203,12 +215,19 @@ $log->header("# $logtitle - created on $time UT",
 	     "#------------------------------------------------------------------------------------------",
 	    );
 
-# Obtain common parameters from headers
-_GET_LOG_PARAMETERS_ GROUP=$usegroup PARLIST=$paramlist
-my $base_entry = join("  ", @{ $_GET_LOG_PARAMETERS_{PARAMS} });
-
 # Create list of values to write in log file
 my $logentry = join("  ",@entries);
 
+# Define set of base parameters to write if requested
+my $entry;
+if ($paramlist eq "NONE") {
+  $entry = $logentry;
+} else {
+  # Obtain common parameters from headers
+  _GET_LOG_PARAMETERS_ GROUP=$usegroup PARLIST=$paramlist
+  my $base_entry = join("  ", @{ $_GET_LOG_PARAMETERS_{PARAMS} });
+  $entry = $base_entry ."  ". $logentry;
+}
+
 # Add the entry
-$log->addentry("$base_entry  $logentry");
+$log->addentry("$entry");
