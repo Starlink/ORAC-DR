@@ -1,0 +1,216 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_NEP_CUBE_ - create a cube or hypercube of NEP values
+
+=head1 SYNOPSIS
+
+ _CREATE_NEP_CUBE_
+
+ _CREATE_NEP_CUBE_ HEAT=0
+
+=head1 DESCRIPTION
+
+This primitive construct a 3-d cube or 4-d hypercube from the noise
+files in the current global Frame object.
+
+The two primary arguments are flags to indicate which axes should be
+created in the output file. The default behaviour is to create a 4-d
+hypercube of the form BOLX-BOLY-HEATER-BIAS. If either flag is set to
+false (0) then a 3-d cube will be created using the other data as the
+third axis.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<BIAS>
+
+Flag to denote whether to add a detector bias heater axis. Default is
+1.
+
+=item B<HEAT>
+
+Flag to denote whether to add a pixel heater axis. Default is 1.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1
+(yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=head1 KAPPA
+
+NDFCOPY, NDFTRACE, PASTE, SETBOUND, SETORIGIN
+
+=head1 ATOOLS
+
+ASTADDFRAME, ASTCMPFRAME, ASTCMPMAP, ASTFRAME, ASTFRAMESET,
+ASTGETFRAME, ASTGETMAPPING, ASTWINMAP
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+One file per subarray with the suffix C<_nep>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Get flags for adding the heater and bias axes to the output
+my $heataxis = get_prim_arg($_PRIM_ARGS_, "HEAT", 1);
+my $biasaxis = get_prim_arg($_PRIM_ARGS_, "BIAS", 1);
+
+# Should we be verbose (default to yes)?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+
+# Get arrays of heater and bias settings
+my @heat = sort($Frm->hdrvals("PIXHEAT"));
+my @bias = sort($Frm->hdrvals("DETBIAS"));
+
+# Now produce a lookup table from value to index into the above arrays
+my %heat = map { $heat[$_] => $_ } 0..$#heat;
+my %bias = map { $bias[$_] => $_ } 0..$#bias;
+
+my @subgrps = $Grp->subgrps("FREQHI");
+foreach my $subgrp (@subgrps) {
+  my $freqhi = $subgrp->frame(0)->hdr("FREQHI");
+
+  # Add the heater and/or bias axes to each input file
+  my %planes;
+  foreach my $frmobj ($subgrp->members) {
+    my $nepfile = $frmobj->inout("_tmpnoi");
+    my $infile = $frmobj->file .".more.smurf.nep";
+    my $args = "in=$infile out=$nepfile";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+    # Retrieve coords of first pixel
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$nepfile");
+    my ($ORAC_STATUS, @xy) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+    # Now add 1-pixel-wide third and fourth axes
+    $args = "ndf=$nepfile(,,1:1,1:1)";
+    $Mon{ndfpack_mon}->obeyw("setbound","$args");
+    # Set the origin accordingly
+    $args = "ndf=$nepfile origin=[$xy[0],$xy[1],"
+      .($heat{$frmobj->hdr("PIXHEAT")}).","
+      .($bias{$frmobj->hdr("DETBIAS")})."]";
+    $Mon{ndfpack_mon}->obeyw("setorigin","$args");
+
+    my $subarray = $frmobj->subarray;
+    my @list;
+    if ($planes{$subarray}) {
+      @list = @{$planes{$subarray}};
+    }
+    push(@list, $nepfile);
+    $planes{$subarray} = \@list;
+    $Frm->push_intermediates($nepfile);
+  }
+
+  # Now create the (hyper)cubes for each subarray
+  foreach my $subarray ($Frm->subarrays) {
+
+    # Define output hypercube name
+    my $cubename = $Frm->inout("_nep");
+    $cubename = $Frm->strip_subscan($cubename);
+
+    # Combine individual NEP images into a 3-D cube or 4-D hypercube
+    my $inlist = write_file_list( @{$planes{$subarray}} );
+    my $args = "in=^".$inlist." p1=! out=$cubename title='NEP hypercube'";
+    $Mon{kappa_mon}->obeyw("paste","$args");
+    orac_print "Creating NEP hypercube...\n";
+    undef $inlist;
+
+    my ($wcs, $mapping, $frame);
+    unless ($Grp->uhdr("WCSFRAMESET")) {
+      # Add WCS info - begin with a template file
+      my $template = $subgrp->frame(0)->file(1);
+
+      # Get existing bolo frame from one plane of the hypercube
+      $args = "this=$template iframe1=ast__base iframe2=ast__current result=bolomap$$.ast";
+      $Mon{atools_mon}->obeyw("astgetmapping","$args");
+      $args = "this=$template iframe=ast__current result=boloframe$$.ast";
+      $Mon{atools_mon}->obeyw("astgetframe","$args");
+
+      # Define a Frame for the heater/bias axes
+      $args = "naxes=2 result=nepframe$$.ast options='Title=Heater and Bias settings,Label(1)=Pixel heater,Label(2)=Detector bias,Unit(1)=DAC units,Unit(2)=DAC units,Domain=Heater-Bias'";
+      $Mon{atools_mon}->obeyw("astframe","$args");
+
+      # Define the mapping from grid to heater/bias
+      $args = "ncoord=2 ina=[1,1] inb=[".(scalar(@heat)).",".(scalar(@bias))."] outa=[$heat[0],$bias[0]] outb=[$heat[-1],$bias[-1]] options=! result=nepmapping$$.ast";
+      $Mon{atools_mon}->obeyw("astwinmap","$args");
+
+      # Create a compound mapping and frameset from the bolo and
+      # heater/bias settings
+      $args = "frame1=boloframe$$.ast frame2=nepframe$$.ast options=! result=cmpframe$$.ast";
+      $Mon{atools_mon}->obeyw("astcmpframe","$args");
+      $args = "map1=bolomap$$.ast map2=nepmapping$$.ast series=f options=! result=cmpmap$$.ast";
+      $Mon{atools_mon}->obeyw("astcmpmap","$args");
+
+      # Create an empty 4-d GRID frame
+      $args = "naxes=4 options='Domain=GRID' result=grid$$.ast";
+      $Mon{atools_mon}->obeyw("astframe","$args");
+      # Add it to a skeleton FrameSet
+      $args = "frame=grid$$.ast options=! result=wcs$$.ast";
+      $Mon{atools_mon}->obeyw("astframeset","$args");
+
+      # Cache the FrameSet, mapping and frame info
+      $wcs = "wcs$$.ast";
+      $mapping = "cmpmap$$.ast";
+      $frame = "cmpframe$$.ast";
+      $Grp->uhdr("WCSFRAMESET", $wcs);
+      $Grp->uhdr("MAPPING", $mapping);
+      $Grp->uhdr("FRAME", $frame);
+    } else {
+      $wcs = $Grp->uhdr("WCSFRAMESET");
+      $mapping = $Grp->uhdr("MAPPING");
+      $frame = $Grp->uhdr("FRAME");
+    }
+    # Now add the frameset to the output image
+    $args = "this=$wcs iframe=ast__base map=$mapping frame=$frame result=$cubename";
+    $Mon{atools_mon}->obeyw("astaddframe","$args");
+
+    # Remove all of the .ast text files with the mapping/frame info if
+    # necessary
+    if ($subgrp == $subgrps[-1]) {
+      $Grp->uhdr("WCSFRAMESET", 0);
+      $Grp->uhdr("MAPPING", 0);
+      $Grp->uhdr("FRAME", 0);
+      unlink glob( "*$$.ast" );
+    }
+  }
+
+}
