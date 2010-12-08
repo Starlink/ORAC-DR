@@ -77,7 +77,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $out =~ s/_(\d{4})$/_raw$1/;
   } else {
     # This should not trigger. May be better to complain here.
-    $out .= "_raw". sprintf("%03d", $i );
+    $out .= "_raw". sprintf("%04d", $i );
   }
 
   # We only need to do this if the input "file" is a softlink to the
@@ -97,17 +97,27 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
       $filecopied = 1;
 
+      # Track provenance properly - we need to get the OBSIDSS from this file
+      # so read the header of this file in particular rather than relying on the frame
+      # object. If we can't find OBSIDSS we don't add provenance.
+      my $hdr = Astro::FITS::Header::NDF->new( File => $out );
+      my $obsidss = $hdr->value( "OBSIDSS" );
+      if (defined $obsidss) {
+        $Mon{ndfpack_mon}->obeyw( "provadd", "ndf=$out creator=KAPPA:NDFCOPY parent=$in moretext=OBSIDSS=$obsidss");
+      }
     }
+
+    my $recipe = $Frm->uhdr( "ORAC_DR_RECIPE" );
+    $Frm->file( $i, $out );
+    $Frm->uhdr( "ORAC_DR_RECIPE", $recipe );
 
   } else {
 
-    hardlink( "$in.sdf", "$out.sdf" ) or orac_throw "Could not link $in.sdf to $out.sdf: $!\n";
+    # if the file is local we do not copy (that would be slow) and we do not make a link
+    # with the new name (that would mess up root provenance)
 
   }
 
-  my $recipe = $Frm->uhdr( "ORAC_DR_RECIPE" );
-  $Frm->file( $i, $out );
-  $Frm->uhdr( "ORAC_DR_RECIPE", $recipe );
 }
 
 # Make sure the data is okay.
