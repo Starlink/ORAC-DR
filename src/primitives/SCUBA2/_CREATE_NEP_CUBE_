@@ -102,62 +102,101 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 # Get arrays of heater and bias settings
 my @heat = sort($Frm->hdrvals("PIXHEAT"));
 my @bias = sort($Frm->hdrvals("DETBIAS"));
-
 # Now produce a lookup table from value to index into the above arrays
 my %heat = map { $heat[$_] => $_ } 0..$#heat;
 my %bias = map { $bias[$_] => $_ } 0..$#bias;
 
-my @subgrps = $Grp->subgrps("FREQHI");
-foreach my $subgrp (@subgrps) {
-  my $freqhi = $subgrp->frame(0)->hdr("FREQHI");
+# Do not create non-significant axes
+$heataxis = 0 if (@heat == 1);
+$biasaxis = 0 if (@bias == 1);
 
-  # Add the heater and/or bias axes to each input file
-  my %planes;
-  foreach my $frmobj ($subgrp->members) {
-    my $nepfile = $frmobj->inout("_tmpnoi");
-    my $infile = $frmobj->file .".more.smurf.nep";
-    my $args = "in=$infile out=$nepfile";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+# Number of dimensions in output (hyper)cube
+my $cubedim = 2;
+$cubedim++ if ($heataxis);
+$cubedim++ if ($biasaxis);
+
+# Set domain for extra dimensions
+my $domain = "Heater-Bias";
+$domain = "Heater" if (!$biasaxis);
+$domain = "Bias" if (!$heataxis);
+
+# Bounds for expanded images before adding to cube
+my @bounds = ("1:1");
+push(@bounds, "1:1") if ($heataxis && $biasaxis);
+
+# Sort data by subarray
+my @subfrms = $Frm->subfrms("SUBARRAY");
+
+#$Grp->allmembers(@subfrms);
+
+# Common NEP cube name for all subarrays
+my $basename = $Frm->hdr("UTDATE") ."_". (sprintf "%05d", $Frm->hdr("OBSNUM"))
+  ."_nep";
+# Common thresholding arguments
+my $thrargs = "thrlo=".($Frm->uhdr("NEP_MIN"))." thrhi=".($Frm->uhdr("NEP_MAX"))
+  ." newlo=bad newhi=bad";
+
+orac_print "Thresholding NEP images between ".($Frm->uhdr("NEP_MIN"))." and "
+  .($Frm->uhdr("NEP_MAX"))." W Hz**-0.5\n";
+
+# Loop over each subarray
+foreach my $frmobj (@subfrms) {
+  my @planes;
+  # Threshold the input NEP file, add extra dimensions and set the
+  # origin accordingly
+  for my $i (1..$frmobj->nfiles) {
+    my $infile = $frmobj->file($i) .".more.smurf.nep";
+    my $nepfile = $frmobj->inout("_thrnoi", $i);
+    my $args = "in=$infile out=$nepfile $thrargs";
+    $Mon{kappa_mon}->obeyw("thresh","$args");
+
+    # Push onto intermediates so it will be deleted at end of
+    # processing
+    $Frm->push_intermediates($nepfile);
+
+    # Skip the rest if the output `cube' has only 2 dimensions
+    next if ($cubedim == 2);
+
+    # Define origin of heater/bias axes
+    my @origin;
+    push (@origin, $heat{$frmobj->hdrval("PIXHEAT",$i-1)}) if ($heataxis);
+    push (@origin, $bias{$frmobj->hdrval("BIASHEAT",$i-1)}) if ($biasaxis);
+
     # Retrieve coords of first pixel
     $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$nepfile");
     my ($ORAC_STATUS, @xy) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
-    # Now add 1-pixel-wide third and fourth axes
-    $args = "ndf=$nepfile(,,1:1,1:1)";
+    # Now add 1-pixel-wide third and optionally fourth axes
+    $args = "ndf=$nepfile(,,".(join(",",@bounds)).")";
     $Mon{ndfpack_mon}->obeyw("setbound","$args");
     # Set the origin accordingly
     $args = "ndf=$nepfile origin=[$xy[0],$xy[1],"
-      .($heat{$frmobj->hdr("PIXHEAT")}).","
-      .($bias{$frmobj->hdr("DETBIAS")})."]";
+      .(join(",",@origin))."]";
     $Mon{ndfpack_mon}->obeyw("setorigin","$args");
 
-    my $subarray = $frmobj->subarray;
-    my @list;
-    if ($planes{$subarray}) {
-      @list = @{$planes{$subarray}};
-    }
-    push(@list, $nepfile);
-    $planes{$subarray} = \@list;
-    $Frm->push_intermediates($nepfile);
+    # Store this file
+    push(@planes, $nepfile);
   }
 
-  # Now create the (hyper)cubes for each subarray
-  foreach my $subarray ($Frm->subarrays) {
-
-    # Define output hypercube name
-    my $cubename = $Frm->inout("_nep");
-    $cubename = $Frm->strip_subscan($cubename);
-
-    # Combine individual NEP images into a 3-D cube or 4-D hypercube
-    my $inlist = write_file_list( @{$planes{$subarray}} );
-    my $args = "in=^".$inlist." p1=! out=$cubename title='NEP hypercube'";
+  # Combine individual NEP images into a 3-D cube or 4-D hypercube
+  my $subarray = lc($frmobj->hdr("SUBARRAY"));
+  my $cubename = $subarray . $basename;
+  if ($cubedim == 2) {
+    # Just copy the thresholded NEP image to the output `cube'
+    orac_print "Creating NEP image for $subarray...\n";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$nepfile out=$cubename");
+  } else {
+    my $hypercube = ($cubedim == 4) ? "hypercube" : "cube";
+    orac_print "Creating NEP $hypercube for $subarray...\n";
+    my $inlist = write_file_list( @planes );
+    my $title = "'".(uc($subarray))." NEP $hypercube'";
+    my $args = "in=^$inlist p1=! out=$cubename title=$title";
     $Mon{kappa_mon}->obeyw("paste","$args");
-    orac_print "Creating NEP hypercube...\n";
     undef $inlist;
 
     my ($wcs, $mapping, $frame);
     unless ($Grp->uhdr("WCSFRAMESET")) {
       # Add WCS info - begin with a template file
-      my $template = $subgrp->frame(0)->file(1);
+      my $template = $frmobj->file(1);
 
       # Get existing bolo frame from one plane of the hypercube
       $args = "this=$template iframe1=ast__base iframe2=ast__current result=bolomap$$.ast";
@@ -165,12 +204,39 @@ foreach my $subgrp (@subgrps) {
       $args = "this=$template iframe=ast__current result=boloframe$$.ast";
       $Mon{atools_mon}->obeyw("astgetframe","$args");
 
+      # Define the mapping from grid to heater/bias
+      my $ncoord = $cubedim - 2;
+      my $ina = join(",", map { 1 } 1..$ncoord);
+      my ($inb, $min, $max);
+      if ($heataxis) {
+	$inb = scalar(@heat);
+	$min = $heat[0];
+	$max = $heat[-1];
+	if ($biasaxis) {
+	  $inb = join(",", $inb, scalar(@bias));
+	  $min = join(",", $min, $bias[0]);
+	  $max = join(",", $max, $bias[-1]);
+	}
+      } elsif ($biasaxis) {
+	$inb = scalar(@bias);
+	$min = $bias[0];
+	$max = $bias[-1];
+      }
+      my $setting = "Heater and Bias";
+      $setting = "Heater" if (!$biasaxis);
+      $setting = "Bias" if (!$heataxis);
+      my @labels;
+      push (@labels, "Pixel heater") if $heataxis;
+      push (@labels, "Detector bias") if $biasaxis;
+      my $options = "Title=$setting settings,Label(1)=$labels[0],Unit(1)=DAC units,Domain=$domain";
+
+      $options .= ",Label(2)=$labels[1],Unit(2)=DAC units" if ($ncoord == 2);
+
       # Define a Frame for the heater/bias axes
-      $args = "naxes=2 result=nepframe$$.ast options='Title=Heater and Bias settings,Label(1)=Pixel heater,Label(2)=Detector bias,Unit(1)=DAC units,Unit(2)=DAC units,Domain=Heater-Bias'";
+      $args = "naxes=$ncoord result=nepframe$$.ast options='$options'";
       $Mon{atools_mon}->obeyw("astframe","$args");
 
-      # Define the mapping from grid to heater/bias
-      $args = "ncoord=2 ina=[1,1] inb=[".(scalar(@heat)).",".(scalar(@bias))."] outa=[$heat[0],$bias[0]] outb=[$heat[-1],$bias[-1]] options=! result=nepmapping$$.ast";
+      $args = "ncoord=$ncoord ina=[$ina] inb=[$inb] outa=[$min] outb=[$max] options=! result=nepmapping$$.ast";
       $Mon{atools_mon}->obeyw("astwinmap","$args");
 
       # Create a compound mapping and frameset from the bolo and
@@ -181,7 +247,7 @@ foreach my $subgrp (@subgrps) {
       $Mon{atools_mon}->obeyw("astcmpmap","$args");
 
       # Create an empty 4-d GRID frame
-      $args = "naxes=4 options='Domain=GRID' result=grid$$.ast";
+      $args = "naxes=$cubedim options='Domain=GRID' result=grid$$.ast";
       $Mon{atools_mon}->obeyw("astframe","$args");
       # Add it to a skeleton FrameSet
       $args = "frame=grid$$.ast options=! result=wcs$$.ast";
@@ -205,12 +271,11 @@ foreach my $subgrp (@subgrps) {
 
     # Remove all of the .ast text files with the mapping/frame info if
     # necessary
-    if ($subgrp == $subgrps[-1]) {
+    if ($frmobj == $subfrms[-1]) {
       $Grp->uhdr("WCSFRAMESET", 0);
       $Grp->uhdr("MAPPING", 0);
       $Grp->uhdr("FRAME", 0);
       unlink glob( "*$$.ast" );
     }
   }
-
 }
