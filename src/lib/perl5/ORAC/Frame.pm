@@ -166,6 +166,87 @@ sub framegroup {
   return @Frms;
 }
 
+=item B<subfrms>
+
+Return a list of Frame objects containing files with the given header
+keys. All the files in each frame will have the same values for the
+given keys (if they exist).
+
+  @subfrms = $Frm->subfrms(@keys);
+
+Only the primary header is searched for subheaders (not the uhdr).
+
+Each frame is in the same class as the given Frame.
+
+This method is analagous to the Group C<subgrps> method and will
+return the current Frame if there are no subheaders.
+
+=cut
+
+sub subfrms {
+  my $self = shift;
+  my @keys = @_;
+
+  # We can create a unique key in a hash for the header values
+  # specified. So create a temporary hash, and one to store the files
+  # too.
+  my %frms = ();
+  my %files = ();
+
+  # Subframes in the order of creation
+  my @subfrms;
+
+  # Check that the given keys are in the subheaders
+  my @subheaders = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
+  my $subhdr = 0;
+  foreach my $key (@keys) {
+    if ( grep {/$key/} @subheaders) {
+      $subhdr++;
+    }
+  }
+
+  # Proceed if subheaders are present
+  if ( $subhdr > 0 ) {
+    # Loop over the files in the given Frame
+    for my $i (1 .. $self->nfiles) {
+      my $key = "";
+      foreach my $subhdr ( @keys ) {
+	my $val1 = $self->hdrval($subhdr, $i-1);
+	if (defined $val1) {
+	  $key .= $val1;
+	}
+      }
+
+      # Create a new frame object if one does not already exist for
+      # this key
+      unless (defined $frms{$key}) {
+	$frms{$key} = $self->new();
+	%{$frms{$key}->uhdr} = %{$self->uhdr};
+	push(@subfrms, $frms{$key});
+      }
+
+      # Add this file to the list for the current key
+      my @files;
+      if (defined $files{$key}) {
+	@files = @{$files{$key}};
+      }
+      push(@files, $self->file($i));
+      $files{$key} = \@files;
+    }
+
+    # Store the files in sub-frames
+    foreach my $key (keys %frms) {
+      $frms{$key}->files(@{$files{$key}});
+      $frms{$key}->readhdr;
+    }
+  } else {
+    # No subheaders so just return the current Frame
+    push(@subfrms, $self);
+  }
+
+  return @subfrms;
+}
+
 =back
 
 =head2 Accessor Methods
