@@ -186,13 +186,37 @@ foreach my $frmobj (@subfrms) {
     $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$planes[0] out=$cubename");
   } else {
     my $hypercube = ($cubedim == 4) ? "hypercube" : "cube";
-    orac_print "Creating NEP $hypercube for $subarray...\n";
-    my $inlist = write_file_list( @planes );
+    orac_print "Creating NEP $hypercube for $subarray... ";
+
+    my $inlist;
+    my $maxplanes = 26;
+    if (@planes > $maxplanes) {
+      use POSIX qw/ ceil /;
+      my $nchunks = ceil(@planes/$maxplanes);
+      my $stepsize = ceil(@planes/$nchunks);
+      my @newplanes;
+      for my $j (1 .. $nchunks) {
+	my @tmpplanes;
+	my $strt = ($j-1) * $stepsize;
+	my $end = $strt + $stepsize - 1;
+	$end = ($end > $#planes) ? $#planes : $end;
+	push(@tmpplanes,@planes[$strt..$end]);
+	my $cubelist = write_file_list(@tmpplanes);
+	my $tmpcube = $Frm->inout("_tmpcube$j");
+	$Frm->push_intermediates($tmpcube);
+	my $tmpargs = "in=^$cubelist p1=! out=$tmpcube";
+	$Mon{kappa_mon}->obeyw("paste","$tmpargs");
+	push(@newplanes, $tmpcube);
+      }
+      @planes = @newplanes;
+    }
+    $inlist = write_file_list( @planes );
     my $title = "'".(uc($subarray))." NEP $hypercube'";
     my $args = "in=^$inlist p1=! out=$cubename title=$title";
     $Mon{kappa_mon}->obeyw("paste","$args");
     undef $inlist;
 
+    orac_print "Adding WCS...\n";
     my ($wcs, $mapping, $frame);
     unless ($Grp->uhdr("WCSFRAMESET")) {
       # Add WCS info - begin with a template file
