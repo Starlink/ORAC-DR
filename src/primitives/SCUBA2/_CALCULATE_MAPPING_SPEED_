@@ -113,36 +113,42 @@ my $nbol = get_prim_arg($_PRIM_ARGS_, "NBOL", 1280);
 # The number of good bolometers
 my $numgood = get_prim_arg($_PRIM_ARGS_, "NGOOD", undef);
 unless ($numgood) {
-  _FIND_IMAGE_STATISTICS_ IMAGE=$nepfile VERBOSE=0
+  _FIND_IMAGE_STATISTICS_ IMAGE=$nepfile VERBOSE=0 HISTAT=0
   $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
 }
 
-# Note normally percentiles would be (100 - $percentile) but these are
-# NEP data and smaller values are better
-my $percentile = 100.0 * ( $nbol / $numgood );
+my ($rmsnep, $mapspeed);
+if (defined $numgood && $numgood > 0) {
+  # Note normally percentiles would be (100 - $percentile) but these are
+  # NEP data and smaller values are better
+  my $percentile = 100.0 * ( $nbol / $numgood );
 
-# Catch the case where nbol was not specified but the number of good
-# bolometers is less than 1280
-$percentile = 100.0 if ($percentile > 100.0);
+  # Catch the case where nbol was not specified but the number of good
+  # bolometers is less than 1280
+  $percentile = 100.0 if ($percentile > 100.0);
 
-# Find the value at this percentile
-_FIND_IMAGE_STATISTICS_ IMAGE=$nepfile VERBOSE=0 PERCENTILES=$percentile
-my $thresh = $_FIND_IMAGE_STATISTICS_{RESULTS}->{PERCENTILES};
-if (ref($thresh) eq "ARRAY") {
-  $thresh = $thresh->[0];
-  orac_warn "Only asked for 1 percentile but got an array on return\n";
+  # Find the value at this percentile
+  _FIND_IMAGE_STATISTICS_ IMAGE=$nepfile VERBOSE=0 PERCENTILES=$percentile HISTAT=0
+  my $thresh = $_FIND_IMAGE_STATISTICS_{RESULTS}->{PERCENTILES};
+  if (ref($thresh) eq "ARRAY") {
+    $thresh = $thresh->[0];
+    orac_warn "Only asked for 1 percentile but got an array on return\n";
+  }
+
+  # Threshold image at that percentile and calculate RMS NEP
+  my $threshfile = ORAC::TempFile->new();
+  my $args = "in=$nepfile out=$threshfile thrlo=0 newlo=0 thrhi=$thresh newhi=bad";
+  $Mon{kappa_mon}->obeyw("thresh","$args");
+
+  _CALCULATE_ARRAY_NEP_ IN=$threshfile NEPTYPE=RMS
+  $rmsnep = $_CALCULATE_ARRAY_NEP_{NEPVAL};
+
+  # Mapping speed is Nbol / (NEP_RMS)^2
+  $mapspeed = $nbol / ($rmsnep * $rmsnep);
+} else {
+  $mapspeed = 0.0;
+  $rmsnep = 0.0;
 }
-
-# Threshold image at that percentile and calculate RMS NEP
-my $threshfile = ORAC::TempFile->new();
-my $args = "in=$nepfile out=$threshfile thrlo=0 newlo=0 thrhi=$thresh newhi=bad";
-$Mon{kappa_mon}->obeyw("thresh","$args");
-
-_CALCULATE_ARRAY_NEP_ IN=$threshfile NEPTYPE=RMS
-my $rmsnep = $_CALCULATE_ARRAY_NEP_{NEPVAL};
-
-# Mapping speed is Nbol / (NEP_RMS)^2
-my $mapspeed = $nbol / ($rmsnep * $rmsnep);
 
 # Return values to caller
 $_PRIM_ARGS_->{MAPSPEED} = $mapspeed;
