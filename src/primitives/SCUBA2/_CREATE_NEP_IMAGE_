@@ -188,10 +188,7 @@ USA.
 =cut
 
 # Should we be verbose (default to no)?
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
-
-# Group object to retrieve Frame objects from
-my $Grpobj = get_prim_arg( $_PRIM_ARGS_, "GROUP", $Grp );
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
 
 # Flag to indicate whether the data are being processed in batch
 # mode. This is obtained from the global Frm.
@@ -209,31 +206,24 @@ if ($neptype eq "rms") {
   $NEP = "NEP_rms";
 }
 
-my $Frmobj;
-if ($batch) {
-  $Frmobj = $Grpobj->frame(-1);
-} else {
-  $Frmobj = $Frm;
-}
-
 # Proceed with the creation of the NEP images if the observation has
 # ended, otherwise just calculate the rms/effective NEP and store it
-my $proceed = ($Frmobj->uhdr("OBSEND")) ? 1 : 0;
+my $proceed = ($Frm->uhdr("OBSEND")) ? 1 : 0;
 
 # Write out a log file?
 my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 my $logtype = "bolonoise";
 my @lognames = ("Subarray", "Freq_Range", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Heater", "Bias");
 
-my $freqrange = $Frmobj->hdr("FREQHI");
+my $freqrange = $Frm->hdr("FREQHI");
 
 # Obtain the NEP units
-my $file = $Frmobj->file . ".more.smurf.nep";
+my $file = $Frm->file . ".more.smurf.nep";
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
 my ($ORAC_STATUS, $nepunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
 
 # Tell the user what's happening
-my @subarrays = $Frmobj->subarrays;
+my @subarrays = $Frm->subarrays;
 my $subinfostr;
 if ( $#subarrays == 0 ) {
   $subinfostr = "subarray $subarrays[0]";
@@ -247,31 +237,40 @@ my @maplognames = ("Subarray", "Freq_Range", "PIXHEAT", "DETBIAS", "N_bol", "NEP
 my $nbolstart = 300;
 my $delta = 100;
 
+# Common thresholding arguments
+my $thrargs = "thrlo=".($Frm->uhdr("NEP_MIN"))." thrhi=".($Frm->uhdr("NEP_MAX"))
+  ." newlo=bad newhi=bad";
+
 # Now calculate the rms/effective NEP for each subarray and store in a
 # hash indexed by the heater and bias settings
-my %nep = %{$Grpobj->uhdr($uhdrnep)} if (defined $Grpobj->uhdr($uhdrnep));
-my @frames = ($batch) ? $Grpobj->members : ($Frm);
+my %nep = %{$Grp->uhdr($uhdrnep)} if (defined $Grp->uhdr($uhdrnep));
+my @frms = $Frm->subfrms("SUBARRAY");
 
-foreach my $Frmobj (@frames) {
-  for my $i ( 1 .. $Frmobj->nfiles ) {
-    my $noisefile = $Frmobj->file($i);
-    my $subarray = $Frmobj->hdrval("SUBARRAY",$i-1);
+foreach my $frmobj (@frms) {
+  my $subarray = $frmobj->hdr("SUBARRAY");
+  for my $i ( 1 .. $frmobj->nfiles ) {
+    my $noisefile = $frmobj->file($i);
 
     # Calculate the effective or RMS NEP for the current file
     my $nepfile = $noisefile . ".more.smurf.nep";
-    _CALCULATE_ARRAY_NEP_ IN=$nepfile NEPTYPE=$neptype
+    # Threshold the NEP measurements according to the reasonable min/max
+    my $thrfile = ORAC::TempFile->new();
+    my $args = "in=$nepfile out=$thrfile $thrargs";
+    $Mon{kappa_mon}->obeyw("thresh","$args");
+
+    _CALCULATE_ARRAY_NEP_ IN=$thrfile NEPTYPE=$neptype
     my $nep = $_CALCULATE_ARRAY_NEP_{NEPVAL};
     my $ngood = $_CALCULATE_ARRAY_NEP_{NUMGOOD};
     if ( $nep ) {
       orac_print " $NEP ($subarray) = ".(sprintf "%5.3e", $nep)
-	."  $nepunits\n", "green";
+	."  $nepunits\n", "green" if ($verbose);
     } else {
       orac_warn "Bad $NEP for $noisefile\n";
       $nep = -1;
     }
 
-    my $key = join("_", $subarray, $Frmobj->hdrval("PIXHEAT",$i-1),
-		   $Frmobj->hdrval("DETBIAS",$i-1));
+    my $key = join("_", $subarray, $frmobj->hdrval("PIXHEAT",$i-1),
+		   $frmobj->hdrval("DETBIAS",$i-1));
     $nep{$key} = $nep;
 
     # Calculate stats for logging
@@ -283,21 +282,21 @@ foreach my $Frmobj (@frames) {
       my $mode = (defined $results{MODE}) ? sprintf "%5.3e", $results{MODE} : "****";
       my $numgood = $results{NUMGOOD};
       my @values = ( $subarray, $freqrange, $median, $mean, $mode, $numgood,
-		     $nep, $Frm->hdrval("PIXHEAT",$i-1),
-		     $Frm->hdrval("DETBIAS",$i-1) );
+		     $nep, $frmobj->hdrval("PIXHEAT",$i-1),
+		     $frmobj->hdrval("DETBIAS",$i-1) );
       _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@lognames PARLIST=BRIEF
     }
 
     if ($neptype eq "rms") {
-      orac_print "Calculating mapping speed for $subinfostr...\n";
+      orac_print "Calculating mapping speed for $subinfostr...\n" if ($verbose);
       # Calculate the array Figure of Merit or `mapping speed' as a
       # function of the number of bolometers from 300 to 1000 in steps
       # of $delta above
       my $nbol = $nbolstart;
-      my @maplogvals = ($subarray, $freqrange, $Frm->hdrval("PIXHEAT",$i-1),
-			$Frm->hdrval("DETBIAS",$i-1));
+      my @maplogvals = ($subarray, $freqrange, $frmobj->hdrval("PIXHEAT",$i-1),
+			$frmobj->hdrval("DETBIAS",$i-1));
       while ($nbol < 1001) {
-	_CALCULATE_MAPPING_SPEED_ IN=$nepfile NBOL=$nbol NGOOD=$ngood
+	_CALCULATE_MAPPING_SPEED_ IN=$thrfile NBOL=$nbol NGOOD=$ngood
 	my $mapspeed = sprintf "%5.3e",
 	  ($_CALCULATE_MAPPING_SPEED_{MAPSPEED} * 1.0e-34);
 	my $nep_rms = sprintf "%5.3e", $_CALCULATE_MAPPING_SPEED_{NEP_RMS};
@@ -310,17 +309,17 @@ foreach my $Frmobj (@frames) {
   }
 }
 
-# Store NEP values in Grpobj uhdr
-$Grpobj->uhdr($uhdrnep, \%nep);
+# Store NEP values in Grp uhdr
+$Grp->uhdr($uhdrnep, \%nep);
 
 if ( $proceed ) {
   # OK now we have the %nep info, write an ascii file and convert
   # it to an NDF
-  my $images = ($Frmobj->numsubarrays == 1) ? "image" : "images";
+  my $images = (@frms == 1) ? "image" : "images";
   orac_print "Creating $images of $type NEP as function of heater/bias settings\n";
 
   # Probably don't need to do this, but just in case...
-  %nep = %{$Grpobj->uhdr($uhdrnep)};
+  %nep = %{$Grp->uhdr($uhdrnep)};
 
   # In QL/summit mode, the heater and bias value arrays have to filled
   # the hard way; in batch mode get hdrvals from Frm.
@@ -355,30 +354,30 @@ if ( $proceed ) {
   my $nx = @heat;
   my $ny = @bias;
   # Assume the heater and bias increments are the same as the first one
-  my $dx = $heat[1] - $heat[0];
-  my $dy = $bias[1] - $bias[0];
+  my $dx = ($nx > 1) ? $heat[1] - $heat[0] : $heat[0];
+  my $dy = ($ny > 1) ? $bias[1] - $bias[0] : $bias[0];
   # Define arguments for trandat common to all subarrays
   my $baseargs = "dtype='_double' shape=[$nx,$ny] auto=false bad=true poscols=[1,2] valcol=3 pscale=[$dx,$dy]";
 
   my @outfiles;
-  my $fitshdr = $Frmobj->fits;
+  my $fitshdr = $Frm->fits;
   orac_print "Writing: ";
   foreach my $subarray ( @subarrays ) {
 
-    # Create the ASCII file, each row is: heater bias NEP_eff
+    # Create the ASCII file, each row is: heater bias NEP
     my @entries;
     foreach my $bias (@bias) {
       foreach my $heat (@heat) {
 	my $key = join("_", $subarray, $heat, $bias);
-
-	push(@entries, "$heat $bias $nep{$key}\n");
+	my $nepval = (defined $nep{$key}) ? $nep{$key} : -1;
+	push(@entries, "$heat $bias $nepval");
       }
     }
     my $entries = write_file_list(@entries);
 
     # Set output file name
-    my $outndf = $Frmobj->inout("_".$neptype."nep");
-    $outndf = $Frmobj->strip_subscan($outndf);
+    my $outndf = $subarray . $Frm->hdr("UTDATE") ."_"
+      .(sprintf "%05d", $Frm->hdr("OBSNUM"))."_".$neptype."nep";
 
     # Convert ASCII file to NDF
     $type = "\u$type" if ($neptype eq "eff");
@@ -419,9 +418,4 @@ if ( $proceed ) {
     push(@outfiles, $outndf);
   }
   orac_print "\n";
-
-  # Store the output files in the current Frame or Group object
-  my $groupstore = get_prim_arg($_PRIM_ARGS_, "GRPSTORE", 0);
-  my $Obj = ($groupstore) ? $Grpobj : $Frmobj;
-  $Obj->files(@outfiles);
 }
