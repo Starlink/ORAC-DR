@@ -871,36 +871,30 @@ hdr.
 
   @subarrays = $Frm->subarrays;
 
-Returns an array.
+Returns an list. In scalar context returns the number of subarrays.
 
 =cut
 
 sub subarrays {
   my $self = shift;
-
   my @subarrays;
-  # Check for sub-headers
-  if ( exists $self->hdr->{'SUBHEADERS'} ) {
-    # OK now check that there are SUBARRAY subheaders - retrieve hash
-    # keys from first element (hash ref) in SUBHEADERS array
-    my @subhdrs = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
-    if ( grep (/SUBARRAY/, @subhdrs) ) {
+
+  # if we have a value in the primary header then we know there
+  # can not be a subheader for it
+  if (exists $self->hdr->{SUBARRAY} && defined $self->hdr->{SUBARRAY}) {
+    push(@subarrays, $self->hdr( "SUBARRAY" ));
+  } elsif ( exists $self->hdr->{'SUBHEADERS'} ) {
+    # OK now check that there are SUBARRAY subheaders
+    # if the first subheader has it then they all will
+    my @subhdrs = @{ $self->hdr->{SUBHEADERS} };
+    if ( exists $subhdrs[0]->{SUBARRAY} ) {
       my %subarrays;
-      my @allsubhdrs = @{ $self->hdr->{'SUBHEADERS'} };
-      foreach my $subhdr (@allsubhdrs) {
-	$subarrays{$subhdr->{'SUBARRAY'}} = 1;
-      }
+      $subarrays{ $_->{SUBARRAY} }++ for @subhdrs;
       push(@subarrays, keys %subarrays);
-    } else {
-      # No SUBARRAY entry in subheaders so only one subarray
-      push( @subarrays, $self->hdr("SUBARRAY") );
     }
-  } else {
-    # No subheaders so only one subarray
-    push( @subarrays, $self->hdr("SUBARRAY") );
   }
 
-  return sort @subarrays;
+  return wantarray() ? sort @subarrays : scalar(@subarrays);
 }
 
 =item B<makemap_args>
