@@ -699,10 +699,7 @@ way of knowing that there are n subarrays.
 
 sub numsubarrays {
   my $self = shift;
-
-  my @subs = $self->_dacodes;
-
-  return scalar (@subs);
+  return scalar $self->subarrays;
 }
 
 =item B<rewrite_outfile_subarray>
