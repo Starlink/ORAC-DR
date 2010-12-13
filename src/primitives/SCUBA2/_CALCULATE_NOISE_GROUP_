@@ -84,43 +84,26 @@ my $freqhi = get_prim_arg($_PRIM_ARGS_, "FREQHI", "2,10");
 
 # The noise may be calculated over multiple frequency ranges given via
 # recipe parameters
-my @range = ($Frm->uhdr("RECPAR_NOISE_FREQHI"))
-  ? @{$Frm->uhdr("RECPAR_NOISE_FREQHI")} : ($freqhi);
+my $freqhi =($Frm->uhdr("RECPAR_NOISE_FREQHI")
+	     if (defined $Frm->uhdr("RECPAR_NOISE_FREQHI"));
 
 # Verbosity defaults to false
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
 
-# Create an index of the files by heater/bias setting
-my %files;
-for my $i (1 .. $Frm->nfiles) {
-  my $key = join("_",$Frm->hdrval("PIXHEAT",$i-1),
-		     $Frm->hdrval("DETBIAS",$i-1));
-  my @files;
-  if (defined $files{$key}) {
-    @files = @{$files{$key}};
-  }
-  push(@files, $Frm->file($i));
-  $files{$key} = \@files;
+# Filter the files into frames grouped by a suitable key that will
+# reduce the chances of the pipeline timing out - start by dividing by
+# subarray
+my @subfrms = $Frm->subfrms("SUBARRAY");
+
+# Calculate noise for each subarray
+my @noisefiles;
+foreach my $subfrm (@subfrms) {
+  my $Frm = $subfrm;
+  _CALCULATE_NOISE_ VERBOSE=0 FREQHI=$freqhi
+
+  $Frm->uhdr("OBSEND",1);
+  push(@noisefiles, $Frm->files);
 }
 
-my @Frms;
-foreach my $setting (sort keys %files) {
-  my ($pixheat, $detbias) = split(/\_/, $setting, 2);
-  orac_print "PIXHEAT = $pixheat, DETBIAS = $detbias: " if ($verbose);
-
-  foreach my $range (@range) {
-    my $Frm = $Frm->new;
-    $Frm->files( @{$files{$setting}} );
-    $Frm->readhdr;
-
-    _CALCULATE_NOISE_ VERBOSE=0 FREQHI=$range
-
-    $Frm->uhdr("OBSEND",1);
-    push(@Frms, $Frm);
-  }
-
-}
-
-# Fill Grp with the new @Frms, discarding the previous ones - this
-# could be slow with a lot of frame objects
-$Grp->allmembers(@Frms);
+# Store noise files
+$Frm->files(@noisefiles);
