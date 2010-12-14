@@ -737,6 +737,53 @@ sub findrecipe {
   return $recipe;
 }
 
+=item B<files_from_hdr>
+
+Groups files in a Frame object by the value of a particular header
+item or items. Returns a list that can be stored in a hash with the
+concatenated header values as the key and a reference to an array of
+file names as the value. If there is no subheader all the files in the
+frame will be returned indexed by the concatenated values of the headers.
+
+  %related = $Frm->files_from_hdr( @keys )
+
+Undefined values in subheaders will be treated as if they had the
+value "<undef>".
+
+It is an error to call this method if the number of files
+in the frame does not match the number of subheaders.
+
+=cut
+
+sub files_from_hdr {
+  my $self = shift;
+  my @keys = @_;
+
+  # if there are subheaders do a sanity check on the number of them
+  if ( exists $self->hdr->{SUBHEADERS} ) {
+    my @subhdrs = @{ $self->hdr->{SUBHEADERS} };
+    my @files = $self->files;
+    if (@subhdrs != @files) {
+      croak "files_from_hdr called with number of files different to number of subheaders";
+    }
+  }
+
+  # Loop over the files and concatenate the key values. For undef
+  # replace with string "<undef>".
+  my %related;
+  for my $i (1..$self->nfiles) {
+    my $newkey = "";
+    for my $k (@keys) {
+      my $val1 = $self->hdrval( $k, $i-1 );
+      $newkey .= ( defined $val1 ? $val1 : "<undef>" );
+    }
+
+    push( @{ $related{$newkey} }, $self->file($i) );
+  }
+
+  return %related;
+}
+
 =item B<flag_from_bits>
 
 Determine the name of the flag file given the variable

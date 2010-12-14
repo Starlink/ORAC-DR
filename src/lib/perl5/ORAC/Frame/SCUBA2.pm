@@ -625,28 +625,8 @@ Return a hash with subarray names as keys and values containing a list
 
 sub get_files_by_subarray {
   my $self = shift;
-
-  my @subarrays = $self->subarrays;
-
-  # Return a hash indexed by subarray name containing an array of
-  # filenames for that subarray
-  my %subarrayfiles;
-  if ( @subarrays == 1 ) {
-    $subarrayfiles{$subarrays[0]} = \@{$self->files};
-  } else {
-    my @subhdrs = @{ $self->hdr->{'SUBHEADERS'} };
-    foreach my $subarray (@subarrays) {
-      my @subfiles;
-      for my $i (1 .. $self->nfiles) {
-	push(@subfiles, $self->file($i))
-	  if ($subhdrs[$i-1]->{'SUBARRAY'} eq $subarray);
-      }
-      $subarrayfiles{$subarray} = \@subfiles;
-    }
-  }
-  return %subarrayfiles;
+  return $self->files_from_hdr( "SUBARRAY" );
 }
-
 
 =item B<meta_file>
 
