@@ -798,10 +798,9 @@ sub subarray {
 
   # Check - if there are sub-headers then we need to delve further
   if ( exists $self->hdr->{'SUBHEADERS'} ) {
-    # OK now check that there are SUBARRAY subheaders - retrieve hash
-    # keys from first element (hash ref) in SUBHEADERS array
-    my @subhdrs = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
-    if ( grep (/SUBARRAY/, @subhdrs) ) {
+    # OK now check that there are SUBARRAY subheaders
+    my @subhdrs = @{ $self->hdr->{SUBHEADERS} };
+    if ( exists $subhdrs[0]->{SUBARRAY} ) {
       # If Subarray is present in the subheaders then we have to dig
       # deeper - now we take notice of the input argument
       my $inarg = shift;
