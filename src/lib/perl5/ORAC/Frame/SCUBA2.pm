@@ -940,6 +940,8 @@ sub duration_science {
 
   my $mindate = undef;
   my $maxdate = undef;
+  my $sequence_steps = 0;
+  my $nscience = 0;
 
   require Astro::FITS::HdrTrans::FITS;
   for my $i (1..$self->nfiles) {
@@ -953,12 +955,17 @@ sub duration_science {
     $seq_type = $obs_type unless defined $seq_type;
 
     if ($seq_type eq $obs_type) {
+      $nscience++;
+
       my %headers = (
                      "DATE-OBS" => $self->hdrval("DATE-OBS", $i-1),
                      "DATE-END" => $self->hdrval("DATE-END", $i-1),
                     );
       my $date_obs_obj = Astro::FITS::HdrTrans::FITS->to_UTSTART( \%headers );
       my $date_end_obj = Astro::FITS::HdrTrans::FITS->to_UTEND( \%headers );
+
+      my $nsteps = $self->hdrval("SEQEND", $i-1) - $self->hdrval("SEQSTART", $i-1);
+      $sequence_steps += $nsteps;
 
       if (!defined $mindate || $mindate > $date_obs_obj) {
         $mindate = $date_obs_obj;
@@ -973,6 +980,13 @@ sub duration_science {
   if (!defined $mindate || !defined $maxdate) {
     return 0;
   }
+
+  # if we only had once science file look at the sequence counter
+  if ($nscience == 1) {
+    my $step = $self->hdrval( "STEPTIME", 0 );
+    return ( $sequence_steps * $step );
+  }
+
   return ($maxdate - $mindate);
 
 }
