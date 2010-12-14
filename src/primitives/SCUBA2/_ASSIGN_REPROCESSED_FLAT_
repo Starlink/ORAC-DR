@@ -1,0 +1,119 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_ASSIGN_DISCRETE_FLAT_ - if required, assign a reprocessed flat field to an observation
+
+=head1 SYNOPSIS
+
+_ASSIGN_DISCRETE_FLAT_
+
+=head1 DESCRIPTION
+
+If the data file was taken before fast flatfields were enabled this
+primitive will attempt to locate a reprocessed flatfield and copy
+it into the data files.
+
+Currently the flatfield file is assumed to be the same file that
+was used originally for the data acquisition and stored in the FLAT
+FITS header. If this file has been reprocessed by the pipeline it
+will be present in the output directory and available to be copied
+in to the relevant data files.
+
+The data files are copied to ensure that we do not modify raw
+data.
+
+Does not currently fall back to using the calibration system to
+locate a flatfield.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item SMURF:
+
+COPYFLAT
+
+=back
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# do not have to do anything after 20100223
+
+if ( $Frm->hdr("ORACTIME") < 20100223 ) {
+
+  orac_print "Data taken prior to fast flatfield ramps. Need to assign reprocessed discrete flatfield\n";
+
+  # Get the FLAT associated with each file
+  my %flats = $Frm->files_from_hdr( "FLAT" );
+
+  # invert the returned hash so that we can walk through
+  # files in order (and make it much easier to handle
+  # the output files)
+  my %flatmap;
+  for my $flat ( keys %flats ) {
+    for my $file ( @{$flats{$flat}} ) {
+      $flatmap{$file} = $flat;
+    }
+  }
+
+  my %warned; # hash to decide whether we have warned already
+
+  my @out;
+  for my $i (1.. $Frm->nfiles) {
+
+    my ($in, $out) = $Frm->inout( "nwflt", $i );
+
+    # look for the relevant flat file
+    my $flat = $flatmap{$in};
+
+    if (-e $flat) {
+      orac_print "Found reprocessed flatfield $flat\n" unless exists $warned{$flat};
+      $Mon{ndfpack_mon}->obeyw( "ndfcopy", "in=$in out=$out" );
+      # Fix root provenance - should have single OBSIDSS
+      my $obsidss = $Frm->hdr("OBSIDSS");
+      if (defined $obsidss) {
+        $Mon{ndfpack_mon}->obeyw( "provadd", "ndf=$out creator=KAPPA:NDFCOPY parent=$in moretext=OBSIDSS=$obsidss");
+      } else {
+        orac_warn "Failed to correct root provenance for file $out\n";
+      }
+
+      $Mon{smurf_mon}->obeyw( "copyflat", "in=$out ref=$flat" );
+      push(@out, $out);
+    } else {
+      orac_warn "Could not find reprocessed flatfield $flat in data directory\n"
+        unless exists $warned{$flat};
+      push(@out, $in);
+    }
+    $warned{$flat} = 1;
+  }
+
+  $Frm->files(@out);
+
+}
