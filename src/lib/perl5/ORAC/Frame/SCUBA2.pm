@@ -405,7 +405,7 @@ observations each focus position is returned as a separate Frame
 object. This simplifies the recipes and allows the QL and standard
 recipes to work in the same way.
 
-Observation number is also kept separate in case the pipeline gets so
+Observation ID is also kept separate in case the pipeline gets so
 far behind that the system detects the end of one observation and the
 start of the next.
 
@@ -414,7 +414,7 @@ start of the next.
 =cut
 
 sub framegroupkeys {
-  return (qw/ UTDATE OBSNUM FOCPOSN FOCAXIS /);
+  return (qw/ OBSIDSS FOCPOSN FOCAXIS /);
 }
 
 
