@@ -1076,16 +1076,21 @@ sub firstmember {
 =item B<lastmember>
 
 Method to determine whether the supplied argument
-matches the last member of the group. Returns a 1 if
+matches the last good member of the group. Returns a 1 if
 it is the last member and a zero otherwise.
 
    $islast = $Grp->lastmember($Frm);
+
+If there are no good members in the group, returns false.
 
 =cut
 
 sub lastmember {
   my $self = shift;
   my $member = shift;
+
+  my $num = $self->num;
+  return 0 if $num == -1;
 
   if ($member eq $self->frame($self->num)) {
     return 1;
