@@ -521,12 +521,6 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib::ACSIS";
     $instclass = "ORAC::Inst::ACSIS";
 
-  } elsif( $inst eq 'ACSIS_QL' ) {
-    $groupclass = "ORAC::Group::ACSIS_QL";
-    $frameclass = "ORAC::Frame::ACSIS_QL";
-    $calclass = "ORAC::Calib";
-    $instclass = "ORAC::Inst::ACSIS_QL";
-
   } elsif ( $inst eq 'PICARD' ) {
     $groupclass = "ORAC::Group::PICARD";
     $frameclass = "ORAC::Frame::PICARD";
@@ -642,10 +636,6 @@ sub orac_determine_recipe_search_path {
 
   } elsif ($inst eq 'ACSIS' ) {
     push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
-    push( @path, $het_root );
-
-  } elsif ($inst eq 'ACSIS_QL' ) {
-    push( @path, File::Spec->catdir( $het_root, 'ACSIS_QL' ) );
     push( @path, $het_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
@@ -816,11 +806,6 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
     push( @path, $het_root );
     push( @path, $jsa_root, $general_root );
-
-  } elsif( $inst eq 'ACSIS_QL' ) {
-    push( @path, File::Spec->catdir( $het_root, 'ACSIS_QL' ) );
-    push( @path, $het_root );
-    push( @path, $general_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
@@ -1119,10 +1104,6 @@ sub orac_determine_initial_algorithm_engines {
   } elsif( $inst eq 'ACSIS' ) {
 
     @AlgEng = qw/ ndfpack_mon kappa_mon smurf_mon cupid_mon/;
-
-  } elsif ($inst eq 'ACSIS_QL') {
-
-    @AlgEng = qw/ ndfpack_mon kappa_mon /;
 
   } elsif ($inst eq 'CGS4') {
 
