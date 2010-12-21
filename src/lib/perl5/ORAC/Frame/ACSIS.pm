@@ -336,7 +336,7 @@ sub pattern_from_bits {
 
   my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d{4}' . $self->rawsuffix;
 
-  return qr/$pattern/;
+  return qr/$pattern$/;
 }
 
 =item B<number>

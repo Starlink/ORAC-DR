@@ -477,7 +477,7 @@ sub pattern_from_bits {
   my $pattern = $self->rawfixedpart . "[a-z]". $prefix . "_$padnum"
     . ".ok";
 
-  return qr/$pattern/;
+  return qr/$pattern$/;
 }
 
 
