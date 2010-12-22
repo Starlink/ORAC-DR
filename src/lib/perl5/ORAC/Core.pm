@@ -1645,13 +1645,16 @@ orac_store_recipe_status.
 Returns 0 if all recipes processed successfully and non-zero
 if some failed. This value can be passed directly to exit().
 
+Returns 0 if the stats hash is empty and -1 if no hash
+reference is supplied.
+
 =cut
 
 sub orac_print_recipe_summary {
   my $color = shift;
   my $stats = shift;
-  return unless defined $stats;
-  return unless exists $stats->{TOTAL};
+  return -1 unless defined $stats;
+  return 0 unless exists $stats->{TOTAL};
 
   if ($stats->{TOTAL} == 1) {
     my $text = "which completed successfully";
