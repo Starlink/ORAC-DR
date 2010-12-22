@@ -13,7 +13,9 @@ _CREATE_NEP_CUBE_ - create a cube or hypercube of NEP values
 =head1 DESCRIPTION
 
 This primitive construct a 3-d cube or 4-d hypercube from the noise
-files in the current global Frame object.
+files in the current global Frame object. The data are sorted into
+separate Frame objects for each subarray, which are stored in the
+current Grp. Each subarray is processed in turn.
 
 The two primary arguments are flags to indicate which axes should be
 created in the output file. The default behaviour is to create a 4-d
@@ -60,7 +62,7 @@ ASTGETFRAME, ASTGETMAPPING, ASTWINMAP
 
 =head1 OUTPUT DATA
 
-None.
+The Grp is updated with the Frame objects for each subarray.
 
 =head1 OUTPUT FILES
 
@@ -127,14 +129,15 @@ push(@bounds, "1:1") if ($heataxis && $biasaxis);
 # Sort data by subarray
 my @subfrms = $Frm->subfrms("SUBARRAY");
 
-#$Grp->allmembers(@subfrms);
+# Store the new subframes in the Group
+$Grp->allmembers(@subfrms);
 
 # Common NEP cube name for all subarrays
 my $basename = $Frm->hdr("UTDATE") ."_". (sprintf "%05d", $Frm->hdr("OBSNUM"))
   ."_nep";
 
 # Loop over each subarray
-foreach my $frmobj (@subfrms) {
+foreach my $frmobj ($Grp->members) {
   my @planes;
   # Threshold the input NEP file, add extra dimensions and set the
   # origin accordingly
@@ -183,11 +186,12 @@ foreach my $frmobj (@subfrms) {
     orac_print "Creating NEP $hypercube for $subarray... ";
 
     my $inlist;
-    my $maxplanes = 26;
+    my $maxplanes = 1000;
     if (@planes > $maxplanes) {
       use POSIX qw/ ceil /;
       my $nchunks = ceil(@planes/$maxplanes);
       my $stepsize = ceil(@planes/$nchunks);
+      orac_print "Creating $nchunks intermediate cubes... " if ($verbose);
       my @newplanes;
       for my $j (1 .. $nchunks) {
 	my @tmpplanes;
@@ -209,7 +213,7 @@ foreach my $frmobj (@subfrms) {
     $Mon{kappa_mon}->obeyw("paste","$args");
     undef $inlist;
 
-    orac_print "Adding WCS...\n";
+    orac_print "adding WCS...\n";
     my ($wcs, $mapping, $frame);
     unless ($Grp->uhdr("WCSFRAMESET")) {
       # Add WCS info - begin with a template file
