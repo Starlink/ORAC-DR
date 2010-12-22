@@ -1,0 +1,253 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALCULATE_NEP_GROUP_ - calculate effective or RMS NEP for each subarray
+
+=head1 SYNOPSIS
+
+ _CALCULATE_NEP_GROUP_
+
+ _CALCULATE_NEP_GROUP_ NEPTYPE=RMS
+
+=head1 DESCRIPTION
+
+This primitive calculates the effective or RMS NEP for all files in
+the current Grp. The data are thresholded at an upper and lower NEP
+limit defined as good before the effective or RMS value is
+calculated. The NEPs are stored in a hash indexed by subarray, heater
+and bias setting which is stored in the Grp uhdr entry C<EFFNEP> or
+C<RMSNEP> for effective and RMS NEPs respectively.
+
+The files must contain noise data and it is assumed that the Group
+contains Frame objects sorted by subarray.
+
+A noise log file is written if requested.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<LOGFILE>
+
+Flag to denote whether or not to write a bolometer noise log
+file. Default is 1 (yes).
+
+=item B<NEPTYPE>
+
+Type of NEP image to create. May be C<eff> or C<rms> for the
+effective or RMS NEPs respectively.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+NDFTRACE, THRESH
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_LOG_ENTRY_, _CALCULATE_ARRAY_NEP_, _FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+The input Group must contain Frame objects which contain data for a
+single subarray only.
+
+=head1 OUTPUT DATA
+
+The Group uhdr contains entries C<EFFNEP> or C<RMSNEP> which are hash
+of effective and RMS NEPs respectively, indexed by subarray, heater
+and bias settings.
+
+=head1 OUTPUT FILES
+
+A noise log file, C<log.bolonoise>.
+
+=head1 LOGFILE FORMAT
+
+The log file C<log.bolonoise> contains the following entries:
+
+=over 4
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Subarray
+
+The relevant subarray name.
+
+=item Freq Range
+
+Range of frequencies over which noise was calculated (in Hz).
+
+=item Median
+
+Median noise in pA Hz**-0.5.
+
+=item Mean
+
+Mean noise in pA Hz**-0.5.
+
+=item Mode
+
+Mode noise value in pA Hz**-0.5.
+
+=item Nbol
+
+Number of bolometers used in noise calculation.
+
+=item NEP_eff
+
+Effective NEP in W Hz**-0.5
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Should we be verbose (default to no)?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
+
+# NEP type to calculate: RMS or effective
+my $neptype = lc(get_prim_arg( $_PRIM_ARGS_, "NEPTYPE", "eff"));
+
+my $type = "effective";
+my $uhdrnep = "EFFNEP";
+my $NEP = "NEP_eff";
+if ($neptype eq "rms") {
+  $type = "RMS";
+  $uhdrnep = "RMSNEP";
+  $NEP = "NEP_rms";
+}
+
+# Write out a log file?
+my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
+my $logtype = "bolonoise";
+my @lognames = ("Subarray", "Freq_Range", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Heater", "Bias");
+
+my $freqrange = $Frm->hdr("FRQRANGE");
+
+# Obtain the NEP units
+my $nepunits;
+if ($Grp->uhdr("NEP_UNITS")) {
+  $nepunits = $Grp->uhdr("NEP_UNITS");
+} else {
+#  my $file = $Frm->file . ".more.smurf.nep";
+  my $file = $Frm->file;
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
+  (my $ORAC_STATUS, $nepunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
+  $Grp->uhdr("NEP_UNITS", $nepunits);
+}
+
+# Tell the user what's happening
+my @subarrays = $Frm->subarrays;
+my $subinfostr;
+if ( $#subarrays == 0 ) {
+  $subinfostr = "subarray $subarrays[0]";
+} else {
+  $subinfostr = "subarrays ".join(", ",@subarrays);
+}
+orac_print "Calculating $type NEPs for $subinfostr...\n";
+
+my $maplogtype = "mapspeed";
+my @maplognames = ("Subarray", "Freq_Range", "PIXHEAT", "DETBIAS", "N_bol", "NEP_RMS", "MAP_SPEED");
+
+# Common thresholding arguments
+my $thrargs = "thrlo=".($Frm->uhdr("NEP_MIN"))." thrhi=".($Frm->uhdr("NEP_MAX"))
+  ." newlo=bad newhi=bad";
+
+# Now calculate the rms/effective NEP for each subarray and store in a
+# hash indexed by the heater and bias settings
+my %nep = %{$Grp->uhdr($uhdrnep)} if (defined $Grp->uhdr($uhdrnep));
+
+foreach my $frmobj ($Grp->members) {
+  my $subarray = $frmobj->hdr("SUBARRAY");
+  for my $i ( 1 .. $frmobj->nfiles ) {
+    my $noisefile = $frmobj->file($i);
+    # Calculate the effective or RMS NEP for the current file
+    my $nepfile = $noisefile . ".more.smurf.nep";
+    # Threshold the NEP measurements according to the reasonable min/max
+    my $thrfile = ORAC::TempFile->new();
+    my $args = "in=$nepfile out=$thrfile $thrargs";
+    $Mon{kappa_mon}->obeyw("thresh","$args");
+
+    _CALCULATE_ARRAY_NEP_ IN=$thrfile NEPTYPE=$neptype
+    my $nep = $_CALCULATE_ARRAY_NEP_{NEPVAL};
+    my $ngood = $_CALCULATE_ARRAY_NEP_{NUMGOOD};
+    if ( $nep ) {
+      orac_print " $NEP ($subarray) = ".(sprintf "%5.3e", $nep)
+	."  $nepunits\n", "green" if ($verbose);
+    } else {
+      orac_warn "Bad $NEP for $noisefile\n";
+      $nep = -1;
+    }
+
+    my $key = join("_", $subarray, $frmobj->hdrval("PIXHEAT",$i-1),
+		   $frmobj->hdrval("DETBIAS",$i-1));
+    $nep{$key} = $nep;
+
+    # Calculate stats for logging
+    if ($uselog) {
+      _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 VERBOSE=0
+      my %results = %{$_FIND_IMAGE_STATISTICS_{RESULTS}};
+      my $mean = (defined $results{MEAN}) ? sprintf "%5.3e", $results{MEAN} : "****";
+      my $median = (defined $results{MEDIAN}) ? sprintf "%5.3e", $results{MEDIAN} : "****";
+      my $mode = (defined $results{MODE}) ? sprintf "%5.3e", $results{MODE} : "****";
+      my $numgood = $results{NUMGOOD};
+      my @values = ( $subarray, $freqrange, $median, $mean, $mode, $numgood,
+		     $nep, $frmobj->hdrval("PIXHEAT",$i-1),
+		     $frmobj->hdrval("DETBIAS",$i-1) );
+      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@lognames PARLIST=BRIEF
+    }
+  }
+}
+
+# Store NEP values in Grp uhdr
+$Grp->uhdr($uhdrnep, \%nep);
