@@ -1,0 +1,235 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALCULATE_MAPPING_SPEED_GROUP_ - calculate the mapping speed for all members of the current Grp
+
+=head1 SYNOPSIS
+
+ _CALCULATE_MAPPING_SPEED_GROUP_
+
+ _CALCULATE_MAPPING_SPEED_GROUP_ NBOLST=300 NBOLEN=900 STEP=50
+
+=head1 DESCRIPTION
+
+This primitive calculates the `mapping speed' parameter for each file
+of each Frame in the current Grp over the given range of
+bolometers. The results are written to a log file, one per subarray.
+
+The user may specify a starting and ending number of bolometers to use
+in the calculation, as well as the interval between number of
+bolometers, as recipe parameters C<MAPSPEED_NBOLST>,
+C<MAPSPEED_NBOLEN> and C<MAPSPEED_STEP>.
+
+The Group must contain Frame objects composed of data from a single
+subarray.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<NBOLEN>
+
+Maximum number of bolometers to use in mapping speed
+calculation. Default is 1000.
+
+=item B<NBOLST>
+
+Minimum number of bolometers to use in mapping speed
+calculation. Default is 300.
+
+=item B<STEP>
+
+Increment number of bolometers to use by this amount. Default is 100.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+THRESH
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_LOG_ENTRY_, _CALCULATE_MAPPING_SPEED_, _FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+The input Group must contain Frame objects which contain noise data
+for a single subarray only.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+One log file for each subarray present (SUB), C<log.mapspeed_SUB>.
+
+=head1 LOGFILE FORMAT
+
+The log file C<log.mapspeed_SUB> contains the following entries:
+
+=over 4
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Subarray
+
+The current subarray.
+
+=item Freq Range
+
+Range of frequencies over which noise was calculated (in Hz).
+
+=item HEATER
+
+The current pixel heater value.
+
+=item BIAS
+
+The current detector bias setting.
+
+=item N_bol
+
+The number of bolometers used in the calculation.
+
+=item NEP_RMS
+
+RMS NEP of the best C<N_bol> bolometers in W Hz**-0.5.
+
+=item MAP_SPEED
+
+Mapping speed parameter in units of 1e34 Hz W**-2.
+
+=back
+
+The C<N_bol>, C<NEP_RMS> and C<MAP_SPEED> entries are repeated for
+different values of C<N_bol>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Starting and ending number of bolometers with which to calculate the
+# mapping speed
+my $nbolstart = get_prim_arg($_PRIM_ARGS_, "NBOLST", 300);
+my $nbolend = get_prim_arg($_PRIM_ARGS_, "NBOLEN", 1000);
+# Interval
+my $delta = get_prim_arg($_PRIM_ARGS_, "STEP", 100);
+
+# Override arguments with recipe parameters if present
+$nbolstart = $Frm->uhdr("RECPAR_MAPSPEED_NBOLST")
+  if (defined $Frm->uhdr("RECPAR_MAPSPEED_NBOLST"));
+$nbolend = $Frm->uhdr("RECPAR_MAPSPEED_NBOLEN")
+  if (defined $Frm->uhdr("RECPAR_MAPSPEED_NBOLEN"));
+$delta = $Frm->uhdr("RECPAR_MAPSPEED_STEP")
+  if (defined $Frm->uhdr("RECPAR_MAPSPEED_STEP"));
+
+# Verbose prints lots more info, probably way more than necessary
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+
+# Logfile headers
+my $maplogtype = "mapspeed";
+my @maplognames = ("Subarray", "Freq_Range", "PIXHEAT", "DETBIAS", "N_bol", "NEP_RMS", "MAP_SPEED");
+
+# Common thresholding arguments
+my $thrargs = "thrlo=".($Frm->uhdr("NEP_MIN"))." newlo=bad thrhi=1 newhi=1";
+
+# Frequency range over which noise was calculated
+my $freqrange = $Frm->hdr("FRQRANGE");
+
+# Tell the user what's happening - get the number of heater/bias
+# settings from the first Frame object
+unless ($verbose) {
+  my $nheat = scalar($Grp->frame(0)->hdrvals("PIXHEAT"));
+  my $nbias = scalar($Grp->frame(0)->hdrvals("DETBIAS"));
+  my $nstep = 1 + ($nbolend - $nbolstart) / $delta;
+  orac_print "Calculating mapping speed over ".$nheat."x".$nbias."x".$nstep." heater/bias/bolometer number settings\n for subarray ";
+}
+
+foreach my $frmobj ($Grp->members) {
+  my $subarray = $frmobj->hdr("SUBARRAY");
+  my $maplog = $maplogtype . "_$subarray";
+  # Tell the user what's happening
+  my $msg = ($verbose) ? "Calculating mapping speed for $subarray\n" : "$subarray ";
+  orac_print ($msg);
+  for my $i ( 1 .. $frmobj->nfiles ) {
+    # Calculate the effective or RMS NEP for the current file
+    my $nepfile = $frmobj->file($i) . ".more.smurf.nep";
+    # Threshold the NEP measurements according to the reasonable min/max
+    my $thrfile = ORAC::TempFile->new();
+    my $args = "in=$nepfile out=$thrfile $thrargs";
+    $Mon{kappa_mon}->obeyw("thresh","$args");
+
+    # Find the total number of good bolometers for this measurement
+    _FIND_IMAGE_STATISTICS_ HISTAT=0 IMAGE=$thrfile VERBOSE=0
+    my $ngood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+
+    # Calculate the array Figure of Merit or `mapping speed' as a
+    # function of the number of bolometers
+    my $nbol = $nbolstart;
+    my $heat = $frmobj->hdrval("PIXHEAT",$i-1);
+    my $bias = $frmobj->hdrval("DETBIAS",$i-1);
+    my @maplogvals = ($subarray, $freqrange, $heat, $bias);
+    orac_print " Heater/Bias = $heat $bias, N_bol = " if ($verbose);
+    while ($nbol <= $nbolend) {
+      orac_print "$nbol " if ($verbose);
+      _CALCULATE_MAPPING_SPEED_ IN=$thrfile NBOL=$nbol NGOOD=$ngood
+      my $mapspeed = sprintf "%5.3e",
+	($_CALCULATE_MAPPING_SPEED_{MAPSPEED} * 1.0e-34);
+      my $nep_rms = sprintf "%5.3e", $_CALCULATE_MAPPING_SPEED_{NEP_RMS};
+      push(@maplogvals, $nbol, $nep_rms, $mapspeed);
+      $nbol += $delta;
+    }
+    orac_print "\n" if ($verbose);
+    _ADD_LOG_ENTRY_ LOGFILE=$maplog ENTRIES=\@maplogvals PARAMS=\@maplognames PARLIST=BRIEF
+  }
+  orac_print "\n" unless ($verbose);
+}
