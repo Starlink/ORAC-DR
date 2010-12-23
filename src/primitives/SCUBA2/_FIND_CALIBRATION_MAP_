@@ -252,8 +252,10 @@ if ( $proceed ) {
       $Obj->push_intermediates($_APPLY_MATCHED_FILTER_{OUT});
     } else {
       orac_warn "Unable to fit peak to source after matched-filter\n";
+      $results{BEAMMATCH} = 0;
     }
 
+    my $bad_results = 0;
     # Loop over the different type of results
     foreach my $type (sort keys %results) {
 
@@ -273,19 +275,21 @@ if ( $proceed ) {
       }
 
       orac_print "Determining calibration of type $type";
-
-      next unless (defined $results{$type});
+      unless (defined $results{$type}) {
+	orac_print " - Failed!\n";
+	orac_err "Calibration did not return a result\n";
+	orac_err "Unable to determine a FCF of type $type for this observation\n";
+	$bad_results++;
+	next;
+      }
       # Trap zero when things have gone very badly wrong
       if ( $results{$type} <= 0) {
+	$bad_results++;
 	# This is obviously a Bad Thing (TM)
 	orac_print " - Failed!\n";
 	my $garbage = ($results{$type} == 0) ? "zero"
 	  : "a negative flux measurement";
-	orac_err "Calibration returned $garbage!\n";
-	if ( !$group ) {
-	  $Obj->isgood(0);
-	  $Grp->check_membership;
-	}
+	orac_err "Calibration returned $garbage\n";
 	orac_err "Unable to determine a FCF of type $type for this observation\n";
 	next;
       } else {
@@ -334,8 +338,14 @@ if ( $proceed ) {
       }
 
     }
-    # Store results in primitive hash
-    $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
+    # Check if all the FCFs were bad in some way
+    if ($bad_results >= scalar(keys %results)) {
+      $Obj->isgood(0);
+      orac_err "No FCFs could be determined for this observation: marking as bad\n";
+    } else {
+      # Store results in primitive hash
+      $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
+    }
   } else {
     if ( !$group ) {
       # If this is a Frame object and no FCF could be determined then
