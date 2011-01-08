@@ -131,7 +131,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005-2008 University of British Columbia. All Rights
+Copyright (C) 2005-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -155,186 +155,224 @@ USA.
 # Should I be verbose? (default to yes)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-# Check for desired OUTPUT coordinate frame
-my $cosys_out = get_prim_arg($_PRIM_ARGS_, "SYSTEM", "");
+my $lbound = "-1,1";
+my $ubound = "-1,1";
+my $bounds = get_prim_arg($_PRIM_ARGS_, "BOUNDS", undef);
+if ($bounds && ref($bounds) eq "ARRAY") {
+  # What if @$bounds doesn't contain 4 elements?
+  $lbound = join(",",@{$bounds}[0..1]);
+  $ubound = join(",",@{$bounds}[2..3]);
+}
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 1);
+my $Obj = ($group) ? $Grp : $Frm;
 
 # Tell the user what's going on
 orac_print "Creating reference image: " if $verbose;
 
-# Create the blank 3x3 pixel reference NDF
-my $refimage = $Grp->raw."_ref";
-my $imgargs = "lbound=\[1,1\] ubound=\[3,3\] mode=bl title=".$Frm->hdr('OBJECT');
+# Create the blank reference NDF
+my $refimage = $Obj->inout("_ref");
+my $imgargs = "lbound=\[$lbound\] ubound=\[$ubound\] mode=bl title=".$Obj->hdr('OBJECT');
 $Mon{kappa_mon}->obeyw("creframe","out=$refimage ".$imgargs);
 orac_print "create blank NDF, " if $verbose;
-
-# Get first file in current Frame for WCS and FITS header info
-my $datafile = $Frm->file(1);
 
 # Calculate the pixel scale. Use default values if not set.
 my $pixelscale = get_prim_arg($_PRIM_ARGS_, "PIXEL_SCALE", $Cal->pixelscale);
 
-# These should not be zero after this block...
-my ($dx, $dy) = (0.0, 0.0);
-if ( $pixelscale == 0 ) {
-  _GET_PIXEL_SCALE_ IMAGE=$datafile DERIVE=0 UNITS=ARCSEC
-  # Retrieve values in arcsec
-  ($dx, $dy) = @{ $_GET_PIXEL_SCALE_{RESULTS}};
+my $add_wcs = get_prim_arg($_PRIM_ARGS_, "ADDWCS", 1);
+
+if ( $add_wcs ) {
+
+  # Check for desired OUTPUT coordinate frame
+  my $cosys_out = get_prim_arg($_PRIM_ARGS_, "SYSTEM", "");
+
+  my $coords = get_prim_arg($_PRIM_ARGS_, "COORDS", undef);
+
+  # Get first file in current object for WCS and FITS header info
+  my $datafile = $Obj->file(1);
+
+  # These should not be zero after this block...
+  my ($dx, $dy) = (0.0, 0.0);
+  if ( $pixelscale == 0 ) {
+    _GET_PIXEL_SCALE_ IMAGE=$datafile DERIVE=0 UNITS=ARCSEC
+    # Retrieve values in arcsec
+    ($dx, $dy) = @{ $_GET_PIXEL_SCALE_{RESULTS}};
+  } else {
+    # If we're not getting the pixel scale from the image, use the value
+    # given and set the X and Y scales equal.
+    $dx = $pixelscale;
+    $dy = $dx;
+  }
+  # Check they're non-zero
+  if ( $dx == 0.0 || $dy == 0.0 ) {
+    orac_err "Pixel scales still set to zero - something went very wrong\n";
+  }
+
+  my $skyref;
+  my $tracksys = $Frm->hdrval("TRACKSYS");
+  my $equinox = "J2000";
+  my $epoch = "2000.0";
+  if ( $coords ) {
+    # Need to set a proper epoch for moving sources
+    if ($cosys_out eq "FK4" ) {
+      $equinox = "B1950";
+      $epoch = "1950.0";
+    }
+    $skyref = $coords->ra .",". $coords->dec;
+  } else {
+    # We may not have write access to the input frame so we
+    # have to force a SKY frame. This is important in QL mode
+    # where the data do not have a .WCS component. We can either
+    # modify read_wcs to parse FITS headers if the WCS does not
+    # contain a sky, or else copy the file, run wcsframe and then
+    # call read_wcs. This only happens for the first file so we can
+    # copy without slowing things down much
+
+    my $tmp = ORAC::TempFile->new(0);
+    my $tmpfile = $tmp->file;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$datafile out=$tmpfile");
+
+    # Retrieve input WCS object - force creation of a sky frame to make
+    # sure the read_wcs call does not fail
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$tmpfile frame=sky");
+    my $wcs = $Frm->read_wcs( $tmpfile );
+
+    # Get current INPUT coordinate system
+    my $cosys_in = $wcs->Get("System");
+
+    # Check that the OUTPUT coordinate system supported - use INPUT if not
+    # recognized
+    if ( $cosys_out eq "" ) {
+      # Use same as input if not set
+      $cosys_out = $cosys_in;
+    } elsif ( ( $cosys_out ne "ICRS" ) &&
+	      ( $cosys_out ne "GAPPT" ) &&
+	      ( $cosys_out ne "EQUATORIAL" ) &&
+	      ( $cosys_out ne "GALACTIC" ) &&
+	      ( $cosys_out ne "FK5" ) &&
+	      ( $cosys_out ne "FK4" ) &&
+	      ( $cosys_out ne "AZEL" ) ) {
+      orac_warn " Unsupported coordinate frame, $cosys_out. Using default ($cosys_in)\n";
+      $cosys_out = $cosys_in;
+    }
+
+    # If we are dealing with a moving source, set the input coordinate
+    # system to ICRS for creating the output WCS
+    my $usesys = $cosys_in;
+    if ( $cosys_in =~ /GAPPT|AZEL/ ) {
+      $wcs->Set("System=ICRS");
+      $usesys = "ICRS";
+    }
+
+    # Get coords of reference pixel in current SKY coordinate system
+    $skyref = $wcs->Get("SkyRef");
+    my ($xstr, $ystr) = split(/,/,$skyref,2);
+
+    # Get TDB equinox
+    $equinox = $wcs->Get("Equinox");
+
+    # Epoch - for GAPPT output retrieve from input data
+    my $epoch;
+    if ( $cosys_out =~ /GAPPT|AZEL/ ) {
+      $epoch = $wcs->Get("Epoch");
+    } else {
+      # Else use equinox before redefining the equinox as a string
+      $epoch = $equinox;
+    }
+
+    # Reformat equinox as suitable string for future use
+    if ( $equinox eq "2000.0" ) {
+      $equinox = "J2000";
+    } elsif ( $equinox eq "1950.0" ) {
+      $equinox = "B1950";
+    }
+
+    my ($x0, $y0);
+    # Create Astro::Coords object using information from sky frame in
+    # input data and then retrieve parameters in desired output frame.
+    use Astro::Coords;
+    #my $coords;
+    if ( $cosys_in eq "GALACTIC" ) {
+      $coords = new Astro::Coords( long => $xstr, lat => $ystr,
+				   units => 'deg', type => 'galactic' );
+    } else {
+      $coords = new Astro::Coords( ra => $xstr, dec => $ystr,
+				   units => 'sex', type => $equinox );
+    }
+  }
+
+  # Now retrieve reference coordinates in desired output frame
+  my $skycosys;
+  my ($x0, $y0);
+  if ( $cosys_out eq "GALACTIC" ) {
+    # Retrieve coords in degrees: SETSKY uses degrees by default
+    $x0 = $coords->glong( format => 'deg' );
+    $y0 = $coords->glat( format => 'deg' );
+    $skycosys = $cosys_out;
+  } else {
+    # Retrieve coords in radians
+    $x0 = $coords->ra( format => 'rad' );
+    $y0 = $coords->dec( format => 'rad' );
+
+    # Convert to string and add units for SETSKY
+    $x0 = $x0."r";
+    $y0 = $y0."r";
+
+    # Re-define output coordinate frame to be generically equatorial for
+    # SETSKY but with appropriate equinox
+    $skycosys = "EQUATORIAL($equinox)";
+  }
+  # Add a WCS sky frame - forces pixel scale to match raw input data
+  orac_print "adding WCS " if $verbose;
+
+  # Define parameters of WCS. Pixelsize is in ARCSEC, lat and lon are as
+  # defined above.
+  # Note quoting around the pixelsize arguments
+  my $wcsargs = "coords=$skycosys epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."s', '".$dy."s'\] orient=0 positions=! projtype=gnom lon=".$x0." lat=".$y0;
+  $Mon{ndfpack_mon}->obeyw("setsky","ndf=$refimage $wcsargs");
+
+  # Store the SkyRef attribute in reference image
+  # SkyRef can not be stored using mset since astSet does not allow
+  # attribute values that include commas.
+  my $args = "ndf=$refimage mode=set name=skyref newval='".$skyref."'";
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+
+  # Work out which AST attributes need to be set, start with observatory
+  # location
+  my $attrs = "obslon=".$Obj->hdr("LONG-OBS").",obslat=".$Obj->hdr("LAT-OBS");
+
+  # Work out whether we were tracking a moving source and if so set the
+  # SkyRefIs, AlignOffset and System attributes
+  if ( $cosys_out eq "GAPPT" ||
+       ( defined $tracksys && $tracksys eq 'APP' )) {
+    $attrs .=",skyrefis=origin,alignoffset=1,system=$cosys_out,epoch=$epoch";
+    # Set a flag for moving sources
+    $Grp->uhdr("MOVING",1);
+  } else {
+    # Set a NULL flag for non-moving sources
+    $Grp->uhdr("MOVING",0);
+  }
+
+  # Now set the attributes
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=mset setting='$attrs'");
+
+  $pixelscale = sprintf "%4.1f", $pixelscale;
+  orac_print "done\nReference image created in $cosys_out coordinate system with pixel scale = $pixelscale arcsec\n" if $verbose;
 } else {
-  # If we're not getting the pixel scale from the image, use the value
-  # given and set the X and Y scales equal.
-  $dx = $pixelscale;
-  $dy = $dx;
-}
-# Check they're non-zero
-if ( $dx == 0.0 || $dy == 0.0 ) {
-  orac_err "Pixel scales still set to zero - something went very wrong\n";
+  # All done - let the user know
+  orac_print "done. \n" if $verbose;
 }
 
-# We may not have write access to the input frame so we
-# have to force a SKY frame. This is important in QL mode
-# where the data do not have a .WCS component. We can either
-# modify read_wcs to parse FITS headers if the WCS does not
-# contain a sky, or else copy the file, run wcsframe and then
-# call read_wcs. This only happens for the first file so we can
-# copy without slowing things down much
-
-my $tmp = ORAC::TempFile->new(0);
-my $tmpfile = $tmp->file;
-$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$datafile out=$tmpfile");
-
-# Retrieve input WCS object - force creation of a sky frame to make
-# sure the read_wcs call does not fail
-$Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$tmpfile frame=sky");
-my $wcs = $Frm->read_wcs( $tmpfile );
-
-# Get current INPUT coordinate system
-my $cosys_in = $wcs->Get("System");
-
-# Check that the OUTPUT coordinate system supported - use INPUT if not
-# recognized
-if ( $cosys_out eq "" ) {
-  # Use same as input if not set
-  $cosys_out = $cosys_in;
-} elsif ( ( $cosys_out ne "ICRS" ) && ( $cosys_out ne "GAPPT" )
-     && ( $cosys_out ne "EQUATORIAL" ) && ( $cosys_out ne "GALACTIC" )
-     && ( $cosys_out ne "FK5" ) && ( $cosys_out ne "FK4" ) && ( $cosys_out ne 'AZEL' ) ) {
-  orac_warn " Unsupported coordinate frame, $cosys_out. Using default ($cosys_in)\n";
-  $cosys_out = $cosys_in;
-}
-
-# If we are dealing with a moving source, set the input coordinate
-# system to ICRS for creating the output WCS
-my $usesys = $cosys_in;
-if ( $cosys_in =~ /GAPPT|AZEL/ ) {
-  $wcs->Set("System=ICRS");
-  $usesys = "ICRS";
-}
-
-# Get coords of reference pixel in current SKY coordinate system
-my $skyref = $wcs->Get("SkyRef");
-my ($xstr, $ystr) = split(/,/,$skyref,2);
-
-# Get TDB equinox
-my $equinox = $wcs->Get("Equinox");
-
-# Epoch - for GAPPT output retrieve from input data
-my $epoch;
-if ( $cosys_out =~ /GAPPT|AZEL/ ) {
-  $epoch = $wcs->Get("Epoch");
-} else {
-  # Else use equinox before redefining the equinox as a string
-  $epoch = $equinox;
-}
-
-# Reformat equinox as suitable string for future use
-if ( $equinox eq "2000.0" ) {
-  $equinox = "J2000";
-} elsif ( $equinox eq "1950.0" ) {
-  $equinox = "B1950";
-}
-
-my ($x0, $y0);
-# Create Astro::Coords object using information from sky frame in
-# input data and then retrieve parameters in desired output frame.
-use Astro::Coords;
-my $coords;
-if ( $cosys_in eq "GALACTIC" ) {
-  $coords = new Astro::Coords( long => $xstr, lat => $ystr,
-			       units => 'deg', type => 'galactic' );
-} else {
-  $coords = new Astro::Coords( ra => $xstr, dec => $ystr,
-			       units => 'sex', type => $equinox );
-}
-
-# Now retrieve reference coordinates in desired output frame
-my $skycosys;
-if ( $cosys_out eq "GALACTIC" ) {
-  # Retrieve coords in degrees: SETSKY uses degrees by default
-  $x0 = $coords->glong( format => 'deg' );
-  $y0 = $coords->glat( format => 'deg' );
-  $skycosys = $cosys_out;
-} else {
-  # Retrieve coords in radians
-  $x0 = $coords->ra( format => 'rad' );
-  $y0 = $coords->dec( format => 'rad' );
-
-  # Convert to string and add units for SETSKY
-  $x0 = $x0."r";
-  $y0 = $y0."r";
-
-  # Re-define output coordinate frame to be generically equatorial for
-  # SETSKY but with appropriate equinox
-  $skycosys = "EQUATORIAL($equinox)";
-}
-
-# Add a WCS sky frame - forces pixel scale to match raw input data
-orac_print "adding WCS " if $verbose;
-
-# Define parameters of WCS. Pixelsize is in ARCSEC, lat and lon are as
-# defined above.
-# Note quoting around the pixelsize arguments
-my $wcsargs = "coords=$skycosys epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."s', '".$dy."s'\] orient=0 positions=! projtype=gnom lon=".$x0." lat=".$y0;
-$Mon{ndfpack_mon}->obeyw("setsky","ndf=$refimage $wcsargs");
-
-# Now add a FITS header, copy from Frm
-my $fitshdr = $Frm->fits;
+# Now add a FITS header, copy from current object
+my $fitshdr = $Obj->fits;
 $fitshdr->writehdr( File => $refimage );
-
-# Store the SkyRef attribute in reference image
-# SkyRef can not be stored using mset since astSet does not allow
-# attribute values that include commas.
-my $args = "ndf=$refimage mode=set name=skyref newval='".$skyref."'";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-
-# Need to set the Observatory location
-my $obslon = $wcs->Get("ObsLon");
-my $obslat = $wcs->Get("ObsLat");
-
-# Work out which AST attributes need to be set
-my $attrs = "obslon=$obslon,obslat=$obslat";
-
-# Work out whether we were tracking a moving source
-my $tracksys = $Frm->hdrval("TRACKSYS");
-
-# If necessary, set the SkyRefIs, AlignOffset and System attributes
-if ( $cosys_out eq "GAPPT" ||
-   ( defined $tracksys && $tracksys eq 'APP' )) {
-  $attrs .=",skyrefis=origin,alignoffset=1,system=$cosys_out,epoch=$epoch";
-  # Set a flag for moving sources
-  $Grp->uhdr("MOVING",1);
-} else {
-  # Set a NULL flag for non-moving sources
-  $Grp->uhdr("MOVING",0);
-}
-
-# Now set the attributes
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=mset setting='$attrs'");
 
 # Store the reference image name in the primitive hash
 $_CREATE_REFERENCE_IMAGE_{REFIMAGE} = $refimage;
 
-# Store the name in the Grp so that we can clean up
-$Grp->push_intermediates( $refimage );
+# Store the name in the object intermediates array so that we can
+# clean up at the end of the recipe
+$Obj->push_intermediates( $refimage );
 
 # Store name of created reference image in Grp uhdr. Note this is not
 # done for FOCUS observations because it messes up the FITS headers
@@ -345,8 +383,3 @@ unless ( $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus" ) {
 
 # Create HISTORY component
 $Mon{ndfpack_mon}->obeyw("hisset","ndf=$refimage mode=normal");
-
-# All done - let the user know
-$pixelscale = sprintf "%4.1f", $pixelscale;
-orac_print "done. \nReference image created in $cosys_out coordinate system with pixel scale = $pixelscale arcsec\n" if $verbose;
-
