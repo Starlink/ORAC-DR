@@ -1,0 +1,169 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_FAKEMAP_FRAME_ - create a fake map to add to timeseries
+
+=head1 SYNOPSIS
+
+ _CREATE_FAKEMAP_FRAME_
+
+=head1 DESCRIPTION
+
+This primitive creates a suitable fake map to add to the timeseries
+data when making the data map. The parameters are all derived from
+recipe parameters: see the documentation for the
+L<REDUCE_SCAN_FAKEMAP|REDUCE_SCAN_FAKEMAP> recipe for the list of
+supported parameters.
+
+SMURF C<makemap> is used to test the size of the output image, from
+which the required pixel bounds can be obtained. A blank template is
+created with these pixel bounds. The template will have WCS added if
+the fake map is to have the same pixel scale as the output map.
+
+The name of the fake map is stored for retrieval at the map-making
+stage.
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=over 4
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (write messages).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+NDFCOPY, NDFTRACE, WCSALIGN, WCSSLIDE
+
+=item SMURF
+
+MAKEMAP
+
+=item ORAC-DR PRIMITIVES
+
+_CREATE_REFERENCE_IMAGE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The current Frame uhdr contains two new entries: C<FAKEMAP> which
+contains the name of the fake map (written to $ORAC_DATA_OUT) and
+C<FAKESCALE>, the scaling parameter used by the map maker to scale the
+fake map.
+
+=head1 OUTPUT FILES
+
+Two files with the suffice C<_ref> and C<_fakemap> for the map
+template and fake map (which is derived from the template). These
+files are added to the intermediates array so they can be deleted at
+the end of the recipe.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Should I be verbose? (default to yes)
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Retrieve parameters
+my $inputmap = $Frm->uhdr("RECPAR_FAKEMAP_MAP");
+
+orac_print "Creating a suitable fakemap from $inputmap:\n";
+my $basemap = ORAC::TempFile->new();
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$inputmap out=$basemap trim trimwcs");
+
+my $fakescale = (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE"))
+  ? $Frm->uhdr("RECPAR_FAKEMAP_SCALE") : 1.0;
+
+# Defined name of fakemap to use
+my $fakemap = $Frm->inout("_fakemap");
+$fakemap = $Frm->strip_subscan($fakemap);
+
+my $regrid = ($Frm->uhdr("RECPAR_FAKEMAP_REGRID")) ? $Frm->uhdr("RECPAR_FAKEMAP_REGRID") : 0;
+
+# Obtain pixel bounds for output map
+orac_print " Deriving pixel bounds... ";
+my $inlist = write_file_list( $Frm->files );
+$Mon{smurf_mon}->obeyw("makemap","in=^$inlist out=! method=rebin");
+my ($ORAC_STATUS, @bounds) = $Mon{smurf_mon}->get("makemap","lbound");
+($ORAC_STATUS, my @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
+push(@bounds, @ubound);
+($ORAC_STATUS, my $reflon) = $Mon{smurf_mon}->get("makemap","reflon");
+($ORAC_STATUS, my $reflat) = $Mon{smurf_mon}->get("makemap","reflat");
+($ORAC_STATUS, my $pixsize) = $Mon{smurf_mon}->get("makemap","pixsize");
+
+# Create a template image - maps are made using the tracking
+# coordinate system by default
+orac_print "creating template... ";
+my $system = $Frm->hdr("TRACKSYS");
+my $coords = new Astro::Coords( ra => $reflon, dec => $reflat,
+				units => 'sex', type => $system );
+_CREATE_REFERENCE_IMAGE_ PIXEL_SCALE=$pixsize SYSTEM=$system COORDS=$coords BOUNDS=\@bounds VERBOSE=0 GROUP=0 ADDWCS=$regrid
+my $template = $_CREATE_REFERENCE_IMAGE_{REFIMAGE};
+
+# Shift the position of the original map if requested
+if (defined $Frm->uhdr("RECPAR_FAKEMAP_OFFSET")) {
+  orac_print "shifting input WCS... ";
+  my @offset = @{$Frm->uhdr("RECPAR_FAKEMAP_OFFSET")};
+  my $args = "stype=absolute abs=[".$offset[0].",".$offset[1]."] ndf=$basemap";
+  $Mon{kappa_mon}->obeyw("wcsslide","$args");
+}
+
+# Regrid the input image if necessary
+my $aligned = ORAC::TempFile->new();
+if ($regrid) {
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$basemap");
+  my ($ORAC_STATUS, @fpixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+  # Only regrid if pixel scale is more than 1% different
+  if ( abs($fpixscale[0] - $pixsize) > 1.0e-2) {
+    orac_print "regridding input to ".$pixsize."-arcsec pixels... ";
+    my $args = "method=bilinear out=$aligned lbnd=! ubnd=! in=$basemap ref=$template";
+    $Mon{kappa_mon}->obeyw("wcsalign","$args");
+    $basemap = $aligned;
+  }
+}
+
+# Now create the fakemap to use with ndfcopy
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$basemap out=$fakemap like=$template");
+$fakemap .= ".sdf" unless ($fakemap =~ /.sdf$/);
+$Frm->uhdr("FAKEMAP", $fakemap);
+$Frm->uhdr("FAKESCALE", $fakescale) if ($fakescale != 1.0);
+$Frm->push_intermediates($template,$fakemap);
+orac_print "done\n";
