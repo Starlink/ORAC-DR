@@ -241,7 +241,8 @@ foreach my $arg (keys %makemapargs) {
 
 # Append name of config file to argument list
 # Do not override the _SCUBA2_HELLO_ value unless an explicit
-# argument has been given to this primitve
+# argument has been given to this primitive
+my $tmpconfig;
 if ( $iterate ) {
   # Type of config file to use: NORMAL, BLANK_FIELD, BRIGHT_COMPACT etc
   my $conftype = get_prim_arg($_PRIM_ARGS_, "CONFIG_TYPE","");
@@ -260,11 +261,21 @@ if ( $iterate ) {
   _GET_MAKEMAP_CONFIG_
   my $config = $_GET_MAKEMAP_CONFIG_{CONFIG};
   # If we're doing fakemap processing, add the relevant parameters
-  # to the config line
+  # to the config file
   if (defined $Frm->uhdr("FAKEMAP")) {
-    $config .= ",fakemap=".($Frm->uhdr("FAKEMAP"));
-    $config .= ",fakescale=".($Frm->uhdr("FAKESCALE"))
+    # Create a copy of the existing config file in ORAC_DATA_OUT
+    my @dirfile = File::Spec->splitpath($config);
+    $tmpconfig = File::Spec->catfile($ENV{ORAC_DATA_OUT}, $dirfile[2] ."_copy");
+    use File::Copy;
+    copy($config, $tmpconfig);
+    # Open and add fakemap parameters
+    open my $TMPFH, ">>", "$tmpconfig"
+      or orac_term "Unable to open temporary config file, $tmpconfig\n";
+    print $TMPFH "fakemap=".($Frm->uhdr("FAKEMAP"))."\n";
+    print $TMPFH "fakescale=".($Frm->uhdr("FAKESCALE"))."\n"
       if (defined $Frm->uhdr("FAKESCALE"));
+    close($TMPFH);
+    $config = $tmpconfig;
   }
   $args .= " config='^$config'";
 }
@@ -382,3 +393,6 @@ unless ($newimage) {
     orac_termerr $msg;
   }
 }
+
+# Delete the temporary config file if one was created
+unlink $tmpconfig if ($tmpconfig && -e $tmpconfig);
