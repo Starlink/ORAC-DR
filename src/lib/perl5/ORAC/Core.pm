@@ -61,6 +61,7 @@ use ORAC::Inst::Defn qw/ orac_determine_inst_classes orac_guess_instrument /;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/; # ORAC status varaibles
 use ORAC::Recipe::Parameters;
+use ORAC::LogHTML;
 
 # Need to use this class so that we can pre-configure the
 # message systems on the basis of command line switches
@@ -642,6 +643,7 @@ sub orac_print_configuration {
   #  Log can be:
   #  s - xterm screen  (STDOUT)
   #  f - file          (ORACDR_$$.LOG)
+  #  h - html          (ORACDR_$$.HTML)
   #  x - Xwindow       (experimental)
   # or combination (eg sf).
   # Can keep STDOUT default if not set at all
@@ -710,7 +712,7 @@ sub orac_print_configuration {
       push (@war_hdl, \*STDOUT);
     }
     # Request for file - must have already chdir'ed to ORAC_DATA_OUT
-    if ($log_options =~ /f/ || exists $ENV{ORAC_LOGDIR}) {
+    if ($log_options =~ /[fh]/ || exists $ENV{ORAC_LOGDIR}) {
 
       my @logfiles;
 
@@ -724,6 +726,11 @@ sub orac_print_configuration {
         push(@logfiles, $logfh);
       }
 
+      # This is the HTML log file
+      if ($log_options =~ /h/) {
+        push( @logfiles, ORAC::LogHTML->new( ".".$logfile_prefix . "_$$.html" ) );
+      }
+
       # Also write a file to the ORAC_LOGDIR for convenience
       if (exists $ENV{ORAC_LOGDIR} && -d $ENV{ORAC_LOGDIR}) {
         my @time = gmtime();
@@ -731,14 +738,20 @@ sub orac_print_configuration {
         my $user = ($ENV{USER} ? "_$ENV{USER}" : "" );
         my $inst = lc($ENV{ORAC_INSTRUMENT});
         my $fname = sprintf($logfile_prefix.
-                            "_%04d%02d%02d_%02d%02d%02d_%s_%s%s.log",
+                            "_%04d%02d%02d_%02d%02d%02d_%s_%s%s",
                             $time[5]+1900, $time[4]+1,$time[3],
                             $time[2],$time[1],$time[0],$inst, $host, $user);
-        my $fh = new IO::File("> ". File::Spec->catfile($ENV{ORAC_LOGDIR},$fname)) || do {
-          orac_err "Error opening $app logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
-          throw ORAC::Error::FatalError("Error opening secondary log file", ORAC__FATAL);
-        };
-        push(@logfiles, $fh);
+        my $path = File::Spec->catfile($ENV{ORAC_LOGDIR}, $fname);
+        if ($log_options =~ /f/) {
+          my $fh = new IO::File("> $path". ".log") || do {
+            orac_err "Error opening $app logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
+            throw ORAC::Error::FatalError("Error opening secondary log file", ORAC__FATAL);
+          };
+          push(@logfiles, $fh);
+        }
+        if ($log_options =~ /h/) {
+          push(@logfiles, ORAC::LogHTML->new( $path. ".html" ));
+        }
       }
 
       for my $logfh (@logfiles) {
