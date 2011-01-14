@@ -54,6 +54,9 @@ sub TIEHANDLE {
   print $fh qq|<HTML>
 <style TYPE="text/css">
 <!--
+BODY {
+  background: #aaaaaa;
+}
 .red {
   color: red
 }
@@ -73,7 +76,7 @@ sub TIEHANDLE {
   color: magenta
 }
 .cyan {
-  color: cyan
+  color: lightcyan
 }
 .white {
   color: white
@@ -111,6 +114,7 @@ sub TIEHANDLE {
 
 -->
 </style>
+<body>
 <code>
 |;
   return bless \$fh, $class;
@@ -127,7 +131,7 @@ sub PRINT {
 sub CLOSE {
   my $self = shift;
   return unless defined $$self; # prevent double close
-  print { $$self } "\n</code></html>\n";
+  print { $$self } "\n</code></body></html>\n";
   close $$self;
   $$self = undef;
 }
