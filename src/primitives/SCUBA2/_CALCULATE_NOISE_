@@ -68,7 +68,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009-2010 University of British Columbia. All Rights
+Copyright (C) 2009-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -119,8 +119,13 @@ if ( $proceed ) {
       ."Estimating white noise level between $freqlohi[0] and $freqlohi[1] Hz\n";
   }
 
+  # Loop over each subarray - temporary fix until calcnoise can deal
+  # with multiple subarrays
+  my @subarrays = $Frm->subarrays;
+
   # Collect files
   my ($inlist, $outlist);
+  my %files;
 
   # For the summit pipeline we need to wait until the end of the
   # observation and use all available data to calculate the noise. The
@@ -130,49 +135,63 @@ if ( $proceed ) {
     my (@infiles, @outfiles);
     # Loop over all members of current Group
     foreach my $frmobj ( $Grp->members ) {
-      # Store input files
-      push ( @infiles, $frmobj->files );
+      my %frmfiles = $frmobj->get_files_by_subarray;
 
-      # Define output file names
-      push ( @outfiles, map { scalar $frmobj->inout("_noi", $_ ) }
-             (1..$frmobj->nfiles) );
+      foreach my $subarray (@subarrays) {
+	if ($files{$subarray}) {
+	  my @files = @{$files{$subarray}};
+	  push(@files, $frmfiles{$subarray});
+	  $files{$subarray} = \@files;
+	} else {
+	  $files{$subarray} = $frmfiles{$subarray};
+	}
+      }
     }
-
-    # Write list of input files and output file names
-    $inlist = write_file_list( @infiles );
-    $outlist = write_file_list( @outfiles );
   } else {
-    # Non-SUMMIT pipeline just uses everything in the current Frame
-    ($inlist, $outlist) = write_file_list_inout( $Frm, "_noi" );
+    %files = $Frm->get_files_by_subarray;
   }
 
   # Inform the user which subarrays are being used to calculate noise
   # for (remember calcnoise can handle data from all subarrays at once
   # so there is no need to pre-sort the data)
-  my @subarrays = $Frm->subarrays;
   my $subinfostr;
-  if ( $#subarrays == 0 ) {
+  if ( @subarrays == 1 ) {
     $subinfostr = "subarray $subarrays[0]";
   } else {
     $subinfostr = "subarrays ".join(", ",@subarrays);
   }
-  orac_print "Calculating noise for $subinfostr...";
+#  orac_print "Calculating noise for $subinfostr...";
+  orac_print "Calculating noise for ";
 
-  # Calculate the noise
-  my $outfiles = "calcnoise.$$";
-  my $args = "in=^$inlist out=^$outlist outfiles=$outfiles power=! freq=[$freqrange] flow=$freqlo";
-  $Mon{smurf_mon}->obeyw("calcnoise","$args");
+  # Calculate noise for each subarray
+  my @alloutfiles;
+  foreach my $subarray (@subarrays) {
+    orac_print "$subarray...";
+    my @infiles = @{$files{$subarray}};
+    my $inlist = write_file_list( @infiles );
+    # Define output file names
+    my $tmpfrm = $Frm->new;
+    $tmpfrm->files(@infiles);
+    my @outfiles = map { scalar $tmpfrm->inout("_noi", $_ ) }
+      (1..$tmpfrm->nfiles);
+    my $outlist = write_file_list(@outfiles);
 
-  # Read the actual list of output files written. For skydip
-  # observations this will be one file per elevation per subarray.
-  my @outfiles = read_file_list( $outfiles );
-  unlink $outfiles;
+    # Calculate the noise
+    my $outfiles = "calcnoise.$$";
+    my $args = "in=^$inlist out=^$outlist outfiles=$outfiles power=! freq=[$freqrange] flow=$freqlo";
+    $Mon{smurf_mon}->obeyw("calcnoise","$args");
 
-  orac_print " storing ".(scalar(@outfiles))." noise files" if ($verbose);
+    # Read the actual list of output files written. For skydip
+    # observations this will be one file per elevation per subarray.
+    push (@alloutfiles, read_file_list( $outfiles ));
+    unlink $outfiles;
+  }
+
+  orac_print " Storing ".(scalar(@alloutfiles))." noise files" if ($verbose);
   orac_print "\n";
   # Store in the Frame
-  $Frm->files(@outfiles);
-  $Frm->readhdr if (@outfiles > 1);
+  $Frm->files(@alloutfiles);
+  $Frm->readhdr if (@alloutfiles > 1);
 
   # Add the current range to the header for logging purposes
   $Frm->hdr( "FRQRANGE" => $freqrange );
