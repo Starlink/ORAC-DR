@@ -120,11 +120,18 @@ Change to the output directory. If that fails, exit the pipeline.
 Default output directory is controlled by ORAC\_DATA\_OUT environment
 variable.
 
+
+
+Takes one argument, a boolean dictating whether or not a check that
+the data is on an NFS disk should be done. By default this check is
+done, and if ORAC\_DATA\_OUT is on an NFS-mounted disk, then the
+pipeline will exit.
+
 \end{description}
 \subsubsection*{REVISION\label{ORAC::Basic_REVISION}\index{ORAC::Basic!REVISION}}
 
 
-\$Id: Basic.pm 7456 2008-02-26 20:54:32Z timj \$
+\$Id\$
 
 \subsubsection*{SEE ALSO\label{ORAC::Basic_SEE_ALSO}\index{ORAC::Basic!SEE ALSO}}
 
@@ -231,7 +238,7 @@ are required.
 \paragraph*{Accessor Methods\label{ORAC::Convert_Accessor_Methods}\index{ORAC::Convert!Accessor Methods}}
 
 
-The following methods are available for accessing the 
+The following methods are available for accessing the
 'instance' data.
 
 \begin{description}
@@ -433,7 +440,7 @@ The Starlink CONVERT package.
 \subsubsection*{REVISION\label{ORAC::Convert_REVISION}\index{ORAC::Convert!REVISION}}
 
 
-\$Id: Convert.pm 7526 2008-03-25 19:08:21Z bradc \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Convert_COPYRIGHT}\index{ORAC::Convert!COPYRIGHT}}
 
@@ -477,9 +484,6 @@ Core routines for data pipelining
   orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr, $ut);
 \end{verbatim}
 \begin{verbatim}
-  orac_handle_args( \@ORAC_ARGS );
-\end{verbatim}
-\begin{verbatim}
   orac_print_configuration( $opt_debug, $opt_showcurrent, $log_options,
                             $win_str, \$STATUS_TEXT  );
 \end{verbatim}
@@ -503,9 +507,9 @@ Core routines for data pipelining
                                $frameclass );
 \end{verbatim}
 \begin{verbatim}
-  orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, 
+  orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip,
                        $opt_debug, $recsuffix, $grptrans,
-                       $loop, $frameclass, $groupclass, 
+                       $loop, $frameclass, $groupclass,
                        $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt,
                        $ORAC_MESSAGE, \$STATUS_TEXT, $PRIMITIVE_LIST,
                        $Override_Recipe );
@@ -513,7 +517,7 @@ Core routines for data pipelining
 \subsubsection*{DESCRIPTION\label{ORAC::Core_DESCRIPTION}\index{ORAC::Core!DESCRIPTION}}
 
 
-This module contains the core routines that actually handle the 
+This module contains the core routines that actually handle the
 data processing. Routines are provided for constructing groups
 and for processing those groups, along with routines to do the
 inital pipeline configuration and algorithm engine startup.
@@ -533,19 +537,19 @@ in a hash (reference supplied) and, optionally, an array (unless undef).
 This is so that Groups can be retrieved in the order in which they
 were created. The GrpType specifies the type of Group that should be
 created (eg \textbf{ORAC::Group::UFTI}, \textbf{ORAC::Group::JCMT} etc). The UT
-is supplied purely so that the Group can be named (using the 
+is supplied purely so that the Group can be named (using the
 file\_from\_bits() method).
 
 \begin{verbatim}
   orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, \@Groups,
         $ut, $resume, $transient);
-  orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, undef, 
+  orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, undef,
         $ut, $resume, $transient);
 \end{verbatim}
 
 
 The resume flag is used to determine the behaviour of the group when
-it is first created. If resume is false, any existing Group file is 
+it is first created. If resume is false, any existing Group file is
 removed before proceeding; if it is true, the Group file is retained
 and any coadd information is read using the coaddsread() Group
 method.
@@ -553,7 +557,10 @@ method.
 
 
 The transient argument controls whether more than one group can be
-created. If transient is true only a single group is stored \%Groups.
+created. If transient is 1 only a single group is stored in \%Groups,
+although multiple may be created during processing. If transient is -1
+then only one group is ever created, and every Frame object goes into
+that group.
 
 
 
@@ -585,6 +592,7 @@ all the monoliths launched for this instrument.
                       Instrument => $instrument,
                       Batch => 0,
                       RecSuffix => "A,B,C",
+                      RecPars => $parameterfile,
                      );
 \end{verbatim}
 
@@ -632,6 +640,32 @@ This routine can safely be called multiple times.
 Returns the top level MainWindow object.
 
 
+\item[{\textbf{orac\_declare\_location}}] \mbox{}
+
+Write a file indicating where the pipeline is going to be writing
+any output data (ie ORAC\_DATA\_OUT). This file will be written into
+a directory obtained from the ORAC\_LOCATION\_DIR or else fall back
+to the default JAC location of "/jac\_sw/oracdr-locations".
+
+
+
+The file will be named for the ORAC\_INSTRUMENT environment variable
+and any recipe suffices that are in use. For example "scuba2\_450-ql".
+The file will contain one line with the value of \$ORAC\_DATA\_OUT.
+
+
+
+A file is only written if the UT date being used is the current
+UT date.
+
+\begin{verbatim}
+  orac_declare_location( %options );
+\end{verbatim}
+
+
+where \%options is the command line options hash.
+
+
 \item[{\textbf{orac\_print\_configuration}}] \mbox{}
 
 This routine setups the orac print system, it takes the \$opt\_debug and
@@ -639,9 +673,9 @@ This routine setups the orac print system, it takes the \$opt\_debug and
 
 \begin{verbatim}
   my($orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
-     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE)    
-     = orac_print_configuration( 
-                                 $log_options, $win_str, \$CURRENT_RECIPE 
+     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE)
+     = orac_print_configuration(
+                                 $log_options, $win_str, \$CURRENT_RECIPE
                                  \@ORAC_ARGS, %options
                                 );
 \end{verbatim}
@@ -669,9 +703,10 @@ object.
 \end{verbatim}
 
 
-The message system itself will be initialised when it is required 
-rather than at the start. If we know there is one messsys and we 
-know that it will always be the same one then we can configure it here explicitly. The main reason for doing that is to make sure that it 
+The message system itself will be initialised when it is required
+rather than at the start. If we know there is one messsys and we know
+that it will always be the same one then we can configure it here
+explicitly. The main reason for doing that is to make sure that it
 works before starting recipe processing.
 
 
@@ -689,7 +724,7 @@ it returns a reference to the algorithm engine hash, \$Mon.
 
 \item[{\textbf{orac\_start\_display}}] \mbox{}
 
-This routine is a wrapper for the orac\_setup\_display() subroutine in 
+This routine is a wrapper for the orac\_setup\_display() subroutine in
 ORAC::Basic. It starts the ORAC display unless \$nodisplay is
 set.
 
@@ -739,6 +774,15 @@ it returns an array of files to be read.
 "\#" is a comment character.
 
 
+\item[{\textbf{orac\_parse\_recparams}}] \mbox{}
+
+Parse the command line argument specifying recipe parameters and return
+either a ORAC::Recipe::Parameters object or undef.
+
+\begin{verbatim}
+ $params = orac_parse_recparams( $params );
+\end{verbatim}
+
 \item[{\textbf{orac\_process\_argument\_list}}] \mbox{}
 
 This routine checks that your data exists and decides which data
@@ -771,13 +815,13 @@ not be defined or supplied by the user.
 This routine handles the main data processing
 
 \begin{verbatim}
-  orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, 
-                       $opt_skip, $opt_debug, $recsuffix, $grptrans,
-           $loop, $frameclass, $groupclass, 
-           $instrument, $Mon, $Cal, \@obs, 
-           $Display, $orac_prt,
-           $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST,
-           $CURRENT_PRIMITIVE, $Override_Recipe );
+  orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume,
+                       $opt_skip, $opt_debug, $recsuffix, $recpars,
+                       $grptrans, $loop, $frameclass, $groupclass,
+                       $instrument, $Mon, $Cal, \@obs,
+                       $Display, $orac_prt,
+                       $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST,
+                       $CURRENT_PRIMITIVE, $Override_Recipe );
 \end{verbatim}
 
 
@@ -821,7 +865,7 @@ observation).
 Batch mode can be summarised as
 
 \begin{verbatim}
-    - Read in all frames and allocate groups 
+    - Read in all frames and allocate groups
     - Loop over all groups Loop over all frames in
       group process frames
 \end{verbatim}
@@ -830,8 +874,8 @@ Batch mode can be summarised as
 Default mode is
 
 \begin{verbatim}
-    - Loop over all frames 
-    - Allocate groups 
+    - Loop over all frames
+    - Allocate groups
     - process frames
 \end{verbatim}
 
@@ -843,7 +887,7 @@ Batch mode can be turned on with the -batch switch.
 \subsubsection*{REVISION\label{ORAC::Core_REVISION}\index{ORAC::Core!REVISION}}
 
 
-\$Id: Core.pm 8039 2008-07-09 20:50:10Z bradc \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Core_COPYRIGHT}\index{ORAC::Core!COPYRIGHT}}
 
@@ -976,7 +1020,7 @@ since status is not returned.
 \subsubsection*{REVISION\label{ORAC::Display::Base_REVISION}\index{ORAC::Display::Base!REVISION}}
 
 
-\$Id: Base.pm 7300 2007-12-29 00:54:19Z timj \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Display::Base_COPYRIGHT}\index{ORAC::Display::Base!COPYRIGHT}}
 
@@ -1213,7 +1257,7 @@ ORAC status is returned.
 \subsubsection*{REVISION\label{ORAC::Display::GAIA_REVISION}\index{ORAC::Display::GAIA!REVISION}}
 
 
-\$Id: GAIA.pm 7825 2008-05-22 23:53:54Z timj \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Display::GAIA_COPYRIGHT}\index{ORAC::Display::GAIA!COPYRIGHT}}
 
@@ -1481,7 +1525,7 @@ a filename with an attached NDF section.
 \end{verbatim}
 
 
-An optional 3rd argument can be used to specify the required 
+An optional 3rd argument can be used to specify the required
 dimensionality. If the number of dimensions in the data file is
 greater than that requested, sections in higher dimensions
 are set to 1 by compressing the undesired dimension
@@ -1507,7 +1551,7 @@ Relevant keywords in options hash:
 
 \begin{verbatim}
   CUT  - Specify the significant dimension[s] (X,Y,3,4,5)
-         Should be a comma-separated list specifying 
+         Should be a comma-separated list specifying
          dimensionality - number of entries should equal the
          requested dimensionality. For a graph only 1 value
          is required since a graph is 1-D
@@ -1782,7 +1826,7 @@ are used.
 
 
 
-These values can be overriden by using the RANGE and DASHED 
+These values can be overriden by using the RANGE and DASHED
 keywords.
 
 
@@ -1794,7 +1838,7 @@ and NDF is assumed.
 
 
 If we are running KAPPA 0.13, the NDF is converted
-to 1-DIM with the kappa RESHAPE command before 
+to 1-DIM with the kappa RESHAPE command before
 displaying.
 
 
@@ -1848,14 +1892,12 @@ ORAC status is returned.
 
 \item[{\textbf{histogram}}] \mbox{}
 
-Display a histogram of the data values present in the 
-data array.
+Display a histogram of the data values present in the data array.
 
 
 
-Takes a file name and arguments stored in a hash.
-Note that currently it does not take a format argument
-and NDF is assumed.
+Takes a file name and arguments stored in a hash. Note that currently
+it does not take a format argument and NDF is assumed.
 
 
 
@@ -1870,10 +1912,13 @@ Arguments:
   ZAUTOSCALE - use full Z-range
   NBINS      - Number of bins to be used for histogram calculation
   COMP       - Component to display (Data (default), Variance or Error)
+  SIGMA      - Number of sigma to clip data before computing histogram
+  TITLE      - title string to label the histogram
 \end{verbatim}
 
 
-Default is for autoscaling and for NBINS=20.
+Default is for autoscaling and for NBINS=20. Note that the presence of
+SIGMA overrides ZMIN/ZMAX.
 
 
 
@@ -1920,7 +1965,7 @@ ORAC status is returned.
 \subsubsection*{REVISION\label{ORAC::Display::KAPVIEW_REVISION}\index{ORAC::Display::KAPVIEW!REVISION}}
 
 
-\$Id: KAPVIEW.pm 7300 2007-12-29 00:54:19Z timj \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Display::KAPVIEW_COPYRIGHT}\index{ORAC::Display::KAPVIEW!COPYRIGHT}}
 
@@ -2064,25 +2109,6 @@ each engine on demand.
 In principal this list can be empty if no pre-launching is required.
 
 
-\item[{\textbf{orac\_determine\_loop\_behaviour}}] \mbox{}
-
-This routine determines the default loop behaviour for a the instrument.
-It does so by determining if ORAC-DR is being run at UKIRT, JCMT, Hilo,
-or some other location, then returning a string for the specific loop
-behaviour.
-
-\begin{verbatim}
-   orac_determine_loop_behaviour( $instrument );
-\end{verbatim}
-
-
-If the instrument is not SCUBA, CGS4, IRCAM, UFTI, or Michelle, or
-ORAC-DR is not being run at UKIRT, JCMT, or Hilo, then the loop behaviour
-will default to 'list'. This routine is meant to be called by xoracdr,
-and the return values are those listed in the loop options in that
-program.
-
-
 \item[{\textbf{orac\_configure\_for\_instrument}}] \mbox{}
 
 This routines configures the user environment (e.g. \%ENV) for the instrument, 
@@ -2215,11 +2241,6 @@ Helper task for the CGS4-DR P4 display system.
   ($path, $cleanup) = p4_helper;
 \end{verbatim}
 \end{description}
-\subsubsection*{REVISION\label{ORAC::Inst::Defn_REVISION}\index{ORAC::Inst::Defn!REVISION}}
-
-
-\$Id: Defn.pm 8041 2008-07-09 21:04:44Z bradc \$
-
 \subsubsection*{COPYRIGHT\label{ORAC::Inst::Defn_COPYRIGHT}\index{ORAC::Inst::Defn!COPYRIGHT}}
 
 
@@ -2551,7 +2572,7 @@ tie, it is necessary to tie the new hash rather than copying it.
 \subsubsection*{REVISION\label{ORAC::Msg::EngineLaunch_REVISION}\index{ORAC::Msg::EngineLaunch!REVISION}}
 
 
-\$Id: EngineLaunch.pm 7300 2007-12-29 00:54:19Z timj \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Msg::EngineLaunch_COPYRIGHT}\index{ORAC::Msg::EngineLaunch!COPYRIGHT}}
 
@@ -2798,7 +2819,7 @@ object is returned.
 \subsubsection*{REVISION\label{ORAC::Msg::MessysLaunch_REVISION}\index{ORAC::Msg::MessysLaunch!REVISION}}
 
 
-\$Id: MessysLaunch.pm 7300 2007-12-29 00:54:19Z timj \$
+\$Id\$
 
 \subsubsection*{COPYRIGHT\label{ORAC::Msg::MessysLaunch_COPYRIGHT}\index{ORAC::Msg::MessysLaunch!COPYRIGHT}}
 
