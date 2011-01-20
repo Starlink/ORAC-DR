@@ -135,10 +135,6 @@ if ($proceed) {
 
   # Parameters for sc2concat
   my $doflat = ($flat) ? "flat" : "noflat";
-  # Calculate length of file and set padding accordingly for short
-  # observations
-  my $obslength = $Frm->hdrval("SEQEND",-1) - $Frm->hdrval("SEQSTART",0) + 1;
-  my $padding = ($obslength < 10000) ? int ($obslength / 10) : 1000;
 
   # Parameters for sc2clean - can use the same config file for all files
   my $cleancfg = File::Spec->catfile($ENV{ORAC_DATA_CAL}, "sc2clean_config.lis");
@@ -149,25 +145,26 @@ if ($proceed) {
   my %subfiles = $Frm->get_files_by_subarray;
 
   my $spectrum = ($nsubarrays == 1) ? "spectrum" : "spectra";
-  orac_print "Calculating average power $spectrum..." if ($verbose);
+  orac_print "Calculating average power $spectrum for" if ($verbose);
 
   my @avpspec;
   my $i = 0;
   # Process each subarray separately
   foreach my $subarray (sort keys %subfiles) {
-    # Step 1: add padding
+    # Step 1: concatenate files
+    orac_print " $subarray..." if ($verbose);
     $i++;
     my $out = $Frm->inout("_avpspec", $i);
     my $inlist = write_file_list( @{$subfiles{$subarray}} );
     my $temp1 = new ORAC::TempFile;
     my $tempfile1 = $temp1->file;
-    my $args = "in=^$inlist out=$tempfile1 padstart=$padding padend=$padding $doflat";
+    my $args = "in=^$inlist out=$tempfile1 $doflat";
     $Mon{smurf_mon}->obeyw("sc2concat","$args");
 
     # Step 2: do some basic cleaning - this is a 1-to-1 operation
     my $temp2 = new ORAC::TempFile;
     my $tempfile2 = $temp2->file;
-    $args = "in=$tempfile1 out=$tempfile2 config='^$cleancfg,apod=$padding'";
+    $args = "in=$tempfile1 out=$tempfile2 config='^$cleancfg'";
     $Mon{smurf_mon}->obeyw("sc2clean","$args");
 
     # Step 3: calculate average power spectrum - reuse tempfile1 for
@@ -207,15 +204,12 @@ if ($proceed) {
     $dispFrm->files(@avpspec);
     # Display power spectrum
     if (defined $Display) {
-      orac_print ". Displaying $spectrum.\n" if ($verbose);
+      orac_print " - Displaying $spectrum" if ($verbose);
       $Display->display_data($dispFrm);
-    } else {
-      orac_print "\n" if ($verbose);
     }
     undef $dispFrm;
-  } else {
-    orac_print "\n" if ($verbose);
   }
+  orac_print "\n" if ($verbose);
 
   # Store the power spectra in the intermediates array so they can be
   # tidied up later, unless the user wishes to keep them on disk.
