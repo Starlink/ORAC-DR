@@ -8,8 +8,14 @@ Looks up standard star parameters - from file, SIMBAD, etc. This primitive
 first checks a configuration table (bsc5.dat in $ORAC_DATA_CAL) for the
 spectral type and V magnitude. If the star is not found in the catalogue,
 a search on the SIMBAD database is performed. If the star is not found in
-SIMBAD, then default values are used: 6000K for temperature, 9.99 for V
-magnitude, and UNKNOWN for spectral type.
+SIMBAD, then values are set to undef so two things happen: flux calibration
+is skipped, and the next time this primitive is run it will attempt to
+find the star parameters again (in case of network failure, for example).
+
+The SIMBAD lookup will use a proxy if necessary. To make this happen, set
+the ORACDR_PROXY environment variable, including the protocol (i.e.
+"http://"), the location of the proxy (i.e. "proxy.example.com") and the
+port (i.e. ":8181"). An example of this would be "http://proxy.example.com:8181".
 
 =head1 AUTHOR
 
@@ -162,98 +168,58 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
    # Find the spectral type from SIMBAD.
 
    if ( (!defined($temperature)) && (defined(&LWP::Simple::get)) ) {
+
       orac_print "Object not found in Bright Star Catalogue.\n";
       orac_print "Querying SIMBAD for spectral type...\n";
 
-      my @simbadurls = qw( http://simbad.harvard.edu/
-                           http://simbad.u-strasbg.fr/ );
-
-      my $meanra = $Frm->uhdr( "ORAC_RA_BASE" );
-      my $meandec = $Frm->uhdr( "ORAC_DEC_BASE" );
-#      my ( $radeg, $ramin, $rasec ) = dectodms( $meanra );
-      my ( $decdeg, $decmin, $decsec ) = dectodms( $meandec );
-# SDR: SIMBAD doesn't seem to like the dms format provided by these,
-#      so go with decimal (not scientific) format
-      my $simformat = "%10.6f";
-      my $simra = sprintf($simformat,$meanra);
-      my $simdec = sprintf($simformat,$meandec);
-
+      my @simbadurls = qw( http://simbad.harvard.edu/simbad/
+                           http://simbad.u-strasbg.fr/simbad/ );
 
       foreach my $simbadurl (@simbadurls) {
         last if (defined($temperature));
 
         orac_print " Querying $simbadurl\n";
 
+	my $objname = $Frm->uhdr( "ORAC_OBJECT" );
+
         # Set up the URL.
-#        my $URL1 = $simbadurl . "sim-id.pl?protocol=html&Ident=".$radeg."+".$ramin."+";
-        my $URL1 = $simbadurl . "sim-id.pl?protocol=html&Ident=".$simra."+";
-        my $URL2;
-        if ( $decdeg > 0 ) {
-#           $URL2 = $rasec."+%2B".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
-# SDR: Search radius of 1 arcmin ought to be enough
-           $URL2 = "+%2B".$simdec."&NbIdent=1&Radius=1&Radius.unit";
-        } else {
-# SDR: Search radius of 1 arcmin ought to be enough
-           $URL2 = $simdec."&NbIdent=1&Radius=1&Radius.unit";
-        }
-        my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
-        my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
-        my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
-        my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
-        my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
-#        orac_print "Using URL $URL\n";
+
+        my $URL =  $simbadurl . "sim-id?Ident=".$objname."&output.format=ASCII&obj.spsel=on&list.spsel=off&obj.coo=off&list.otypesel=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.mtsel=off&obj.sizesel=off&list.idsel=off&obj.bibsel=off&obj.messel=off&obj.notesel=off";
+
         # Attempt to access the URL.  If successful the information is stored in
         # the content array with appropriate line breaks.
 
         # set timeout to 20 seconds
         $LWP::Simple::ua->timeout(20);
 
-        my @content = split '\n', LWP::Simple::get( $URL );
-        if ( !defined( $content[ 0 ] ) ) {
+        # Set the proxy, if the environment variable is set.
+        if( exists( $ENV{'ORACDR_PROXY'} ) ) {
+          $LWP::Simple::ua->proxy('http', $ENV{'ORACDR_PROXY'} );
+          orac_print "Using proxy at " . $ENV{'ORACDR_PROXY'} . " to access SIMBAD.\n";
+        }
+
+        my $get = LWP::Simple::get( $URL );
+        if ( !defined( $get ) ) {
            orac_print "Unable to connect to SIMBAD database.\n";
         } else {
            my $found = 0;
 
   	 # If the SIMBAD results page changes, this will need to change as well.
 	   # For each line, split the fields into an array.
-           foreach my $string ( @content ) {
-              my @array = ();
-              @array = split '\|', $string;
 
+              my @array = ();
+              @array = split 'Spectral type:', $get;
   	    # Extract the spectral type.
-              if ( (defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i ) && ($found == 0) ) {
+              if ( (defined($array[0])) && (defined($array[1])) && ($array[1] =~ m/([A-M][0-9])/i) && ($found == 0) ) {
+
                  $spectype = $1;
 
-	         # Obtain the standard's equatorial co-ordinates.
-                 my @simcoord = split ' ', $array[ 2 ];
-                 my $format = "%2d %2d %4.2f";
-# SDR: We want RA in hms format, not dms
-#                 my $rastring = sprintf( $format, $radeg, $ramin, $rasec );
-  		 my $rahours = ($meanra / 360.0) * 24.0;
-  		 my $hours = int( $rahours );
-  		 my $minute = int( ( $rahours - $hours ) * 60 );
-  		 my $second = int( ( ( ( $rahours - $hours ) * 60 ) - $minute ) * 60 );
-                 my $rastring = sprintf( $format, $hours, $minute, $second );
-                 my $decstring = sprintf( $format, $decdeg, $decmin, $decsec );
-                my $srastring = sprintf( $format, $simcoord[ 0 ], $simcoord[ 1 ], $simcoord[ 2 ] );
-                my $sdecstring = sprintf( $format, $simcoord[ 3 ], $simcoord[ 4 ], $simcoord[ 5 ] );
 
   	       # Keep the user informed.
 
-		 my $objname = "Fred";
-                 if ( (defined($array[0])) ) {
-# SDR: Strip off all the http://...
-                 my @name1 = split '>', $array[ 0 ];
-# SDR: Strip off the trailing </A>
-		 my @name2 = split '<', $name1[1];
-		 $objname = $name2[0];
-		 }
-		 orac_print "    Position matched to: $objname\n";
-                 orac_print "    Header RA: $rastring Decl: $decstring\n";
-                 orac_print "    SIMBAD RA: $srastring Decl: $sdecstring\n";
-                 orac_print "    Object is spectral type $spectype\n";
+                 orac_print "    Object is spectral type $spectype.\n";
                  $temperature = $spectotemp{$spectype};
-                 orac_print "    Setting temperature to $temperature K\n";
+                 orac_print "    Setting temperature to $temperature K.\n";
 
   	       # Record the match.
                  $found = 1;
@@ -262,67 +228,59 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
 	         # spaces, rather than looking for 'Number Number' which sometimes
 	         # fails since occasionally SIMBAD inserts a character between
 	         # the numbers.
-                 $array[ 3 ] =~ /([\d\.]+)\s*$/;
+                 $array[ 0 ] =~ m/V\s:\s(\d\D\d+)/i;
                  $vmag = $1;
                  if ( defined $vmag ) {
-                    orac_print "    V magnitude is $vmag (from B, V = $array[ 3 ] )\n";
+                    orac_print "    V magnitude is $vmag \n";
                 } else {
                     orac_warn "V magnitude information did not match the expected pattern.\n";
-                    orac_warn "Got: '$array[ 3 ]' expected  'Number ? Number' (where ? is an optional character).\n";
+                    orac_warn "Got: '$get' expected  'Number ? Number' (where ? is an optional character).\n";
                     orac_warn "V magnitude could not be determined.\n";
                  }
 
-              }
+
            }
 
            if ( ! $found  ) {
-              my $format = "%2d %2d %4.2f";
-# SDR: We want RA in hms format, not dms
-#              my $rastring = sprintf($format,$radeg,$ramin,$rasec);
-  	      my $rahours = ($meanra / 360.0) * 24.0;
-  	      my $hours = int( $rahours );
-  	      my $minute = int( ( $rahours - $hours ) * 60 );
-  	      my $second = int( ( ( ( $rahours - $hours ) * 60 ) - $minute ) * 60 );
-              my $rastring = sprintf( $format, $hours, $minute, $second );
 
-              my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
-              orac_print "Object at RA: $rastring Decl: $decstring is not classified in SIMBAD.\n";
+              orac_print "Object ".$objname." is not classified in SIMBAD.\n";
            }
         }
      }
 
   }
 
-   # Use defaults if other methods have failed.
+   # Set user headers or throw warnings, depending on if
+   # parameters are set or not.
 
-   # If SIMBAD failed to set the temperature, default to 6000
-   unless (defined $temperature) {
-      $temperature = 6000.0;
-      orac_warn "    Temperature could not be determined. Defaulting to $temperature K.\n";
+   if ( defined $temperature ) {
+      $Grp->uhdr( "TEMPERATURE", $temperature );
+   } else {
+      orac_print "    Temperature or standard could not be determined.\n";
+      $Grp->uhdr("TEMPERATURE", "UNKNOWN");
    }
 
-   # Write a obviously wrong V magnitude, if not set.
-#    An "obviously wrong" mag of -1000 leads to all sorts of problems later
-#    on, so make this a less ridiculous 9.99 - SDR 7/3/05
-   unless ( defined $vmag ) {
-      $vmag = 9.99;
-#      $vmag = -1000.0;
-      orac_warn "    V magnitude could not be determined. Defaulting to $vmag.\n";
+   if ( defined $vmag ) {
+      $Grp->uhdr( "VMAG", $vmag );
+      $Frm->uhdr("VMAG", $vmag);
+      _SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
+   } else {
+      orac_print "    V magnitude of standard could not be determined.\n";
+      $Grp->uhdr("VMAG", "UNKNOWN");
+      $Frm->uhdr("VMAG", "UNKNOWN");
+      _SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=UNKNOWN COMMENT=V|magnitude
    }
 
-   # Default the spectral type.
-   unless ( defined $spectype ) {
-      $spectype = "UNKNOWN";
-      orac_warn "    Spectral type could not be determined. Defaulting to UNKNOWN.\n";
+   if ( defined $spectype ) {
+      $Grp->uhdr( "SPECTYPE", $spectype );
+      $Frm->uhdr("SPECTYPE", $spectype);
+      _SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
+   } else {
+      orac_print "    Spectral type of standard could not be determined.\n";
+      $Grp->uhdr("SPECTYPE", "UNKNOWN");
+      $Frm->uhdr("SPECTYPE", "UNKNOWN");
+      _SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=UNKNOWN COMMENT=spectral|type
    }
-
-   # Store or read values to or from the headers.
-
-
-   # Store the values in the header.
-   $Grp->uhdr( "VMAG", $vmag );
-   $Grp->uhdr( "TEMPERATURE", $temperature );
-   $Grp->uhdr( "SPECTYPE", $spectype );
 
 } else {
    # Values are already stored, so access them.
@@ -331,9 +289,8 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
    $spectype = $Grp->uhdr( "SPECTYPE" );
 
    orac_print "Using previously determined values of Vmag=$vmag, SPECTYPE=$spectype, TEMP=$temperature.\n";
+   $Frm->uhdr("VMAG", $vmag);
+   $Frm->uhdr("TEMPERATURE", $temperature);
+   $Frm->uhdr("SPECTYPE", $spectype);
 }
 
-_SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
-_SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
-$Frm->uhdr("VMAG", $vmag);
-$Frm->uhdr("SPECTYPE", $spectype);
