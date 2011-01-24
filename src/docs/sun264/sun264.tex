@@ -866,19 +866,32 @@ access privileges to write to the data output directories.
 There are four pipelines running at the telescope, a QL and summit
 version for each wavelength. Each pipeline runs on a separate data
 reduction (DR) machine (\verb+sc2dr#+ where \verb+#+ is 1--4). Raw
-data are read from \verb+/jcmtdata/raw/scuba2/sXX/YYYYMMDD+, where
+data are stored in \verb+/jcmtdata/raw/scuba2/sXX/YYYYMMDD+, where
 \verb+sXX+ is the subarray and \verb+YYYYMMDD+ is the current
-date. Reduced data are written to
-\verb+/jcmtdata/reduced/dr#/scuba2_XXX/YYYYMMDD+ where \verb+dr#+ is
-the number of the machine running the pipeline and \verb+XXX+ is
+UT date. Reduced data are written
+to\\ \verb+/jcmtdata/reduced/dr#/scuba2_XXX/YYYYMMDD+ where \verb+dr#+
+is the number of the machine running the pipeline and \verb+XXX+ is
 either 850 or 450. Note that the output directories are local to their
-respective computer (though they are NFS-mounted by the other DR
-machines).
+host computers (though they are NFS-mounted by the other DR machines).
 
 Each pipeline waits for new data to appear before processing, and
 processes all data automatically choosing the correct recipe based on
 the observation type (which may be modified by the particular pipeline
 being run).
+
+\subsection{Preqrequisites}
+
+DRAMA must be running on the QL DR machines, and the DRAMA task names
+must be defined. The task names are communicated through the
+\verb+ORAC_REMOTE_TASK+ environment variable, which contains a
+comma-separated list of names. The usual form of an individual task
+name is \verb+TASK@server+, e.g., \verb+SC2DA8D@sc2da8d+. The task
+name is in upper case; the machine name serving the parameter in lower
+case.
+
+The QL and summit pipeline must be run under \verb+tcsh+.
+
+\subsection{Running the QL pipeline}
 
 The QL pipeline is started with the following commands (substitute 850
 for 450 for the short wave pipeline):
@@ -888,13 +901,11 @@ for 450 for the short wave pipeline):
 % oracdr &
 \end{verbatim}
 \end{myquote}
-
 The QL pipeline is fed data via DRAMA parameters and must be told the
-names of the tasks to expect data from. The task names are
-communicated through the \verb+ORAC_REMOTE_TASK+ environment
-variable, and are usually of the form \verb+TASK@server+, e.g.,
-\verb+SC2DA8D@sc2da8d+. The task name is in upper case; the machine
-name serving the parameter in lower case.
+names of the tasks to expect data from, as described
+above. QL-specific recipes will be used if present.
+
+\subsection{Running the summit pipeline}
 
 The summit pipeline is started by:
 \begin{myquote}
@@ -903,6 +914,9 @@ The summit pipeline is started by:
 % oracdr -loop flag -skip &
 \end{verbatim}
 \end{myquote}
+The summit pipeline reads the data files from flag files, and skips
+non-existent observations. Summit-specific recipes will be used if
+present.
 
 \subsection{Monitoring the pipeline from a non-privileged account}
 
@@ -919,6 +933,9 @@ which will launch a clone of the \oracdr\ window so the user can follow
 the output messages. The monitor will also launch its own display so
 images and other diagnostic data can be viewed.
 
+Note that the user must be logged on to the same machine as the
+pipeline they wish to monitor, or define \verb+ORAC_DATA_OUT+ to point
+to the output directory.
 
 \section{\xlabel{offline}Offline processing of SCUBA-2 data\label{se:offline}}
 
@@ -926,10 +943,9 @@ images and other diagnostic data can be viewed.
 
 If the data for your project have been downloaded from CADC and placed
 in a single directory, the easiest procedure is to create a text file
-containing the name of each of these raw files. The file containing
-the names of the data files to process should contain either the full
-path to each file or relative to \verb+ORAC_DATA_IN+. The data can be
-processed with the commands:
+containing the name of each of these raw files. That file should
+contain either the full path to each file or relative to
+\verb+ORAC_DATA_IN+. The data can be processed with the commands:
 \begin{myquote}
 \begin{verbatim}
 % oracdr_scuba2_XXX YYYYMMDD
@@ -937,77 +953,43 @@ processed with the commands:
 \end{verbatim}
 \end{myquote}
 where \verb+XXX+ is the wavelength (450 or 850) and \verb+YYYYMMDD+ is
-the observation date in that form (e.g. 20100301). If the date is
+the UT observation date in that form (e.g.\ 20100301). If the date is
 omitted, the current date is assumed. The initialization command only
-needs to be run once per observation date, and may be given the
-\verb+-honour+ flag to use existing definitions of the relevant
-environment variables.
+needs to be run once per UT date, and may be given the \verb+-honour+
+flag to use existing definitions of the relevant environment
+variables.
+
+Note that there is no need to uncompress the data files prior to
+running the pipeline: \oracdr\ can accept files compressed with
+\verb+gzip+ (ending \verb+.sdf.gz+) and will uncompress them itself.
 
 Each observation is processed separately and the images combined to
 form a single output image. If the list of files contains data from
 different objects, the pipeline will treat each object separately and
-create different output files accordingly.
+create different output files accordingly. Calibration is handled
+automatically (see \ref{sse:cal} below).
 
-\subsection{Running the science pipeline at JAC}
-
-The raw data are stored at JAC in the same way as at the summit. (It
-is also possible to do this yourself at your home institution but in
-general will not be worth the effort: use the example above instead.)
-However, you should define \verb+ORAC_DATA_OUT+ to be a suitable
-location.
-
-\oracdr\ should be run with the \texttt{-loop flag} option to indicate
-that the pipeline should examine the contents of flag files (which end
-in \verb+.ok+). The flag files contain the path to the files to be
-processed, and have a fixed naming convention so the pipeline can
-recognize them. Use the \texttt{-list} option to specify the
-observation numbers to be processed (otherwise the pipeline will begin
-at observation 1).
-
-\subsection{Processing examples}
-
-To process all files starting at observation 21 (skipping non-existent
-files) until there are no more files:
-\begin{myquote}
-\begin{verbatim}
-% oracdr -loop flag -from 21 -skip
-\end{verbatim}
-\end{myquote}
-
-To process the files from a list of observations (e.g. 21, 22, 28, 29 and
-30):
-\begin{myquote}
-\begin{verbatim}
-% oracdr -loop flag -list 21,22,28:30
-\end{verbatim}
-\end{myquote}
-Note the use of a colon to specify a contiguous range of observation
-numbers.
-
-To process a set of data downloaded from the JCMT archive at CADC,
-where the files to be processed have been listed in a text file called
-\verb+mydata.lis+:
-\begin{myquote}
-\begin{verbatim}
-% oracdr -loop file -files mydata.lis
-\end{verbatim}
-\end{myquote}
+The default science recipes will display the individual observation
+images plus the final coadded image using \GAIA. (The display can be
+turned off, if desired, by adding \texttt{-nodisplay} to the
+\oracdr\ command line.)
 
 \subsection{Pipeline products}
 
 The science data products from the pipeline have a suffix of
-\verb+_reduced+. The files beginning with \verb+s+ are the products from
-individual observations; the files beginning \verb+gs+ are the coadded
-observations for a single object. The products from non-science
-observations may have different suffices, and may be three-dimensional
-cubes. See the documentation for individual recipes for further
-details on those products.
+\verb+_reduced+. The files beginning with \verb+s+ are the products
+from individual observations; the files beginning \verb+gs+ are the
+coadded observations for a single object. The products from
+non-science observations may have different suffices, and may be
+three-dimensional cubes. See the documentation on the individual
+recipes in Appendix\,\ref{ap:full} for further details on those
+products.
 
 In addition to the data files, the reduced products have PNG format
 images 64, 256 and 1024 pixels on a side for easy viewing in an image
 viewer or web browser.
 
-\subsection{Calibration}
+\subsection{Calibration\label{sse:cal}}
 
 If no calibration observations are available, the pipeline will apply
 standard flux conversion factors (FCFs) to calibrate the images in
@@ -1034,7 +1016,7 @@ recipe parameter file as follows:
 MAKEMAP_CONFIG = myconfigfilename.lis
 \end{verbatim}
 \end{myquote}
-and add \verb+-recpars recipe_params.lis+ to the command line when
+and add \texttt{-recpars recipe\_params.lis} to the command line when
 running the pipeline, where \verb+recipe_params.lis+ is the name of
 recipe parameter file (which must be in the current directory). The
 \task{makemap} configuration file must exist in the current working
@@ -1042,6 +1024,53 @@ directory or one of the directories defined by the environment
 variables \verb+MAKEMAP_CONFIG_DIR+, \verb+ORAC_DATA_OUT+, or
 \verb+ORAC_DATA_CAL+ or in \verb+$STARLINK_DIR/share/smurf+. Each
 directory is searched in turn and the first match is used.
+
+
+\subsection{Running the science pipeline at JAC}
+
+The raw data are stored at JAC in the same way as at the summit. (It
+is also possible to do this yourself at your home institution but in
+general will not be worth the effort: use the example above instead.)
+However, you should define \verb+ORAC_DATA_OUT+ to be a suitable
+location where you have write access.
+
+\oracdr\ should be run with the \texttt{-loop flag} option to indicate
+that the pipeline should examine the contents of flag files (which end
+in \verb+.ok+). The flag files contain the path to the files to be
+processed, and have a fixed naming convention so the pipeline can
+recognize them. Use the \texttt{-list} option to specify the
+observation numbers to be processed (otherwise the pipeline will begin
+at observation 1).
+
+\subsection{Processing examples\label{sse:examples}}
+
+To process a set of data downloaded from the JCMT archive at CADC,
+where the files to be processed have been listed in a text file called
+\verb+mydata.lis+:
+\begin{myquote}
+\begin{verbatim}
+% oracdr -loop file -files mydata.lis
+\end{verbatim}
+\end{myquote}
+
+To process all files starting at observation 21 (skipping non-existent
+files) until there are no more files:
+\begin{myquote}
+\begin{verbatim}
+% oracdr -loop flag -from 21 -skip
+\end{verbatim}
+\end{myquote}
+
+To process the files from a list of observations (e.g. 21, 22, 28, 29 and
+30):
+\begin{myquote}
+\begin{verbatim}
+% oracdr -loop flag -list 21,22,28:30
+\end{verbatim}
+\end{myquote}
+Note the use of a colon to specify a contiguous range of observation
+numbers.
+
 
 \section{\xlabel{details}Detailed description of the SCUBA-2 pipeline\label{se:details}}
 
@@ -1570,58 +1599,62 @@ components, so the combined results are accurate.
 
 \newpage
 \appendix
-\begin{small}
 \section{\xlabel{ap_list}Alphabetical list of SCUBA-2 recipes\label{ap:list}}
 \begin{htmlonly}
 \begin{description}
 \end{htmlonly}
 \menuitem{ARRAY\_TESTS}{
-  Basic recipe to co-add and display DREAM/STARE images}
+  Co-add and display DREAM/STARE images}
 \menuitem{BENCHMARK}{
-  Basic benchmarking recipe}
+  Benchmarking recipe}
 \menuitem{ENG\_NEP}{
-  Recipe for processing engineering data}
+  Process NEP measurements made in engineering mode}
+\menuitem{ENG\_NEP\_QL}{
+  QL processing NEP measurements made in engineering mode}
 \menuitem{REDUCE\_DARK}{
-  recipe for processing dark frames}
+  Process dark frames}
 \menuitem{REDUCE\_DREAMSTARE}{
-  Recipe for processing DREAM/STARE images}
+  Process DREAM/STARE images}
 \menuitem{REDUCE\_DREAMSTARE\_QL}{
-  Quick-Look recipe for processing DREAM/STARE images}
+  QL processing DREAM/STARE images}
 \menuitem{REDUCE\_FASTFLAT}{
-  process fast-ramp flatfield data}
+  Process fast-ramp flatfield data}
 \menuitem{REDUCE\_FLATFIELD}{
-  Recipe for processing flatfield measurements}
+  Process flatfield measurements}
 \menuitem{REDUCE\_FOCUS}{
   Recipe for deriving focus information}
 \menuitem{REDUCE\_FTS\_SCAN}{
-  Recipe for processing SCAN data}
+  Recipe for processing FTS-2 SCAN data}
 \menuitem{REDUCE\_NOISE}{
-  Basic recipe for reducing NOISE observations}
+  Process NOISE observations}
 \menuitem{REDUCE\_NOISE\_QL}{
-  Quick-look recipe for reducing NOISE observations}
+  QL processing NOISE observations}
+\menuitem{REDUCE\_NOISE\_SUMMIT}{
+  Summit processing NOISE observations}
 \menuitem{REDUCE\_POINTING}{
-  Recipe for deriving pointing information}
+  Process POINTING observations}
 \menuitem{REDUCE\_POINTING\_QL}{
-  Recipe for deriving pointing information with Quick Look}
+  QL processing of pointing observations}
 \menuitem{REDUCE\_SCAN}{
-  Recipe for processing SCAN data}
-\menuitem{REDUCE\_SCAN\_EXTENDED\_SOURCE}{
-  Recipe for processing SCAN data from extended sources}
+  Process SCAN-mode data}
+\menuitem{REDUCE\_SCAN\_EXTENDED\_SOURCES}{
+  Process SCAN data from extended sources}
 \menuitem{REDUCE\_SCAN\_FAINT\_POINT\_SOURCES}{
-  Recipe for processing SCAN data from faint compact sources}
+  Process SCAN data from faint compact sources}
 \menuitem{REDUCE\_SCAN\_FAKEMAP}{
-  Recipe for processing SCAN data with existing map data added}
+  Process SCAN data with existing map data added}
 \menuitem{REDUCE\_SCAN\_QL}{
-  Recipe for processing SCAN data}
+  QL process SCAN data}
 \menuitem{REDUCE\_SCAN\_SUMMIT}{
   Summit recipe for processing SCAN data}
 \menuitem{REDUCE\_SKYDIP}{
-  Process skydip observations}
+  Process SKYDIP observations}
 \begin{htmlonly}
 \end{description}
 \end{htmlonly}
 
 \newpage
+\begin{small}
 \section{\xlabel{ap_classified}Alphabetical list of SCUBA-2 recipes\label{ap:classified}}
 
 SCUBA-2 recipes may be classified in terms of their observing mode as
@@ -1635,15 +1668,15 @@ follows.
 
 \begin{description}
 \classitem{REDUCE\_SCAN}
-Recipe for processing SCAN data
-\classitem{REDUCE\_SCAN\_EXTENDED\_SOURCE}
-Recipe for processing SCAN data from extended sources
+Process SCAN-mode data
+\classitem{REDUCE\_SCAN\_EXTENDED\_SOURCES}
+Process SCAN data from extended sources
 \classitem{REDUCE\_SCAN\_FAINT\_POINT\_SOURCES}
-Recipe for processing SCAN data from faint compact sources
+Process SCAN data from faint compact sources
 \classitem{REDUCE\_SCAN\_FAKEMAP}
-Recipe for processing SCAN data with existing map data added
+Process SCAN data with existing map data added
 \classitem{REDUCE\_SCAN\_QL}
-Recipe for processing SCAN data
+QL process SCAN data
 \classitem{REDUCE\_SCAN\_SUMMIT}
 Summit recipe for processing SCAN data
 \end{description}
@@ -1655,9 +1688,9 @@ Summit recipe for processing SCAN data
 }
 \begin{description}
 \classitem{REDUCE\_DREAMSTARE}
-Recipe for processing DREAM/STARE images
+Process DREAM/STARE images
 \classitem{REDUCE\_DREAMSTARE\_QL}
-Quick-Look recipe for processing DREAM/STARE images
+QL processing DREAM/STARE images
 \end{description}
 
 {\large
@@ -1667,7 +1700,7 @@ Quick-Look recipe for processing DREAM/STARE images
 }
 \begin{description}
 \classitem{REDUCE\_FTS\_SCAN}
-Recipe for processing SCAN data
+Recipe for processing FTS-2 SCAN data
 \end{description}
 
 {\large
@@ -1677,9 +1710,9 @@ Recipe for processing SCAN data
 }
 \begin{description}
 \classitem{REDUCE\_POINTING}
-Recipe for deriving pointing information
+Process POINTING observations
 \classitem{REDUCE\_POINTING\_QL}
-Recipe for deriving pointing information with Quick Look
+QL processing of pointing observations
 \end{description}
 
 {\large
@@ -1699,13 +1732,13 @@ Recipe for deriving focus information
 }
 \begin{description}
 \classitem{ENG\_NEP}
-Recipe for processing engineering data
+Process NEP measurements made in engineering mode
 \classitem{REDUCE\_NOISE}
-Basic recipe for reducing NOISE observations
+Process NOISE observations
 \classitem{REDUCE\_NOISE\_QL}
-Quick-look recipe for reducing NOISE observations
+QL processing NOISE observations
 \classitem{REDUCE\_SKYDIP}
-Process skydip observations
+Process SKYDIP observations
 \end{description}
 
 {\large
@@ -1715,9 +1748,9 @@ Process skydip observations
 }
 \begin{description}
 \classitem{REDUCE\_FASTFLAT}
-process fast-ramp flatfield data
+Process fast-ramp flatfield data
 \classitem{REDUCE\_FLATFIELD}
-Recipe for processing flatfield measurements
+Process flatfield measurements
 \end{description}
 
 
@@ -1728,13 +1761,13 @@ Recipe for processing flatfield measurements
 }
 \begin{description}
 \classitem{REDUCE\_DREAMSTARE\_QL}
-Quick-Look recipe for processing DREAM/STARE images
-\menuitem{REDUCE\_NOISE\_QL}{
-  Quick-look recipe for reducing NOISE observations}
+QL processing DREAM/STARE images
+\classitem{REDUCE\_NOISE\_QL}
+QL processing NOISE observations
 \classitem{REDUCE\_POINTING\_QL}
-Recipe for deriving pointing information with Quick Look
+QL processing of pointing observations
 \classitem{REDUCE\_SCAN\_QL}
-Recipe for processing SCAN data
+QL process SCAN data
 \end{description}
 
 {\large
@@ -1754,11 +1787,11 @@ Summit recipe for processing SCAN data
 }
 \begin{description}
 \classitem{ARRAY\_TESTS}
-Basic recipe to co-add and display DREAM/STARE images
+Co-add and display DREAM/STARE images
 \classitem{BENCHMARK}
-Basic benchmarking recipe
+Benchmarking recipe
 \classitem{REDUCE\_DARK}
-recipe for processing dark frames
+Process dark frames
 \end{description}
 
 
@@ -2614,7 +2647,7 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
-   REDUCE\_SCAN\_EXTENDED\_SOURCE
+   REDUCE\_SCAN\_EXTENDED\_SOURCES
 }{
    Process SCAN data from extended sources
 }{
