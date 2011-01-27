@@ -106,8 +106,10 @@ if ( -e $starperl ) then
   if !($?oracdr_setup_args) set oracdr_setup_args=""
   set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $* $oracdr_setup_args`
   if ( $? != 0 ) then
-  echo "**** ERROR IN setup_oracdr_env.pl ****"
-  exit 255
+    echo " "
+    echo "   **** ERROR IN setup_oracdr_env.pl ****"
+    echo " "
+    exit 255
   endif
   eval $orac_env_setup
   unset orac_env_setup
@@ -154,33 +156,33 @@ if ( -e $starperl ) then
 
   # Start up message
   echo " "
-  echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
+  echo "     ORAC Data Reduction Pipeline (ORAC-DR Version $pkgvers)"
   echo "     Configured for instrument $ORAC_INSTRUMENT"
   echo " "
   echo '     Type "oracdr -man" for usage'
   echo "     Type $doc_command to browse the hypertext documentation"
   echo " "
-  echo " "
+#  echo " "
   echo " Raw data will be read from $ORAC_DATA_IN"
 
   # Check for that `in' directory
   if !( -d $ORAC_DATA_IN ) then
-    echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
+    $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\!\n","red");'
   endif
 
   echo " Reduced data will appear in $ORAC_DATA_OUT"
 
   # Check for that `out' directory
   if !(-d $ORAC_DATA_OUT) then
-    echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
+    $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\!\n","red");'
   endif
 
   echo " "
-  echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+  echo " ++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
   echo ""
-  echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON
-  echo 'For problems with the ORAC-DR system mail oracdr@jach.hawaii.edu'
-  echo '         http://www.oracdr.org'
+  echo " For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON"
+  echo ' For problems with the ORAC-DR system mail oracdr@jach.hawaii.edu'
+  echo '     ORAC-DR website: http://www.oracdr.org/'
   echo ""
   echo ""
 

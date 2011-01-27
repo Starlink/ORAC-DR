@@ -88,7 +88,9 @@ if test -e $starperl; then
   # Run initialization.
   orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $*`
   if test $? != 0; then
-    echo "**** ERROR IN setup_oracdr_env.pl ****"
+    echo " "
+    echo "   **** ERROR IN setup_oracdr_env.pl ****"
+    echo " "
     # Can not exit since the shell that is sourcing this will exit
     return
   fi
@@ -153,14 +155,14 @@ echo " Raw data will be read from $ORAC_DATA_IN"
 
 # Check for that `in' directory
 if ! test -d $ORAC_DATA_IN; then
-  echo '     !!!!!!!!!!!! but that directory does not exist !!!!!!!!! '
+  $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     !!!!!!!!!!!! but that directory does not exist !!!!!!!!!\n","red");'
 fi
 
 echo " Reduced data will appear in $ORAC_DATA_OUT"
 
 # Check for that `out' directory
 if ! test -d $ORAC_DATA_OUT; then
-  echo '     !!!!!!!!!!!! but that directory does not exist !!!!!!!!! '
+  $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     !!!!!!!!!!!! but that directory does not exist !!!!!!!!!\n","red");'
 fi
 
 echo " "

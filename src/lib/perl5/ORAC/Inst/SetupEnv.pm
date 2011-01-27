@@ -28,6 +28,7 @@ use File::Spec;
 use Net::Domain;
 use Sys::Hostname;
 use Fcntl ":mode";
+use Term::ANSIColor;
 
 use ORAC::General;  # utdate()
 
@@ -155,7 +156,7 @@ sub orac_calc_instrument_settings {
 
   # ACSIS does not support -eng mode
   if ($inst eq 'ACSIS' && $options{eng}) {
-    print STDERR " ** ACSIS does not support an engineering mode **\n";
+    print STDERR colored(" ** ACSIS does not support an engineering mode **\n","red");
     $options{eng} = 0;
   }
 
@@ -207,7 +208,7 @@ sub orac_calc_instrument_settings {
     # if we still have nothing just take a guess
     if (!defined $dataroot) {
       $dataroot = File::Spec->rel2abs( File::Spec->curdir );
-      print STDERR "Can not find data directory in default locations so using current directory\n";
+      print STDERR colored("Can not find data directory in default locations so using current directory\n","red");
     }
     $env{ORAC_DATA_ROOT} = $dataroot;
   }
@@ -247,7 +248,7 @@ sub orac_calc_instrument_settings {
       $drN =~ s/sc2//;
       if( $drN !~ /^dr\d$/ ) {
 	$drN = $dr_default{$root};
-	print STDERR "Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n";
+	print STDERR colored("Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n","red");
       }
       push(@drn, $drN);
     }
@@ -343,7 +344,7 @@ sub orac_calc_instrument_settings {
                  SCUBA2_450 => "scuba2_450",);
 
     if (!exists $path{$oracinst}) {
-      print STDERR "Unrecognized SCUBA-2 instrument type: $oracinst. Using SCUBA2_850\n";
+      print STDERR colored("Unrecognized SCUBA-2 instrument type: $oracinst. Using SCUBA2_850\n","red");
       $oracinst = "SCUBA2_850";
     }
 
@@ -755,11 +756,11 @@ sub orac_validate_datadirs {
   my $newout = _checkdir( $env->{ORAC_DATA_OUT} );
 
   if ( ! defined $newin ) {
-    print STDERR "Unable to locate a raw data directory. Please fix ORAC_DATA_IN\n";
+    print STDERR colored("\n     Unable to locate a raw data directory. Please fix ORAC_DATA_IN.\n", "red");
   }
 
   if ( ! defined $newout ) {
-    print STDERR "Default output directory ($env->{ORAC_DATA_OUT}) does not exist. Assuming current directory.\n";
+    print STDERR colored("\n     Default output directory ($env->{ORAC_DATA_OUT}) does not exist. Assuming current directory.\n", "red");
     $env->{ORAC_DATA_OUT} = $curdir;
   }
 
@@ -789,15 +790,15 @@ sub orac_validate_datadirs {
       if ($usein) {
         $env->{ORAC_DATA_IN} = $newin;
         $env->{ORAC_DATA_OUT} = $curdir;
-        print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
+        print STDERR colored("ORAC_DATA_OUT does not exist. Using current working directory.\n","red");
       } elsif ($useout) {
         $env->{ORAC_DATA_OUT} = $newout;
-        print STDERR "ORAC_DATA_IN does not exist. Please set before running pipeline.\n";
+        print STDERR colored("ORAC_DATA_IN does not exist. Please set before running pipeline.\n","red");
       } else {
         $env->{ORAC_DATA_OUT} = $curdir;
         $env->{ORAC_DATA_IN} = $newin;
-        print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
-        print STDERR "ORAC_DATA_IN does not exist. Guessing but please set before running pipeline.\n";
+        print STDERR colored("ORAC_DATA_OUT does not exist. Using current working directory.\n","red");
+        print STDERR colored("ORAC_DATA_IN does not exist. Guessing but please set before running pipeline.\n","red");
       }
 
     } else {
@@ -837,12 +838,12 @@ sub _mkdir {
     mkdir $path
       or croak "Unable to create directory $path ($!)";
 
-    print STDERR "**** Created data directory '$path' ****\n";
+    print STDERR colored("**** Created data directory '$path' ****\n","red");
 
     # Make sure it is writeable with group gid bit set
     chmod  S_ISGID|S_IRWXU|S_IRWXG|S_IROTH|S_IXOTH, $path;
   } else {
-    print STDERR "Remote data directory is not present and can not be created reliably over NFS\n";
+    print STDERR colored("Remote data directory is not present and can not be created reliably over NFS\n","red");
   }
 }
 
@@ -890,10 +891,10 @@ sub _mkdir_jcmt {
 
     } else {
       # This is not good
-      print STDERR "The expected output data directory ($outdirup) is missing. Please fix and try again.\n";
+      print STDERR colored("The expected output data directory ($outdirup) is missing. Please fix and try again.\n","red");
     }
     if (! -d $outdir ) {
-      print STDERR "Using current directory for ORAC_DATA_OUT.\n";
+      print STDERR colored("Using current directory for ORAC_DATA_OUT.\n","red");
       $outdir = File::Spec->rel2abs(File::Spec->curdir);
     }
   }
