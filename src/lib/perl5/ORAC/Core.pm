@@ -1625,6 +1625,8 @@ sub orac_store_recipe_status {
   # ORAC__OK to become "ORAC__OK" we want it to become the value
   my %lut = (ORAC__OK, "OK",
              ORAC__TERM, "TERM",
+             ORAC__TERMERR, "TERMERR",
+             ORAC__BADFRAME, "BADFRAME",
              ORAC__BADENG, "BADENG");
 
   # initialise good and bad to make things easier later on
@@ -1641,7 +1643,7 @@ sub orac_store_recipe_status {
   # summarize
   $href->{TOTAL}++;
 
-  if ($status == ORAC__OK || $status == ORAC__TERM) {
+  if ($status == ORAC__OK || $status == ORAC__TERM || $status == ORAC__BADFRAME ) {
     $href->{GOOD}++;
   } elsif ($key ne "BAD") {
     $href->{BAD}++;
@@ -1675,20 +1677,55 @@ sub orac_print_recipe_summary {
       $text = "which was terminated early";
     } elsif (exists $stats->{BADENG} && $stats->{BADENG}) {
       $text = "which had a bad algorithm engine";
+    } elsif (exists $stats->{TERMERR} && $stats->{TERMERR}) {
+      $text = "which was terminated early with an error";
+    } elsif (exists $stats->{BADFRAME} && $stats->{BADFRAME}) {
+      $text = "which completed without error but the frame was marked bad";
     } elsif ( $stats->{GOOD} == 0 ) {
       $text = "which completed with an error";
     }
     orac_print( "Processed one recipe $text\n", $color );
   } else {
-    my $text = "successfully";
+    my @messages;
+
     if ($stats->{BAD} > 0) {
-      $text = "of which ".$stats->{BAD}. " completed with an error";
-    } elsif (exists $stats->{TERM} && $stats->{TERM} > 0) {
-      my $waswere = ($stats->{TERM} == 1) ? "was" : "were";
-      $text = "of which ". $stats->{TERM}. " $waswere terminated early";
+      my $text = $stats->{BAD}. " completed with an error";
+      push(@messages,$text);
+      # handle the error states
+      if (exists $stats->{BADENG} && $stats->{BADENG} > 0) {
+        my $badeng = $stats->{BADENG};
+        push(@messages, "with $badeng having ".($badeng==1 ? "a " :"").
+             "bad algorithm engine".($badeng==1 ? "" :"s"));
+      }
+      if (exists $stats->{TERMERR} && $stats->{TERMERR} > 0) {
+        my $n = $stats->{TERMERR};
+        push(@messages, "with $n terminating early with ". ($n == 1 ? "an" : "").
+             " error". ($n ==1 ? "" : "s"));
+      }
     }
 
-    orac_print( "Processed ".$stats->{TOTAL}." recipes $text\n", $color);
+    if (exists $stats->{TERM} && $stats->{TERM} > 0) {
+      my $waswere = ($stats->{TERM} == 1) ? "was" : "were";
+      push(@messages, $stats->{TERM}. " $waswere terminated early with good status");
+    }
+    if (exists $stats->{BADFRAME} && $stats->{BADFRAME} > 0) {
+      my $badfrm = $stats->{BADFRAME};
+      my $text;
+      if ($badfrm == 1) {
+        $text = "$badfrm frame was marked bad with good recipe status";
+      } else {
+        $text = "$badfrm frames were marked bad with good recipe status";
+      }
+      push(@messages, $text);
+    }
+
+    my $text = join("\n",@messages);
+    if ($stats->{BAD} == 0) {
+      $text = " successfully".(@messages ? ": " : "."). $text;
+    } elsif (@messages) {
+      $text = ": $text";
+    }
+    orac_print( "Processed ".$stats->{TOTAL}." recipes$text\n", $color);
   }
   return ( $stats->{BAD} == 0 ? 0 : 1 );
 }

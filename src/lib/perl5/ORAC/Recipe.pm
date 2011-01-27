@@ -588,7 +588,7 @@ sub execute {
   }
 
   if (!$Frm->isgood) {
-    if (!defined $status || $status != ORAC__TERMERR ) {
+    if (!defined $status || ($status != ORAC__TERMERR && $status != ORAC__BADENG)) {
       $status = ORAC__BADFRAME;
     }
   }
@@ -616,9 +616,6 @@ sub execute {
 
   # _TERM is really a good status
   $status = ORAC__OK if $status == ORAC__TERM;
-
-  # And BADFRAME can be TERMERR
-  $status = ORAC__TERMERR if $status == ORAC__BADFRAME;
 
   # Some extra info
   if ($self->debug) {
@@ -682,7 +679,7 @@ sub execute {
   # without a croak - we continue)
   if ($status) {
     orac_err "Recipe completed with error status = $status\n";
-    if ($status == ORAC__TERMERR) {
+    if ($status == ORAC__TERMERR || $status == ORAC__BADFRAME) {
       orac_err "The error indicates that the pipeline has attempted to handle the issue\n";
     } else {
       orac_err "Continuing but this may cause problems during group processing\n";
