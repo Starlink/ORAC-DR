@@ -156,12 +156,25 @@ my $freqrange = $Frm->hdr("FRQRANGE");
 
 # Logfile headers
 my $maplogtype = "mapspeed";
-my @maplognames = ("Subarray", "Freq_Range", "PIXHEAT", "DETBIAS", "N_bol", "NEP_RMS", "MAP_SPEED");
+my @maplognames = ("UT", "HST", "Obs", "Subarray", "Freq_Range", "PIXHEAT", "DETBIAS", "N_bol", "NEP_RMS", "MAP_SPEED");
+
+use DateTime::Format::ISO8601;
+my $calcut = sub {
+  my $dt = DateTime::Format::ISO8601->parse_datetime(shift);
+  my $frac = sprintf "%.7f", ($dt->hour + ($dt->min / 60.) + ($dt->sec / 3600.0))/24.0;
+  return $dt->ymd("") + $frac;
+};
 
 # Common thresholding arguments
 my $thrargs = "thrlo=".($Frm->uhdr("NEP_MIN"))." newlo=bad thrhi=1 newhi=1";
 
+my $obs = $frmobj->uhdr("ORAC_OBSERVATION_NUMBER");
+my $ut = sprintf "%.7f", $frmobj->hdr("ORACTIME");
 for my $i ( 1 .. $frmobj->nfiles ) {
+  my $outobs =  $obs ."_". $frmobj->hdrval("NSUBSCAN", $i-1);
+  my $hst = $frmobj->hdrval("HSTSTART", $i-1);
+  my $out_ut = $calcut->( $frmobj->hdrval("DATE-OBS", $i-1) );
+
   my $subarray = $frmobj->hdrval("SUBARRAY", $i-1);
   my $maplog = $maplogtype . "_$subarray";
 
@@ -181,7 +194,7 @@ for my $i ( 1 .. $frmobj->nfiles ) {
   my $nbol = $nbolstart;
   my $heat = $frmobj->hdrval("PIXHEAT",$i-1);
   my $bias = $frmobj->hdrval("DETBIAS",$i-1);
-  my @maplogvals = ($subarray, $freqrange, $heat, $bias);
+  my @maplogvals = ($out_ut, $hst, $outobs, $subarray, $freqrange, $heat, $bias);
   orac_print " Heater/Bias = $heat $bias, N_bol = " if ($verbose);
   while ($nbol <= $nbolend) {
     orac_print "$nbol " if ($verbose);
@@ -193,5 +206,5 @@ for my $i ( 1 .. $frmobj->nfiles ) {
     $nbol += $delta;
   }
   orac_print "\n" if ($verbose);
-  _ADD_LOG_ENTRY_ LOGFILE=$maplog ENTRIES=\@maplogvals PARAMS=\@maplognames PARLIST=BRIEF
+  _ADD_LOG_ENTRY_ LOGFILE=$maplog ENTRIES=\@maplogvals PARAMS=\@maplognames PARLIST=NONE
 }
