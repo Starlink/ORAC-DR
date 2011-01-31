@@ -1103,7 +1103,7 @@ sub orac_determine_initial_algorithm_engines {
 
   } elsif( $inst eq 'ACSIS' ) {
 
-    @AlgEng = qw/ ndfpack_mon kappa_mon smurf_mon cupid_mon/;
+    @AlgEng = qw/ ndfpack_mon kappa_mon smurf_mon cupid_mon ccdpack_reg /;
 
   } elsif ($inst eq 'CGS4') {
 
