@@ -19,6 +19,12 @@ spatial/spectral cube.
 
 The number of bytes per pixel. [4]
 
+=item CHUNK = INTEGER (Given)
+
+The maximum number of files to process simultaneously in MAKECUBE to
+avoid a timeout.  The choice is affected by processor speed and
+memory.  [5]
+
 =item MAXSIZE = INTEGER (Given)
 
 The maximum size, in bytes, of the output cube. This value does not
@@ -147,6 +153,8 @@ use Math::Trig;
 #  where c is the velocity of light in m/s.  The value has more
 #  precision than needed, but it shows that the value is floating point.
 use constant FREQ2PIXSIZE => 1236.7;
+use diagnostics;
+use File::Copy;
 
 # Deal with parameters.
 my $system_arg = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
@@ -158,6 +166,7 @@ my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512000000 );
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
+my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNK", 5 );
 my $override = get_prim_arg( $_PRIM_ARGS_, "OVERRIDE", 1 );
 
 # Override various parameters via the recipe parameter system.
@@ -286,6 +295,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
     %seen = ();
     @uniq = grep { ! $seen{$_} ++ } values %usedetpos;
     my $usedetpos = ( $#uniq == 0 ? $uniq[0] : 'no' );
+    my $tiledims;
+    my $sp_params;
 
     # Check to see if we have any pixel sizes back from the previous
     # MAKECUBE runs. If we don't have any, then all of the resulting
@@ -339,13 +350,17 @@ if( $Grp->lastallmembers( $Frm ) ) {
         $crota = 0;
       }
 
-      # Find out how big our tiles are going to be.
+      # Find out how big our tiles are going to be.  Since we do not
+      # want the tile dimensions to vary in order to enable tiles from
+      # each chunk to be combined, disable the ability to adjust the
+      # tile dimensions arbitrarily.  This is achieved by setting the
+      # dimension negative.
       _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder MAXSIZE=$maxsize BYTES_PER_PIXEL=$bytes_per_pixel
-      my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
+      $tiledims = -1 * $_GET_TILE_DIMENSIONS_{TILEDIMS};
 
       # Get the parameter string to send to makecube.
       _GET_SPREAD_PARAMS_ METHOD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize
-      my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
+      $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
 
       # Set up MAKECUBE parameters.
       $params  = "pixsize=$pixsize crota=$crota spread=$spread params=$sp_params usedetpos=$usedetpos";
@@ -372,26 +387,262 @@ if( $Grp->lastallmembers( $Frm ) ) {
       $params .= " genvar=spread inweight=false";
     }
 
+    # Determine the reference sky co-ordinates and spectral bounds for all the files
+    # ==============================================================================
+
+    # The reference co-ordinates are needed so that the same reference
+    # position applies to all chunks.
     my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
     my $inlist_fh = $inlist->handle;
     my @infiles;
+    my $num_files = 0;
     foreach my $Frm ( $Grp->members ) {
       foreach my $i ( 1 .. $Frm->nfiles ) {
         print $inlist_fh $Frm->file( $i ) . "\n";
         push @infiles, $Frm->file( $i );
+        $num_files++;
       }
     }
     $inlist->handle->close;
 
-    my ( $in, $out ) = $Grp->inout( "_cube" );
+    # Do not create the output file, thus this is a quick operation.
+    $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=!" );
+    ( $ORAC_STATUS, my $reflon ) = $Mon{'smurf_mon'}->get( "makecube", "reflon" );
+    ( $ORAC_STATUS, my $reflat ) = $Mon{'smurf_mon'}->get( "makecube", "reflat" );
+    ( $ORAC_STATUS, my @flbnd ) = $Mon{'smurf_mon'}->get( "makecube", "flbnd");
+    ( $ORAC_STATUS, my @fubnd ) = $Mon{'smurf_mon'}->get( "makecube", "fubnd" );
+    my $specbounds = "'" . $flbnd[2] . "," . $fubnd[2] . "'";
+    $params .= " reflon=$reflon reflat=$reflat specunion specbounds=$specbounds";
 
-    orac_print "Creating cube from " . join( ", ", @infiles ) . "... ";
+    undef $inlist;
 
-    $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$out" );
-    orac_say "done.";
+    # Obtain the total number of tiles.
+    ( $ORAC_STATUS, my $totaltile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+    orac_print "totaltile: ". $totaltile . "    num_files: " . $num_files . "\n";
 
-    # Handle tiles.
-    ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+    # Divide the list into manageable chunks to prevent a timeout.
+    # ============================================================
+
+    # The approach is to attempt to reduce each observation separately
+    # on the same grid of tiles, and only chunk an observation if
+    # contains too many files.  Then combine each observation of a tile.
+    # Thus edge artefacts from smoothing in chunks rather than the
+    # observation as whole is reduced.
+
+    # We want to find the extreme bounds of the tiles.  The central tile
+    # is symmetric around bound (0,0).  Initialise the limits accordingly.
+    my @full_lb = ( 1, 1 );
+    my @full_ub = ( -1, -1 );
+
+    my $fi = 0;
+    my $total_chunk = 0;
+    my @chunk_ntile;
+    my $chunk_offset = 0;
+
+    # Process each observation separately.
+    foreach my $Frm ( $Grp->members ) {
+
+      # Determine the number of chunks.  A chunk must comprise at least two
+      # files.
+      my $num_chunk = int( ( $Frm->nfiles - 2 ) / $chunksize ) + 1;
+      orac_print "Number of chunks: " . $num_chunk . "\n";
+      $total_chunk += $num_chunk;
+
+      # Create a text listing all the output files.
+      my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+      my $outlist_fh = $outlist->handle;
+
+      # Process all the input files in manageable chunks.
+      my $i = 0;
+      my $remain;
+      for ( my $j = 1; $j <= $num_chunk; $j++ ) {
+
+        # Find the number of files in the chunk.
+        $remain = $Frm->nfiles - $i;
+        my $chunk = ( $j == $num_chunk ) ? $remain : min( $remain, $chunksize );
+        orac_print "Chunk: " . $j . " contains " . $chunk . " files.\n";
+
+        # Form text file listing the chunk's members for MAKECUBE.
+        my $chlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+        my $chlist_fh = $chlist->handle;
+
+        my @chfiles;
+        for ( my $k = 1; $k <= $chunk; $k++ ) {
+          print $chlist_fh $infiles[ $fi ] . "\n";
+          push @chfiles, $infiles[ $fi ];
+          $i++;
+          $fi++;
+        }
+        $chlist->handle->close;
+
+        # Form tiles for current chunk.
+        my ( $in, $out ) = $Grp->inout( "_cube" );
+        my $ci = $j + $chunk_offset;
+        if ( $num_chunk > 1 ) { $out .= "_ch" . "$ci" }
+
+        orac_print "Creating cube $out from " . join( ", ", @chfiles ) . "...\n";
+
+        $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $chlist->file . "' out=$out" );
+        orac_say "done.";
+        undef $chlist;
+
+        # Find and record the number of tiles in the current chunk.
+        ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+        push @chunk_ntile, $ntile;
+
+        # Assign tiles in the current chunk to their index within the
+        # full set of tiles, as if processing all the time series
+        # simultaneously.
+
+        # The tiles are always numbered from 1 at the lower left to ntile
+        # at the upper right.  Thus the lower bound of the first tile will
+        # be most negative and the upper bound of the last tile will be
+        # the most positive.
+        if ( $num_chunk > 1 ) {
+          my $lb_file = $out . "_1";
+          _GET_DIMENSIONS_ FILE=$lb_file
+          my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+          $full_lb[0] = min( $lbnd[0], $full_lb[0] );
+          $full_lb[1] = min( $lbnd[1], $full_lb[1] );
+
+          my $ub_file = $out . "_" . $ntile;
+          _GET_DIMENSIONS_ FILE=$ub_file
+          my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+          $full_ub[0] = max( $ubnd[0], $full_ub[0] );
+          $full_ub[1] = max( $ubnd[1], $full_ub[1] );
+        }
+      }
+      $chunk_offset += $num_chunk;
+    }
+    orac_print "Spatial extent of tiles is (" . $full_lb[0] . "," .
+               $full_lb[1] . ") to (" . $full_ub[0] . "," . $full_ub[1] .")\n";
+
+    # Assign files in each chunk to the grand-mosaic tiles.
+    # =====================================================
+    #
+    ( undef, my $out ) = $Grp->inout( "_cube" );
+    if ( $total_chunk > 1 ) {
+
+      # Reset the tile dimensions to the original value.
+      $tiledims *= -1;
+
+      # Find the number of tiles along each spatial axis, and
+      # hence the x-y indices of the centre.  This assumes that
+      # the reference point is at the centre of a tile.
+      my $fulltile = $tiledims + 2 * $tileborder;
+      orac_print "Tiledims: $tiledims   border: $tileborder   fulltile: $fulltile\n";
+      my $halftile = int( $fulltile / 2 );
+      my $nx = int( $full_ub[0] / $tiledims + 0.5 ) + 1 +
+               int( abs( $full_lb[0] ) / $tiledims + 0.5 );
+      my $ny = int( $full_ub[1] / $tiledims + 0.5 ) + 1 +
+               int( abs( $full_lb[1] ) / $tiledims + 0.5 );
+      my @centre_index;
+      $centre_index[0] = int( ( $nx + 1 ) / 2 );
+      $centre_index[1] = int( ( $ny + 1 ) / 2 );
+
+      my @tilenames;
+      foreach my $c ( 1 .. $total_chunk ) {
+         push @tilenames , ' ';
+      }
+
+
+      # Store the tile spatial upper and lower bounds, constrained by
+      # the actual limiting bounds.  The bounds must always be integer
+      # so apply the half-tile shift as integer.  Also the limits are
+      # not symmetric, being offset from (1,1) not (0,0).
+      my ( @tile_xl, @tile_xu, @tile_yl, @tile_yu );
+      $halftile = int( ( $tiledims + 1 ) / 2 );
+      orac_print "Centres indices: " . $centre_index[0] . ", " . $centre_index[1] ."\n";
+      foreach my $c ( 1 .. $totaltile ) {
+        my $xi = ( $c - 1 ) % $nx + 1;
+        my $yi = int( ( $c - 1 ) / $nx ) + 1;
+        $tile_xl[$c] = max( $full_lb[0], 1 - $halftile - $tileborder +
+                            ( $xi - $centre_index[0] ) * $tiledims );
+        $tile_xu[$c] = min( $full_ub[0], $tileborder + $halftile +
+                            ( $xi - $centre_index[0] ) * $tiledims  );
+
+        $tile_yl[$c] = max( $full_lb[1], 1 - $halftile - $tileborder +
+                            ( $yi - $centre_index[1] ) * $tiledims );
+        $tile_yu[$c] = min( $full_ub[1], $tileborder + $halftile +
+                            ( $yi - $centre_index[1] ) * $tiledims );
+        orac_print "Tile: " . $c . "  bounds (" . $tile_xl[$c] . "," . $tile_yl[$c] . ") ";
+        orac_print "to : (" . $tile_xu[$c] . "," . $tile_yu[$c] .")\n";
+
+      }
+
+      foreach my $c ( 1 .. $total_chunk ) {
+        foreach my $t ( 1 .. $chunk_ntile[$c - 1] ) {
+          my $chunk_file = $out . "_ch" . $c . "_" . $t;
+          _GET_DIMENSIONS_ FILE=$chunk_file
+          my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+          my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+          orac_print "Chunk: $chunk_file has bounds ($lbnd[0],$lbnd[1]) to ($ubnd[0],$ubnd[1]).\n";
+
+          # Find the tile indices that the current chunk spans along
+          # each axis, using the offsets from the centre (0,0).
+          my @ti_lb = ( 0, 0 );
+          my @ti_ub = ( 0, 0 );
+          for ( my $i = 0; $i < 2; $i++ ) {
+            $ti_lb[$i] = int( $lbnd[$i] / $tiledims +
+                              ( $lbnd[$i] >= 0 ? +1 : -1 ) * 0.5 ) + $centre_index[$i];
+            $ti_ub[$i] = int( $ubnd[$i] / $tiledims +
+                              ( $ubnd[$i] >= 0 ? +1 : -1 ) * 0.5 ) + $centre_index[$i];
+          }
+          orac_print "Tiles: $chunk_file spans tiles ($ti_lb[0],$ti_lb[1]) to ($ti_ub[0],$ti_ub[1]).\n";
+
+          # Convert the x,y indices to a tile index to store the
+          # contributing chunk names, constrained with bounds to lie
+          # solely within the tile.
+          my $tileindex;
+          my $tile_section;
+          for ( my $j = $ti_lb[1]; $j <= $ti_ub[1]; $j++ ) {
+            for ( my $i = $ti_lb[0]; $i <= $ti_ub[0]; $i++ ) {
+              $tileindex = $i + $nx * ( $j - 1 );
+              $tile_section = "(" . $tile_xl[$tileindex] . ":" . $tile_xu[$tileindex] . "," .
+                               $tile_yl[$tileindex] . ":" . $tile_yu[$tileindex] . ",)";
+              $tilenames[$tileindex] .= $chunk_file . $tile_section . " ";
+              orac_print "File " . $chunk_file . " is in tile " . $tileindex . ".\n";
+            }
+          }
+        }
+      }
+
+      foreach my $c ( 1 .. $totaltile ) {
+
+        # Form text file listing the chunk's members for MAKEMOS.
+        my $mmlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+        my $mmlist_fh = $mmlist->handle;
+
+        $tilenames[$c] =~ s/^\s+//;
+        my @frames = split ( ' ', $tilenames[$c] );
+        orac_print "tilenames: " . $tilenames[$c] . "\n";
+        my $nframe = @frames;
+        orac_print "Number of frames in current tile: " . $nframe . "\n";
+        if ( $nframe > 1 ) {
+          my $mm_params = "usevar method=mean genvar nozero noscale";
+          foreach my $i ( 1.. $nframe ) {
+            print $mmlist_fh $frames[ $i - 1 ] . "\n";
+            orac_print "  " . $frames[ $i - 1 ] . "\n";
+          }
+          $mmlist->handle->close;
+
+#  Combine the tiles as if we had processed all the data in one MAKECUBE
+#  invocation.
+          my $mmout = $out . "_" . $c;
+          orac_print "Running MAKEMOS on Tile $c to form $mmout.\n";
+          $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mm_params in='^" . $mmlist->file . "' out=$mmout" );
+          undef $mmlist;
+
+        } elsif ( $nframe > 1 ) {
+          orac_print "Only one file contributes to Tile $c\n";
+          orac_print "Rename ". $frames[0] . " to " . $out . "_" . $c . "\n";
+          copy( $frames[0] . ".sdf", $out . "_" . $c . ".sdf" );
+
+        } else {
+          orac_print "No files contribute to Tile $c\n";
+        }
+      }
+    }
 
     # Get DATE-OBS and DATE-END from the members of the group. Find the
     # earliest DATE-OBS and the latest DATE-END and stick these into the
@@ -406,8 +657,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
     my @files;
     my $numbad = 0;
     my $outfilenumber = 1;
-    if( $ntile > 1 ) {
-      foreach my $j ( 1 .. $ntile ) {
+    if( $totaltile > 1 ) {
+      foreach my $j ( 1 .. $totaltile ) {
         my $makecube_outfile = "${out}_$j.sdf";
         my $outfile = sprintf( "$out%03d", $outfilenumber ) . ".sdf";
 
@@ -415,7 +666,7 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
           # Run STATS to find out if this tile is blank or not.
           $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$makecube_outfile" );
-          ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+          ( my $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
           if( $numgood == 0 ) {
             unlink( $makecube_outfile );
             $numbad++;
@@ -443,9 +694,9 @@ if( $Grp->lastallmembers( $Frm ) ) {
       push( @files, $outfile );
     }
 
-    $ntile -= $numbad;
+    $totaltile -= $numbad;
 
-    orac_print " " . scalar( @files ) . " cube" . ( $ntile > 1 ? 's' : '' ) . " formed: ";
+    orac_print " " . scalar( @files ) . " cube" . ( $totaltile > 1 ? 's' : '' ) . " formed: ";
 
     $Grp->allow_header_sync( 1 );
     $Grp->product( "cube" );
