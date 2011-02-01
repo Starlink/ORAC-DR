@@ -31,8 +31,9 @@ end
 
 cd $ORAC_PERL5LIB
 
-# Run the command
+# Run the command. Remove any trailing blanks in situ.
 pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
+sed -i 's/[ \t]*$//' $output
 
 # These are the set of classes relevant for oracdr hackers
 
@@ -45,8 +46,9 @@ foreach i ( Basic.pm Convert.pm Core.pm  Display/Base.pm Display/GAIA.pm Display
 end
 echo $input
 
-# Run the command again
+# Run the command again. Remove any trailing blanks in situ.
 pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
+sed -i 's/[ \t]*$//' $output
 
 # Return to cwd - unnecessary
 
