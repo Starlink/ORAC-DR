@@ -572,6 +572,8 @@ sub badbol_list {
 
 }
 
+=back
+
 =head1 SEE ALSO
 
 L<ORAC::Calib::JCMTCont>
