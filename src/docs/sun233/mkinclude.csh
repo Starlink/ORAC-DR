@@ -8,7 +8,7 @@
 # When run, the relevant files are processed by pod2latex into
 # a single output tex file which can either be inserted into
 # sun233.tex directly or included. It will not be a complete
-# document
+# document.
 
 # A very, very simple script
 
@@ -27,7 +27,7 @@ end
 
 # Since the $input variable seems to run into buffer overflow if I prepend
 # the path, overcome this by changing to the ORAC_PERL5LIB directory but
-# specifying the output file name as a full path
+# specifying the output file name as a full path.
 
 cd $ORAC_PERL5LIB
 
