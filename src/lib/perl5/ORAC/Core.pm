@@ -558,7 +558,14 @@ sub orac_declare_location {
 
   # get the mode information from recsuffix
   if (exists $options{recsuffix}) {
-    for my $rs ( @{$options{recsuffix}} ) {
+    my $recsuffix = $options{recsuffix};
+    # If recsuffix has not been converted to a array ref yet do it here
+    if (defined $recsuffix && ! ref($recsuffix) ) {
+      $recsuffix = [ split /,/, $recsuffix];
+    } else {
+      $recsuffix = [];
+    }
+    for my $rs ( @$recsuffix ) {
       my $sfx = lc($rs);
       $sfx =~ s/^_//;
       $type .= "-$sfx";
