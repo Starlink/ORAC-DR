@@ -450,6 +450,12 @@ sub launch {
 	my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
 		     : $engine );
 	$obj = $pars{CLASS}->new($engid, $path );
+
+        # If we can silence set silent tasks
+        if (exists $pars{SILENT} && @{$pars{SILENT}} &&
+            defined $obj && $obj->can("silent_tasks")) {
+          $obj->silent_tasks( @{$pars{SILENT}} );
+        }
       }
 
       # Execute the cleanup routine immediately if defined

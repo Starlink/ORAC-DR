@@ -121,11 +121,23 @@ BEGIN {
 # Internal definitions of algorithm engine definitions
 # Used to construct instrument recipe dependencies
 
+my $silent = sub {
+  my @tosilent;
+  # only silent if MSG_FILTER env is not defined
+  # or set to 0, 1, 2 or NONE, QUIET, NORM
+  if (!exists $ENV{MSG_FILTER} ||
+      $ENV{MSG_FILTER} =~ /^[012NQ]/) {
+    @tosilent = @_;
+  }
+  return \@tosilent;
+};
+
 my %MonolithDefns = (
          kappa_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{KAPPA_DIR}."/kappa_mon" : "" ),
+           SILENT => $silent->( "stats", "histat" ),
           },
          surf_mon => {
            MESSYS => 'AMS',
@@ -186,6 +198,7 @@ my %MonolithDefns = (
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{KAPPA_DIR}."/ndfpack_mon" : "" ),
+           SILENT => $silent->( "ndftrace" ),
           },
          figaro1 => {
            MESSYS => 'AMS',

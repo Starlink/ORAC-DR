@@ -87,7 +87,9 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $task = {};  # Anon hash
+  my $task = {
+              SILENT => {},
+             };  # Anon hash
 
   my $status; # Status from load
   $status  = ORAC__OK; # Default good status
@@ -117,6 +119,29 @@ sub obj {
   my $self = shift;
   if (@_) { $self->{Obj} = shift; }
   return $self->{Obj};
+}
+
+=item B<silent_tasks>
+
+Returns or set the list of tasks that should have their output
+silenced when an obeyw is issued.
+
+ @silent = $obj->silent_tasks()
+ $obj->silent_tasks( @silent );
+
+The task will be something like "ndftrace" or "stats" and not
+the monolith name.
+
+=cut
+
+sub silent_tasks {
+  my $self = shift;
+  # Store internally as a hash
+  if (@_) {
+    my %lut = map { $_ => undef; } @_;
+    %{$self->{SILENT}} = %lut;
+  }
+  return (sort keys %{$self->{SILENT}});
 }
 
 =back
@@ -159,6 +184,20 @@ sub load {
   return $self->_to_orac_status($status);
 }
 
+=item B<is_silent>
+
+Returns a boolean indicating whether the task output should
+be silenced.
+
+ $is = $obj->is_silent( "ndftrace" );
+
+=cut
+
+sub is_silent {
+  my $self = shift;
+  my $test = shift;
+  return exists $self->{SILENT}->{$test};
+}
 
 =item B<obeyw>
 
@@ -174,7 +213,15 @@ sub obeyw {
   my $status;
 
   # Pass arguments directly to the object
-  if (@_) { $status = $self->obj->obeyw(@_); }
+  # but handle QUIET option
+  if (@_) {
+    my $task = shift;
+    my $args = shift;
+    if ($self->is_silent($task)) {
+      $args .= " quiet";
+    }
+    $status = $self->obj->obeyw($task, $args);
+  }
 
   # Should now change status from the obeyw (DTASK__ACTCOMPLETE)
   # to good ORAC status
