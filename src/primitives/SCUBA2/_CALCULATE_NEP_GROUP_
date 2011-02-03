@@ -12,17 +12,17 @@ _CALCULATE_NEP_GROUP_ - calculate effective or RMS NEP for each subarray
 
 =head1 DESCRIPTION
 
-This primitive calculates the effective or RMS NEP for all files in
-the current Grp. The data are thresholded at an upper and lower NEP
-limit defined as good before the effective or RMS value is
-calculated. The NEPs are stored in a hash indexed by subarray, heater
-and bias setting which is stored in the Grp uhdr entry C<EFFNEP> or
-C<RMSNEP> for effective and RMS NEPs respectively.
+This primitive calculates the effective or RMS nosie equivalent power
+(NEP) for all files in the current Grp. The data are thresholded at an
+upper and lower NEP limit defined as good before the effective or RMS
+value is calculated. The NEPs are stored in a hash indexed by
+subarray, heater and bias setting which is stored in the Grp uhdr
+entry C<EFFNEP> or C<RMSNEP> for effective and RMS NEPs respectively.
 
 The files must contain noise data and it is assumed that the Group
 contains Frame objects sorted by subarray.
 
-A noise log file is written if requested.
+An NEP log file is written if requested.
 
 =head1 ARGUMENTS
 
@@ -76,11 +76,11 @@ and bias settings.
 
 =head1 OUTPUT FILES
 
-A noise log file, C<log.bolonoise>.
+A noise log file, C<log.nep>.
 
 =head1 LOGFILE FORMAT
 
-The log file C<log.bolonoise> contains the following entries:
+The log file C<log.nep> contains the following entries:
 
 =over 4
 
@@ -122,7 +122,15 @@ Number of bolometers used in noise calculation.
 
 =item NEP_eff
 
-Effective NEP in W Hz**-0.5
+Effective NEP in W Hz**-0.5.
+
+=item Heater
+
+Pixel heater DAC setting.
+
+=item Bias
+
+Detector bias DAC setting.
 
 =back
 
@@ -132,7 +140,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia. All Rights
+Copyright (C) 2010-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -167,9 +175,10 @@ if ($neptype eq "rms") {
   $NEP = "NEP_rms";
 }
 
-# Write out a log file?
+# Write out a log file? Only do so for effective NEP.
 my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
-my $logtype = "bolonoise";
+$uselog = 0 if ($neptype eq "rms")
+my $neplog = "nep";
 my @lognames = ("Subarray", "Freq_Range", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Heater", "Bias");
 
 my $freqrange = $Frm->hdr("FRQRANGE");
@@ -179,8 +188,9 @@ my $nepunits;
 if ($Grp->uhdr("NEP_UNITS")) {
   $nepunits = $Grp->uhdr("NEP_UNITS");
 } else {
-#  my $file = $Frm->file . ".more.smurf.nep";
-  my $file = $Frm->file;
+  # Use first file in first Frame. Note that it must be a noise file
+  # (which is true for this primitive anyway).
+  my $file = $Grp->frame(0)->file ."more.smurf.nep";
   $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
   (my $ORAC_STATUS, $nepunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
   $Grp->uhdr("NEP_UNITS", $nepunits);
@@ -195,9 +205,6 @@ if ( $#subarrays == 0 ) {
   $subinfostr = "subarrays ".join(", ",@subarrays);
 }
 orac_print "Calculating $type NEPs for $subinfostr...\n";
-
-my $maplogtype = "mapspeed";
-my @maplognames = ("Subarray", "Freq_Range", "PIXHEAT", "DETBIAS", "N_bol", "NEP_RMS", "MAP_SPEED");
 
 # Common thresholding arguments
 my $thrargs = "thrlo=".($Frm->uhdr("NEP_MIN"))." thrhi=".($Frm->uhdr("NEP_MAX"))
@@ -233,9 +240,9 @@ foreach my $frmobj ($Grp->members) {
 		   $frmobj->hdrval("DETBIAS",$i-1));
     $nep{$key} = $nep;
 
-    # Calculate stats for logging
+    # Calculate NEP stats for thresholded file
     if ($uselog) {
-      _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 VERBOSE=0
+      _FIND_IMAGE_STATISTICS_ IMAGE=$thrfile HISTAT=0 VERBOSE=0
       my %results = %{$_FIND_IMAGE_STATISTICS_{RESULTS}};
       my $mean = (defined $results{MEAN}) ? sprintf "%5.3e", $results{MEAN} : "****";
       my $median = (defined $results{MEDIAN}) ? sprintf "%5.3e", $results{MEDIAN} : "****";
@@ -244,7 +251,7 @@ foreach my $frmobj ($Grp->members) {
       my @values = ( $subarray, $freqrange, $median, $mean, $mode, $numgood,
 		     $nep, $frmobj->hdrval("PIXHEAT",$i-1),
 		     $frmobj->hdrval("DETBIAS",$i-1) );
-      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@lognames PARLIST=BRIEF
+      _ADD_LOG_ENTRY_ LOGFILE=$neplog ENTRIES=\@values PARAMS=\@lognames PARLIST=BRIEF
     }
   }
 }
