@@ -510,13 +510,13 @@ if( $Grp->lastallmembers( $Frm ) ) {
           # at the upper right.  Thus the lower bound of the first tile will
           # be most negative and the upper bound of the last tile will be
           # the most positive.
-          my $lb_file = $out . "_1";
+          my $lb_file= ( $ntile > 1 ) ? $out . "_1" : $out;
           _GET_DIMENSIONS_ FILE=$lb_file
           my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
           $full_lb[0] = min( $lbnd[0], $full_lb[0] );
           $full_lb[1] = min( $lbnd[1], $full_lb[1] );
 
-          my $ub_file = $out . "_" . $ntile;
+          my $ub_file= ( $ntile > 1 ) ? $out . "_" . $ntile : $out;
           _GET_DIMENSIONS_ FILE=$ub_file
           my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
           $full_ub[0] = max( $ubnd[0], $full_ub[0] );
@@ -578,7 +578,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
         foreach my $c ( 1 .. $total_chunk ) {
           foreach my $t ( 1 .. $chunk_ntile[$c - 1] ) {
-            my $chunk_file = $out . "_ch" . $c . "_" . $t;
+            my $chunk_file = $out . "_ch" . $c;
+            if ( $chunk_ntile[$c - 1] > 1 ) { $out .= "_" . $t }
             _GET_DIMENSIONS_ FILE=$chunk_file
             my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
             my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
@@ -624,6 +625,11 @@ if( $Grp->lastallmembers( $Frm ) ) {
           orac_print "tilenames: " . $tilenames[$c] . "\n";
           my $nframe = @frames;
           orac_print "Number of frames in current tile: " . $nframe . "\n";
+
+          # Mimic MAKECUBE's output-NDF naming convention, i.e. exclude the
+          # _<tile> suffix if there is only one tile.
+          my $mmout = ( $totaltile > 1 ) ? $out . "_" . $c : $out;
+
           if ( $nframe > 1 ) {
             my $mm_params = "usevar method=mean genvar nozero noscale";
             foreach my $i ( 1.. $nframe ) {
@@ -634,15 +640,14 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
             # Combine the tiles as if we had processed all the data in
             # one MAKECUBE invocation.
-            my $mmout = $out . "_" . $c;
             orac_print "Running MAKEMOS on Tile $c to form $mmout.\n";
             $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mm_params in='^" . $mmlist->file . "' out=$mmout" );
             undef $mmlist;
 
           } elsif ( $nframe > 1 ) {
             orac_print "Only one file contributes to Tile $c\n";
-            orac_print "Rename ". $frames[0] . " to " . $out . "_" . $c . "\n";
-            copy( $frames[0] . ".sdf", $out . "_" . $c . ".sdf" );
+            orac_print "Rename ". $frames[0] . " to $mmout \n";
+            copy( $frames[0] . ".sdf", $mmout . ".sdf" );
 
           } else {
             orac_print "No files contribute to Tile $c\n";
@@ -691,9 +696,12 @@ if( $Grp->lastallmembers( $Frm ) ) {
           $outfilenumber++;
         }
       }
+
+    # The number of tiles is only one.  MAKECUBE does not append a _1
+    # suffix.  Again we still want CUBENNN naming.
     } else {
       my $outfile = "${out}001.sdf";
-      rename( $out . ".sdf", $outfile );
+      rename( $out . ".sdf", $outfile ) or die "Could not rename " . $out . ".sdf to $outfile: $!\n";
       $outfile =~ s/\.sdf$//;
 
       _SET_FILE_FITS_ITEM_ FILE=$outfile KEY=DATE-OBS VALUE=$dateobs
