@@ -19,11 +19,11 @@ spatial/spectral cube.
 
 The number of bytes per pixel. [4]
 
-=item CHUNK = INTEGER (Given)
+=item CHUNKSIZE = INTEGER (Given)
 
-The maximum number of files to process simultaneously in MAKECUBE to
-avoid a timeout.  The choice is affected by processor speed and
-memory.  [5]
+The maximum sum of file sizes in megabytes of files to process
+simultaneously in MAKECUBE to avoid a timeout.  The choice is
+affected by processor speed and memory.  [4096]
 
 =item MAXSIZE = INTEGER (Given)
 
@@ -153,6 +153,7 @@ use Math::Trig;
 #  where c is the velocity of light in m/s.  The value has more
 #  precision than needed, but it shows that the value is floating point.
 use constant FREQ2PIXSIZE => 1236.7;
+use constant MEGABYTE => 1048576;
 use File::Copy;
 
 # Deal with parameters.
@@ -165,11 +166,14 @@ my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512000000 );
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
-my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNK", 5 );
+my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNKSIZE", 4096 );
 my $override = get_prim_arg( $_PRIM_ARGS_, "OVERRIDE", 1 );
 
 # Override various parameters via the recipe parameter system.
 if( $override ) {
+  $chunksize = ( defined( $Frm->uhdr( "RECPAR_CHUNKSIZE" ) ) ?
+                  $Frm->uhdr( "RECPAR_CHUNKSIZE" )            :
+                  $chunksize );
   $sp_param1 = ( defined( $Frm->uhdr( "RECPAR_PARAM1" ) ) ?
                  $Frm->uhdr( "RECPAR_PARAM1" )            :
                  $sp_param1 );
@@ -391,16 +395,19 @@ if( $Grp->lastallmembers( $Frm ) ) {
     # Determine the reference sky co-ordinates and spectral bounds for all the files
     # ==============================================================================
 
-    # The reference co-ordinates are needed so that the same reference
-    # position applies to all chunks.
+    # Form a list of all the input filenames and determine their total size.
+    # Also store the filenames in a GRP list text file.
     my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
     my $inlist_fh = $inlist->handle;
     my @infiles;
+    my $totalsize = 0;
     my $num_files = 0;
     foreach my $Frm ( $Grp->members ) {
       foreach my $i ( 1 .. $Frm->nfiles ) {
         print $inlist_fh $Frm->file( $i ) . "\n";
         push @infiles, $Frm->file( $i );
+        my $fullname = $Frm->file( $i ) . ".sdf";
+        $totalsize += ( -s $fullname ) / MEGABYTE;
         $num_files++;
       }
     }
@@ -422,7 +429,7 @@ if( $Grp->lastallmembers( $Frm ) ) {
     # =====================
 
     my ( $in, $out ) = $Grp->inout( "_cube" );
-    if ( $num_files <= $chunksize ) {
+    if ( $totalsize / MEGABYTE <= $chunksize ) {
       orac_print "Creating cube from " . join( ", ", @infiles ) . "... ";
 
       $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$out" );
@@ -434,8 +441,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
       # ============================================================
 
       # The approach is to attempt to reduce each observation separately
-      # on the same grid of tiles, and only chunk an observation if
-      # contains too many files.  Then combine each observation of a tile.
+      # on the same grid of tiles, and only chunk an observation if it
+      # contains too much data.  Then combine each observation of a tile.
       # Thus edge artefacts from smoothing in chunks rather than the
       # observation as whole is reduced.
 
@@ -445,84 +452,104 @@ if( $Grp->lastallmembers( $Frm ) ) {
       my @full_ub = ( -1, -1 );
 
       my $fi = 0;
-      my $total_chunk = 0;
       my @chunk_ntile;
-      my $chunk_offset = 0;
 
       # Process each observation separately.
+      my $chunk_index = 0;
       foreach my $Frm ( $Grp->members ) {
 
-        # Determine the number of chunks.  A chunk must comprise at least two
-        # files.
-        my $num_chunk = int( ( $Frm->nfiles - 2 ) / $chunksize ) + 1;
-        orac_print "Number of chunks: " . $num_chunk . "\n";
-        $total_chunk += $num_chunk;
+        my $sumsize = 0;
+        my @chfiles;
 
-        # Create a text listing all the output files.
-        my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-        my $outlist_fh = $outlist->handle;
+        # Look at each input file within the Frame and see if it needs
+        # chunking.
+        foreach my $i ( 1 .. $Frm->nfiles ) {
+          my $fullname = $Frm->file( $i ) . ".sdf";
+          my $filesize = ( -s $fullname )/ MEGABYTE;
 
-        # Process all the input files in manageable chunks.
-        my $i = 0;
-        my $remain;
-        for ( my $j = 1; $j <= $num_chunk; $j++ ) {
-
-          # Find the number of files in the chunk.
-          $remain = $Frm->nfiles - $i;
-          my $chunk = ( $j == $num_chunk ) ? $remain : min( $remain, $chunksize );
-          my $string = ( $chunk == 1 ) ? "file" : "files";
-          orac_print "Chunk: $j contains $chunk $string.\n";
-
-          # Form text file listing the chunk's members for MAKECUBE.
-          my $chlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-          my $chlist_fh = $chlist->handle;
-
-          my @chfiles;
-          for ( my $k = 1; $k <= $chunk; $k++ ) {
-            print $chlist_fh $infiles[ $fi ] . "\n";
+          # Continue to add files to the current chunk until the size
+          # limit is surpassed.  Spectral-cube formation is always
+          # required for the last file in the Frame.
+          if ( ( $sumsize + $filesize ) <= $chunksize && $i < $Frm->nfiles ) {
+            $sumsize += $filesize;
             push @chfiles, $infiles[ $fi ];
-            $i++;
             $fi++;
+
+          } else {
+
+            # Append the final input time-series file to the the list
+            # for the final chunk of the Frame.  This rarely may cause the
+            # final chunk to be larger than CHUNKSIZE.
+            if ( $i == $Frm->nfiles ) {
+              push @chfiles, $infiles[ $fi ];
+              $fi++;
+            }
+
+            # Create a text listing all the output files.
+            my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+            my $outlist_fh = $outlist->handle;
+
+            # Find and report the number of files in the chunk.
+            my $chunk = @chfiles;
+            my $string = ( $chunk == 1 ) ? "file" : "files";
+            $chunk_index++;
+            orac_print "Chunk: $chunk_index contains $chunk $string.\n";
+
+            # Form text file listing the chunk's members for MAKECUBE.
+            my $chlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+            my $chlist_fh = $chlist->handle;
+
+            for ( my $k = 0; $k < $chunk; $k++ ) {
+              print $chlist_fh $chfiles[ $k ] . "\n";
+            }
+            $chlist->handle->close;
+
+            # Form tiles for current chunk. Use suffix to delineate the
+            # chunks.
+            my ( $in, $out ) = $Grp->inout( "_cube" );
+            $out .= "_ch" . "$chunk_index";
+
+            # Process the current manageable chunk of input time series
+            # into spectral cubes.
+            orac_print "Creating cube $out from " . join( ", ", @chfiles ) . "...\n";
+
+            $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $chlist->file . "' out=$out" );
+            orac_say "done.";
+            undef $chlist;
+
+            # Find and record the number of tiles in the current chunk.
+            ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+            push @chunk_ntile, $ntile;
+
+            # Assign tiles in the current chunk to their index within the
+            # full set of tiles, as if processing all the time series
+            # simultaneously.
+
+            # The tiles are always numbered from 1 at the lower left to ntile
+            # at the upper right.  Thus the lower bound of the first tile will
+            # be most negative and the upper bound of the last tile will be
+            # the most positive.
+            my $lb_file= ( $ntile > 1 ) ? $out . "_1" : $out;
+            _GET_DIMENSIONS_ FILE=$lb_file
+            my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+            $full_lb[0] = min( $lbnd[0], $full_lb[0] );
+            $full_lb[1] = min( $lbnd[1], $full_lb[1] );
+
+            my $ub_file= ( $ntile > 1 ) ? $out . "_" . $ntile : $out;
+            _GET_DIMENSIONS_ FILE=$ub_file
+            my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+            $full_ub[0] = max( $ubnd[0], $full_ub[0] );
+            $full_ub[1] = max( $ubnd[1], $full_ub[1] );
+
+            # Start a new list of files for the new chunk.
+            if ( $i < $Frm->nfiles ) {
+              @chfiles = ( $infiles[ $fi ] );
+              $sumsize = $filesize;
+            }
           }
-          $chlist->handle->close;
-
-          # Form tiles for current chunk.
-          my ( $in, $out ) = $Grp->inout( "_cube" );
-          my $ci = $j + $chunk_offset;
-          $out .= "_ch" . "$ci";
-
-          orac_print "Creating cube $out from " . join( ", ", @chfiles ) . "...\n";
-
-          $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $chlist->file . "' out=$out" );
-          orac_say "done.";
-          undef $chlist;
-
-          # Find and record the number of tiles in the current chunk.
-          ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
-          push @chunk_ntile, $ntile;
-
-          # Assign tiles in the current chunk to their index within the
-          # full set of tiles, as if processing all the time series
-          # simultaneously.
-
-          # The tiles are always numbered from 1 at the lower left to ntile
-          # at the upper right.  Thus the lower bound of the first tile will
-          # be most negative and the upper bound of the last tile will be
-          # the most positive.
-          my $lb_file= ( $ntile > 1 ) ? $out . "_1" : $out;
-          _GET_DIMENSIONS_ FILE=$lb_file
-          my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
-          $full_lb[0] = min( $lbnd[0], $full_lb[0] );
-          $full_lb[1] = min( $lbnd[1], $full_lb[1] );
-
-          my $ub_file= ( $ntile > 1 ) ? $out . "_" . $ntile : $out;
-          _GET_DIMENSIONS_ FILE=$ub_file
-          my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
-          $full_ub[0] = max( $ubnd[0], $full_ub[0] );
-          $full_ub[1] = max( $ubnd[1], $full_ub[1] );
         }
-        $chunk_offset += $num_chunk;
       }
+      my $total_chunk = $chunk_index;
       orac_print "Spatial extent of tiles is (" . $full_lb[0] . "," .
                  $full_lb[1] . ") to (" . $full_ub[0] . "," . $full_ub[1] .")\n";
 
