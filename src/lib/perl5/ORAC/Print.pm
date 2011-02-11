@@ -705,14 +705,13 @@ sub msglog {
   my $self = shift;
   my $refepoch = shift;
   if (defined $refepoch) {
-    my $ref = shift;
     my $LOG = $self->{Log};
     # we could use a clever bisection algorithm since we know
     # they are in order but until the profiler tells me there
     # is a problem we will do it the easy way
     my $refindex;
     for my $i (0..$#$LOG) {
-      if ($LOG->[$i]->[1] >= $ref) {
+      if ($LOG->[$i]->[1] >= $refepoch) {
         $refindex = $i;
       }
     }
