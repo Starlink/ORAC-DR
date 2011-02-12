@@ -1,0 +1,221 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_DISPLAY_FASTFLAT_ - Display the current and previous bolometer responsivity maps
+
+=head1 SYNOPSIS
+
+_DISPLAY_FASTFLAT_
+
+=head1 DESCRIPTION
+
+This primitive displays the current and previous bolometer
+responsivity data in a single Kapview window. Images of the bolometer
+responsivities are displayed on the same scale, along with histograms
+of values (also on the same scale). The percentage change in
+responsivity between the current and previous solutions is also
+displayed as a 2-D image.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 4
+
+=item B<CLIP>
+
+Number of standard deviations at which to clip the data before
+displaying the data on a histogram. The default (undef) is no
+clipping.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used by this primitive:
+
+=over 4
+
+=item KAPPA:
+
+NDFCOPY, SETTITLE, WCSFRAME
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+The B<CLIP> parameter applies to the data in the current solution. The
+corresponding absolute value is used to define the range of values to
+be displayed from the previous solution.
+
+This primitive relies on the current and previous responsivity files
+corresponding to file numbers 2 and 3 in the given Frame object.
+
+=head1 OUTPUT DATA
+
+On exit the given Frame object will contain the name of the percentage
+change image. However, note that this file will be deleted at the end
+of processing by the REDUCE_FLATFIELD recipe.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+
+#
+my @files = map { $_->files } $Grp->members;
+
+my @curfiles = map { $_ .".more.smurf.resp_new" } @files;
+my @prefiles = map { $_ .".more.smurf.resp_old" } @files;
+
+foreach my $file (@curfiles, @prefiles) {
+  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$file frame=fplane");
+}
+
+my $filter = $Frm->uhdr("ORAC_FILTER");
+
+my $refsub;
+if ($filter =~ /450/) {
+  $refsub = "s4d";
+} else {
+  $refsub = "s8b";
+}
+
+my %ref;
+foreach my $file (@files) {
+  # Never trust the filenames...
+  my $fitshdr = new Astro::FITS::Header::NDF( File => $file );
+  $ref{lc($fitshdr->value("SUBARRAY"))} = $file;
+}
+my $ref = $ref{$refsub};
+unless ($ref) {
+  # Pick first one...
+  my @subs = sort keys %ref;
+  $refsub = $subs[0];
+  $ref = $ref{$refsub};
+}
+
+# Now use knowledge of the orientation of the arrays to get the X
+# and Y axes pointing the right way
+my ($flip, $rotate, $axis, $angle) = (0, 0, 0, 0);
+if ($refsub eq "s4d" || $refsub eq "s8b" ) {
+  # Flip about Y-axis (flip axis 1)
+  $flip = 1;
+  $axis = 1;
+} elsif ( $refsub eq "s4a" || $refsub eq "s8c" ) {
+  # Rotate 90 CW
+  $rotate = 1;
+  $angle = 90;
+} elsif ( $refsub eq "s4b" ) {
+  # Rotate 180
+  $rotate = 1;
+  $angle = 180;
+} elsif ( $refsub eq "s8d" ) {
+  # Flip about X-axis (flip axis 2)
+  $flip = 1;
+  $axis = 2;
+} elsif ( $refsub eq "s4c" ) {
+  # Rotate 90 CCW, flip about X (axis 2)
+  $rotate = 1;
+  $angle = -90;
+  $flip = 1;
+  $axis = 1;
+} elsif ( $refsub eq "s8a" ) {
+  # Rotate 90 CW, flip about X (axis 2)
+  $rotate = 1;
+  $angle = 90;
+  $flip = 1;
+  $axis = 1;
+}
+
+my @out;
+
+foreach my $soln ("PROPOSED", "CURRENT") {
+  my (@infiles, $ext);
+  if ($soln eq "PROPOSED") {
+    @infiles = @curfiles;
+    $ext = "resp_new";
+  } else {
+    @infiles = @prefiles;
+    $ext = "resp_old";
+  }
+
+  my $inlist = write_file_list( @infiles );
+  my $mos = ORAC::TempFile->new();
+
+  my $mosref = $ref.".more.smurf.$ext";
+  my $args = "in=^$inlist out=$mos ref=$mosref lbnd=! ubnd=! method=nearest";
+  $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+
+  # Perform the required flip and/or rotation
+  my $processed;
+  my $rot = ORAC::TempFile->new();
+  my $flipped = ORAC::TempFile->new();
+  if ($rotate) {
+    $Mon{kappa_mon}->obeyw("rotate","in=$mos out=$rot angle=$angle");
+    $processed = $rot;
+  }
+  if ($flip) {
+    $mos = $rot if ($rotate);
+    $Mon{kappa_mon}->obeyw("flip","in=$mos out=$flipped dim=$axis");
+    $processed = $flipped;
+  }
+
+  # Save result to a file
+  my $out = $Frm->inout("_flatmos");
+  $out = $Frm->rewrite_outfile_subarray($out);
+  $out .= ".more.smurf.$ext";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$out");
+
+  my $title = "$soln solution";
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title='$title'");
+
+  push (@out, $out);
+}
+
+
+# Find min/max of current responsivity image so previous image can
+# be displayed on same scale
+my $current = $out[0];
+_FIND_IMAGE_STATISTICS_ IMAGE=$current HISTAT=0 VERBOSE=0
+my $zmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
+my $zmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+my $clip = max(abs($zmin), abs($zmax)) / $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+
+my %options = ( SIGMA => $clip/2.0, ZMIN => $zmin, ZMAX => $zmax );
+
+# Display the results
+my $tmpFrm = $Frm->new();
+$tmpFrm->files(@out);
+$Display->display_data( $tmpFrm, \%options, -1 );
