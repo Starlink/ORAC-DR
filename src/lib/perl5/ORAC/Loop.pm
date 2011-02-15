@@ -674,16 +674,21 @@ sub orac_loop_file {
 
 =item B<orac_loop_task>
 
-In this scheme, ORAC-DR obtains data triggers from a running task
-that is updating its parameters each time new data are available.
+In this scheme ORAC-DR looks for a flag file of a standard name created
+by a task that is monitoring remote QL parameters and writing the
+data locally. The flag file is always the same name and contains the
+files that should be processed by the pipeline immediately.
 
-  $Frm = orac_loop_task( $class, \@array, $skip );
+When the pipeline finds a flag file the file is immediately renamed
+and the listed files are then "owned" by the pipeline. The QL
+task monitor will continue to write a new flag file when data arrives
+and delete the old flag file if the pipeline has not taken ownership.
+The QL task monitor deletes files that were never harvested. The
+pipeline should tidy up for itself if it finds the flag file.
 
-The array supplied to this routine is used to store the next frame
-number of interest (to prevent returning the same data file more than once).
+  $Frm = orac_loop_task( $class, $ut, \@array, $skip );
 
-In this looping scheme the UT date and skip flags are ignored since we
-only know about the data most recently written.
+In this looping scheme all except the first argument are ignored.
 
 =cut
 
@@ -692,24 +697,15 @@ sub orac_loop_task {
     unless scalar(@_) == 4;
   my ($class, $ut, $arr, $skip ) = @_;
 
-  # get the launch object or define it
-  $ENGINE_LAUNCH = new ORAC::Msg::EngineLaunch()
-    unless defined $ENGINE_LAUNCH;
+  orac_print("Checking for data from QL monitor task\n");
 
-  # and which task(s) should be accessed for it's information.
-  my @tasks = $class->data_detection_tasks();
-  if (!@tasks) {
-    orac_err("Frame class ($class) does not support the -loop task option\n");
-    return;
-  }
+  # Flag file is fixed name
+  my $flagfile = task_flag_file();
+  my $tmpflag  = $flagfile . "_in_use";
 
-  # get the reference value
-  my $refframe = shift(@$arr) || 1;
-
-  orac_print("Checking for data set equal to or newer than frame $refframe\n");
-
-  # rejig to say that we are looking for frames newer than this value
-  $refframe--;
+  # Clean up any files associated with the old flag file
+  # that are in the current directory.
+  clean_flag_file_and_entries( $tmpflag );
 
   # Use dots and timeouts as for the other systems
   my $timeout = 43200;          # 12 hours timeout
@@ -718,146 +714,13 @@ sub orac_loop_task {
   my $dot     = 4;   # Number of pauses for each dot printed
   my $npauses = 0; # number of pauses so far (reset each time dot printed)
 
-  # This is the data we have retrieved so far whilst waiting
-  # for this frame number. Indexed by frame number and then task
-  # name.
-  my %received;
+  # Now look for a flag file. Very simple flag file implementation
+  while (1) {
 
-  # This is the frame number we completed
-  my $wantframe;
-
-  # timestamp of most recent accepted frame
-  my $reftime = 0;
-
-  # This hash keeps track of how many times we look for a task
-  # so that we can control message printing
-  my %looked;
-
-  # We will poll inside this loop until we get all 4 monitors
-  # with newer data than the reference. This is the outer loop that allows
-  # us to pause before trying again (used if none of the data we got were
-  # new)
- OUTER: while ( 1 ) {
-
-    # Since we know that we would like all the received parameters
-    # to have the same FRAMENUM number and since we also can cache
-    # the value to prevent asking the same task for the same frame
-    # number. We can try the tasks again if we get differing answers
-    # (this will take much less than a second so should cover the case
-    # where we get half the data from one frame and half from the next)
-    # This inner while loop only triggers if we have partial data that is
-    # newer since we then assume that the data will be turning up at the other
-    # tasks very shortly because they are synchronized.
-    while (1) {
-
-      # by convention we are looking for a "QL" parameter in that task
-      # Ask each task for data
-      for my $t (@tasks) {
-        # if we already have the requested frame from this task
-        # skip. This is a bit problematic if the frame number
-        # increments in the middle of this task loop
-        next if (defined $wantframe && exists $received{$wantframe}{$t});
-        if (defined $wantframe) {
-          orac_print "Looking at task $t for frame $wantframe\n";
-        } else {
-          # we want to prefill with 0 rather than ++ starting us at 1
-          if (exists $looked{$t}) {
-            $looked{$t}++;
-          } else {
-            $looked{$t} = 0;
-          }
-          # and only print a message every so often (in seconds)
-          orac_print "Looking for a frame from task $t\n"
-            if ($looked{$t} % (30.0/$pause) == 0);
-        }
-        # get the task object
-        my $tobj = $ENGINE_LAUNCH->engine( $t );
-
-        my $sleep = 5;
-        if (!defined $tobj) {
-          orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Will retry in $sleep seconds.\n");
-          orac_sleep($sleep);
-          next OUTER;
-        } elsif (!$tobj->contact) {
-          orac_err("Lost connection to remote task $t. Has the data acquisition system died? Will retry in $sleep seconds.\n");
-          orac_sleep($sleep);
-          next OUTER;
-        }
-
-        # get the parameter
-        my $current = $tobj->get( "QL" );
-
-        # Check data valid
-        my $isvalid = "NO";
-        $isvalid = $current->{DATAVALID} if exists $current->{DATAVALID};
-        if ($isvalid eq 'NO') {
-          # no point going further so we sleep again for a little bit and
-          # then retry this task
-          $timer += orac_sleep($pause);
-          $npauses++;
-          redo;
-        }
-
-        my $thisframe;
-        $thisframe = $current->{FRAMENUM} if exists $current->{FRAMENUM};
-
-        # Get the timestamp
-        my $timestamp;
-        $timestamp = $current->{TIMESTAMP} if exists $current->{TIMESTAMP};
-
-        # Is this frame number relevant?
-        # No need to warn if we haven't picked anything up before.
-        if (defined $thisframe && $thisframe > $refframe) {
-          if ($refframe > 1 && $thisframe - $refframe > 1) {
-            orac_err "Got frame $thisframe when expecting ".($refframe+1).
-              " from task $t\n";
-          }
-
-          # see whether we skipped one again
-          if (defined $wantframe && $thisframe > $wantframe) {
-            orac_err "Frame mismatch ($thisframe != $wantframe) so trying again\n";
-
-            # delete the earlier frame
-            delete $received{$wantframe};
-          }
-
-          # this is now the one we need
-          $wantframe = $thisframe;
-          $reftime = $timestamp;
-
-          # Store the information
-          $received{$wantframe}{$t} = $current;
-
-        } elsif (defined $thisframe && $thisframe < $refframe &&
-                 $timestamp > $reftime ) {
-          # Looks like we have reset our observation
-          orac_print "Detected observation reset. Looks like a new observation is beginning.\n";
-
-          # Code duplication.
-          delete $received{$wantframe} if defined $wantframe;
-          $reftime = $timestamp;
-          $wantframe = $thisframe;
-          $received{$wantframe}{$t} = $current;
-        }
-
-      }
-
-      # if we got no new data also skip to the outer loop because we need to pause
-      last unless defined $wantframe;
-
-
-      # if we have everything we need skip the while loop
-      last if keys %{$received{$wantframe}} == @tasks;
-
-      my $got = scalar( keys %{$received{$wantframe}} );
-      orac_err "Going round the task detection loop again (got $got from frame $wantframe)\n";
-    }
-
-    # all timestamps are newer, so abort from the loop
-    # Also make sure we update reftime
-    # Have a full set of data
-    if ($wantframe && keys %{$received{$wantframe}} == @tasks) {
-      $refframe = $wantframe;
+    # To avoid a race condition with the monitor task we simply attempt
+    # to rename the flag file to somewhere safe that we can open at our
+    # leisure without risk that it will be renamed from under us
+    if ( rename $flagfile, $tmpflag ) {
       last;
     }
 
@@ -868,7 +731,7 @@ sub orac_loop_task {
     # Return bad status if timer hits timeout
     if ($timer > $timeout) {
       orac_print "\n";
-      orac_err("Timeout whilst waiting for next monitored data set\n");
+      orac_err("Timeout whilst waiting for next data file from the QL\n");
       return;
     }
 
@@ -883,115 +746,27 @@ sub orac_loop_task {
 
   }
 
-  # create a frame object
-  my $Frm = $class->new();
+  orac_print "\nFound data from remote task\n";
 
-  # Get the input and output formats for the class
-  my $infmt = $Frm->rawformat();
-  my $outfmt = $Frm->format();
+  # Read the files from the file
+  my @files = _read_flagfiles( $tmpflag );
 
-  # Local copy of relevant data to simplify source
-  my %current = %{$received{$wantframe}};
-
-  # we have new data detected for all tasks
-  # now generate filesnames for each
-  my @files;
-  my @istemp;
-  for my $t (keys %current) {
-
-    # Filename is blanked for DREAM/STARE but not deleted
-    if (exists $current{$t}->{FILENAME}
-        && $current{$t}->{FILENAME} =~ /\w/ ) {
-      # simple filename relative to ORAC_DATA_IN
-      my $fname =  _to_abs_path( $current{$t}->{FILENAME} );
-
-      # and convert to ORAC_DATA_OUT
-      my ($cname) = _convert_and_link_nofrm( $infmt, $outfmt, $fname );
-      return if !defined $cname;
-
-      push(@files, $cname );
-      push(@istemp, 0 );        # This is a real file
-
-    } elsif (exists $current{$t}->{IMAGE}) {
-
-      # need to choose a filename. Make one up for the moment
-      # it needs to be unique per task so use the task name and
-      # the timestamp. We may benefit from a simple counter
-      # in the remote parameter. People also like to have the
-      # observation number in the header so we need some translation
-      require Astro::FITS::Header;
-      my $hdr = Astro::FITS::Header->new( Cards => $current{$t}->{IMAGE}->{FITS});
-      my %header;
-      tie %header, "Astro::FITS::Header", $hdr;
-      my $class = Astro::FITS::HdrTrans::determine_class( \%header );
-      my $obsnum = $class->to_OBSERVATION_NUMBER( \%header );
-
-      # Also include the FRAMENUM like a Subscan number. Makes it easier to parse out the
-      # observation number
-
-      my $tstr = sprintf("%.2f",$current{$t}->{TIMESTAMP});
-      $tstr =~ s/\./_/;
-      my $root = $t;
-      $root =~ s/\@.*//; # @a.b.c in DRAMA task will cause HDS and ADAM problems
-      my $fname = lc($root) . '_' . $tstr . '_' . sprintf("%05d",$obsnum). '_'.
-        sprintf("%04d", $current{$t}->{FRAMENUM});
-
-      if ($infmt eq 'NDF') {
-        # write the DATA_ARRAY out as a piddle
-        # defer depending on PDL::IO::NDF
-        require PDL::IO::NDF;
-        my $data = $current{$t}->{IMAGE}->{DATA_ARRAY};
-        if (!defined $data) {
-          orac_err("Received IMAGE parameter did not include a DATA_ARRAY component\n");
-          return;
-        }
-        $data->wndf( $fname );
-
-        # and write the FITS header
-        require Astro::FITS::Header::NDF;
-        bless $hdr, "Astro::FITS::Header::NDF";
-        $hdr->writehdr( File => $fname );
-
-        $fname .= ".sdf";
-        push(@files, $fname);
-        push(@istemp, 1);       # this is a temporary file
-
-      } else {
-        # wibble
-        orac_err("Task monitoring loop does not (yet) know how to generate raw data in format $infmt...\n");
-        return;
-      }
-
-    } else {
-      orac_err("The monitored parameter does not seem to match the specification. It has neither FILENAME nor IMAGE component\n");
-      return;
-
-    }
-
-  }
-
-  if (!@files) {
-    orac_err("Fatal error in orac_loop_task. Got to end without any files listed\n");
+  if (!@files || !defined $files[0] ) {
+    orac_err( "Could not find files in the monitored flag file.\n" );
     return;
   }
-  orac_print "\nFound\n";
 
-  # Now configure the frame object
-  $Frm->configure( @files == 1 ? $files[0] : \@files );
+  my @frames = _convert_and_link( $class->new(), @files );
 
-  # and indicate tempness
-  $Frm->tempraw( @istemp );
-
-  # Override the GROUP membership. This frame is generated from a remote task
-  # and so should only be coadded with frames from this observation.
-  # [KLUGE - header translation not enabled for SCUBA-2 yet]
-  $Frm->group( $Frm->hdr("OBSNUM") );
-
-  # Store the next reference frame number
-  $arr->[0] = $refframe + 1;
+  # Override group membership decisions since we only
+  # want to combine this data with data from the same
+  # observation when in QL/Task mode
+  for (@frames) {
+    $_->group( $_->hdr("OBSNUM") );
+  }
 
   # return the frame object
-  return $Frm;
+  return @frames;
 }
 
 =back
@@ -1663,9 +1438,90 @@ sub _read_flagfiles {
 
 =back
 
-=head1 REVISION
+=head2 QL Monitor Support
 
-$Id$
+Routines to support "task" mode and the "qlgather" task
+monitor.
+
+=over 4
+
+=item B<_task_flag_file>
+
+Name of flag file to monitor in task mode. Includes
+full path.
+
+  $flag = task_flag_file();
+
+=cut
+
+sub task_flag_file {
+  return File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "oracdr_qlfiles.ok");
+}
+
+=item B<_is_in_data_out>
+
+Returns true if the file given is in ORAC_DATA_OUT
+
+  isin = _is_in_data_out( $file );
+
+Can include a full path. ORAC_DATA_OUT will be prepended
+if the file name is not absolute.
+
+=cut
+
+sub _is_in_data_out {
+  my $testfile = shift;
+  return unless defined $testfile;
+
+  $testfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $testfile )
+    unless File::Spec->file_name_is_absolute( $testfile );
+
+  # no use trying if the file is not there
+  return unless -e $testfile;
+
+  # work out the file name
+  my ($vol, $dir, $filename) = File::Spec->splitpath( $testfile );
+
+  # then place it in ORAC_DATA_OUT
+  my $cmpfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $filename );
+  return unless -e $cmpfile; # is not in ORAC_DATA_OUT
+
+  # and compare the two using stat
+  my @oristat = stat($testfile);
+  my @cmpstat = stat($cmpfile);
+
+  for my $field ( qw/ 0 1 2 3 4 5 6 7 9 10 11 12 / ) {
+    if ( $oristat[$field] != $cmpstat[$field]) {
+      return 0;
+    }
+  }
+  return 1; # are the same
+}
+
+=item B<clean_flag_file_and_entries>
+
+Read the supplied flag file and remove any files that
+are listed and in $ORAC_DATA_OUT. Then remove the flag
+file itself.
+
+  clean_flag_file_and_entries( $file );
+
+=cut
+
+sub clean_flag_file_and_entries {
+  my $file = shift;
+  return unless -e $file;
+
+  my @contents = _read_flagfiles( $file );
+
+  for my $f (@contents) {
+    next unless _is_in_data_out( $f );
+    unlink $f;
+  }
+  unlink $file;
+}
+
+=back
 
 =head1 AUTHORS
 

@@ -1,0 +1,609 @@
+#!/usr/bin/env starperl
+# -*-cperl-*-
+
+=head1 NAME
+
+qlgather - Monitor QL DRAMA tasks and collate QL data
+
+=head1 SYNOPSIS
+
+  qlgather &
+
+=head1 DESCRIPTION
+
+This DRAMA task acts as an intermediary between the data acquisition tasks
+and the QL data reduction pipeline. Multiple parameters are monitored
+by this task and a single parameter is published to the QL when all data
+have been received for a particular frame number.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<-help>
+
+Provide simple help information.
+
+=item B<-man>
+
+Provides the manual page.
+
+=back
+
+=head1 DESIGN
+
+This task assumes a SCUBA-2 centric view of the world and is not
+written in a generic manner. It is a DRAMA task. It uses DRAMA
+monitors. It will by default try to talk to the remote SCUBA-2 data
+acquisition computers.
+
+Monitors are set up on each DA computer with the list determined from
+the wavelength part of the ORAC_INSTRUMENT environment variable. The
+ORAC_REMOTE_TASK variable can override these settings.
+
+When monitors have been received from all DA tasks with matching frame
+numbers the data are written to disk (either as soft links to real files
+or as actual images) and a flag file written. When the next set of monitors
+arrive the old flag file is moved out the way, the new flag file is written
+and the data referenced in the old flag file is deleted.
+
+To prevent races where this task removes data files that are just being
+picked up by the pipeline, the pipeline itself will move the flag file
+out the way when it needs data and will be responsible itself for deleting
+the files.
+
+=cut
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Pod::Usage;
+use File::Spec;
+use File::Temp;
+
+use Tk;
+use Tk::TextANSIColor;
+
+use lib $ENV{ORAC_PERL5LIB};
+use JAC::Setup qw/ its drama /;
+
+use Jit;
+use DRAMA;
+
+# We know that we are writing NDF files for SCUBA-2
+use PDL::IO::NDF;
+use Astro::FITS::Header;
+use Astro::FITS::Header::NDF;
+
+# We need the ORAC-DR classes to synchronize the flag file I/O
+use ORAC::Loop ();
+
+# Options
+my ($help, $man);
+my $opt_status = GetOptions("help" => \$help,
+                            "man" => \$man,
+                           );
+
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+# Sanity check
+if (!exists $ENV{ORAC_INSTRUMENT} || !defined $ENV{ORAC_INSTRUMENT}) {
+  die "ORAC_INSTRUMENT environment variable must be set";
+}
+if ($ENV{ORAC_INSTRUMENT} !~ /^SCUBA2/) {
+  die "This application can only be used for SCUBA-2 data monitoring";
+}
+
+# Supposedly the FILENAME parameter does not include a full path but
+# need to check this
+die "Must set ORAC_DATA_IN environment variable"
+  unless exists $ENV{ORAC_DATA_IN};
+
+die "Must set ORAC_DATA_OUT environment variable"
+  unless exists $ENV{ORAC_DATA_OUT} && -d $ENV{ORAC_DATA_OUT};
+
+# Start DRAMA and we will use the Tk event loop
+my $TASKROOT = "QLGATHER";
+my $TASKNAME = $TASKROOT . "_$$";
+
+# Buffer sizes
+$DRAMA::BUFSIZE = 4_000_000;
+
+# Override the space for receiving parameters
+# This limits replies to 80kB
+$DRAMA::REPLYBYTES   = 150000;
+$DRAMA::MAXREPLIES   = 4;
+
+Jit::TkInit( $TASKNAME );
+
+# Get the name of the remote tasks.
+my @remotes;
+if (exists $ENV{ORAC_REMOTE_TASK} && defined $ENV{ORAC_REMOTE_TASK}
+    && $ENV{ORAC_REMOTE_TASK} =~ /\w/) {
+  @remotes = split(/,/, $ENV{ORAC_REMOTE_TASK});
+} else {
+  if ($ENV{ORAC_INSTRUMENT} =~ /_450/) {
+    @remotes = (qw/
+                    SC2DA4A@sc2da4a
+                    SC2DA4B@sc2da4b
+                    SC2DA4C@sc2da4c
+                    SC2DA4D@sc2da4d
+                  /);
+  } else {
+    @remotes = (qw/
+                    SC2DA4A@sc2da4a
+                    SC2DA4B@sc2da4b
+                    SC2DA4C@sc2da4c
+                    SC2DA4D@sc2da4d
+                  /);
+  }
+}
+
+# Start up Tk early and put up a status bar
+my $MW = MainWindow->new;
+$MW->title("SCUBA-2 QL Data Gatherer ($TASKNAME)");
+$MW->iconname($TASKROOT);
+
+# Some setup parameters
+my $MSGWIDTH = 80;
+
+# Hash for all data - initialise the hashes based
+# on task names
+my %PRIV = (
+            MONITORS => {},
+           );
+for my $r (@remotes) {
+  $PRIV{MONITORS}->{$r} = { RESULTS => {}, RESULTS_SDS => {},
+                            CANCELLED => 1,
+                            DATAVALID => 0, FRAMENUM => 0,
+                            TIMESTAMP => 0, };
+}
+
+# Create simple GUI
+$MW->Button( -text => 'EXIT', -command => [\&_shutdown, $MW],
+           )->pack(-side => 'top',-anchor=>'n');
+
+my $ResultsFrame = $MW->Frame->pack(-side => 'top', -anchor => 'n' );
+my $InfoFrame    = $MW->Frame->pack(-side => 'top', -anchor => 'n' );
+
+# Somewhere for the DRAMA messages to go
+$PRIV{MsgText} = $InfoFrame->Scrolled('TextANSIColor',-scrollbars=>'w',
+                                      -height=>4,
+                                      -width=> $MSGWIDTH,
+                                      -background => 'black',
+                                      -foreground => 'white',
+                                     )->pack(-side => 'top' );
+
+# Binding
+BindMouseWheel($PRIV{MsgText});
+
+# Create a information widget for each task
+my $colnum = 0;
+for my $r (@remotes) {
+  my $frame = $ResultsFrame->Frame->grid( -row => 0, -column => $colnum, -sticky => 'w');
+  $PRIV{MONITORS}{$r}{TASKLABEL} = $frame->Label( -text => "$r: ",
+                                                  -background => "red",
+                                                )->pack( -side => 'left' );
+  $frame->Label( -textvariable => \$PRIV{MONITORS}{$r}{FRAMENUM},
+               )->pack( -side => 'left' );
+  $colnum++;
+}
+
+
+# DRAMA messages
+my $status = DRAMA::Status->new();
+Dits::UfacePutMsgOut( sub {
+                        write_text_messages( $PRIV{MsgText}, 0, @_ );
+                      },
+                      $status);
+
+# Also want this to appear in the log file so just print it
+Dits::UfacePutErsOut( sub {
+                        my $flag = shift;
+                        # make sure that we prepend with # marks in the DRAMA style
+                        my $done_first;
+                        my @hashed = map {
+                          my $hash = " ";
+                          if (!$done_first) {
+                            $hash = "#";
+                            $done_first = 1;
+                          }
+                          "#". $hash . $_;
+                        } @_;
+                        write_text_messages( $PRIV{MsgText}, 1, @hashed );
+                      },
+                      $status);
+
+# Start the monitor checking on a 30 second repeat
+check_ql_monitors($MW,30);
+
+
+MainLoop;
+
+exit;
+
+# Support functions
+
+# MONITORS
+# $PRIV{MONITORS} is a hash indexed by remote task name
+# $PRIV{MONITORS}->{TASKNAME} contains
+#   CANCELLED = boolean, true if monitor has been cancelled
+#   RESULTS   = monitored parameter hash (ref passed to monitor command)
+
+# Setup monitors
+# arguments are tasks to init. If no args all are tested.
+
+sub init_ql_monitors {
+
+  my @remotes;
+  if (@_) {
+    @remotes = @_;
+  } else {
+    @remotes = sort keys %{$PRIV{MONITORS}};
+  }
+
+  for my $remote ( @remotes ) {
+    my $mon = $PRIV{MONITORS}{$remote};
+
+    if ($mon->{CANCELLED}) {
+      $mon->{CANCELLED} = 0;
+      monitor( $remote, "START",
+               "QL",
+               {
+                -monitorvar => $mon->{RESULTS_SDS},
+                -sendcur => 1,
+                -repmonloss => 1,
+                -complete => sub { write_text_messages($PRIV{MsgText},
+                                                       "messages",
+                                                       "Monitor on task $remote complete");
+                                   $mon->{CANCELLED} = 1;
+                                 },
+                -info => sub { write_text_messages( $PRIV{MsgText},
+                                                    "messages",
+                                                    "Response from monitor on task $remote: $_[0]" ); },
+                -cvtsub => sub { handle_monitor($remote, @_); },
+                -error  => sub { handle_monerror($remote, @_); },
+             });
+
+    }
+  }
+}
+
+# Check the state of the monitors
+# The second argument specifies the rescheduling time in seconds.
+# defaulting to 60
+
+sub check_ql_monitors {
+  my $w = shift;
+  my $time = shift;
+
+  # Check each task in turn
+  for my $remote (keys %{$PRIV{MONITORS}}) {
+    my $mon = $PRIV{MONITORS}->{$remote};
+
+    if ($mon->{CANCELLED}) {
+      init_ql_monitors( $remote );
+    }
+
+  }
+
+  # Reschedule
+  $time = 60 unless (defined $time && $time > 0); # seconds
+
+  # convert to milliseconds
+  my $ms =  1000 * $time;
+
+  # Set up the after
+  $w->after( $ms, [\&check_ql_monitors,$w, $time] );
+  return;
+}
+
+
+sub handle_monerror {
+  my $remote = shift;
+  $_[2]->Flush; # flush bad status
+  $PRIV{MONITORS}{$remote}{CANCELLED} = 1; # mark for reattempt
+}
+
+sub handle_monitor {
+  my $thisremote = shift;
+  my ($param, $value) = @_;
+
+  # Should not happen really
+  return $value if not ref $value;
+
+  # Tie to make things easier
+  my %tie;
+  tie %tie, "Sds::Tie", $value;
+
+  # Report the frame number in the GUI
+  $PRIV{MONITORS}{$thisremote}{FRAMENUM} = $tie{FRAMENUM};
+
+  # Translate DATAVALID to a boolean
+  $PRIV{MONITORS}{$thisremote}{DATAVALID} = ($tie{DATAVALID} eq 'YES' ? 1 : 0 );
+
+  # Set the relevant color
+  # RED: invalid data
+  # AMBER: got data. waiting for all tasks
+  # GREEN: Got data from all tasks
+  my $labwidget = $PRIV{MONITORS}{$thisremote}{TASKLABEL};
+  if ($PRIV{MONITORS}{$thisremote}{DATAVALID}) {
+    $labwidget->configure( -background => "yellow" );
+  } else {
+    $labwidget->configure( -background => "red" );
+
+    # force frame to 0 and return
+    $PRIV{MONITORS}{$thisremote}{FRAMENUM} = 0;
+    return $value;
+  }
+
+  # Store the tied hash
+  $PRIV{MONITORS}{$thisremote}{RESULTS} = \%tie;
+
+  # We do not really care much about the result ending
+  # up in the RESULTS_SDS slot so we do all the checking here
+  # and even the writing out to disk if needed
+
+  # Check each active monitor
+  my $refframe = $PRIV{MONITORS}{$thisremote}{FRAMENUM};
+  my $gotall = 1;
+  for my $r (keys %{$PRIV{MONITORS}}) {
+    my $mon = $PRIV{MONITORS}{$r};
+    next if $mon->{CANCELLED};
+    if ( $refframe != $mon->{FRAMENUM} ) {
+      $gotall = 0;
+      last;
+    }
+  }
+
+  # we have all the data so package it for the pipeline
+  if ($gotall) {
+
+    for my $r (keys %{$PRIV{MONITORS}}) {
+      my $mon = $PRIV{MONITORS}{$r};
+      next if $mon->{CANCELLED};
+      my $labwidget = $mon->{TASKLABEL};
+      $labwidget->configure( -background => "green" );
+    }
+
+    # Report that we have all the data
+    write_text_messages( $PRIV{MsgText}, 0, "Received all data from frame $refframe" );
+
+    package_data();
+
+  }
+
+  return $value;
+}
+
+# Call at shutdown
+
+sub _shutdown {
+  my $w = shift;
+
+  # Detach all monitors
+  for my $remote (keys %{$PRIV{MONITORS}}) {
+    my $thismon = $PRIV{MONITORS}->{$remote};
+    if (exists $thismon->{RESULTS_SDS}->{MONITOR_ID} && ! $thismon->{CANCELLED}) {
+      monitor($remote, "CANCEL", $thismon->{RESULTS_SDS}->{MONITOR_ID});
+    }
+    select undef, undef, undef, 0.1; # Wait for messages
+    DoDramaEvents;
+  }
+
+  # Clear and MsgOut ties
+  Dits::UfacePutMsgOut( undef, DRAMA::Status->new);
+  Dits::UfacePutErsOut( undef, DRAMA::Status->new);
+
+  # Clean up last flag file
+  remove_previous();
+
+  print "Closdeown QL gathering\n";
+  $w->destroy;
+}
+
+# Package the data in a form the pipeline requires
+# If we have soft links then things are easy
+# Else we write out the PDL
+# Only include items that have DATAVALID true
+
+sub package_data {
+
+  # List of files we have written
+  my @outfiles;
+
+  # Assume we have everything
+  for my $r (keys %{$PRIV{MONITORS}}) {
+    my $this = $PRIV{MONITORS}{$r};
+    next unless $this->{DATAVALID};
+
+    # Get the results
+    my $results = $this->{RESULTS};
+
+    # FILENAME is blanked for DREAM/STARE but not deleted
+    if (exists $results->{FILENAME} &&
+        $results->{FILENAME} =~ /\w/) {
+
+      # This is a file in $ORAC_DATA_IN
+      my $f = $results->{FILENAME};
+      push(@outfiles, ORAC::Loop::_to_abs_path( $f ) );
+
+    } else {
+
+      # need to choose a filename. Make one up for the moment
+      # it needs to be unique per task so use the task name and
+      # the timestamp. We may benefit from a simple counter
+      # in the remote parameter. People also like to have the
+      # observation number in the header so we need some translation
+      my $hdr = Astro::FITS::Header->new( Cards => $results->{IMAGE}->{FITS});
+      my $obsnum = $hdr->value("OBSNUM");
+
+      # Also include the FRAMENUM like a Subscan number. Makes it easier to parse out the
+      # observation number
+
+      my $tstr = sprintf("%.2f",$results->{TIMESTAMP});
+      $tstr =~ s/\./_/;
+      my $root = $r;
+      $root =~ s/\@.*//; # @a.b.c in DRAMA task will cause HDS and ADAM problems
+      my $fname = lc($root) . '_' . $tstr . '_' . sprintf("%05d",$obsnum). '_'.
+        sprintf("%04d", $results->{FRAMENUM});
+
+      # But write into ORAC_DATA_OUT
+      $fname = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $fname );
+
+      # We must write NDF for SCUBA-2
+      # write the DATA_ARRAY out as a piddle
+      # defer depending on PDL::IO::NDF
+      require PDL::IO::NDF;
+      my $data = $results->{IMAGE}->{DATA_ARRAY};
+      if (!defined $data) {
+        write_text_messages( $PRIV{MsgText}, 1,
+                             "IMAGE parameter received from task $r for frame ".
+                             $results->{FRAMENUM}. " did not include a DATA_ARRAY component");
+        next;
+      }
+      # Write out the PDL but we take a copy because the SDS PDL is readonly
+      # and you can not run get_dataref on a readonly PDL.
+      $data = $data->copy;
+      $data->wndf( $fname );
+
+      # and write the FITS header
+      require Astro::FITS::Header::NDF;
+      bless $hdr, "Astro::FITS::Header::NDF";
+      $hdr->writehdr( File => $fname );
+
+      $fname .= ".sdf";
+      push(@outfiles, $fname);
+
+    }
+
+  }
+
+  # Now we have a list of files we write them to a temp flag file
+  my $tmpflag = File::Temp->new( DIR => $ENV{ORAC_DATA_OUT},
+                                 CLEANUP => 0 );
+  print $tmpflag "$_\n" for @outfiles;
+  close($tmpflag);
+
+  # and remove any previous flag file
+  my $flagfile = remove_previous();
+
+  # move the new flag file in
+  rename( "$tmpflag", $flagfile ) or die "Could not rename temporary flag file: $!\n";
+
+}
+
+# Remove previous data files and flagfile.
+# Returns name of flag file to use for new data.
+
+sub remove_previous {
+  my $flagfile = ORAC::Loop::task_flag_file();
+  my $oldflag = $flagfile . "_old_flag";
+  if (rename( $flagfile, $oldflag ) ) {
+    ORAC::Loop::clean_flag_file_and_entries( $oldflag );
+  }
+  return $flagfile;
+}
+
+
+# Cargo cult programming
+
+sub BindMouseWheel {
+  my $w = shift;
+
+  # Mousewheel binding from Mastering Perl/Tk, pp 370-371.
+  if ($^O eq 'MSWin32') {
+    $w->bind('<MouseWheel>' =>
+             [ sub { $_[0]->yview('scroll', -($_[1] / 120) * 3, 'units') },
+               Ev('D') ]
+            );
+  } else {
+    $w->bind('<4>' => sub {
+               $_[0]->yview('scroll', -3, 'units') unless $Tk::strictMotif;
+             });
+    $w->bind('<5>' => sub {
+               $_[0]->yview('scroll', +3, 'units') unless $Tk::strictMotif;
+             });
+  }
+}                               # end BindMouseWh
+
+# some cut and paste from ocsqmon
+
+sub write_text_messages {
+  my $w = shift;
+  my $isErr = shift;
+
+  # Support a reference to an array of lines or a simple list
+  # containing text.
+  my @lines;
+  if (ref($_[0])) {
+    @lines = @{ $_[0] };
+  } else {
+    @lines = @_;
+  }
+
+  # clean up the array
+  _clean_array(\@lines);
+
+  # [CODE taken from the TIEHANDLE for Tk::Text - I wrote
+  # it anyway]
+  # Find out whether 'end' is displayed at the moment
+  # Retrieve the position of the bottom of the window as
+  # a fraction of the entire contents of the Text widget
+  my $yview = ($w->yview)[1];
+
+  # If $yview is 1.0 this means that 'end' is visible in the window
+  # If the window has never been displayed yview will return 0
+  # this means that we need to view the end unless the window
+  # has been displayed
+  my $update = 0;
+  $update = 1 if $yview == 1.0;
+
+  # Insert the text
+  $w->insert('end',join("\n",@lines)."\n");
+
+  # Move to the end
+  # Make sure that we do not move to the end if we can not see the end
+  $w->see('end') if $update;
+
+}
+
+# This method "cleans" an array so that empty lines are removed
+# from the end as well as trailing space. Used to convert SDS arrays
+# to a usable perl array.
+# Takes the array ref and modifies it in place.
+# Does nothing if array reference is not defined
+# Explicit undefs in the array are ignored
+
+sub _clean_array {
+  my $arr = shift;
+  return unless defined $arr;
+  @$arr = grep {defined $_ && /\w/} @$arr;
+  foreach (@$arr) {
+    s/\s+$//;
+  }
+}
+
+=head1 AUTHOR
+
+Tim Jenness, E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+Copyright (C) 2011 Science & Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
