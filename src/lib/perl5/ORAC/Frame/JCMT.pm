@@ -30,6 +30,7 @@ use Carp;
 use base qw/ ORAC::Frame::NDF /;
 
 use JSA::Headers qw/ read_jcmtstate /;
+use ORAC::Print;
 use ORAC::Error qw/ :try /;
 
 $VERSION = '1.01';
@@ -126,22 +127,33 @@ sub jcmtstate {
   my $startref = $self->{JCMTSTATE}->{START} = {};
   my $endref = $self->{JCMTSTATE}->{END} = {};
 
-  # if we have a single file read the start and end
-  # read the start and end into the cache regardless
-  # of what was requested in order to minimize file opening.
-  if ($first eq $last ) {
-    my %values = read_jcmtstate( $first, [qw/ start end /] );
-    for my $key ( keys %values ) {
-      $startref->{$key} = $values{$key}->[0];
-      $endref->{$key} = $values{$key}->[1];
+  # QL data from SCUBA-2 DREAM/STARE will not have JCMTSTATE
+  my $E;
+  try {
+    # if we have a single file read the start and end
+    # read the start and end into the cache regardless
+    # of what was requested in order to minimize file opening.
+    if ($first eq $last ) {
+      my %values = read_jcmtstate( $first, [qw/ start end /] );
+      for my $key ( keys %values ) {
+        $startref->{$key} = $values{$key}->[0];
+        $endref->{$key} = $values{$key}->[1];
+      }
+    } else {
+      my %values = read_jcmtstate( $first, 'start' );
+      %$startref = %values;
+      %values = read_jcmtstate( $last, 'end' );
+      %$endref = %values;
     }
-  } else {
-    my %values = read_jcmtstate( $first, 'start' );
-    %$startref = %values;
-    %values = read_jcmtstate( $last, 'end' );
-    %$endref = %values;
+  } catch JSA::Error with {
+    $E = shift;
+  };
 
+  if (defined $E) {
+    $E->flush if defined $E;
+    orac_warn( "Unable to read JCMTSTATE.$keyword from input file\n" );
   }
+
   return $self->{JCMTSTATE}->{$which}->{$keyword};
 }
 
