@@ -276,43 +276,6 @@ my %MonolithDefns = (
                           CLASS => 'ORAC::Msg::Task::ADAM',
                           PATH => ( defined( $ENV{'HDSTOOLS_DIR'} ) ? "$ENV{HDSTOOLS_DIR}/hdstools_mon" : "" ),
                          },
-	 # SCUBA-2 Acquisition Tasks
-	 QLSIM => { # we never start QLSIM
-		   MESSYS => 'DRAMA',
-		   CLASS => 'ORAC::Msg::Task::DRAMA',
-		  },
-	 SCU2_8A => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-	 SCU2_8B => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-	 SCU2_8C => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-         SCU2_8D => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-	 SCU2_4A => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-	 SCU2_4B => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-	 SCU2_4C => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
-	 SCU2_4D => {
-		     MESSYS => 'DRAMA',
-		     CLASS => 'ORAC::Msg::Task::DRAMA'
-		     },
          # Testing
 	 CSOMON => {
            MESSYS => 'DRAMA',
@@ -1499,23 +1462,6 @@ sub orac_messys_description {
   } else {
     return ();
   }
-}
-
-=item B<orac_remote_task>
-
-Returns the override task names specified by the $ORAC_REMOTE_TASK
-environment variable.
-
-  @tasks = orac_remote_task();
-
-=cut
-
-sub orac_remote_task {
-  if (exists $ENV{ORAC_REMOTE_TASK} && defined $ENV{ORAC_REMOTE_TASK}
-      && $ENV{ORAC_REMOTE_TASK} =~ /\w/) {
-     return split(/,/, $ENV{ORAC_REMOTE_TASK});
-  }
-  return ();
 }
 
 =back

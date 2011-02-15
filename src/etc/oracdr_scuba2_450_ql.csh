@@ -110,3 +110,6 @@ source $ORAC_DIR/etc/oracdr_start.csh
 if ( $?ORAC_DATA_CAL ) then
   alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_ql.ini &"
 endif
+
+echo Running data gatherer
+$ORAC_DIR/bin/qlgather &

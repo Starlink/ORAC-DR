@@ -352,18 +352,6 @@ sub orac_calc_instrument_settings {
 
     my @eng = ($options{eng} ? ("eng") : ());
 
-    my %remote;
-    if (exists $options{mode} && defined $options{mode}) {
-      if ($options{mode} eq 'QL') {
-        # Decide which remote tasks to talk to
-        if ($oracinst eq 'SCUBA2_850') {
-          $remote{ORAC_REMOTE_TASK} = 'SC2DA8A@sc2da8a';
-        } elsif ($oracinst eq 'SCUBA2_450') {
-          $remote{ORAC_REMOTE_TASK} = 'SC2DA4A@sc2da4a';
-        }
-      }
-    }
-
     $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT} )
       unless $fixout;
 
@@ -371,7 +359,7 @@ sub orac_calc_instrument_settings {
     $defaults{'ORAC_DATA_CAL'} = File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, "scuba2" );
     $defaults{'ORAC_DATA_IN'} = File::Spec->catdir( $dataroot, "raw", "scuba2", "ok", @eng, $options{ut} );
 
-    return ( %defaults, %remote );
+    return %defaults;
   };
 
   # Arguments to use for the alias.

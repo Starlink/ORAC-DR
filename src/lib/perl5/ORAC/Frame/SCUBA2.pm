@@ -372,32 +372,6 @@ sub configure {
   return 1;
 }
 
-=item B<data_detection_tasks>
-
-Returns the names of the DRAMA tasks that should be queried for new
-raw data.
-
-  @tasks = $Frm->data_detection_tasks();
-
-These tasks must be registered with the C<ORAC::Inst::Defn> module.
-
-The task list can be overridden using the $ORAC_REMOTE_TASK
-environment variable.
-
-=cut
-
-sub data_detection_tasks {
-  my $self = shift;
-  my @override = ORAC::Inst::Defn::orac_remote_task();
-  return @override if @override;
-  return ("QLSIM");
-  my $pre = $self->_wavelength_prefix();
-  my @codes = $self->_dacodes();
-
-  # The task names will depend on the wavelength
-  return map { "SCU2_$pre" . uc($_) } @codes;
-}
-
 =item B<framegroupkeys>
 
 For SCUBA-2 a single frame object is returned in most cases. For focus
