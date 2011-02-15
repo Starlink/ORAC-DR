@@ -25,11 +25,29 @@ None.
 
 =head1 OUTPUT DATA
 
-The Frame uhdr entry OBSEND is set to 1 if the Frame contains the last
-data file in the observation, or if the observation is a SCAN pointing.
+The Frame uhdr has a number of new entries:
 
-The Frame uhdr entry PERCENT_CMP is retrieved from the last value in
-the state structure.
+=over 2
+
+=item DARKONLY
+
+A flag to indicate that Frame contains dark data (shutter closed).
+
+=item OBSEND
+
+Set to 1 if the Frame contains the last data file in the observation,
+or if the observation is a SCAN pointing.
+
+=item PERCENT_CMP
+
+Retrieved from the last value in the state structure.
+
+=item PROCESS_FASTFLAT
+
+A flag to indicate that the Frame contains fast-ramp flatfield data
+which should be processed.
+
+=back
 
 =head1 OUTPUT FILES
 
@@ -47,7 +65,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2005 Particle Physics and Astronomy Research Council.
-Copyright (C) 2009 University of British Columbia. All Rights Reserved.
+Copyright (C) 2009-2011 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -76,7 +95,7 @@ my $duration_minutes = sprintf("%.1f",$duration/60);
 # the Frame. If the shutter is closed (0.0) then mark as dark only,
 # and mark the Frame as bad for all observations except flatfield and
 # noise.
-my $do_fastflat;
+my $do_fastflat = 0;
 if ((defined $Frm->hdr("SHUTTER")) && ($Frm->hdr("SHUTTER") == 0.0)) {
   $Frm->uhdr("DARKONLY",1);
 
@@ -87,7 +106,8 @@ if ((defined $Frm->hdr("SHUTTER")) && ($Frm->hdr("SHUTTER") == 0.0)) {
   # some point because we don't want to try and mosaic darks with
   # images. Noise and Flatfields must allow dark frames through.
   unless ( $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /flatfield/i ||
-       $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /noise/i ) {
+	   $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /noise/i ||
+	   $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /setup/i ) {
     $Frm->isgood(0);
   }
 
@@ -112,12 +132,8 @@ if ((defined $Frm->hdr("SHUTTER")) && ($Frm->hdr("SHUTTER") == 0.0)) {
   $Frm->isgood(0);
 }
 
-# Process fastflat data if necessary
-if ($do_fastflat) {
-  _PROCESS_FASTFLAT_
-  $Grp->uhdr("FASTFLATS",$_PROCESS_FASTFLAT_{FLATS})
-    if ( defined $_PROCESS_FASTFLAT_{FLATS} );
-}
+# Store the fastflat flag
+$Frm->uhdr("PROCESS_FASTFLAT",$do_fastflat);
 
 # Print welcome message
 orac_print "Obs #".$Frm->uhdr("ORAC_OBSERVATION_NUMBER").
@@ -131,7 +147,10 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") {
     unless ( $Frm->uhdr("DARKONLY") );
 }
 
-my $extra = ($Frm->uhdr("DARKONLY")) ? " (dark frame only - ignoring)" : "";
+# Tell user if the data consists of darks only or fastflat ramps
+my $extra = ($Frm->uhdr("DARKONLY")) ?
+  ( ($Frm->uhdr("PROCESS_FASTFLAT")) ? " - processing fastflat ramp data" : " (dark frame only - ignoring)")
+  : "";
 orac_print "This is an observation of ".$Frm->uhdr("ORAC_OBJECT")."$extra\n"
   if ( defined $Frm->uhdr("ORAC_OBJECT") ) ;
 
@@ -144,16 +163,13 @@ my $obsend = ( $Frm->hdrval("OBSEND",-1) ) ? 1 : 0;
 # Pass this value on to the current Frame
 $Frm->uhdr("OBSEND", $obsend);
 
-# Filter out dark frames from science observations if necessary
-# (applies to DREAM/STARE mode only)
-#$Frm->filter_darks;
-
 if ($Frm->hdr("SIMULATE")) {
   orac_warn(" *** This observation is simulated data! ***\n");
 }
 
-# And if we set the frame bad by this point we simply terminate
-if ( ! $Frm->isgood && ! $Frm->uhdr("OBSEND") ) {
+# And if we set the frame bad by this point we simply terminate,
+# unless it's a fastflat
+if ( ! $Frm->isgood && ! $Frm->uhdr("OBSEND") && ! $Frm->uhdr("PROCESS_FASTFLAT") ) {
   orac_print("Frame not useful so terminating recipe\n");
   return ORAC__TERM;
 }
