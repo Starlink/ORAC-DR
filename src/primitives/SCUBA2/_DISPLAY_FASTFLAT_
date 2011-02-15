@@ -11,11 +11,15 @@ _DISPLAY_FASTFLAT_
 =head1 DESCRIPTION
 
 This primitive displays the current and previous bolometer
-responsivity data in a single Kapview window. Images of the bolometer
-responsivities are displayed on the same scale, along with histograms
-of values (also on the same scale). The percentage change in
-responsivity between the current and previous solutions is also
-displayed as a 2-D image.
+responsivity data in a single Kapview window. The responsivity images
+are mosaicked in focal-plane coordinates and displayed with the Y-axis
+pointing up and X-axis increasing to the right.
+
+Displaying the mosaci means that the responsivities for each subarray
+are displayed on the same scale, along with their histograms of values
+(also on the same scale). The percentage change in responsivity
+between the current and previous solutions is also displayed as a 2-D
+image scaled with +/-10 %.
 
 =head1 ARGUMENTS
 
@@ -93,25 +97,21 @@ USA.
 =cut
 
 
-#
+# Derive the list of current/previous filenames
 my @files = map { $_->files } $Grp->members;
-
 my @curfiles = map { $_ .".more.smurf.resp_new" } @files;
 my @prefiles = map { $_ .".more.smurf.resp_old" } @files;
 
+# Set the coordinate frame to FPLANE
 foreach my $file (@curfiles, @prefiles) {
   $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$file frame=fplane");
 }
 
-my $filter = $Frm->uhdr("ORAC_FILTER");
+# Reference subarray
+my $refsub = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? "s4d" : "s8b";
 
-my $refsub;
-if ($filter =~ /450/) {
-  $refsub = "s4d";
-} else {
-  $refsub = "s8b";
-}
-
+# Find out which file corresponds to the reference subarray, redefine
+# the reference if not present.
 my %ref;
 foreach my $file (@files) {
   # Never trust the filenames...
@@ -159,8 +159,11 @@ if ($refsub eq "s4d" || $refsub eq "s8b" ) {
   $axis = 1;
 }
 
+# Output file name for responsivity mosaic: _respmos
+my $out = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_respmos")));
 my @out;
 
+# Create mosaic for current/previous (PROPOSED/CURRENT)
 foreach my $soln ("PROPOSED", "CURRENT") {
   my (@infiles, $ext);
   if ($soln eq "PROPOSED") {
@@ -193,29 +196,53 @@ foreach my $soln ("PROPOSED", "CURRENT") {
   }
 
   # Save result to a file
-  my $out = $Frm->inout("_flatmos");
-  $out = $Frm->rewrite_outfile_subarray($out);
-  $out .= ".more.smurf.$ext";
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$out");
+  my $outname = $out . ".more.smurf.$ext";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$outname");
 
   my $title = "$soln solution";
-  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title='$title'");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$outname title='$title'");
 
-  push (@out, $out);
+  push (@out, $outname);
 }
 
 
+# Create the `percentage change' image
+my $deltafile = $out.".more.smurf.resp_delta";
+my $exp = "PA*(IA-IB)/IB";
+my $args = "exp=$exp IA=$out[0] IB=$out[1] PA=100.0 out=$deltafile";
+$Mon{kappa_mon}->obeyw("maths","$args");
+$args = "ndf=$deltafile title='Percentage change'";
+$Mon{ndfpack_mon}->obeyw("settitle","$args");
+
+# Store this as another extension in flatfield file
+my $pcresp = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_pcrsp")));
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$deltafile out=$pcresp");
+
+# Calculate responsivity ratio image - note there is no display
+# associated with this image and should probably not be created in the
+# QL or SUMMIT pipelines
+my $ratio = $out . ".more.smurf.resp_ratio";
+$args = "in1=$out[0] in2=$out[1] out=$ratio title='Responsivity ratio: proposed/current'";
+$Mon{kappa_mon}->obeyw("div","$args");
+
 # Find min/max of current responsivity image so previous image can
 # be displayed on same scale
-my $current = $out[0];
-_FIND_IMAGE_STATISTICS_ IMAGE=$current HISTAT=0 VERBOSE=0
+_FIND_IMAGE_STATISTICS_ IMAGE=$out[0] HISTAT=0 VERBOSE=0
 my $zmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
 my $zmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-my $clip = max(abs($zmin), abs($zmax)) / $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+my $clip = 0.5 * max(abs($zmin), abs($zmax)) / $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
 
-my %options = ( SIGMA => $clip/2.0, ZMIN => $zmin, ZMAX => $zmax );
+my %options = ( SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
 
 # Display the results
 my $tmpFrm = $Frm->new();
 $tmpFrm->files(@out);
 $Display->display_data( $tmpFrm, \%options, -1 );
+
+# Now display the percentage change image
+$tmpFrm->files( ($pcresp) );
+# Display limits for delta image
+($zmin, $zmax) = (-10.0, 10.0);
+%options = ( SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
+$Display->display_data($tmpFrm, \%options, -1);
+
