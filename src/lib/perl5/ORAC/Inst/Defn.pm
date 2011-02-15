@@ -265,11 +265,6 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => \&fluxes_helper,
           },
-         FTS2DR => {
-           MESSYS => 'DRAMA',
-           CLASS => 'ORAC::Msg::Task::DRAMA',
-           PATH => (exists $ENV{FTS2DR_DIR} ? $ENV{FTS2DR_DIR}. "/fts2dr.sh" :
-		                                 "not_defined"),
          },
          hdstools_mon => {
                           MESSYS => 'AMS',
