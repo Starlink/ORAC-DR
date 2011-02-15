@@ -13,9 +13,8 @@ _ANALYZE_FLATFIELD_ ERR=1
 Analyze the current flatfield solution and compare with previous
 flatfields. The analysis is performed on the current and previous
 responsivity images and is only carried out if the OBSEND FITS header
-flag is true. The results are displayed numerically (including
-percentage changes) and visually (see the documentation for
-_DISPLAY_RESPONSIVITIES_ for further information).
+flag is true. The results (including percentage changes) are displayed
+numerically in the terminal window.
 
 On completion, a flag file is written to indicate that flatfield
 processing is complete and the flatfield solution is stored in the
@@ -82,8 +81,7 @@ NDFTRACE
 
 =item ORAC-DR PRIMITIVES:
 
-_ADD_FLATFIELD_LOG_ENTRY_, _DISPLAY_RESPONSIVITIES_,
-_FIND_IMAGE_STATISTICS_, _WRITE_FLAG_FILE_
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_, _WRITE_FLAG_FILE_
 
 =back
 
@@ -112,10 +110,9 @@ written after the pipeline has performed its own analysis.
 
 If B<LOGFILE> is true, then the file C<log.flatfield> is written with
 the current subarray, median, mean, sigma, max, min and number of good
-solutions along with assoaicted changes compared with previous
+solutions along with associated changes compared with previous
 solutions. See the documentation for
-L<_ADD_FLATFIELD_LOG_ENTRY_|_ADD_FLATFIELD_LOG_ENTRY_> for more
-details.
+L<_ADD_LOG_ENTRY_|_ADD_LOG_ENTRY_> for more details.
 
 =head1 AUTHOR
 
@@ -150,13 +147,14 @@ if ( $proceed ) {
 
   # Flag to denote whether to write a log file
   my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+  my $logtype = "flatfield";
 
   # Get ERR argument
   my $err = get_prim_arg( $_PRIM_ARGS_, "ERR", 0 );
 
   # Which component to analyze?
   my $comp = ( $err ) ? "err" : "data";
-  my $preftext = ( $err ) ? "Uncertainties in" : "Values of";
+  my $preftext = ( $err ) ? "Uncertainties in responsivities" : "Responsivities";
 
   # Level to clip the data before calculating statistics?
   my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
@@ -180,6 +178,9 @@ if ( $proceed ) {
   # Loop over subarrays... Use subgrps method to return list of Groups
   # sorted by subarray
   my @Grps = $Grp->subgrps( "SUBARRAY" );
+
+  my $logmsg = ($uselog) ? " (full results written to log.$logtype)" : "";
+  orac_print "\nAnalyzing responsivity solutions$logmsg:\n";
 
   foreach my $Subgrp ( @Grps ) {
     my @frames = $Subgrp->members;
@@ -254,11 +255,12 @@ if ( $proceed ) {
       $previous{LABEL} = "START";
 
       ### Obtain and store the desired statistics for printing/logging ###
+
       # Print out results from current solution and calculate
       # percentage changes from previous solution
-      orac_print ("---- $preftext responsivity fits for subarray $subarray ---- \n", "green");
-      orac_print ("---- Clipped at $clip sigma ($dn solutions omitted = $dnpc %) ----\n", "green")
+      orac_print " $preftext clipped at $clip sigma ($dn solutions omitted = $dnpc %)\n"
 	if ($clip ne "");
+
       # Define two arrays to hold the results for the current and
       # previous solutions respectively. The `current' array is always
       # populated, and has diff values included under normal
@@ -273,7 +275,27 @@ if ( $proceed ) {
 	push(@curlogpar, $results{LABEL});
 	push(@prelogpar, $subarray, $previous{LABEL});
       }
+
+      # Store the number of good results and the change in uhdr
       my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
+      $Frmobj->uhdr( "NGOOD", $results{NUMGOOD} );
+      $Frmobj->uhdr( "DNGOOD", $numdiff );
+
+      ### Now print out the change in the number of good solutions ###
+      my $numstring = "no change";
+      # Make sure we don't divide by zero - set a dummy 100% as a default
+      my $deltapc = ($previous{NUMGOOD} > 0)
+	? sprintf "%5.1f", 100*abs($numdiff / $previous{NUMGOOD})
+	  : "100.0";
+      $numstring = (sprintf "%4d", abs($numdiff)) . " changed : $deltapc % ".
+	($numdiff > 0 ? "increase" : "decrease");
+      # Print a simple message if the results are being written to a
+      # log file, otherwise use the same format as for the other
+      # statistics below
+      my $msg = ($uselog) ? " $subarray: " : " NGOOD   = ";
+      orac_print ("$msg".(sprintf "%4d", $results{NUMGOOD}).
+		  " good solutions ( $numstring )\n", "green");
+
       # Loop over the statistics calculated above and reformat to
       # store in the array(s) as necessary
       foreach my $stat ( qw/ MEDIAN MEAN MODE SIGMA MAX MIN / ) {
@@ -315,7 +337,6 @@ if ( $proceed ) {
       ### Write results to log file if appropriate ###
       if ($uselog) {
 	push (@curlogpar, $results{NUMGOOD});
-	my $logtype = "flatfield";
 
 	my @names;
 	my $parlist = "BRIEF";
@@ -369,20 +390,6 @@ if ( $proceed ) {
 	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@curlogpar PARAMS=\@names PARLIST=$parlist
       }
 
-      ### Now print out the change in the number of good solutions ###
-      my $numstring = "no change";
-      # Make sure we don't divide by zero - set a dummy 100% as a default
-      my $deltapc = ($previous{NUMGOOD} > 0)
-	? sprintf "%4.1f", 100*abs($numdiff / $previous{NUMGOOD})
-	  : 100;
-      $numstring = abs($numdiff) . " changed : $deltapc % ".
-	($numdiff > 0 ? "increase" : "decrease");
-      orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n",
-		  "green");
-      # Store in uhdr
-      $Frmobj->uhdr( "NGOOD", $results{NUMGOOD} );
-      $Frmobj->uhdr( "DNGOOD", $numdiff );
-
       ### Create the `percentage change' image ###
       my $deltafile = $Frmobj->inout("_pcrsp");
       my $exp = "PA*(IA-IB)/IB";
@@ -401,10 +408,7 @@ if ( $proceed ) {
       # change image
       $Frmobj->uhdr("RESP_DELTA", $deltafile);
 
-      # Display the results
-      _DISPLAY_RESPONSIVITIES_ FRAME=$Frmobj CLIP=$clip
-
-      # Now create the resposivity ratio image if requested - note
+      # Now create the responsivity ratio image if requested - note
       # there is no display associated with this image
       if ($respratio) {
 	my $ratiofile = new ORAC::TempFile;
@@ -414,9 +418,6 @@ if ( $proceed ) {
 	# Store this as another extension in flatfield file
 	my $respratio = $flatfile.".MORE.SMURF.RESP_RATIO";
 	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$ratiofile out=$respratio");
-
-	# No display as yet - no entries in disp.dat, will need to
-	# update _DISPLAY_RESPONSIVITIES_ too
       }
     } else {
       orac_warn "No responsivity file for subarray $subarray\n";
