@@ -1655,6 +1655,7 @@ sub _read_flagfiles {
     close $flagfile
       or orac_throw "Error closing flag file $flagname: $!";
   }
+  chomp(@names);
 
   # add $ORAC_DATA_IN to path if not absolute
   return _to_abs_path( @names );
@@ -1674,6 +1675,7 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2007-2009, 2011 Science and Technology Facilities Council.
 Copyright (C) 1998-2006 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
