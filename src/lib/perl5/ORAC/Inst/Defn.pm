@@ -1409,9 +1409,6 @@ See L<"orac_messys_description">.
 
 Returns an empty list on error.
 
-If the engine is not specified but is defined in $ORAC_REMOTE_TASK
-environment variable, the task is assumed to be DRAMA.
-
 =cut
 
 sub orac_engine_description {
@@ -1419,14 +1416,6 @@ sub orac_engine_description {
   if (exists $MonolithDefns{$engine}) {
     return %{ $MonolithDefns{$engine} };
   } else {
-    # Look in ORAC_REMOTE_TASK (assumed to be DRAMA)
-    my @tasks = orac_remote_task();
-    for my $t (orac_remote_task()) {
-      if ($engine eq $t) {
-	return ( MESSYS => 'DRAMA',
-		 CLASS => 'ORAC::Msg::Task::DRAMA');
-      }
-    }
     return ();
   }
 }
