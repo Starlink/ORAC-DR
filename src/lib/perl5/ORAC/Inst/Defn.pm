@@ -264,7 +264,6 @@ my %MonolithDefns = (
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => \&fluxes_helper,
-          },
          },
          hdstools_mon => {
                           MESSYS => 'AMS',
