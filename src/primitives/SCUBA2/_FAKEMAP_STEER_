@@ -71,14 +71,42 @@ foreach my $par ( grep {"FAKEMAP"} keys %RECPARS ) {
   $Frm->uhdr($recpar, $RECPARS{$par}) if defined $RECPARS{$par};
 }
 
-# Quit immediately if no map was defined
-orac_term "No base fakemap defined - will not proceed\n"
-  unless defined ($Frm->uhdr("RECPAR_FAKEMAP_MAP"));
+# If no map was given, check for FWHM and/or AMP keywords
+unless (defined $Frm->uhdr("RECPAR_FAKEMAP_MAP")) {
+  my $nomap = 1;
+  if (defined $Frm->uhdr("RECPAR_FAKEMAP_FWHM")) {
+    unless (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
+      # Define default amplitudes which correspond to 1 and 4 Jy at
+      # 850/450 um respectively
+      my $amp = ($Frm->hdr("FILTER") =~ /850/) ? 0.002 : 0.01;
+      $Frm->uhdr("RECPAR_FAKEMAP_SCALE", $amp);
+    }
+    $nomap = 0;
+  }
+  if (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
+    # Define a default FWHM equal to the beam size if not given
+    $Frm->uhdr("RECPAR_FAKEMAP_FWHM", $Cal->fwhm)
+      unless (defined $Frm->uhdr("RECPAR_FAKEMAP_FWHM"));
+    $nomap = 0;
+  }
+  # If no FWHM or AMP then quit
+  orac_term "No base fakemap defined - will not proceed\n"
+    if ($nomap);
+}
 
 # Tell user the map name that's being used
-orac_print(" Adding ".($Frm->uhdr('RECPAR_FAKEMAP_MAP'))." to timeseries", "yellow");
+my $fakemap;
+if (defined $Frm->uhdr('RECPAR_FAKEMAP_MAP')) {
+  $fakemap = $Frm->uhdr('RECPAR_FAKEMAP_MAP');
+} else {
+  my $fwhm = sprintf "%g", $Frm->uhdr("RECPAR_FAKEMAP_FWHM");
+  my $amp = sprintf "%g", $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
+  $fakemap = "a gaussian with FWHM = $fwhm arcsec and amplitude $amp pW";
+}
+orac_print(" Adding $fakemap to timeseries", "yellow");
 # And other details if appropriate
-if (defined $Frm->uhdr('RECPAR_FAKEMAP_SCALE')) {
+if ( defined $Frm->uhdr('RECPAR_FAKEMAP_SCALE') &&
+     defined $Frm->uhdr('RECPAR_FAKEMAP_MAP') ) {
   orac_print(", scaled by a factor of ".($Frm->uhdr('RECPAR_FAKEMAP_SCALE')), "yellow");
 }
 
