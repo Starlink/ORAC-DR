@@ -124,7 +124,13 @@ and FITS (character array) components.
 =item B<FRAMENUM>
 
 Frame number. Monotonically increases each time a parameter
-is updated.
+is updated. Periodically reset to 1 depending on the value
+of the "maxframe" option in internal mode.
+
+=item B<OBSNUM>
+
+Observation number. In internal mode this increments each time
+FRAMENUM resets.
 
 =iteM B<DATAVALID>
 
@@ -273,6 +279,7 @@ my $sdp = Dits::GetParId();
 my $qlsds = Sds->Create("QL", undef, Sds::STRUCT, 0, $status );
 $qlsds->Create( "TIMESTAMP", undef,Sds::DOUBLE, 0.0, $status );
 $qlsds->Create( "FRAMENUM", undef,Sds::INT, 0.0, $status );
+$qlsds->Create( "OBSNUM", undef,Sds::INT, 0.0, $status );
 $qlsds->Create( "DATAVALID", undef,Sds::CHAR, 0, $status );
 
 # Store it in the parameter system
@@ -288,8 +295,9 @@ print "DRAMA refresh = $drama_refresh\n";
 # Create the rescheduling timescale
 my $DELAY = Dits::DeltaTime( int($drama_refresh), 1E6 * ($drama_refresh - int($drama_refresh)));
 
-# Sequence number
+# Sequence number and observation number
 my $SEQNUM = 1;
+my $OBSNUM = 1;
 
 # Only delay once
 my $DONE_DELAY = 0;
@@ -448,9 +456,6 @@ sub update_param {
     # Find the timestamp
     set_timestamp( $status );
 
-    # and sequence number
-    set_seqnum( $status );
-
     # Find the FILENAME (or create it)
     if ($status->Ok) {
       if ($image_mode) {
@@ -487,6 +492,11 @@ sub update_param {
 	      $fits = new Astro::FITS::Header::NDF( File => $nextfile );
 	    };
 	    $fits = new Astro::FITS::Header() if (!defined $fits);
+
+            my $obsnum = $fits->value("OBSNUM");
+            if (defined $obsnum && looks_like_number($obsnum)) {
+              $OBSNUM = $obsnum;
+            }
 
 	    # Now find .WCS and convert to FITS
 	    my $lstatus = &NDF::SAI__OK;
@@ -526,6 +536,9 @@ sub update_param {
 	}
       }
     }
+
+    # and sequence number (which includes OBSNUM)
+    set_seqnum( $status );
 
     $qlsds->List( $status );
     # trigger parameter update
@@ -622,9 +635,16 @@ sub set_seqnum {
   print "$name: Frame number=$SEQNUM\n";
   $s->PutPdl( PDL::Core::long( $SEQNUM ) )
     if (defined $s && $status->Ok);
+  $s = $qlsds->Find( "OBSNUM", $status );
+  $s->PutPdl( PDL::Core::long( $OBSNUM ) )
+    if (defined $s && $status->Ok);
+
   $SEQNUM++;
   # The real system resets the sequence number
-  $SEQNUM = 1 if ($internal && $SEQNUM > $MAXSEQ);
+  if ($internal && $SEQNUM > $MAXSEQ) {
+    $SEQNUM = 1;
+    $OBSNUM++;
+  }
 }
 
 # canonicalize path

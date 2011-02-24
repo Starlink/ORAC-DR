@@ -157,6 +157,7 @@ for my $r (@remotes) {
   $PRIV{MONITORS}->{$r} = { RESULTS => {}, RESULTS_SDS => {},
                             CANCELLED => 1,
                             DATAVALID => 0, FRAMENUM => 0,
+                            OBSNUM => 0,
                             TIMESTAMP => 0, };
 }
 
@@ -185,6 +186,10 @@ for my $r (@remotes) {
   $PRIV{MONITORS}{$r}{TASKLABEL} = $frame->Label( -text => "$r: ",
                                                   -background => "red",
                                                 )->pack( -side => 'left' );
+  $frame->Label( -textvariable => \$PRIV{MONITORS}{$r}{OBSNUM},
+               )->pack( -side => 'left' );
+  $frame->Label( -text => "#",
+               )->pack( -side => 'left' );
   $frame->Label( -textvariable => \$PRIV{MONITORS}{$r}{FRAMENUM},
                )->pack( -side => 'left' );
   $colnum++;
@@ -317,8 +322,9 @@ sub handle_monitor {
   my %tie;
   tie %tie, "Sds::Tie", $value;
 
-  # Report the frame number in the GUI
+  # Report the frame and obs number in the GUI
   $PRIV{MONITORS}{$thisremote}{FRAMENUM} = $tie{FRAMENUM};
+  $PRIV{MONITORS}{$thisremote}{OBSNUM} = $tie{OBSNUM};
 
   # Translate DATAVALID to a boolean
   $PRIV{MONITORS}{$thisremote}{DATAVALID} = ($tie{DATAVALID} eq 'YES' ? 1 : 0 );
@@ -347,11 +353,12 @@ sub handle_monitor {
 
   # Check each active monitor
   my $refframe = $PRIV{MONITORS}{$thisremote}{FRAMENUM};
+  my $refobs   = $PRIV{MONITORS}{$thisremote}{OBSNUM};
   my $gotall = 1;
   for my $r (keys %{$PRIV{MONITORS}}) {
     my $mon = $PRIV{MONITORS}{$r};
     next if $mon->{CANCELLED};
-    if ( $refframe != $mon->{FRAMENUM} ) {
+    if ( $refframe != $mon->{FRAMENUM} || $refobs != $mon->{OBSNUM}) {
       $gotall = 0;
       last;
     }
@@ -368,7 +375,7 @@ sub handle_monitor {
     }
 
     # Report that we have all the data
-    write_text_messages( $PRIV{MsgText}, 0, "Received all data from frame $refframe" );
+    write_text_messages( $PRIV{MsgText}, 0, "Received all data from frame $refframe of obs $refobs" );
 
     package_data();
 
@@ -460,7 +467,7 @@ sub package_data {
       if (!defined $data) {
         write_text_messages( $PRIV{MsgText}, 1,
                              "IMAGE parameter received from task $r for frame ".
-                             $results->{FRAMENUM}. " did not include a DATA_ARRAY component");
+                             $results->{FRAMENUM}. " of observation $obsnum did not include a DATA_ARRAY component");
         next;
       }
       # Write out the PDL but we take a copy because the SDS PDL is readonly
