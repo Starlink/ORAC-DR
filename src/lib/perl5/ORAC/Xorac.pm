@@ -1046,7 +1046,7 @@ sub xorac_calib {
   my ($frameclass, $groupclass, $calclass, $instclass) =
     orac_determine_inst_classes( $ENV{"ORAC_INSTRUMENT"} );
 
-  if ( defined %{${$options}{"calib"}} ) {
+  if ( defined $options->{"calib"} && keys %{$options->{"calib"}} ) {
     foreach my $key (keys %{${$options}{"calib"}}) {
       %calib = ( %calib, $key => ${${$options}{"calib"}}{$key} );
     }
