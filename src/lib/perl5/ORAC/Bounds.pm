@@ -33,7 +33,7 @@ $DEBUG = 0;
 
 use Astro::FITS::Header::NDF;
 use Astro::Coords;
-use Starlink::AST;
+use Starlink::AST 1.01;
 use Carp;
 
 use NDF qw/ :ndf :err /;
@@ -162,15 +162,7 @@ sub retrieve_bounds {
     my $spectemplate = Starlink::AST::SpecFrame->new( "MaxAxes=3" );
     my $specframe = $wcs->FindFrame( $spectemplate, "" );
 
-    my $dsbspectemplate = Starlink::AST::DSBSpecFrame->new( "MaxAxes=3" );
-    my $dsbspecframe = $wcs->FindFrame( $dsbspectemplate, "DSBSPECTRUM" );
-
-    my $has_dsb;
-    if (defined $dsbspecframe) {
-      $has_dsb = 1;
-      $specframe = $dsbspecframe;
-      undef $dsbspecframe;
-    }
+    my $has_dsb = (defined $specframe ? $specframe->HasAttribute("Sideband") : 0);
 
     # We want the units returned in GHz, the system to be frequency,
     # and to use the barycentric standard of rest.
