@@ -91,6 +91,9 @@ my $fakemap = get_prim_arg($_PRIM_ARGS_, "FAKEMAP", 0);
 # onto this array
 my @scanpar = map { "MAKEMAP_".uc($_)} $Frm->makemap_args;
 
+# Findclumps config file
+push(@scanpar, "FINDCLUMPS_CONFIG");
+
 # Define fakemap recipe parameter names if necessary
 if ($fakemap) {
   my @fakepars = ("MAP", "SCALE", "REGRID", "OFFSET", "FWHM");
@@ -106,9 +109,40 @@ foreach my $par ( grep {"MAKEMAP"} keys %RECPARS ) {
   $Frm->uhdr($recpar, $RECPARS{$par}) if defined $RECPARS{$par};
 }
 
-# Tell user if a new config file is being used
+# Tell user if a new makemap config file is being used
 orac_say( " Using user-specified config file $RECPARS{'MAKEMAP_CONFIG'}",
 	  "yellow" ) if defined $Frm->uhdr("RECPAR_MAKEMAP_CONFIG");
+
+# Findclumps config file
+if (defined $RECPARS{'FINDCLUMPS_CONFIG'}) {
+  my $findclumps_config;
+  my $config = $RECPARS{'FINDCLUMPS_CONFIG'};
+  # Borrowed from _GET_MAKEMAP_CONFIG_
+  my $abs = File::Spec->file_name_is_absolute( $config );
+  if ( $abs ) {
+    # Use this file if it exists
+    $findclumps_config = $config if ( -e $config );
+  } else {
+    # OK not an absolute path - check in current working dir, and
+    # other known locations if necessary. Use the first match.
+    use Cwd;
+    my @locations = ( getcwd(), $ENV{ORAC_DATA_OUT}, $ENV{MAKEMAP_CONFIG_DIR} );
+    foreach my $testlocation ( @locations ) {
+      my $new_config = File::Spec->catfile( $testlocation, $config );
+      if ( -e $new_config ) {
+	$findclumps_config = $new_config;
+	last;
+      }
+    }
+  }
+  if ($findclumps_config) {
+    $Frm->uhdr("RECPAR_FINDCLUMPS_CONFIG", $findclumps_config);
+    # Tell user if a new findclumps config file is being used
+    orac_say( " Using user-specified source-detection config file $RECPARS{'FINDCLUMPS_CONFIG'}", "yellow" )
+  } else {
+    orac_warn "Unable to locate given findclumps config file, $config: using defaults\n";
+  }
+}
 
 # Additional processing for fake maps
 if ($fakemap) {
