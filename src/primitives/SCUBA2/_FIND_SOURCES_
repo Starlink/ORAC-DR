@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_FIND_SOURCES_ - find sources in given image using SExtractor
+_FIND_SOURCES_ - find sources in given image
 
 =head1 SYNOPSIS
 
@@ -12,9 +12,9 @@ _FIND_SOURCES_ - find sources in given image using SExtractor
 
 =head1 DESCRIPTION
 
-Find the position of sources in the given image using
-SExtractor. Returns an C<Astro::Catalog> object and optionally the
-name of a catalogue written to disk.
+Find the position of sources in the given image using either
+SExtractor of CUPID:FINDCLUMPS. Returns an C<Astro::Catalog> object
+and optionally the name of a catalogue written to disk.
 
 This primitive is designed to work on a single image and will fail if
 the current Frame object contains more than one file.
@@ -40,6 +40,12 @@ Group file. Otherwise, use the current Frame. Default is 0 (false).
 Name of image file to extract point sources from. No default, but if
 left unset image will be determined by the B<GROUP> parameter.
 
+=item B<METHOD>
+
+Source-finding method. May be Extractor/SExtractor or any of the
+CUPID:FINDCLUMPS methods. Minimum match is supported. Default is
+to use SExtractor.
+
 =item B<MINPIX>
 
 Minimum number of connected pixels defining a source. Default is 9.
@@ -62,7 +68,11 @@ The following external tasks are used:
 
 =over 4
 
-=item EXTRACTOR
+=item CUPID
+
+FINDCLUMPS
+
+=item KAPPA
 
 EXTRACTOR (via the C<Starlink::Extractor> perl module)
 
@@ -90,12 +100,11 @@ the following keys:
 =item CATALOGUE
 
 A catalogue in the form of an C<Astro::Coords> object containing
-sources
+sources (only if Extractor is used).
 
 =item CATALOGUE_NAME
 
-Name of disk file containing catalogue. Will be undef if no file was
-written.
+Name of disk file containing catalogue.
 
 =back
 
@@ -113,7 +122,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 University of British Columbia. All Rights
+Copyright (C) 2007-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -137,17 +146,11 @@ USA.
 my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
 
 # If not input file was defined use the current group or frame
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
 unless ( defined $in ) {
   # Determine if the user wants to use the current stacked Grp or Frm
   # image
-  my $Obj;
-  my $group = defined( $_FIND_SOURCES_{GROUP} ) ?
-    $_FIND_SOURCES_{GROUP} : 0;
-  if( $group ) {
-    $Obj = $Grp;
-  } else {
-    $Obj = $Frm;
-  }
   if ( $Obj->nfiles == 1 ) {
     $in = $Obj->file;
   } else {
@@ -155,79 +158,153 @@ unless ( defined $in ) {
   }
 }
 
-# Should the catalogue contain only point sources? Default is no.
+# Source-finding method
+my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "extractor"));
+my $cupid = ($method =~ /extract/) ? 0 : 1;
+
+# Should the catalogue contain only point sources? Default is no. Not
+# used if CUPID is true.
 my $point = get_prim_arg( $_PRIM_ARGS_, "POINT", 0 );
 
 # Should the catalogue be written to disk? Default is no.
-my $writecatalogue = get_prim_arg( $_PRIM_ARGS_, "WRITE_CATALOGUE", 0 );
+my $writecat = get_prim_arg( $_PRIM_ARGS_, "WRITE_CATALOGUE", 0 );
 
 # Minimum size of box defining a source
 my $minpix = ( $_FIND_SOURCES_{MINPIX} || 9 );
+
 # Obtain the detection sigma level.
 my $detect = ( $_FIND_SOURCES_{DETECT_SIGMA} || 5 );
 
-# Initialise the results array
-$_FIND_SOURCES_{RESULTS} = [];
+# Deal with all Findclumps methods in this block
+if ( $cupid ) {
+  my $out = $Obj->inout("_clmp");
 
-# Set ellipticity criteria for adding to source catalogue
-my $maxel;
-if ($point) {
-  $maxel = 0.25; # Point-source definition
-} else {
-  $maxel = 5.0; # Weed out obviously dodgy sources
-}
+  # Find the standard deviation by clipping at 5 sigma - this gives
+  # something closer to the real `noise', especially if the input file
+  # is a signal-to-noise ratio image.
+  _FIND_IMAGE_STATISTICS_ IMAGE=$in HISTAT=0 CLIP=5 VERBOSE=0
+  my $medianrms = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
 
-# Run SExtractor
-use Starlink::Extractor;
-use Astro::WaveBand;
-use Astro::Catalog;
-my $conf_file = $Cal->find_file("extractor_catalogue.sex");
-my $extractor = new Starlink::Extractor( config => $conf_file );
-# Set the detection threshold
-$extractor->detect_thresh( $detect );
-# And the analysis threshold
-$extractor->analysis_thresh( 3.0 );
-$extractor->verbose_type('NORMAL');
+  # Hack to get the final threshold close to the input value of
+  # DETECT_SIGMA
+  $detect *= 0.6;
 
-# Note that filter is a mandatory argument so create a dummy one
-my $extracted_catalogue = $extractor->extract( frame => $in,
-					     filter => new Astro::WaveBand( Filter => $Frm->uhdr("ORAC_FILTER") ) );
+  orac_print "Finding sources... ";
+  my $outcat = ($writecat) ? $Obj->inout("_cat") : "!";
 
-# Filter output catalogue to identify point sources
-my $filtered_catalogue = new Astro::Catalog( origin => 'ORAC-DR primitive _FIND_SOURCES_');
-my $source;
-while ( $extracted_catalogue->sizeof > 0 ) {
-  # Pop current source (returns an Astro::Catalog::Star object)
-  $source = $extracted_catalogue->popstar;
+  # Retrieve name of a config file if given
+  my $fc_param = $Frm->uhdr("RECPAR_FINDCLUMPS_CONFIG");
 
-  # Add suitable sources to output catalogue: note the `numbers'
-  # returned by these methods are Number::Uncertainty objects, so call
-  # the value method to obtain the actual value.
-  if ( ( $source->morphology->area->value >= $minpix ) &&
-       ( $source->morphology->ellipticity->value < $maxel ) ) {
-    $filtered_catalogue->pushstar( $source ) ;
+  # Write a config file if none specified
+  unless ($fc_param) {
+    # Some defaults
+    my ($allowedge, $fwhmbeam, $maxbad) = (1, 2, 0.05);
+    $fc_param = "findclumps$$.param";
+    open my $fc_fh, ">", $fc_param;
+    if ($method =~ /^clump/) {
+      # Clumpfind parameters - TO BE TWEAKED
+      print $fc_fh "ClumpFind.AllowEdge=$allowedge\n";
+      print $fc_fh "ClumpFind.FwhmBeam=$fwhmbeam\n";
+      print $fc_fh "ClumpFind.MaxBad=$maxbad\n";
+      print $fc_fh "ClumpFind.Minpix=$minpix\n";
+      print $fc_fh "ClumpFind.Tlow=$detect*RMS\n";
+    } elsif ($method =~ /^fell/) {
+      # Fellwalker parameters
+      print $fc_fh "FellWalker.AllowEdge=$allowedge\n";
+      print $fc_fh "FellWalker.FwhmBeam=$fwhmbeam\n";
+      print $fc_fh "FellWalker.MaxBad=$maxbad\n";
+      print $fc_fh "FellWalker.Noise=$detect*RMS\n";
+      print $fc_fh "FellWalker.FlatSlope=1.0*RMS\n";
+      print $fc_fh "FellWalker.MinHeight=$detect*RMS\n";
+      print $fc_fh "FellWalker.Minpix=$minpix\n";
+      print $fc_fh "FellWalker.MinDip=2*RMS\n";
+    } else {
+      # Other methods yet to be supported...
+    }
+    close $fc_fh;
   }
-}
 
-if ( $filtered_catalogue->sizeof == 0 ) {
-  orac_warn "No sources found in current image\n";
-  if ( $writecatalogue ) {
-    orac_warn "Will not write catalogue to disk\n";
-    $writecatalogue = 0;
-  }
-}
+  # Call findclumps
+  my $params = "in=$in rms=$medianrms config='^$fc_param' method=$method out=$out outcat=$outcat deconv=no logfile=!";
+  $Mon{'cupid_mon'}->obeyw("findclumps", "$params");
 
-# Store the resultant catalogue, even if it's empty
-$_FIND_SOURCES_{CATALOGUE} = $filtered_catalogue;
+  # Delete the temp config file if it was created here
+  unlink( $fc_param ) unless (defined $Frm->uhdr("RECPAR_FINDCLUMPS_CONFIG"));
 
-# Write to disk if desired.
-if ( $writecatalogue ) {
-  _GET_CATALOGUE_NAME_
-  my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
-  my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
-  my $status = $filtered_catalogue->write_catalog( file => $cat_file, format => 'Cluster');
-  $_FIND_SOURCES_{CATALOGUE_NAME} = $catalogue_name;
-  orac_print "Wrote catalogue to $cat_file.\n";
+  # Retrieve number of clumps found
+  my ($ORAC_STATUS, $nclumps) = $Mon{cupid_mon}->get("findclumps", "nclumps");
+
+  # This seems to give a number close to the minimum source SN found
+  # by findclumps
+  my $thresh = sprintf "%.1f", sqrt(2) * $detect * $medianrms;
+  orac_print "Found $nclumps clumps above a threshold of $thresh sigma\n";
+
+  # Store catalogue name
+  $_FIND_SOURCES_{CATALOGUE_NAME} = $outcat if ($outcat ne "!");
+
 } else {
-  $_FIND_SOURCES_{CATALOGUE_NAME} = undef;
+  # Using SExtractor
+
+  # Set ellipticity criteria for adding to source catalogue
+  my $maxel;
+  if ($point) {
+    $maxel = 0.25; # Point-source definition
+  } else {
+    $maxel = 5.0; # Weed out obviously dodgy sources
+  }
+
+  # Run SExtractor
+  use Starlink::Extractor;
+  use Astro::WaveBand;
+  use Astro::Catalog;
+  my $conf_file = $Cal->find_file("extractor_catalogue.sex");
+  my $extractor = new Starlink::Extractor( config => $conf_file );
+  # Set the detection threshold
+  $extractor->detect_thresh( $detect );
+  # And the analysis threshold
+  $extractor->analysis_thresh( 3.0 );
+  $extractor->verbose_type('NORMAL');
+
+  # Note that filter is a mandatory argument so create a dummy one
+  my $extracted_catalogue = $extractor->extract( frame => $in,
+						 filter => new Astro::WaveBand( Filter => $Frm->uhdr("ORAC_FILTER") ) );
+
+  # Filter output catalogue to identify point sources
+  my $filtered_catalogue = new Astro::Catalog( origin => 'ORAC-DR primitive _FIND_SOURCES_');
+  my $source;
+  while ( $extracted_catalogue->sizeof > 0 ) {
+    # Pop current source (returns an Astro::Catalog::Star object)
+    $source = $extracted_catalogue->popstar;
+
+    # Add suitable sources to output catalogue: note the `numbers'
+    # returned by these methods are Number::Uncertainty objects, so call
+    # the value method to obtain the actual value.
+    if ( ( $source->morphology->area->value >= $minpix ) &&
+	 ( $source->morphology->ellipticity->value < $maxel ) ) {
+      $filtered_catalogue->pushstar( $source ) ;
+    }
+  }
+
+  if ( $filtered_catalogue->sizeof == 0 ) {
+    orac_warn "No sources found in current image\n";
+    if ( $writecat ) {
+      orac_warn "Will not write catalogue to disk\n";
+      $writecat = 0;
+    }
+  }
+
+  # Store the resultant catalogue, even if it's empty
+  $_FIND_SOURCES_{CATALOGUE} = $filtered_catalogue;
+
+  # Write to disk if desired.
+  if ( $writecat ) {
+    _GET_CATALOGUE_NAME_
+    my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
+    my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+    my $status = $filtered_catalogue->write_catalog( file => $cat_file, format => 'Cluster');
+    $_FIND_SOURCES_{CATALOGUE_NAME} = $catalogue_name;
+    orac_print "Wrote catalogue to $cat_file.\n";
+  } else {
+    $_FIND_SOURCES_{CATALOGUE_NAME} = undef;
+  }
 }
