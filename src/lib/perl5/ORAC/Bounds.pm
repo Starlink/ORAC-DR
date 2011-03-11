@@ -127,7 +127,7 @@ sub retrieve_bounds {
     ndf_begin;
     ndf_find( &NDF::DAT__ROOT(), $filename, my $ndf_id, $STATUS );
 
-    ndf_bound( $ndf_id, 3, my @ndf_lbnd, my @ndf_ubnd, my $ndim, $STATUS );
+    ndf_bound( $ndf_id, 7, my @ndf_lbnd, my @ndf_ubnd, my $ndim, $STATUS );
 
     # Retrieve the WCS.
     my $wcs = ndfGtwcs( $ndf_id, $STATUS );
@@ -147,183 +147,19 @@ sub retrieve_bounds {
     }
     err_end( $STATUS );
 
-    # Retrieve spatial information.
-    my $skytemplate = Starlink::AST::SkyFrame->new( "MaxAxes=3,MinAxes=1" );
-    my $skyframe = $wcs->FindFrame( $skytemplate, "" );
+    # Try to find the spectral and spatial bounds
+    my %return = (
+                  calc_spectral_bounds( $wcs, \@ndf_lbnd, \@ndf_ubnd ),
+                  calc_spatial_corners( $wcs, \@ndf_lbnd, \@ndf_ubnd )
+                 );
 
-    # We want the skyframe system to be ICRS.
-    # And not to be in a offset system
-    if ( defined( $skyframe ) ) {
-      $skyframe->Set( 'system' => 'ICRS',
-                      SkyRefIs => "ignored" );
-    }
+    # If this is a moving source blank the reference position
+    delete $return{reference}
+      if ($tracksys eq 'APP' || $tracksys eq 'AZEL');
 
-    # Retrieve spectral information. Can be dual sideband or straight specFrame
-    my $spectemplate = Starlink::AST::SpecFrame->new( "MaxAxes=3" );
-    my $specframe = $wcs->FindFrame( $spectemplate, "" );
-
-    my $has_dsb = (defined $specframe ? $specframe->HasAttribute("Sideband") : 0);
-
-    # We want the units returned in GHz, the system to be frequency,
-    # and to use the barycentric standard of rest.
-    if ( defined( $specframe ) ) {
-      $specframe->Set( 'system' => 'FREQ',
-                       'unit'   => 'GHz',
-                       'stdofrest' => 'BARY',
-                     );
-    }
-
-    # astTranP uses the GRID coordinate system as a base, which
-    # counts from 0.5. We need to find out how big the NDF is, which
-    # we can do from the @ndf_lbnd and @ndf_ubnd arrays.
-    my @wcs_bnds;
-    my @cen;
-    my @isb_bnds;
-    my @ssb_bnds;
-    my $x_min = 0.5;
-    my $x_max = 0.5 + ( $ndf_ubnd[0] - $ndf_lbnd[0] ) + 1;
-    my $x_cen = ( $x_min + $x_max ) / 2;
-    if ( $#ndf_ubnd > 0 ) {
-      my $y_min = 0.5;
-      my $y_max = 0.5 + ( $ndf_ubnd[1] - $ndf_lbnd[1] ) + 1;
-      my $y_cen = ( $y_min + $y_max ) / 2;
-      if ( defined( $ndf_ubnd[2] ) ) {
-        my $z_min = 0.5;
-        my $z_max = 0.5 + ( $ndf_ubnd[2] - $ndf_lbnd[2] ) + 1;
-
-        if ( defined( $skyframe ) ) {
-          @wcs_bnds = $skyframe->TranP( 1,
-                                        [ $x_min, $x_min, $x_max, $x_max ],
-                                        [ $y_min, $y_max, $y_min, $y_max ],
-                                        [ $z_min, $z_min, $z_min, $z_min ] );
-
-          @cen = $skyframe->TranP( 1, [ $x_cen ], [ $y_cen ], [ $z_min ] );
-
-        }
-
-        if ( defined( $specframe ) ) {
-
-          # Calculate the LSB info.
-          $specframe->Set( "SideBand", "observed" ) if $has_dsb;
-          @ssb_bnds = $specframe->TranP( 1,
-                                         [ $x_min, $x_max ],
-                                         [ $y_min, $y_max ],
-                                         [ $z_min, $z_max ] );
-          # Calculate the USB info.
-          if ($has_dsb) {
-            $specframe->Set( "SideBand", "image" );
-            @isb_bnds = $specframe->TranP( 1,
-                                           [ $x_min, $x_max ],
-                                           [ $y_min, $y_max ],
-                                           [ $z_min, $z_max ] );
-          }
-        }
-      } elsif ( defined( $skyframe ) ) {
-        @wcs_bnds = $skyframe->Tran2( [ $x_min, $x_min, $x_max, $x_max ],
-                                      [ $y_min, $y_max, $y_min, $y_max ],
-                                      1 );
-        @cen = $skyframe->Tran2( [ $x_cen ], [ $y_cen ], 1 );
-      }
-    }
-
-    # We now have enough information for the OBSRA/OBSDEC headers.
-    if ( defined( $skyframe ) ) {
-
-      # Find out which axis is the latitude (declination) and which is
-      # the longitude (RA).
-      my $lataxis = $skyframe->Get( "LatAxis" );
-      my $lonaxis = $skyframe->Get( "LonAxis" );
-
-      my $obsra_rad = $skyframe->Get( "SkyRef($lonaxis)" );
-      my $obsdec_rad = $skyframe->Get( "SkyRef($lataxis)" );
-      my $obsref = new Astro::Coords( ra => $obsra_rad,
-                                      dec => $obsdec_rad,
-                                      type => 'J2000',
-                                      units => 'radians' );
-
-      # Not interested in reference position for moving sources
-      $return{'reference'} = $obsref
-        unless ($tracksys eq 'APP' || $tracksys eq 'AZEL');
-
-      my $obs_cen = new Astro::Coords( ra => $cen[0]->[0],
-                                       dec => $cen[1]->[0],
-                                       type => 'J2000',
-                                       units => 'radians' );
-      $return{'centre'} = $obs_cen;
-
-      my $obsrabl_rad = ( $wcs_bnds[0]->[0] < -1e100 ? undef : $wcs_bnds[0]->[0] );
-      my $obsratl_rad = ( $wcs_bnds[0]->[1] < -1e100 ? undef : $wcs_bnds[0]->[1] );
-      my $obsrabr_rad = ( $wcs_bnds[0]->[2] < -1e100 ? undef : $wcs_bnds[0]->[2] );
-      my $obsratr_rad = ( $wcs_bnds[0]->[3] < -1e100 ? undef : $wcs_bnds[0]->[3] );
-      my $obsdecbl_rad = ( $wcs_bnds[1]->[0] < -1e100 ? undef : $wcs_bnds[1]->[0] );
-      my $obsdectl_rad = ( $wcs_bnds[1]->[1] < -1e100 ? undef : $wcs_bnds[1]->[1] );
-      my $obsdecbr_rad = ( $wcs_bnds[1]->[2] < -1e100 ? undef : $wcs_bnds[1]->[2] );
-      my $obsdectr_rad = ( $wcs_bnds[1]->[3] < -1e100 ? undef : $wcs_bnds[1]->[3] );
-
-      if ( defined( $obsrabl_rad ) && defined( $obsdecbl_rad ) ) {
-        my $bl = new Astro::Coords( ra => $obsrabl_rad,
-                                    dec => $obsdecbl_rad,
-                                    type => 'J2000',
-                                    units => 'radians'
-                                  );
-        $return{'bottom_left'} = $bl;
-      } else {
-        $return{'bottom_left'} = undef;
-      }
-      if ( defined( $obsratl_rad ) && defined( $obsdectl_rad ) ) {
-        my $tl = new Astro::Coords( ra => $obsratl_rad,
-                                    dec => $obsdectl_rad,
-                                    type => 'J2000',
-                                    units => 'radians' );
-        $return{'top_left'} = $tl;
-      } else {
-        $return{'top_left'} = undef;
-      }
-      if ( defined( $obsrabr_rad ) && defined( $obsdecbr_rad ) ) {
-        my $br = new Astro::Coords( ra => $obsrabr_rad,
-                                    dec => $obsdecbr_rad,
-                                    type => 'J2000',
-                                    units => 'radians' );
-        $return{'bottom_right'} = $br;
-      } else {
-        $return{'bottom_right'} = undef;
-      }
-      if ( defined( $obsratr_rad ) && defined( $obsdectr_rad ) ) {
-        my $tr = new Astro::Coords( ra => $obsratr_rad,
-                                    dec => $obsdectr_rad,
-                                    type => 'J2000',
-                                    units => 'radians' );
-        $return{'top_right'} = $tr;
-      } else {
-        $return{'top_right'} = undef;
-      }
-    }
-
-    # Only write the sideband bounds if we have them.
-    if ( defined( $ssb_bnds[0] ) ) {
-
-      $return{'freq_sig_lo'} = ( $ssb_bnds[0]->[0] < $ssb_bnds[0]->[1] ?
-                                 $ssb_bnds[0]->[0]                     :
-                                 $ssb_bnds[0]->[1]                     );
-      $return{'freq_sig_hi'} = ( $ssb_bnds[0]->[0] < $ssb_bnds[0]->[1] ?
-                                 $ssb_bnds[0]->[1]                     :
-                                 $ssb_bnds[0]->[0]                     );
-    }
-    if ( defined( $isb_bnds[0] ) ) {
-
-      $return{'freq_img_lo'} = ( $isb_bnds[0]->[0] < $isb_bnds[0]->[1] ?
-                                 $isb_bnds[0]->[0]                     :
-                                 $isb_bnds[0]->[1]                     );
-      $return{'freq_img_hi'} = ( $isb_bnds[0]->[0] < $isb_bnds[0]->[1] ?
-                                 $isb_bnds[0]->[1]                     :
-                                 $isb_bnds[0]->[0]                     );
-    }
-
-
+    return \%return;
   }
-
-  return \%return;
-
+  return ();
 }
 
 =item B<return_bounds_header>
@@ -624,6 +460,241 @@ sub update_bounds_headers {
 }
 
 =back
+
+=begin _HELPER_ROUTINES_
+
+=head1 HELPER ROUTINES
+
+=over 4
+
+=item B<calc_spectral_bounds>
+
+Given a frameset, extract the specframe and return a list
+in the form of a hash with the high and low values in the
+observed and, if relevant, image sideband.
+
+  %bounds = calc_spectral_bounds( $frameset, \@lbnd, \@ubnd );
+
+Where the second and third arguments are the lower and upper
+pixel bounds of the data array.
+
+=cut
+
+sub calc_spectral_bounds {
+  my $fset = shift;
+  my $lbnd = shift;
+  my $ubnd = shift;
+
+  # The template can be a SpecFrame since that matches a DSBSpecFrame
+  my ($fsout, $outax) = get_frameset_via_template( $fset,
+                                                   Starlink::AST::SpecFrame->new( "MaxAxes=100" ),
+                                                 );
+  return unless defined $fsout;
+
+  # Make sure we have the right attributes
+  $fsout->Set( 'system' => 'FREQ',
+               'unit'   => 'GHz',
+               'stdofrest' => 'BARY',
+             );
+
+  # Now we can ask for the bounds (we are 1D so it is easy)
+  # and we know which pixel axis to use
+  my $dims = $ubnd->[ $outax->[0] - 1 ] - $lbnd->[ $outax->[0] - 1 ] + 1;
+  my @speclbnd = ( 0.5 );
+  my @specubnd = ( $dims + 0.5 );
+
+  # See if we have the Sideband attribute
+  my $has_dsb = $fsout->HasAttribute( "Sideband" );
+
+  # Force Observed sideband
+  $fsout->Set( "Sideband" => "Observed" ) if $has_dsb;
+
+  my %results;
+  for my $type (qw/ sig img / ) {
+    my ($low, $high, $lout, $uout) = $fsout->MapBox( \@speclbnd,
+                                                     \@specubnd,
+                                                     1, 1 );
+    $results{"freq_${type}_lo"} = $low;
+    $results{"freq_${type}_hi"} = $high;
+
+    last unless $has_dsb;
+    $fsout->Set( "Sideband" => "Image" );
+  }
+
+  return %results;
+}
+
+=item B<calc_spatial_corners>
+
+Given a frameset, extract the skyframe and return a list
+in the form of a hash with the coordinates of the "corners"
+of the data array. The bounding box is not calculated.
+
+  %bounds = calc_spatial_corners( $frameset, \@lbnd, \@ubnd );
+
+Where the second and third arguments are the lower and upper
+pixel bounds of the data array.
+
+Note that these corners refer to the pixel centre, not the further
+extent of the pixel.
+
+Also calculates the centre (key = centre) and retrieves
+any reference coordinate (key = reference)
+
+=cut
+
+sub calc_spatial_corners {
+  my $fset = shift;
+  my $lbnd = shift;
+  my $ubnd = shift;
+
+  # Get the SkyFrame
+  my ($fsout, $outax) = get_frameset_via_template( $fset,
+                                                Starlink::AST::SkyFrame->new( "MaxAxes=100" ),
+                                              );
+  return unless defined $fsout;
+
+  # Make sure we have the right attributes
+  $fsout->Set( 'system' => 'ICRS',
+               'SkyRefIs' => "ignored",
+             );
+
+  # Calculate the GRID coordinates of the 4 SkyFrame corners
+  my $xcoords = $outax->[0] - 1;
+  my $ycoords = $outax->[1] - 1;
+  my (@gx_in, @gy_in);
+  $gx_in[0] = $gx_in[2] = $ubnd->[$xcoords] - $lbnd->[$xcoords] + 1;   # Right
+  $gx_in[1] = $gx_in[3] = 1.0; # Left
+  $gy_in[0] = $gy_in[1] = $ubnd->[$ycoords] - $lbnd->[$ycoords] + 1;   # Top
+  $gy_in[2] = $gy_in[3] = 1.0; # Bottom
+
+  # The centre
+  $gx_in[4] = ($gx_in[0] + $gx_in[1]) / 2.0;
+  $gy_in[4] = ($gy_in[0] + $gy_in[2]) / 2.0;
+
+  my ($gx_out, $gy_out) = $fsout->Tran2( \@gx_in, \@gy_in, 1 );
+
+  # Work out whether X or Y is the longitude
+  my $lonaxis = $fsout->Get("LonAxis");
+  my $lataxis = $fsout->Get("LatAxis");
+
+  my $xname = "ra";
+  my $yname = "dec";
+  if ($lonaxis == 2) {
+    $xname = "dec";
+    $yname = "ra";
+  }
+
+  # TR, TL, BR, BL
+  my %results;
+  for my $corner (qw/ top_right top_left bottom_right bottom_left centre /) {
+    my $xval = shift(@$gx_out);
+    my $yval = shift(@$gy_out);
+
+    # Check for bad values
+    if ($xval > -1e100 && $yval > -1e100) {
+      $results{$corner} = Astro::Coords->new( $xname => $xval,
+                                              $yname => $yval,
+                                              type => "J2000",
+                                              units => 'radians' );
+    } else {
+      $results{$corner} = undef;
+    }
+
+  }
+
+  # Retrieve the sky reference
+  my $refra = $fsout->Get( "SkyRef($lonaxis)");
+  my $refdec = $fsout->Get( "SkyRef($lataxis)");
+  $results{reference} = Astro::Coords->new( ra => $refra,
+                                            dec => $refdec,
+                                            type => "J2000",
+                                            units => 'radians');
+
+  return %results;
+}
+
+
+=item B<get_frameset_via_template>
+
+Given a frameset and a template, return a frameset
+that contains only the mappings and coordinates
+relevant to the template.
+
+  ($newfs, $outax) = get_frameset_via_template( $infs, $template );
+
+where the template is a frame of any class and the
+returned outax is a reference to an array containing
+the indices into the original frameset base GRID frame
+relevant mapped to the new frameset (1-based).
+
+Returns empty list if a template does not match or if the
+mapping can not be split.
+
+=cut
+
+sub get_frameset_via_template {
+  my $fset = shift;
+  my $template = shift;
+
+ # Copy the frame set
+  $fset = $fset->Copy();
+
+  # Set the base frame to GRID
+  my $nframes = $fset->GetI( "NFrame" );
+  my $bfrm;
+  for my $i (1..$nframes) {
+    my $tfrm = $fset->GetFrame( $i );
+    my $domain = $tfrm->GetC( "Domain" );
+    if ($domain && $domain eq 'GRID') {
+      $fset->SetI( "Base", $i );
+      $bfrm = $tfrm;
+      last;
+    }
+  }
+
+  # do not continue if no GRID frame
+  return () unless defined $bfrm;
+
+  # Find the matching frame
+  my $matchfset = $fset->FindFrame( $template, "" );
+
+  return () unless defined $matchfset;
+
+  # Get the mapping from template to the base frame
+  my $map = $matchfset->GetMapping( Starlink::AST::AST__CURRENT(),
+                                    Starlink::AST::AST__BASE() );
+
+  # Get the specframe itself
+  my $cfrm = $matchfset->GetFrame( Starlink::AST::AST__CURRENT() );
+
+  # May have an N-d frameset so have to split the mapping
+  # with the correct number of inputs (note that the mapping goes
+  # from the frame that matched the template to the multi-dim GRID)
+  my $nin = $map->GetI( "Nin" );
+  my @axin = (1..$nin);
+
+  my ($splitmap, @outax) = $map->MapSplit( \@axin );
+
+  if (defined $splitmap && $splitmap->GetI("Nout") == $nin) {
+    # Now pick out the corresponding axis from the base frame
+    my $gfrm = $bfrm->PickAxes( \@outax );
+
+    # and put it together into a new frameset
+    my $fsout = Starlink::AST::FrameSet->new( $gfrm, "" );
+    $splitmap->Invert();
+    $fsout->AddFrame( Starlink::AST::AST__BASE(), $splitmap, $cfrm );
+
+    return ( $fsout, \@outax );
+
+  }
+
+  return;
+}
+
+=back
+
+=end _HELPER_ROUTINES_
 
 =head1 SEE ALSO
 
