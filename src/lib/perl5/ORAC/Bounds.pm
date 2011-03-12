@@ -154,8 +154,10 @@ sub retrieve_bounds {
                  );
 
     # If this is a moving source blank the reference position
+    # if we do not have a tracking system we play it safe by not blanking
+    # the reference.
     delete $return{reference}
-      if ($tracksys eq 'APP' || $tracksys eq 'AZEL');
+      if (defined $tracksys && ($tracksys eq 'APP' || $tracksys eq 'AZEL'));
 
     return \%return;
   }
