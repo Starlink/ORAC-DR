@@ -101,25 +101,46 @@ sub filename {
 =item B<for_recipe>
 
 Retrieves the parameters associated with a particular recipe.
+Optionally an object name can also be supplied to allow recipe/object
+combinations.
 
- %params = $par->for_recipe( $recipe );
+ %params = $par->for_recipe( $recipe, $object );
 
 Will return an empty list if no parameters exist for the recipe
 or if the recipe name is not defined.
+
+RecipeObject parameters supercede Recipe parameters but
+Recipe parameters will be included.
+
+Whitespace is removed from the object name.
 
 =cut
 
 sub for_recipe {
   my $self = shift;
   my $rec = shift;
+  my $object = shift;
   return () unless defined $rec;
   $rec = uc($rec);
   my %allpars = $self->_parameters();
 
+  my %RecPars;
+
+  # Simple recipe parameter
   if (exists $allpars{$rec}) {
-    return %{$allpars{$rec}};
+    %RecPars = %{$allpars{$rec}};
   }
-  return ();
+
+  # OBJECT Recipe parameters
+  if (defined $object) {
+    $object =~ s/\s//g;
+    if (length($object)) {
+      my $key = $rec .":". uc($object);
+      %RecPars = (%RecPars, %{$allpars{$key}});
+    }
+  }
+
+  return %RecPars;
 }
 
 =item B<verify_parameters>
@@ -308,8 +329,19 @@ containing keyword=value pairs.
  [RECIPE2_NAME]
  param1 = value
 
+ [RECIPE_NAME:OBJECT1]
+ param1 = value
+
+ [RECIPE_NAME:OBJECT2]
+
 Comma-separated values are converted to perl arrays. Multiple recipes
 can be specified in a single parameter file.
+
+Object names (as found in the FITS header but converted to upper case
+and with spaces removed) can be specified along with recipe names. If
+a recipe is being processed with a particular object the parameters
+for the recipe itself and the object variant of the recipe will be
+merged with the object taking precedence.
 
 =head1 AUTHORS
 
@@ -317,7 +349,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009 Science and Technology Facilities Council.
+Copyright (C) 2009, 2011 Science and Technology Facilities Council.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under

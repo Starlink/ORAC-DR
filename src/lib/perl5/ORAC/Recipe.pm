@@ -934,7 +934,9 @@ sub orac_execute_recipe {
   my $allpars = $Recipe->parameters;
   my %recpars;
   if ($allpars) {
-    %recpars = $allpars->for_recipe( $Recipe->name );
+    # Need the object name in some cases
+    %recpars = $allpars->for_recipe( $Recipe->name,
+                                     $Frm->uhdr("ORAC_OBJECT"));
   }
 
   # run the recipe
