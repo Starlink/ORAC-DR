@@ -600,6 +600,39 @@ sub flush_messages {
   orac_throw($errstr) if defined $errstr;
 }
 
+=item B<set_app_name>
+
+A class method that is used to set the NDF application name from the
+supplied arguments. Usually triggered automatically on entry to
+a new primitive.
+
+  $File->set_app_name( Primitive => $primitive );
+
+Call without arguments to reset the name to the ORAC-DR app name and
+version number.
+
+=cut
+
+sub set_app_name {
+  my $self = shift;
+  my %args = @_;
+  my $status = &NDF::SAI__OK();
+
+  my $baseapp = ORAC::Version->getApp;
+
+  # Use the shortened SHA1 commit if available
+  my @vers = ORAC::Version->oracversion_global;
+  my $sha = "";
+  $sha = "(". substr($vers[1],0,6).")" if defined $vers[1];
+
+  my $extra = "";
+  if (exists $args{Primitive} && defined $args{Primitive}) {
+    $extra = "- $args{Primitive}";
+  }
+
+  NDF::ndf_happn( "$baseapp $extra $sha", $status );
+}
+
 =back
 
 =head1 PRIVATE METHODS

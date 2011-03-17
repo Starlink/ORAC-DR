@@ -768,6 +768,7 @@ sub _expand_primitive {
   push(@parsed, "orac_loginfo( 'Primitive Arguments' => \$_PRIM_ARGS_STRING_ );");
   push(@parsed, "my \$_PRIM_EPOCH_ = &Time::HiRes::gettimeofday();");
   push(@parsed, "orac_logkey(\"".$prim->name."\");");
+  push(@parsed, "\$Frm->set_app_name(Primitive=>\"".$prim->name."\") if \$Frm->can(\"set_app_name\");");
 
   # Promote the recipe parameters to a recipe global variable
   push(@parsed, "my \%RECPARS = %{\$ORAC_Recipe_Info->{Parameters}};");
@@ -902,7 +903,8 @@ sub _expand_primitive {
         push(@parsed, $earlier);
       }
 
-      # Reset line count
+      # Reset line count and app name
+      push(@parsed, "\$Frm->set_app_name(Primitive=>\"".$prim->name."\") if \$Frm->can(\"set_app_name\");");
       push(@parsed, "#line ".($lineno+1) ." ". $prim->name() );
 
     } elsif ($line =~ /->obeyw(.*)/) {
@@ -1026,7 +1028,9 @@ sub _expand_primitive {
   }
 
   # At the end of the primitive file the primitive arguments hash and close the sub
+  # Also reset the application name
   push(@parsed, $class . "->_store_prim_params(\"".$prim->name."\", \\%".$prim->name.");");
+  push(@parsed, "\$Frm->set_app_name() if \$Frm->can(\"set_app_name\");");
   push(@parsed, " return ORAC__OK;");
   push(@parsed, "}","# End primitive". $prim->name,"");
 
