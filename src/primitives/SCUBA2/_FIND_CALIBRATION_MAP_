@@ -245,6 +245,10 @@ if ( $proceed ) {
 		    ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX},
 		    BEAMEQUIV => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} / $beamconv
 		  );
+    my %results_err = ( BEAM_ERR => $_FIND_MAP_PEAK_{PEAKERR},
+			ARCSEC_ERR => $_FIND_INTEGRATED_INTENSITY_{SIGMATOTAL},
+			BEAMEQUIV_ERR => $_FIND_INTEGRATED_INTENSITY_{SIGMATOTAL} / $beamconv
+		      );
 
     my %fcf;
 
@@ -263,6 +267,7 @@ if ( $proceed ) {
     my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
     if ($matched_peak) {
       $results{BEAMMATCH} = $matched_peak;
+      $results_err{BEAMMATCH_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
       # Store the _mf file on the intermediates array so it can be
       # deleted later
       $Obj->push_intermediates($_APPLY_MATCHED_FILTER_{OUT});
@@ -273,6 +278,7 @@ if ( $proceed ) {
     my $bad_results = 0;
     # Loop over the different type of results
     foreach my $type (sort keys %results) {
+      my $errtype = $type . "_ERR";
 
       # Type specific configurations
       my ($ismap, $units);
@@ -321,11 +327,15 @@ if ( $proceed ) {
 
 	# Calculate the new gain
 	my $fcf = $flux / $results{$type};
+	my $dfcf = (defined $results_err{$errtype})
+	  ? $fcf * ($results_err{$errtype} / $results{$type}) : 0.0;
 
 	# Store the result in the calibration system
+	my $pfcf = sprintf "%.4f", $fcf;
+	my $pdfcf = sprintf "%.4f", $dfcf;
 	if ( $store ) {
 	  # Announce the new gain
-	  orac_print("Storing new gain for $filter: $fcf $units\n",'yellow');
+	  orac_print("Storing new gain for $filter: $pfcf +/- $pdfcf $units\n",'yellow');
 
 	  # Set the current gain - add to index file
 	  # This means that we have to create a hash with the
@@ -338,15 +348,15 @@ if ( $proceed ) {
 	  $Cal->gainsindex->add($Obj->file() ."_$type",
 				{ %{$Obj->hdr}, %{$Obj->uhdr}});
 	} else {
-	  orac_print ("Derived FCF for $filter: $fcf $units\n", "yellow");
+	  orac_print ("Derived FCF for $filter: $pfcf +/- $pdfcf $units\n", "yellow");
 	}
 	$fcf{$type} = $fcf;
 
 	# Additionally it seems that a user-friendly logfile is
 	# a requirement
 	my $logtype = "fcf";
-	my @names = ("FCF", "FCF_units", "FWHM");
-	my @values = ($fcf, $type, $fwhm);
+	my @names = ("FCF", "FCFerr", "FCF_units", "FWHM");
+	my @values = ($fcf, $dfcf, $type, $fwhm);
 	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
       } else {
 	orac_warn "Unable to calculate a flux for source $src\n";
