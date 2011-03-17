@@ -32,6 +32,11 @@ The following arguments are supported:
 
 =over 4
 
+=item B<FITBOX>
+
+Size of area in pixels within which to constrain the fit. Default is
+25.
+
 =item B<FITPEAK>
 
 A flag to denote whether the peak position should be refined by fitting
@@ -95,8 +100,16 @@ contains the following keys:
 
 =item PEAK
 
-The peak signal. Contains C<undef> if the calculation did not
-complete sucessfully.
+The peak signal. Corresponds to the peak signal at the peak
+signal-to-noise position if the fit failed or no fit was
+specified. Will be undef if no significant maximum was found.
+
+=item PEAKERR
+
+Uncertainty in the peak signal. If the fit failed or no fit was
+specified then this is the value of the error component of the NDF at
+the position of the peak signal. Will be undef if no significant
+maximum was found.
 
 =item POSITION
 
@@ -117,7 +130,7 @@ None.
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2009-2010 University of British Columbia.
+Copyright (C) 2009-2011 University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2000 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
@@ -186,7 +199,7 @@ $Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$image_snr");
 # Check that SNR image has >5 sigma peaks
 $Mon{kappa_mon}->obeyw("stats","ndf=$image_snr");
 my ($ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
-my ($peakval, @xy, $peak, $posn);
+my ($peakval, $peakerr, @xy, $peak, $dpeak, $posn);
 if ( $peaksn > 5 ) {
   my $image_mf = new ORAC::TempFile;
   _APPLY_MATCHED_FILTER_ IN=$image OUT=$image_mf STORE=0 VERBOSE=0
@@ -199,8 +212,10 @@ if ( $peaksn > 5 ) {
 
   # Now find the value in the original image at the maximum
   $in = $image."($xy[0]~1,$xy[1]~1,)";
-  $Mon{kappa_mon}->obeyw("stats","ndf=$image");
+  $Mon{kappa_mon}->obeyw("stats","ndf=$in");
   ($ORAC_STATUS, $peakval) = $Mon{kappa_mon}->get("stats", "maximum");
+  $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=err");
+  ($ORAC_STATUS, $peakerr) = $Mon{kappa_mon}->get("stats", "maximum");
 } else {
   orac_warn "Image $in has no significant maximum\n";
   @xy = ();
@@ -212,8 +227,11 @@ if ($fitpeak) {
   # Are we forcing a gaussian fit?
   my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 0);
 
+  # Size of region to fit
+  my $fitbox = get_prim_arg($_PRIM_ARGS_, "FITBOX", 25);
+
   # Fit a 2-d gaussian to the source to determine the peak signal
-  _FIT_SOURCE_ IMAGE=$image XYPOS=\@xy BOX=15 VERBOSE=0 GAUSSIAN=$gaussian
+  _FIT_SOURCE_ IMAGE=$image XYPOS=\@xy BOX=$fitbox VERBOSE=0 GAUSSIAN=$gaussian
 
   # Proceed if the fit was successful
   my $beamfit = 0;
@@ -232,6 +250,10 @@ if ($fitpeak) {
   if ($beamfit) {
     my $amp = $_FIT_SOURCE_{AMPLITUDE};
     $peak = $amp->[0];
+    # Use the uncertainty in the fit - could use the RMS to get a
+    # better sense of the overall uncertainty but in practice it's
+    # only a little bit higher than this
+    $dpeak = $amp->[1];
     $posn = $_FIT_SOURCE_{POSITION};
     orac_print " Fitted peak at $posn->[0], $posn->[1]\n" if ($verbose);
     my %fitpars = %_FIT_SOURCE_;
@@ -239,15 +261,18 @@ if ($fitpeak) {
   } else {
     orac_warn "Fit to source failed - using peak position instead\n";
     $peak = $peakval;
+    $dpeak = $peakerr;
     $posn = \@xy;
     orac_print " Found peak at $posn->[0], $posn->[1]\n" if ($verbose);
   }
 } else {
   $peak = $peakval;
+  $dpeak = $peakerr;
   $posn = \@xy;
 }
 
 # Store the result in the hash
 $_PRIM_ARGS_->{PEAK} = $peak;
+$_PRIM_ARGS_->{PEAKERR} = $dpeak;
 $_PRIM_ARGS_->{POSITION} = $posn;
 
