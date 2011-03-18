@@ -111,5 +111,18 @@ if ( $?ORAC_DATA_CAL ) then
   alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_ql.ini &"
 endif
 
-echo Running data gatherer
-$ORAC_DIR/bin/qlgather &
+# qlgather alias
+alias qlgather "$STARLINK_DIR/Perl/bin/perl $ORAC_DIR/bin/qlgather"
+
+echo " Use 'xstripchart' to monitor pipeline output time series data"
+echo
+echo " To run QL processing the QL data gatherer must be run up."
+echo " Make sure that DRAMA networking tasks are running and then:"
+echo
+echo "    qlgather &"
+echo "    oracdr &"
+echo
+echo " ORAC_REMOTE_TASK can be set to monitor specific tasks but"
+echo " this is not necessary by default."
+echo
+
