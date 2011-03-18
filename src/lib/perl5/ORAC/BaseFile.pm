@@ -311,16 +311,17 @@ sub files {
     }
 
     # Store the new versions
-    @{ $self->{Files} } = @_;
+    my @newfiles = map { $self->stripfname($_) } @_;
+    @{ $self->{Files} } = @newfiles;
 
     # Also in raw if raw is empty
-    $self->raw( @{ $self->{Files} } ) unless defined $self->raw;;
+    $self->raw( @newfiles ) unless defined $self->raw;;
 
     # And store the new files on the intermediates array.
     # Note that we store new and not old to guarantee
     # that we can clear out the final files that are created if
     # necessary. This means that intermediates also includes current
-    $self->push_intermediates( @_ );
+    $self->push_intermediates( @newfiles );
 
     # unset noKeep flags
     for my $i (1..scalar(@_)) {
