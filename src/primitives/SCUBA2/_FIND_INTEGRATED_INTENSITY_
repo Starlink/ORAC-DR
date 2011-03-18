@@ -126,6 +126,11 @@ The sum of the data values from all pixels within the aperture
 The total flux within the aperture in units of
 signal_units*pixel_units^2
 
+=item TOTALFLUXERR
+
+The estimated error on the total flux within the aperture in units of
+signal_units*pixel_units^2
+
 =back
 
 The Frame object is not updated.
@@ -143,7 +148,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2005-2007 Particle Physics and Astronomy Research
-Council. Copyright (C) 2005-2010 University of British Columbia. All
+Council. Copyright (C) 2005-2011 University of British Columbia. All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -204,6 +209,9 @@ my ($ORAC_STATUS, $sum) = $Mon{kappa_mon}->get("aperadd","total");
 ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("aperadd","ngood");
 ($ORAC_STATUS, my $npix) = $Mon{kappa_mon}->get("aperadd","numpix");
 
+# Uncertainty in the sum within the aperture
+my $fluxerr = 0;
+
 # Calculate and remove a constant background if required
 my $removeback = get_prim_arg($_PRIM_ARGS_, "REMOVEBACK", 1);
 if ( $removeback ) {
@@ -217,7 +225,8 @@ if ( $removeback ) {
 
   # Now calculate stats of the masked file to get the background level
   # outside the source aperture
-  _FIND_IMAGE_STATISTICS_ IMAGE=$bgout VERBOSE=0 HISTAT=1
+  my $histat =  ($estimator eq "MODE") ? 1 : 0;
+  _FIND_IMAGE_STATISTICS_ IMAGE=$bgout VERBOSE=0 HISTAT=$histat
   my $background = ($_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD})
     ? $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator} : 0.0;
 
@@ -228,6 +237,15 @@ if ( $removeback ) {
   } else {
     orac_warn "Unable to determine background level: integrated intensity may be over/underestimated\n";
   }
+
+  # Find sigma separately if histat is true
+  if ($histat) {
+    _FIND_IMAGE_STATISTICS_ IMAGE=$bgout VERBOSE=0 HISTAT=0
+  }
+  $fluxerr = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+  # This is the std deviation in the non-signal pixels - the std
+  # deviation in the aperture is sqrt($ngood) higher
+  $fluxerr *= sqrt($ngood);
 }
 
 # Retrieve pixel scale in arcsec so totalflux is returned as a flux
@@ -239,6 +257,7 @@ my $pixarea = $_GET_PIXEL_SCALE_{AREA};
 $_PRIM_ARGS_->{SUM} = $sum;
 $_PRIM_ARGS_->{SIGMA} = $sigma;
 $_PRIM_ARGS_->{TOTALFLUX} = $sum*$pixarea;
+$_PRIM_ARGS_->{TOTALFLUXERR} = $fluxerr*$pixarea;
 $_PRIM_ARGS_->{SIGMATOTAL} = $sigma*$pixarea;
 $_PRIM_ARGS_->{NUMGOOD} = $ngood;
 $_PRIM_ARGS_->{NUMPIX} = $npix;
