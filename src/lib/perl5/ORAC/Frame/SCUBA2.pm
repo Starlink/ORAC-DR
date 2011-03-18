@@ -602,6 +602,38 @@ sub get_files_by_subarray {
   return $self->files_from_hdr( "SUBARRAY" );
 }
 
+=item B<instap_subarray>
+
+Return the name of the subarray which corresponds to the instrument
+aperture at the current wavelength.
+
+  my $data_instap = $Frm->instap_subarray;
+
+=cut
+
+sub instap_subarray {
+  my $self = shift;
+  # Retrieve current instrument aperture
+  my $instap = $self->hdr("INSTAP");
+
+  # Is the instrument aperture the same filter as the data?
+  my $instap_wavelen = ($instap =~ /4/ ? 4 : 8);
+  my $data_wavelen = ($self->hdr("FILTER") =~ /450/ ? 4 : 8);
+
+  # If the instap is defined at the other waveband, work out which
+  # subarray that maps to it this waveband. Fortunately it's simple:
+  # the a and d subarrays are swapped, as are the b and c.
+  if ($instap_wavelen != $data_wavelen) {
+    my $new_instap = "s".($data_wavelen);
+    $new_instap .= "d" if $instap =~ /a$/;
+    $new_instap .= "c" if $instap =~ /b$/;
+    $new_instap .= "b" if $instap =~ /c$/;
+    $new_instap .= "a" if $instap =~ /d$/;
+    $instap = $new_instap;
+  }
+  return $instap;
+}
+
 =item B<meta_file>
 
 Search for and return the full path to the meta file associated with
@@ -658,10 +690,11 @@ sub numsubarrays {
 
 =item B<rewrite_outfile_subarray>
 
-This method modifies the supplied filename to remove specific
-subarray designation and replace it with a generic filter
-designation. 4 digit subscan information is also removed but not
-if this is a Focus observation.
+This method modifies the supplied filename to remove specific subarray
+designation and replace it with a generic filter designation. 4 digit
+subscan information is also removed but not if this is a Focus
+observation or if the data are a fast-ramp flatfield (as there may be
+multiple fastflats in a single observation).
 
 Should be used when subarrays are merged into a single file.
 
@@ -689,7 +722,9 @@ sub rewrite_outfile_subarray {
 
     # Replace the subscan number with the filter name
     my $obsmode = $self->hdr( "OBS_TYPE" );
-    if ($obsmode =~ /focus/i) {
+    my $seqtype = (defined $self->hdr( "SEQ_TYPE" ))
+      ? $self->hdr( "SEQ_TYPE" ) : $obsmode;
+    if ($obsmode =~ /focus/i || $seqtype =~ /fastflat/i) {
       $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
     } else {
       $new =~ s/(_\d\d\d\d_)/_${filt}_/;
