@@ -380,9 +380,13 @@ sub sync_headers {
     @files = $self->files;
   }
 
+  # Get a list of known raw files
+  # Need to do the stripfname shenanigans in case raw has a suffix
+  my %rawlut = map { $self->stripfname($_), undef } $self->raw;
+
   foreach my $file ( @files ) {
 
-    if ( $file !~ /_(\d)+$/ ) {
+    if ( !exists $rawlut{$file}) { # Do not update a raw file
       my $newheader = $self->collate_headers( $file );
       my $header = new Astro::FITS::Header::NDF( File => $file );
       $header->append( $newheader );
