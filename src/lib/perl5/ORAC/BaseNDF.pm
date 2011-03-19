@@ -38,6 +38,12 @@ $VERSION = '1.0';
 
 $DEBUG = 0;
 
+# We have NDF so we have HDSPACK so it is safe to define an error
+# handler here so that the error stack is visible to ORAC-DR. All NDF
+# usingi nstruments should inherit from this class
+use Starlink::HDSPACK '2.01';
+&Starlink::HDSPACK::error_handler( sub { my $cmd = shift; orac_err("$cmd: ". $_."\n") for @_ } );
+
 =head1 METHODS
 
 =head2 General Methods
