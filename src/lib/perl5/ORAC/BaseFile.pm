@@ -315,7 +315,11 @@ sub files {
     @{ $self->{Files} } = @newfiles;
 
     # Also in raw if raw is empty
-    $self->raw( @newfiles ) unless defined $self->raw;;
+    my $are_raw;
+    if (!defined $self->raw) {
+      $self->raw( @newfiles );
+      $are_raw = 1;
+    }
 
     # And store the new files on the intermediates array.
     # Note that we store new and not old to guarantee
@@ -328,9 +332,11 @@ sub files {
       $self->nokeep( $i, 0);
     }
 
-    # Sync the headers.
-    for my $i ( 1..scalar( @_ ) ) {
-      $self->sync_headers( $i );
+    # Sync the headers (But not if we know these are raw files)
+    if (!$are_raw) {
+      for my $i ( 1..scalar( @_ ) ) {
+        $self->sync_headers( $i );
+      }
     }
 
   }
