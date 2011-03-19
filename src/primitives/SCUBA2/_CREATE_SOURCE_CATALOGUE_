@@ -1,0 +1,144 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_SOURCE_CATALOGUE_ - create a catalogue of sources in an image
+
+=head1 SYNOPSIS
+
+ _CREATE_SOURCE_CATALOGUE_
+
+=head1 DESCRIPTION
+
+This primitive is designed to perform the optimal source extraction
+and catalogue creation for both compact and extended sources.
+
+Source finding is performed using CUPID:findclumps and may use any of
+the supported methods. The best way to control source detection is by
+providing a tuned config file with all the necessary parameters. This
+is specified using the recipe parameter C<FINDCLUMPS_CONFIG>. The
+results are written to a CUPID catalogue file (a FITS binary table).
+
+This primitive is designed to work on a single image and will fail if
+the current Frame object contains more than one file.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<DETECT>
+
+Optional detection threshold in units of standard deviation. Default
+is 5.
+
+=item B<GROUP>
+
+Flag to denote whether the current Group file or current Frame file
+should be used. Default is 0 (use the Frame file).
+
+=item B<METHOD>
+
+Source-finding method. May be any of the CUPID:FINDCLUMPS
+methods. Default is C<FELLWALKER>.
+
+=item B<MINPIX>
+
+Minimum number of connected pixels defining a source. Default is 9.
+
+=item B<SMOOTH_FWHM>
+
+FWHM of Gaussian used to smooth the image before subtracting as part
+of applying a matched filter. Default is wavelength dependent (30" at
+850 um; 20" at 450 um).
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_APPLY_MATCHED_FILTER_, _CALC_SCUBA2_SNR_, _CROP_IMAGE_FRAME_,
+_FIND_SOURCES_
+
+=back
+
+=head1 NOTES
+
+Input arguments may be overridden by survey-specific choices.
+
+=head1 OUTPUT DATA
+
+....
+
+=head1 OUTPUT FILES
+
+Output catalogue with suffix C<_cat> and filename extension of C<.FIT>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Signal-to-noise detection threshold
+my $detect = get_prim_arg($_PRIM_ARGS_, "DETECT", 5);
+
+# Minimum number of pixels which define a source
+my $minpix = get_prim_arg($_PRIM_ARGS_, "MINPIX", 9);
+
+# Source detection method for CUPID
+my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "fellwalker");
+
+# FWHM of Gaussian to smooth and subtract in the matched filter
+my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH_FWHM", 30.0);
+
+# Use Frame or Group image
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+
+# Be verbose? Default to yes.
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Trim image to map size so results are not biassed by noise around
+# the edge of the map
+_CROP_IMAGE_FRAME_
+
+# Apply the matched filter
+_APPLY_MATCHED_FILTER_ GROUP=$group STORE=1 SMOOTH_FWHM=$smooth_fwhm
+
+# Calculate S/N map
+_CALC_SCUBA2_SNR_ GROUP=$group STORE=1 VERBOSE=0
+
+# Run CUPID
+_FIND_SOURCES_ GROUP=$group WRITE_CATALOGUE=1 METHOD=$method MINPIX=$minpix DETECT_SIGMA=$detect
+
