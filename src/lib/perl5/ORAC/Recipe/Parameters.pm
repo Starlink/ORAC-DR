@@ -136,7 +136,9 @@ sub for_recipe {
     $object =~ s/\s//g;
     if (length($object)) {
       my $key = $rec .":". uc($object);
-      %RecPars = (%RecPars, %{$allpars{$key}});
+      if (exists $allpars{$key}) {
+        %RecPars = (%RecPars, %{$allpars{$key}});
+      }
     }
   }
 
