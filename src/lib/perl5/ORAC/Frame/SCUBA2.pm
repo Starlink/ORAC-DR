@@ -194,9 +194,6 @@ sub configure {
     }
   }
 
-  # Set the raw file to include the path
-  $self->raw( @paths );
-
   # first thing we need to do is find which keys differ
   # between the .I1 and .IN processed images
   for my $f (keys %rfits) {
@@ -354,10 +351,8 @@ sub configure {
   $self->fits( $primary );
   $self->calc_orac_headers;
 
-  # register these files
-  for my $i (1..scalar(@paths) ) {
-    $self->file($i, $paths[$i-1]);
-  }
+  # register these files (will also fill in raw() )
+  $self->files( @paths );
 
   # Find the group name and set it.
   $self->findgroup;

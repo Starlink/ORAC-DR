@@ -147,13 +147,8 @@ sub configure {
     croak "Wrong number of arguments to configure: 1 or 2 args only";
   }
 
-  # Set the filenames.
-  for my $i (1..scalar(@fnames)) {
-    $self->file($i, $fnames[$i-1]);
-  }
-
-  # Set the raw files.
-  $self->raw( @fnames );
+  # Set the filenames (along with raw()).
+  $self->files(@fnames);
 
   # Populate the header.
   $self->readhdr;
