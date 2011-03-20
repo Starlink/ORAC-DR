@@ -147,6 +147,16 @@ if ( ! defined( $totaltile ) ) {
 
 my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNKSIZE", 5120 );
 
+# Will a TSYS be created?
+
+my $tsys_present = 0;
+if ( lc( $params ) =~ /spread=nearest/ ) {
+   $tsys_present = 1;
+
+} elsif ( !( lc( $params ) =~ /spread=/ ) ) {
+   $tsys_present = 1;
+}
+
 # Divide the list into manageable chunks to prevent a timeout.
 # ============================================================
 
@@ -337,7 +347,7 @@ if ( $total_chunk > 1 ) {
                   $tiles_main[$tileindex] .= $chunk_file . $tile_section . " ";
                   $tiles_eff_time[$tileindex] .= $chunk_file . ".MORE.SMURF.EFF_TIME" . $tile_section . " ";
                   $tiles_exp_time[$tileindex] .= $chunk_file . ".MORE.SMURF.EXP_TIME" . $tile_section . " ";
-                  $tiles_tsys[$tileindex] .= $chunk_file . ".MORE.SMURF.TSYS" . $tile_section . " ";
+                  if ( $tsys_present ) { $tiles_tsys[$tileindex] .= $chunk_file . ".MORE.SMURF.TSYS" . $tile_section . " " }
                   orac_print "File " . $chunk_file . " is in Tile " . $tileindex . ".\n";
                }
             }
@@ -428,30 +438,33 @@ if ( $total_chunk > 1 ) {
 # mean TSYS.
 
 # Delete the existing version of the extension NDF in the output file.
-         my $tsys_out = $mmout . ".MORE.SMURF.TSYS";
-         $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$tsys_out ok" );
+         my $tsys_out;
+         if ( $tsys_present ) {
+            $tsys_out = $mmout . ".MORE.SMURF.TSYS";
+            $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$tsys_out ok" );
 
 # Form text file listing the tile's contributing TSYS chunks to average.
-         $mslist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-         $mslist_fh = $mslist->handle;
+            $mslist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+            $mslist_fh = $mslist->handle;
 
-         @frames = split ( ' ', $tiles_tsys[$c] );
-         foreach my $i ( 1.. $nframe ) {
-            print $mslist_fh $frames[ $i - 1 ] . "\n";
-         }
-         $mslist->handle->close;
+            @frames = split ( ' ', $tiles_tsys[$c] );
+            foreach my $i ( 1.. $nframe ) {
+               print $mslist_fh $frames[ $i - 1 ] . "\n";
+            }
+            $mslist->handle->close;
 
 # Average the TSYS.
-         my $temp_tsys = new ORAC::TempFile;
-         $ms_params = "wlim=0 variance=f trim estimator=mean single=false";
-         $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$mslist out=$temp_tsys $ms_params" );
+            my $temp_tsys = new ORAC::TempFile;
+            $ms_params = "wlim=0 variance=f trim estimator=mean single=false";
+            $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$mslist out=$temp_tsys $ms_params" );
 
 # MSTATS will leave a cube with a degenerate final axis.  Remove that axis.
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_tsys out=$tsys_out trim" );
-         orac_print "Averaging system temperatures on Tile $c to form $tsys_out.\n";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_tsys out=$tsys_out trim" );
+            orac_print "Averaging system temperatures on Tile $c to form $tsys_out.\n";
 
-         undef $temp_tsys;
-         undef $mslist;
+            undef $temp_tsys;
+            undef $mslist;
+        }
 
 # Combine the EFF_TIME NDFs.
 # --------------------------
@@ -460,80 +473,83 @@ if ( $total_chunk > 1 ) {
 # EFF_TIME = (sum (EFF_TIME_i / TSYS_i) )**2 / sum (EFF_TIME_p / (TSYS_p)**2)
 #               i                                p
 
+# Remove the existing EFF_TIME propagated from the primary NDF.
+         my $eff_time_out = $mmout . ".MORE.SMURF.EFF_TIME";
+         $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$eff_time_out ok" );
+
+# TSYS is needed to sum the EFF_TIME.
+         if ( $tsys_present ) {
+
 # Form text files listing the terms to sum in the numerator
 # and denominator that define the combined T_eff.
-         my $nlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-         my $nlist_fh = $nlist->handle;
-         my $dlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-         my $dlist_fh = $dlist->handle;
+            my $nlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+            my $nlist_fh = $nlist->handle;
+            my $dlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+            my $dlist_fh = $dlist->handle;
 
-         my $eff_time_out = $mmout . ".MORE.SMURF.EFF_TIME";
-         orac_print "Combining T_eff on Tile $c to form $eff_time_out.\n";
-         my @eframes = split ( ' ', $tiles_eff_time[$c] );
-         my @tframes = split ( ' ', $tiles_tsys[$c] );
-         my ( @numerator, @denominator );
+            orac_print "Combining T_eff on Tile $c to form $eff_time_out.\n";
+            my @eframes = split ( ' ', $tiles_eff_time[$c] );
+            my @tframes = split ( ' ', $tiles_tsys[$c] );
+            my ( @numerator, @denominator );
 
-         foreach my $i ( 1.. $nframe ) {
+            foreach my $i ( 1.. $nframe ) {
 
 # Form temporary NDFs that store numerator and denominator expressions.
-            my $temp_n = new ORAC::TempFile;
-            my $temp_d = new ORAC::TempFile;
-            push @numerator, $temp_n;
-            push @denominator, $temp_d;
+               my $temp_n = new ORAC::TempFile;
+               my $temp_d = new ORAC::TempFile;
+               push @numerator, $temp_n;
+               push @denominator, $temp_d;
 
 # Constrain the Tsys to avoid divide by zeroes.
-            my $maths_in = "ia=" . $eframes[ $i - 1 ] . " ib=" . $tframes[ $i - 1 ] . " fb=max(0.1,IB)";
-            my $maths_out = "exp=ia/fb out=$temp_n";
-            $Mon{'kappa_mon'}->obeyw( "maths", "$maths_in $maths_out" );
+               my $maths_in = "ia=" . $eframes[ $i - 1 ] . " ib=" . $tframes[ $i - 1 ] . " fb=max(0.1,IB)";
+               my $maths_out = "exp=ia/fb out=$temp_n";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$maths_in $maths_out" );
 
-            $maths_out = "exp=ia/fb/fb out=$temp_d";
-            $Mon{'kappa_mon'}->obeyw( "maths", "$maths_in $maths_out" );
+               $maths_out = "exp=ia/fb/fb out=$temp_d";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$maths_in $maths_out" );
 
 # Store the names of temporary NDFs that are to be summed to form the
 # numerator and denominator of the expression to combine T_eff values.
-            print $nlist_fh $temp_n . "\n";
-            print $dlist_fh $temp_d . "\n";
-         }
+               print $nlist_fh $temp_n . "\n";
+               print $dlist_fh $temp_d . "\n";
+            }
 
 # Close the indirection files so that MSTATS can read them.
-         $nlist->handle->close;
-         $dlist->handle->close;
+            $nlist->handle->close;
+            $dlist->handle->close;
 
 # Sum the terms in the numerator and denominator.
-         my $temp_num = new ORAC::TempFile;
-         my $temp_den = new ORAC::TempFile;
-         $ms_params = "wlim=0 variance=f trim estimator=sum single=false";
-         $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$nlist out=$temp_num $ms_params" );
-         $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$dlist out=$temp_den $ms_params" );
+            my $temp_num = new ORAC::TempFile;
+            my $temp_den = new ORAC::TempFile;
+            $ms_params = "wlim=0 variance=f trim estimator=sum single=false";
+            $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$nlist out=$temp_num $ms_params" );
+            $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$dlist out=$temp_den $ms_params" );
 
 # The numerator is the sqaured of the sum.
-         my $temp_numsq = new ORAC::TempFile;
-         $Mon{'kappa_mon'}->obeyw( "maths", "ia=$temp_num exp=ia*ia out=$temp_numsq" );
+            my $temp_numsq = new ORAC::TempFile;
+            $Mon{'kappa_mon'}->obeyw( "maths", "ia=$temp_num exp=ia*ia out=$temp_numsq" );
 
 # Remove intermediate NDFs and indirection files.
-         foreach my $i ( 1.. $nframe ) {
-            undef $numerator[ $i - 1 ];
-            undef $denominator[ $i - 1 ];
-         }
-         undef $temp_num;
-         undef $nlist;
-         undef $dlist;
-
-# Remove the existing EFF_TIME propagated from the primary NDF.
-         $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$eff_time_out ok" );
+            foreach my $i ( 1.. $nframe ) {
+               undef $numerator[ $i - 1 ];
+               undef $denominator[ $i - 1 ];
+            }
+            undef $temp_num;
+            undef $nlist;
+            undef $dlist;
 
 # Generate the output EFF_TIME NDF.
-         my $temp_eff_time = new ORAC::TempFile;
-         $Mon{'kappa_mon'}->obeyw( "div", "in1=$temp_numsq in2=$temp_den out=$temp_eff_time" );
+            my $temp_eff_time = new ORAC::TempFile;
+            $Mon{'kappa_mon'}->obeyw( "div", "in1=$temp_numsq in2=$temp_den out=$temp_eff_time" );
 
 # MSTATS calculations will leave a cube with a degenerate final axis.  Remove that axis.
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_eff_time out=$eff_time_out trim" );
-         orac_print "  Done.\n";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_eff_time out=$eff_time_out trim" );
+            orac_print "  Done.\n";
 
-         undef $temp_eff_time;
-         undef $temp_num;
-         undef $temp_den;
-
+            undef $temp_eff_time;
+            undef $temp_num;
+            undef $temp_den;
+         }
 
 # Update three representative values of these arrays in the FITS headers.
 # -----------------------------------------------------------------------
@@ -542,13 +558,20 @@ if ( $total_chunk > 1 ) {
          ( $ORAC_STATUS, my $exptime ) = $Mon{'kappa_mon'}->get( "stats", "median" );
          _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=EXP_TIME VALUE=$exptime
 
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$eff_time_out order" );
-         ( $ORAC_STATUS, my $efftime ) = $Mon{'kappa_mon'}->get( "stats", "median" );
-         _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=EFF_TIME VALUE=$efftime
+         if ( $tsys_present ) {
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$eff_time_out order" );
+            ( $ORAC_STATUS, my $efftime ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+            _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=EFF_TIME VALUE=$efftime
 
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tsys_out order" );
-         ( $ORAC_STATUS, my $medtsys ) = $Mon{'kappa_mon'}->get( "stats", "median" );
-         _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=MEDTSYS VALUE=$medtsys
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tsys_out order" );
+            ( $ORAC_STATUS, my $medtsys ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+            _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=MEDTSYS VALUE=$medtsys
+
+# Set blank headers as we have no values.
+         } else {
+            _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=EFF_TIME VALUE=<null>
+            _SET_FILE_FITS_ITEM_ FILE=$mmout KEY=MEDTSYS VALUE=<null>
+         }
 
       } elsif ( $nframe > 1 ) {
          orac_print "Only one file contributes to Tile $c\n";
