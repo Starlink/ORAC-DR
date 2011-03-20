@@ -89,7 +89,7 @@ spatial extent and proceeding in a raster fashion from left to right.
 =head1 TASKS
 
 CCDPACK: MAKEMOS.
-KAPPA: DIV, MATHS, MSTATS, NDFCOPY, NDFTRACE, STATS.
+KAPPA: DIV, MATHS, MSTATS, NDFCOPY, NDFTRACE, SETBB, SHOWQUAL, STATS.
 SMURF: MAKECUBE.
 
 =head1 REQUIRED PERL MODULES
@@ -177,6 +177,7 @@ my $chunk_index = 0;
 my $sumsize = 0;
 my @chfiles;
 my $num_files = @$files;
+my $ORAC_STATUS;
 
 # Look at each input file and see if it needs chunking.
 foreach my $i ( 1 .. $num_files ) {
@@ -201,10 +202,6 @@ foreach my $i ( 1 .. $num_files ) {
          push @chfiles, $files->[ $fi ];
          $fi++;
       }
-
-# Create a text listing all the output files.
-      my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-      my $outlist_fh = $outlist->handle;
 
 # Find and report the number of files in the chunk.
       my $chunk = @chfiles;
@@ -234,8 +231,89 @@ foreach my $i ( 1 .. $num_files ) {
       undef $chlist;
 
 # Find and record the number of tiles in the current chunk.
-      ( my $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+      ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
       push @chunk_ntile, $ntile;
+
+# Mask border pixels.
+# -------------------
+      if ( $ntile > 1 ) {
+
+# Create a text file listing all the input tiles with a border.
+         my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+         my $inlist_fh = $inlist->handle;
+
+# Create a text file listing all the output tiles without a border.
+         my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+         my $outlist_fh = $outlist->handle;
+
+# The tiles should be in same places as if all the input time series
+# were turned into a spatial/spectral cube in one invocation of MAKECUBE.
+# However, not all will be occupied with data from this subset.
+         my @tmp;
+         foreach my $i ( 1.. $totaltile ) {
+            my $ch_tile = $out . "_" . $i;
+            if ( -e $ch_tile . ".sdf" ) {
+               my $trim_ch_tile = new ORAC::TempFile;
+
+# Determine whether there is a BORDER quality flag set.
+               if ( starversion_gt( 'KAPPA', 'V1.13-0' ) ) {
+                  $Mon{'ndfpack_mon'}->obeyw( "showqual", "ndf=$ch_tile" );
+                 ( $ORAC_STATUS, my @qnames ) = $Mon{'ndfpack_mon'}->get( "showqual", "qnames" );
+
+# Add those with a border to the list of files to mask.  As the times
+# are summed, there is a need to mask the exposure-time and effective-time
+# arrays too, but these do not have QUALITY.  The approach is to use
+# the bounds of the bad-pixel trimmed DATA_ARRAY for all the SMURF
+# arrays too.
+                  foreach my $element ( @qnames ) {
+                     if ( $element eq "BORDER" ) {
+                        print $inlist_fh "$ch_tile\n";
+                        print $outlist_fh "$trim_ch_tile\n";
+                        push @tmp, $trim_ch_tile;
+                        last;
+                     }
+                  }
+
+# Have to keep fingers crossed that all tiles have a border.  I can
+# only think of messy ways to search for the QUALITY_NAMES without the
+# SHOWQUAL output parameter.
+               } else {
+                  print $inlist_fh "$ch_tile\n";
+                  print $outlist_fh "$trim_ch_tile\n";
+               }
+            }
+         }
+         $inlist->handle->close;
+
+         $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf='^" . $inlist->file . "' bb=BORDER" );
+
+# Trim the border, now comprising bad pixels in each chunk.  Copy each
+# back to its original name, as if nothing had happened.
+         my $trim_param = "in='^" . $inlist->file . "' out='^" . $outlist->file . "'";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$trim_param trimbad" );
+
+         $trim_param = "in='^" . $outlist->file . "' out='^" . $inlist->file . "'";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$trim_param" );
+
+         undef $inlist;
+         undef $outlist;
+
+# Not sure why the temporary NDFs are not being removed outside the
+# context.
+         foreach my $element ( @tmp ) {
+            undef $element;
+         }
+
+# There is only the one tile, and MAKECUBE omits the tile-index suffix.
+      } else {
+         $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$out bb=BORDER" );
+
+# Trim the border, now comprising bad pixels.  Copy back to the
+# original name, as if nothing had happened.
+         my $trim_ch_tile = new ORAC::TempFile;
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$trim_ch_tile trimbad" );
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$trim_ch_tile out=$out" );
+      }
 
 # Assign tiles in the current chunk to their index within the full set
 # of tiles, as if processing all the time series simultaneously.
