@@ -337,6 +337,11 @@ sub files {
       for my $i ( 1..scalar( @_ ) ) {
         $self->sync_headers( $i );
       }
+    } else {
+      # Read the header if these are raw and we have not read the header
+      if ( ! defined( $self->hdr ) || scalar( keys( %{$self->hdr} ) ) == 0 ) {
+        $self->readhdr;
+      }
     }
 
   }
