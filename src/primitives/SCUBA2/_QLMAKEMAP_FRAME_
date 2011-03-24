@@ -2,19 +2,17 @@
 
 =head1 NAME
 
-_QLMAKEMAP_FRAME_ - make a map using a simple rebinning algorithm
+_QLMAKEMAP_FRAME_ - make a map as quickly as possible
 
 =head1 SYNOPSIS
 
-_QLMAKEMAP_FRAME_ PIXSIZE=7.5 SPREAD=LINEAR
+_QLMAKEMAP_FRAME_
 
 =head1 DESCRIPTION
 
 This primitive takes raw time-series data for the current Frame and
-constructs an image. The data are corrected for dark current drifts
-(provided dark frames are included), a mean sky signal is removed and
-a simple quick extinction correction applied. The data are rebinned
-onto a map pixels using a specified pixel-spreading scheme.
+constructs an image as quickly as possible. This is achieved by
+reducing the number of iterations and downsampling the data.
 
 This is a many to one operation, with only a single output file
 created.
@@ -25,22 +23,10 @@ The following arguments are supported:
 
 =over 4
 
-=item B<PIXSIZE>
-
-Size of the output pixels in arcsec. The default is to use the values
-stored in the calibration system: 5.8 arcsec at 850 microns, 2.9
-arcsec at 450 microns.
-
 =item B<SYSTEM>
 
 Coordinate system for output image. May be any supported by
 B<AST>. Default is C<TRACKING>.
-
-=item B<SPREAD>
-
-Desired pixel-spreading scheme. May be either C<NEAREST> for
-nearest-neighbour resampling or C<LINEAR> for bi-linear resampling.
-Default is C<NEAREST>.
 
 =back
 
@@ -52,18 +38,18 @@ The following external tasks are used:
 
 =item SMURF:
 
-QLMAKEMAP
+MAKEMAP
 
 =item ORAC-DR PRIMITIVES
 
-_ADD_LOG_ENTRY_
+_GET_MAKEMAP_ARGS_, _GET_MAKEMAP_CONFIG_
 
 =back
 
 =head1 OUTPUT DATA
 
-The Frame uhdr entries C<SKY_SUBTRACTION> and C<EXTINCTION> are set to
-1 on success.
+The Frame uhdr entries C<SKY_SUBTRACTION>, C<EXTINCTION> and
+C<NEWIMAGE> are set to 1 on success.
 
 =head1 OUTPUT FILES
 
@@ -79,7 +65,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2006-2008 University of British Columbia. All Rights
+Copyright (C) 2006-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -103,62 +89,177 @@ my @out;
 
 # What checks should we carry out?
 
-# Verbosity - default to no
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+# Do not continue if this is not the QL pipeline
+return ORAC__OK unless ($Frm->uhdr("QUICKLOOK"));
 
-# Output coordinate system - default is TRACKING
-my $system = get_prim_arg($_PRIM_ARGS_, "SYSTEM", "TRACKING");
-
-# Should be an argument
-my $pixsize = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", $Cal->pixelscale);
-
-# Pixel-spreading scheme
-my $spread = lc(get_prim_arg($_PRIM_ARGS_, "SPREAD", "nearest"));
-
-# Reset to "nearest" if an unsupported scheme is given
-if ( ($spread ne "nearest") && ($spread ne "linear") ) {
-  orac_warn "Unsupported pixel-spreading scheme, $spread: using NEAREST\n";
-  $spread = "nearest";
+# Check for dark-only Frames and mark them as bad
+if ($Frm->uhdr("DARKONLY")) {
+  $Frm->isgood(0);
+  $Grp->check_membership;
+  $Frm->uhdr("NOCALIB",1);
+  # Set a flag to indicate a map was not made
+  $Frm->uhdr("NEWIMAGE",0);
+  # Force the sky subtraction and extinction flags to unity so that
+  # these steps are not attempted on non-image data
+  $Frm->uhdr("SKY_SUBTRACTION",1);
+  $Frm->uhdr("EXTINCTION",1);
+  return ORAC__OK;
 }
 
-# Retrieve list of files in current frame
-my @files = $Frm->files;
+my $system = uc(get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING"));
 
-# Write filenames to a file
-my $inlist = new ORAC::TempFile;
-$inlist = write_file_list( @files );
+my @infiles;
+my $suffix = "_fmos";
+my $obsnum = $Frm->hdr("OBSNUM");
+# Use all files in current Frame, except for POINTING and FOCUS
+# observations where the instrument aperture is defined
+if (($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i ||
+     $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) &&
+    defined $Frm->hdr("INSTAP") ) {
+
+  my %allfiles = $Frm->get_files_by_subarray;
+  my $instap = $Frm->instap_subarray;
+  orac_print "Selecting files from subarray $instap only... ";
+  my $infiles = $allfiles{$instap};
+  if ($infiles) {
+    @infiles = @{$infiles};
+    orac_print "done\n";
+  } else {
+    orac_print "\n";
+    orac_warn "Unable to retrieve data for the instrument aperture, $instap: using all data\n";
+    @infiles = $Frm->files;
+  }
+} else {
+  @infiles = $Frm->files;
+}
+
+# Quit processing if there is no data to make a map
+my $object = $Frm->hdr('OBJECT');
+orac_term "No good data for $object from obs $obsnum with which to make a map\n"
+  unless (@infiles);
+
+# Retrieve fast-ramp flatfield files if they exist
+push (@infiles, @{ $Grp->uhdr("FASTFLATS") })
+  if ( defined $Grp->uhdr("FASTFLATS") );
+
+# Write list of filenames to a temp file
+my $inlist = write_file_list( @infiles );
 
 # Set output filename
-my $out = $Frm->inout('_fmos');
+my ($in, $out) = $Frm->inout($suffix);
 $out = $Frm->rewrite_outfile_subarray( $out );
 
-# Argument list
-my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread system=$system genvar=true";
+# Define makemap argument list - mandatory arguments
+_GET_MAKEMAP_CONFIG_
+my $config = $_GET_MAKEMAP_CONFIG_{CONFIG};
+my $args = "in=^$inlist out=$out config='^$config' ";
 
-# Call qlmakemap
-orac_print "Calling qlmakemap... (this may take a few/several/many seconds) \n";
-$Mon{smurf_mon}->obeyw("qlmakemap","$args");
+# Define the remaining arguments to makemap
+my %makemapargs = ( method => "iterate" );
+_GET_MAKEMAP_ARGS_ SYSTEM=$system
+my %newmakemapargs = %{$_GET_MAKEMAP_ARGS_{ARGS}};
+# Store these new arguments in the hash - existing entries will be
+# overriden
+foreach my $arg (keys %newmakemapargs) {
+  $makemapargs{$arg} = $newmakemapargs{$arg};
+}
+$args .= join(" ", map { "$_=$makemapargs{$_}" } keys %makemapargs);
 
-# Retrieve mean sky level subtracted
-my ($ORAC_STATUS, $sky) = $Mon{smurf_mon}->get("qlmakemap","meansky");
+# Call makemap - really must have some sort of feedback to user
+orac_print "Calling makemap using iterate method\n";
 
-# Write log file
-my $logtype = "sky";
-my @names = ("DC_sky", "Slope", "PA");
-$sky = sprintf "%12.7f", $sky;
-# Since this is a DC sky removal, sky slope and PA are both 0
-my @values = ($sky, 0.0, 0.0);
-_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names
+# Newimage will be used to determine if a new image was created by
+# this primitive. Set an optimistic default.
+my $newimage = 1;
+# Error message text
+my $msg;
 
-# Register the new file name
-$Frm->files( $out );
+my $fault_msg = "If this failure is not associated with a bad observation please file a fault\n";
 
-orac_print "Image $out created\n" if $verbose;
+if ($newimage) {
+  my $nfiles = scalar(@infiles);
+  # Now create output map
+  orac_print "Making map from $nfiles input files\n";
+  my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 
-# Set sky subtraction and extinction flags as these steps are done
-# within qlmakemap
-$Frm->uhdr("SKY_SUBTRACTION",1);
-$Frm->uhdr("EXTINCTION",1);
+  # Check for SMF__NOMEM return status
+  if ( $SMURF_STATUS == ORAC__OK ) {
+    # Check that an output file was actually created - in some
+    # instances bad data can be dealt with by makemap which then exits
+    # with good status and no output file.
+    my $fullout = File::Spec->catfile($ENV{ORAC_DATA_OUT}, $out);
+    $fullout .= ".sdf" unless ($fullout =~ /.sdf$/); # hack...
+    if ( -e $fullout ) {
+      # Now, is there any analysis of the model component files that could
+      # be useful?
 
-# Set a flag to indicate a map was made
-$Frm->uhdr("NEWIMAGE",1);
+      # Register the new file name
+      $Frm->files( $out );
+
+      # Set the title to include the source name - add obs num if
+      # running at the summit
+      my $title = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT"))
+	? "'$object / $obsnum'"	: "'$object'";
+      $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
+
+      # Set Frame EXP_TIME and WEIGHTS flags
+      $Frm->uhdr("EXP_TIME",1);
+      $Frm->uhdr("WEIGHTS",1);
+      # And of course sky subtraction and extinction correction have been
+      # applied, though there really isn't much point to setting these
+      # other than a desire for consistency.
+      $Frm->uhdr("SKY_SUBTRACTION",1);
+      $Frm->uhdr("EXTINCTION",1);
+
+      # Mark current frame as good now that we have a map
+      $Frm->isgood(1);
+
+      # Set a flag to indicate a new map was made
+      $newimage = 1;
+
+      my $nbol = sprintf "%d", $Frm->hdr("NBOLOEFF");
+      orac_print "Thank you for waiting: image $out created using $nbol bolometers\n";
+      orac_warn "Map created from only $nbol bolometers: check map quality\n"
+	if ($nbol < 100);
+    } else {
+      # Mark this frame as BAD. The only reason we would be here is
+      # that the data are bad/corrupt.
+      $Frm->isgood(0);
+      $newimage = 0;
+      $msg = "Makemap failed to create an output file (corrupt data): data from this Frame will be ignored.\n\n$fault_msg";
+    }
+  } else {
+    # OK we have bad exit status - check for known reasons
+    if ( $SMURF_STATUS == 235176770 ) {
+      # SMF__NOMEM: Memory allocation error
+      $msg = "Output image will exceed maximum size 2 GB - will not continue\n";
+    } elsif ( $SMURF_STATUS == 235176794 ) {
+      # SMF__INSMP: insufficient samples for statistics
+      $msg = "All data flagged bad: insufficient samples available for calculating statistics - will not continue\n";
+    } elsif ( $SMURF_STATUS == 235176858 ) {
+      # SMF__NOSCI: no science data found
+      $msg = "No science data found: data from this Frame will be ignored\n";
+    } else {
+      # Everything else...
+      $msg = "Makemap failed for an unknown reason: data from this Frame will be ignored\n$fault_msg";
+    }
+    $Frm->isgood(0);
+    $newimage = 0;
+  }
+}
+
+# Set a flag to indicate whether or not a map was made
+$Frm->uhdr("NEWIMAGE",$newimage);
+# If no new image was created issue an error saying why
+unless ($newimage) {
+  $Frm->uhdr("NOCALIB",1);
+  # Terminate the recipe unless we're processing the last member and
+  # have more than one member in the group, in which case we still
+  # want a Group file to be created if possible.
+  my @members = $Grp->allmembers;
+  if ($Grp->lastmember($Frm) && @members > 1) {
+    orac_err $msg;
+  } else {
+    orac_termerr $msg;
+  }
+}
