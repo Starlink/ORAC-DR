@@ -1,0 +1,107 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALCULATE_FCFS_ - calculate flux conversion factors for calibrators
+
+=head1 SYNOPSIS
+
+ _CALCULATE_FCFS_
+
+=head1 DESCRIPTION
+
+For calibrators, derive Flux Conversion Factors (FCFs) which convert
+bolometer power in pW to Jy/beam or Jy/arcsec**2. The input image is
+first trimmed to the map size given in the header and a background
+removed by masking out the source and fitting and subtracting a 2-d
+surface. This trimmed and background-subtracted image is then analyzed
+to derive the FCFs.
+
+See also the PICARD recipe L<SCUBA2_FCFNEFD|SCUBA2_FCFNEFD>.
+
+=head1 ARGUMENTS
+
+The primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_CROP_IMAGE_FRAME_, _FIND_CALIBRATION_MAP_, _REMOVE_BACKGROUND_FROM_IMAGE_
+
+=back
+
+=head1 NOTES
+
+This primitive is frame based (C<$Frm>).
+
+The original image on entry is restored in the Frame on
+completion. The modified images created in calculating the FCFs are
+deleted at the end of the recipe.
+
+=head1 OUTPUT DATA
+
+See L<_FIND_CALIBRATION_MAP_|_FIND_CALIBRATION_MAP_> for details of
+how the results are stored.
+
+=head1 OUTPUT FILES
+
+Files with the suffix C<_crop> and C<_back> are created but deleted at
+the end of processing.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1  COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Only calculate FCFs for calibrators if an image exists. Do nothing
+# (quietly) if this is not the case.
+if ($Cal->iscalsource($Frm->hdr("OBJECT")) && $Frm->uhdr("NEWIMAGE")) {
+  # Only proceed if there is a single image in the Frame - this should
+  # always be the case if the NEWIMAGE flag is true
+  if ($Frm->nfiles == 1) {
+    # Retrieve the current file to re-store later
+    my $original_file = $Frm->file;
+
+    # Trim image to mapped area
+    _CROP_IMAGE_FRAME_ VERBOSE=0
+
+    # These settings come from the PICARD recipe but are subject to
+    # change and may be overridden by recipe parameters
+    _REMOVE_BACKGROUND_FROM_IMAGE_ MASK=1 METHOD=FITSURFACE VERBOSE=0
+
+    # Derive FCFs using the trimmed, background-subtracted image
+    _FIND_CALIBRATION_MAP_
+
+    # Now the FCFs have been calculated, store the original map again
+    $Frm->file($original_file);
+  } else {
+    # Issue a warning that nothing has happened
+    orac_warn "Found multiple files when only expecting one - will not estimate FCFs\n";
+}
+
