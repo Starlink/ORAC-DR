@@ -273,9 +273,6 @@ sub beampar {
 
     $self->{Beam}->{ErrFrac} = $beamargs{errfrac};
 
-    # Store geometric mean as FWHM
-    $self->fwhm( sqrt($beamargs{majfwhm}->[0] * $beamargs{minfwhm}->[0]) );
-
     return;
   }
 
