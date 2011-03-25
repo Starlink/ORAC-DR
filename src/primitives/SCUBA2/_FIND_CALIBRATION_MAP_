@@ -45,6 +45,12 @@ The following arguments are supported:
 True if the Group image should be used. Otherwise the current Frame is
 used.
 
+=item B<LOGFITPAR>
+
+A flag to denote whether the fit parameters should be written to a log
+file. Useful for debugging purposes but not meant for full-time
+pipeline use. Default is 0 (do not write parameters).
+
 =item B<STORE>
 
 Flag to denote whether to store the results in the Calibration
@@ -69,7 +75,7 @@ NDFTRACE
 
 =item ORAC-DR PRIMITIVES
 
-_ADD_FCF_LOG_ENTRY_, _FIND_INTEGRATED_INTENSITY_, _FIND_MAP_PEAK_
+_ADD_LOG_ENTRY_, _FIND_INTEGRATED_INTENSITY_, _FIND_MAP_PEAK_
 
 =back
 
@@ -105,6 +111,8 @@ FCF per fitted or nominal beam size
 =head1 OUTPUT FILES
 
 Entry in C<log.fcf> log file if the frame is a calibrator.
+
+A log file called C<log.fit_fcf> may be written.
 
 =head1 AUTHOR
 
@@ -221,6 +229,7 @@ if ( $proceed ) {
 
   # Find the peak signal in the image
   _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos
+  my $mapfitpar = $_FIND_MAP_PEAK_{BEAM};
 
   # Retrieve the position - if successful, proceed with deriving an FCF
   my $posn = $_FIND_MAP_PEAK_{POSITION};
@@ -265,6 +274,7 @@ if ( $proceed ) {
     _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group VERBOSE=0
     _FIND_MAP_PEAK_ IMAGE=$_APPLY_MATCHED_FILTER_{OUT} VERBOSE=0 GROUP=$group GAUSSIAN=0
     my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
+    my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
     if ($matched_peak) {
       $results{BEAMMATCH} = $matched_peak;
       $results_err{BEAMMATCH_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
@@ -323,7 +333,8 @@ if ( $proceed ) {
 
       # If we have a flux, store the FCF in the calibration system
       if (defined $flux) {
-	orac_print "Flux ($type) = $flux; Data = ". $results{$type}. "\n";
+	my $printunits = ($type eq "ARCSEC") ? $dataunits ." arcsec**2" : $dataunits;
+	orac_print "Flux ($type) = $flux; Data = ". $results{$type}. " $printunits\n";
 
 	# Calculate the new gain
 	my $fcf = $flux / $results{$type};
@@ -371,6 +382,25 @@ if ( $proceed ) {
       # Store results in primitive hash
       $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
     }
+
+    # Log fit parameters here
+    my $logfitpar = get_prim_arg($_PRIM_ARGS_, "LOGFITPAR", 0);
+    if ($logfitpar && $mapfitpar && $matchfitpar) {
+      my %map_fit = %{ $mapfitpar };
+      my %mf_fit = %{ $matchfitpar };
+      my $logtype = "fit_fcf";
+      my @names = ("A", "B", "Peak", "Unc", "Gamma", "Dgamma",
+		   "A_mf", "B_mf", "Peak_mf", "Unc_mf", "Gamma_mf", "Dgamma_mf");
+      my @values = ($map_fit{MAJFWHM}->[0], $map_fit{MINFWHM}->[0],
+		    $map_fit{AMPLITUDE}->[0], $map_fit{AMPLITUDE}->[1],
+		    $map_fit{GAMMA}->[0], $map_fit{GAMMA}->[1],
+		    $mf_fit{MAJFWHM}->[0], $mf_fit{MINFWHM}->[0],
+		    $mf_fit{AMPLITUDE}->[0], $mf_fit{AMPLITUDE}->[1],
+		    $mf_fit{GAMMA}->[0], $mf_fit{GAMMA}->[1]
+		   );
+      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
+    }
+
   } else {
     if ( !$group ) {
       # If this is a Frame object and no FCF could be determined then
