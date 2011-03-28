@@ -170,27 +170,8 @@ my @infiles;
 my $suffix = "_fmos";
 my $obsnum = $Frm->hdr("OBSNUM");
 if ( $infiles eq "FRAME" ) {
-  # Use all files in current Frame, except for POINTING and FOCUS
-  # observations where the instrument aperture is defined
-  if (($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i ||
-       $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) &&
-     defined $Frm->hdr("INSTAP") && $Frm->uhdr("QUICKLOOK")) {
-
-    my %allfiles = $Frm->get_files_by_subarray;
-    my $instap = $Frm->instap_subarray;
-    orac_print "Selecting files from subarray $instap only... ";
-    $infiles = $allfiles{$instap};
-    if ($infiles) {
-      @infiles = @{$infiles};
-      orac_print "done\n";
-    } else {
-      orac_print "\n";
-      orac_warn "Unable to retrieve data for the instrument aperture, $instap: using all data\n";
-      @infiles = $Frm->files;
-    }
-  } else {
-    @infiles = $Frm->files;
-  }
+  # Use all files in current Frame
+  @infiles = $Frm->files;
 } elsif ( $infiles eq "OBS" ) {
   # Create a sub-group for the current observation only
   my $subGrp = $Grp->subgrp(OBSNUM => $obsnum);
@@ -314,20 +295,18 @@ my $newimage = 1;
 my $msg;
 
 # Check the output map bounds
-unless ( $Frm->uhdr("QUICKLOOK") ) {
-  _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
-  if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
-    my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
-    my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
-    # Append the new bounds to the list of arguments
-    $args .= " lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
-  } elsif ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == -1 ) {
-    # The bounds check failed so mark the current frame as bad and
-    # set an error message
-    $Frm->isgood(0);
-    $newimage = 0;
-    $msg = "Checking map size failed - skipping this observation\n";
-  }
+_CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
+if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
+  my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
+  my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
+  # Append the new bounds to the list of arguments
+  $args .= " lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
+} elsif ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == -1 ) {
+  # The bounds check failed so mark the current frame as bad and
+  # set an error message
+  $Frm->isgood(0);
+  $newimage = 0;
+  $msg = "Checking map size failed - skipping this observation\n";
 }
 
 my $fault_msg = "If this failure is not associated with a bad observation please file a fault\n";
@@ -357,8 +336,7 @@ if ($newimage) {
 
       # Set the title to include the source name - add obs num if
       # running at the summit
-      my $title = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT"))
-	? "'$object / $obsnum'"	: "'$object'";
+      my $title = ($Frm->uhdr("SUMMIT")) ? "'$object / $obsnum'" : "'$object'";
       $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
 
       # Set Frame EXP_TIME and WEIGHTS flags
