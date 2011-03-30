@@ -99,7 +99,7 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
     # and terminating the recipe immediately. This block should never
     # be reached in the QL pipeline because each new file becomes a
     # new Group and thus the Frame is always the last member.
-    _COPY_RAW_DATA_
+    _COPY_RAW_DATA_ SUFFIX=_rawflat
     my @newflats = $Frm->get_fastramp_flats;
     $Grp->uhdr("FASTRAMPFLATS", \@newflats);
     return ORAC__TERM;
@@ -156,7 +156,7 @@ if (@flats) {
   # through the recipe - only done for the QL pipeline as fastflat
   # processing batch doesn't care about processing the science data
   if (!$batch) {
-    _COPY_RAW_DATA_
+    _COPY_RAW_DATA_ SUFFIX=_rawflat
   }
 
   my @Frms;
@@ -215,7 +215,7 @@ if (@flats) {
 	$previous{$tmpfrm->hdr("SUBARRAY")} = $fastflat;
       }
     }
-    # Store the fastflats for retrieval by the flatfield analysis primitive
+    # Store the fastflats for retrieval by _ANALYZE_FLATFIELD_ below
     $Grp->uhdr("FASTFLATSOL",\%previous) if (%previous);
   }
   # Calculate the flatfield solution
@@ -232,7 +232,7 @@ if (@flats) {
     $Frm->push_intermediates(values %previous);
   } else {
     # First time processing fast-ramps so keep the raw data too
-    $keep = "_flat,_raw";
+    $keep = "_flat,_rawflat";
 
     # Each Frame will only contain 1 file, the flatfield solution. Take
     # a copy so it's not overwritten by the second fastflat.
@@ -262,4 +262,18 @@ if (@flats) {
 
 # Store the fastflats for retrieval the next time through the recipe
 $Grp->uhdr("FASTFLATSOL",\%store) if (%store);
-$Grp->uhdr("FASTFLATS", \@rawfastflats) if (@rawfastflats);
+if (@rawfastflats) {
+  $Grp->uhdr("FASTFLATS", \@rawfastflats);
+
+  unless ($Frm->uhdr("OBSEND")) {
+    my $Frmobj = $Frm->new;
+    $Frmobj->files(@rawfastflats);
+
+    my %rawfiles = $Frmobj->get_files_by_subarray;
+    foreach my $subarray (sort keys %rawfiles) {
+      $Frmobj->files( @{$rawfiles{$subarray}} );
+      $Frmobj->hdr("SUBARRAY" => $subarray);
+      $Cal->fastflatindex->add( $Frmobj->file, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+    }
+  }
+}
