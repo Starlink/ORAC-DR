@@ -128,6 +128,7 @@ my %PHOTFLUXES = (
 # Setup the object structure
 __PACKAGE__->CreateBasicAccessors( mask => {},
                                    resp => {},
+				   fastflat => {},
 				   flat => {},
 				   dark => {},
 );
@@ -374,7 +375,30 @@ Frame subheaders when evaluating the rules.
 
 sub flat {
   my $self = shift;
-  return $self->GenericIndexAccessor( "flat", 0, 1, 0, 1, @_ );
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( "flat", 0, 1, 0, $warn, @_ );
+}
+
+=item B<fastflat>
+
+Return (or set) the name of the current fast-ramp flatfield file(s).
+
+  $fastflat = $Cal->fastflat;
+
+We have one fast-ramp flatfield file per subarray. Note that the user
+must set the subarray with the Frame class C<subarray()> method before
+a suitable calibration entry can be found. This is due to the fact
+that it is not possible to search the Frame subheaders when evaluating
+the rules.
+
+=cut
+
+sub fastflat {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( "fastflat", 0, 1, 0, $warn, @_ );
 }
 
 =back
