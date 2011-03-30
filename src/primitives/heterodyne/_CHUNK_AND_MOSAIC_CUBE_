@@ -89,7 +89,7 @@ spatial extent and proceeding in a raster fashion from left to right.
 =head1 TASKS
 
 CCDPACK: MAKEMOS.
-KAPPA: DIV, MATHS, MSTATS, NDFCOPY, NDFTRACE, SETBB, SHOWQUAL, STATS.
+KAPPA: DIV, MATHS, MSTATS, NDFCOPY, NDFTRACE, STATS.
 SMURF: MAKECUBE.
 
 =head1 REQUIRED PERL MODULES
@@ -232,113 +232,13 @@ foreach my $i ( 1 .. $num_files ) {
 # cubes.
       orac_print "Creating cube $out from " . join( ", ", @chfiles ) . "...\n";
 
-      $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $chlist->file . "' out=$out" );
+      $Mon{'smurf_mon'}->obeyw( "makecube", "$params trim=f in='^" . $chlist->file . "' out=$out" );
       orac_say "done.";
       undef $chlist;
 
 # Find and record the number of tiles in the current chunk.
       ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
       push @chunk_ntile, $ntile;
-
-# Mask border pixels.
-# -------------------
-      if ( $ntile > 1 ) {
-
-# Create a text file listing all the input tiles with a border.
-         my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-         my $inlist_fh = $inlist->handle;
-
-# Create a text file listing all the output tiles without a border.
-         my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-         my $outlist_fh = $outlist->handle;
-
-# The tiles should be in same places as if all the input time series
-# were turned into a spatial/spectral cube in one invocation of MAKECUBE.
-# However, not all will be occupied with data from this subset.
-         my @tmp;
-         foreach my $i ( 1.. $totaltile ) {
-            my $ch_tile = $out . "_" . $i;
-            if ( -e $ch_tile . ".sdf" ) {
-               my $trim_ch_tile = new ORAC::TempFile;
-
-# Determine whether there is a BORDER quality flag set.
-               if ( starversion_gt( 'KAPPA', 'V1.13-0' ) ) {
-                  $Mon{'ndfpack_mon'}->obeyw( "showqual", "ndf=$ch_tile" );
-                 ( $ORAC_STATUS, my @qnames ) = $Mon{'ndfpack_mon'}->get( "showqual", "qnames" );
-
-# Add those with a border to the list of files to mask.  As the times
-# are summed, there is a need to mask the exposure-time and effective-time
-# arrays too, but these do not have QUALITY.  The approach is to use
-# the bounds of the bad-pixel trimmed DATA_ARRAY for all the SMURF
-# arrays too.
-                  foreach my $element ( @qnames ) {
-                     if ( $element eq "BORDER" ) {
-                        print $inlist_fh "$ch_tile\n";
-                        print $outlist_fh "$trim_ch_tile\n";
-                        push @tmp, $trim_ch_tile;
-                        last;
-                     }
-                  }
-
-# Have to keep fingers crossed that all tiles have a border.  I can
-# only think of messy ways to search for the QUALITY_NAMES without the
-# SHOWQUAL output parameter.
-               } else {
-                  print $inlist_fh "$ch_tile\n";
-                  print $outlist_fh "$trim_ch_tile\n";
-               }
-            }
-         }
-         $inlist->handle->close;
-
-         $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf='^" . $inlist->file . "' bb=BORDER" );
-
-# Trim the border, now comprising bad pixels in each chunk.  Copy each
-# back to its original name, as if nothing had happened.
-         my $trim_param = "in='^" . $inlist->file . "' out='^" . $outlist->file . "'";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$trim_param trimbad" );
-
-         $trim_param = "in='^" . $outlist->file . "' out='^" . $inlist->file . "'";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$trim_param" );
-
-         undef $inlist;
-         undef $outlist;
-
-# Not sure why the temporary NDFs are not being removed outside the
-# context.
-         foreach my $element ( @tmp ) {
-            undef $element;
-         }
-
-# There is only the one tile, and MAKECUBE omits the tile-index suffix.
-      } else {
-         $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$out bb=BORDER" );
-
-# Trim the border, now comprising bad pixels.  Copy back to the
-# original name, as if nothing had happened.
-         my $trim_ch_tile = new ORAC::TempFile;
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$trim_ch_tile trimbad" );
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$trim_ch_tile out=$out" );
-      }
-
-# Assign tiles in the current chunk to their index within the full set
-# of tiles, as if processing all the time series simultaneously.
-# --------------------------------------------------------------------
-
-# The tiles are always numbered from 1 at the lower left to $ntile at
-# the upper right.  Thus the lower bound of the first tile will be most
-# negative and the upper bound of the last tile will be the most positive.
-      my $lb_file= ( $ntile > 1 ) ? $out . "_1" : $out;
-      _GET_DIMENSIONS_ FILE=$lb_file
-      my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
-      $full_lb[0] = min( $lbnd[0], $full_lb[0] );
-      $full_lb[1] = min( $lbnd[1], $full_lb[1] );
-
-      my $ub_file= ( $ntile > 1 ) ? $out . "_" . $ntile : $out;
-      _GET_DIMENSIONS_ FILE=$ub_file
-      my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
-      $full_ub[0] = max( $ubnd[0], $full_ub[0] );
-      $full_ub[1] = max( $ubnd[1], $full_ub[1] );
 
 # Start a new list of files for the new chunk.
       if ( $i < $num_files ) {
@@ -350,97 +250,33 @@ foreach my $i ( 1 .. $num_files ) {
 }
 
 my $total_chunk = $chunk_index;
-orac_print "Spatial extent of tiles is (" . $full_lb[0] . "," .
-           $full_lb[1] . ") to (" . $full_ub[0] . "," . $full_ub[1] .")\n";
+
+# Reset the tile dimensions to the original value.
+$tiledims *= -1;
 
 # Assign files in each chunk to the grand-mosaic tiles.
 # =====================================================
 #
 ( undef, my $out ) = $Grp->inout( "_cube" );
 if ( $total_chunk > 1 ) {
-
-# Find the bounds of the grand-mosaic tiles.
-# ------------------------------------------
-
-# Reset the tile dimensions to the original value.
-   $tiledims *= -1;
-
-# Find the number of tiles along each spatial axis, and hence the x-y
-# indices of the centre.  This assumes that the reference point is at the
-# centre of a tile.
-   my $nx = int( $full_ub[0] / $tiledims + 0.5 ) + 1 +
-            int( abs( $full_lb[0] ) / $tiledims + 0.5 );
-   my $ny = int( $full_ub[1] / $tiledims + 0.5 ) + 1 +
-            int( abs( $full_lb[1] ) / $tiledims + 0.5 );
-   my @centre_index;
-   $centre_index[0] = int( ( $nx + 1 ) / 2 );
-   $centre_index[1] = int( ( $ny + 1 ) / 2 );
-
    my ( @tiles_main, @tiles_exp_time, @tiles_eff_time, @tiles_tsys );
 
-# Store the tile spatial upper and lower bounds, constrained by the actual
-# limiting bounds.  The bounds must always be integer so apply the half-tile
-# shift as integer.  Also the limits are not symmetric, being offset from
-# (1,1) not (0,0).
-   my ( @tile_xl, @tile_xu, @tile_yl, @tile_yu );
-   my $halftile = int( ( $tiledims ) / 2 );
-   my $oddtile = $tiledims % 2;
-   foreach my $c ( 1 .. $totaltile ) {
-      my $xi = ( $c - 1 ) % $nx + 1;
-      my $yi = int( ( $c - 1 ) / $nx ) + 1;
-      $tile_xl[$c] = max( $full_lb[0], 1 - $halftile +
-                          ( $xi - $centre_index[0] ) * $tiledims );
-      $tile_xu[$c] = min( $full_ub[0], $halftile + $oddtile +
-                          ( $xi - $centre_index[0] ) * $tiledims );
-
-      $tile_yl[$c] = max( $full_lb[1], 1 - $halftile +
-                          ( $yi - $centre_index[1] ) * $tiledims );
-      $tile_yu[$c] = min( $full_ub[1], $halftile + $oddtile +
-                          ( $yi - $centre_index[1] ) * $tiledims );
-   }
-
-# Assign portions of each chunk to tiles.
-# ---------------------------------------
    foreach my $c ( 1 .. $total_chunk ) {
       foreach my $t ( 1 .. $chunk_ntile[$c - 1] ) {
          my $chunk_file = $out . "_ch" . $c;
+
+# Mimic MAKECUBE naming.
          if ( $chunk_ntile[$c - 1] > 1 ) { $chunk_file .= "_" . $t }
 
-# The spanned tiles need not be contiguous if data from two frames are
-# combined.
+# The tiles generated in chunks should be the same as if all the time
+# series were supplied together.  Assignments to tiles should be
+# straightforward.
          if ( -e $chunk_file . ".sdf" ) {
-            _GET_DIMENSIONS_ FILE=$chunk_file
-            my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
-            my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
-            orac_print "\nChunk: $chunk_file has bounds ($lbnd[0],$lbnd[1]) to ($ubnd[0],$ubnd[1]).\n";
-
-# Find the tile indices that the current chunk spans along each axis,
-# using the offsets from the centre (0,0).
-            my @ti_lb = ( 0, 0 );
-            my @ti_ub = ( 0, 0 );
-            for ( my $i = 0; $i < 2; $i++ ) {
-               $ti_lb[$i] = int( $lbnd[$i] / $tiledims +
-                                 ( $lbnd[$i] >= 0 ? +1 : -1 ) * 0.5 ) + $centre_index[$i];
-               $ti_ub[$i] = int( $ubnd[$i] / $tiledims +
-                                 ( $ubnd[$i] >= 0 ? +1 : -1 ) * 0.5 ) + $centre_index[$i];
-            }
-            orac_print "Tiles: $chunk_file spans tiles ($ti_lb[0],$ti_lb[1]) to ($ti_ub[0],$ti_ub[1]).\n";
-
-# Convert the x-y indices to a tile index to store the contributing chunk
-# names, constrained with bounds to lie solely within the tile.  Apply
-# to each SMURF NDF too.
-            my $tileindex;
-            my $tile_section;
-            for ( my $j = $ti_lb[1]; $j <= $ti_ub[1]; $j++ ) {
-               for ( my $i = $ti_lb[0]; $i <= $ti_ub[0]; $i++ ) {
-                  $tileindex = $i + $nx * ( $j - 1 );
-                  $tile_section = "($tile_xl[$tileindex]:$tile_xu[$tileindex],$tile_yl[$tileindex]:$tile_yu[$tileindex],)";
-                  $tiles_main[$tileindex] .= $chunk_file . $tile_section . " ";
-                  $tiles_eff_time[$tileindex] .= $chunk_file . ".MORE.SMURF.EFF_TIME" . $tile_section . " ";
-                  $tiles_exp_time[$tileindex] .= $chunk_file . ".MORE.SMURF.EXP_TIME" . $tile_section . " ";
-                  if ( $tsys_present ) { $tiles_tsys[$tileindex] .= $chunk_file . ".MORE.SMURF.TSYS" . $tile_section . " " }
-                  orac_print "File " . $chunk_file . " is in Tile " . $tileindex . ".\n";
-               }
+            $tiles_main[$t] .= $chunk_file . " ";
+            $tiles_exp_time[$t] .= $chunk_file . ".MORE.SMURF.EXP_TIME" . " ";
+            if ( $tsys_present ) {
+               $tiles_tsys[$t] .= $chunk_file . ".MORE.SMURF.TSYS" . " ";
+               $tiles_eff_time[$t] .= $chunk_file . ".MORE.SMURF.EFF_TIME" . " ";
             }
          }
       }
@@ -555,7 +391,7 @@ if ( $total_chunk > 1 ) {
 
             undef $temp_tsys;
             undef $mslist;
-        }
+         }
 
 # Combine the EFF_TIME NDFs.
 # --------------------------
