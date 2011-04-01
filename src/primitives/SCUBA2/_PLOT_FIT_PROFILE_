@@ -1,0 +1,149 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_PLOT_FIT_PROFILE_ - plot X and Y slices through an image along with fit
+
+=head1 SYNOPSIS
+
+ _PLOT_FIT_PROFILE_ IMAGE=$data MODEL=$fit
+
+=head1 DESCRIPTION
+
+Plots X- and Y-slices for a given image along with the 2-d fit. The
+profiles are plotted as a function of arcsec side by side in a Kapview
+window.
+
+However, when called as part of calculating flux conversion factors,
+four panels are plotted. The Frame uhdr entries C<PLOT_DATAFIT> and
+C<PLOT_MF_FIT> are used to determine whether the data should be
+plotted side-by-side on the top row (for map data) or the bottom row
+(matched-filtered map data). Note that only two panels are plotted
+when this primitive is called: the complete display requires two
+calls.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<IMAGE>
+
+Name of image to plot. No default. The pipeline will terminate with an
+error if not specified.
+
+=item B<MODEL>
+
+Name of fitted model to plot. No default. The pipeline will terminate
+with an error if not specified.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA:
+
+NDFCOPY, NDFTRACE, SETTITLE, WCSATTRIB
+
+=item ORAC-DR PRIMITIVES
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+Input data must have at least 2 dimensions. It is assumed that the
+first two dimensions are the X and Y axes respectively.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates files with suffix C<_sourcefit> and C<_sourcefit_model> which
+are pushed onto the Frame intermediates array for deletion at the end
+of the recipe.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
+my $model = get_prim_arg($_PRIM_ARGS_, "MODEL", undef);
+
+return ORAC__TERM unless ($image && $model);
+
+_FIND_IMAGE_STATISTICS_ IMAGE=$image
+  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+my $zmax = 1.1*$results->{MAX};
+my $zmin = 1.1*$results->{MIN};
+my $peakpos = $results->{PEAKPOS};
+
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$image");
+my ($ORAC_STATUS, $title) = $Mon{ndfpack_mon}->get("ndftrace","title");
+for my $i (0 .. 1) {
+  my $section = ($i==0) ? ",$peakpos->[1]:$peakpos->[1]," : "$peakpos->[0]:$peakpos->[0],,";
+  my $indata = $image ."($section)";
+  my $inmodel = $model . "($section)";
+  my $data = $Frm->inout("_sourcefit");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$indata out=$data trim trimwcs");
+  my $model = $data ."_model";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$inmodel out=$model trim trimwcs");
+
+  my $tmpFrm = $Frm->new;
+  $tmpFrm->files($model);
+  $tmpFrm->files($data);
+  # Store for deletion at end of processing
+  $Frm->push_intermediates($data, $model);
+
+  my $region = 0;
+  my $newtitle;
+  if ($Frm->uhdr("PLOT_MF_FIT")) {
+    $region = ($i==0) ? 3 : 4;
+    $newtitle = "'$title - matched filter fit'";
+  } elsif ($Frm->uhdr("PLOT_DATAFIT")) {
+    $region = ($i==0) ? 1 : 2;
+    $newtitle = "'$title - map fit'";
+  } else {
+    $region = ($i==0) ? 5 : 6;
+    $newtitle = "'$title'";
+  }
+
+  # Set title and axis attributes
+  foreach my $file ($data, $model) {
+    $Mon{ndfpack_mon}->obeyw("settitle","ndf=$file title=$newtitle");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$file mode=set name=format newval=s");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$file mode=set name=unit newval=arcsec");
+  }
+
+  # Display the data and fit
+  my %options = ( REGION => $region, ZMIN => $zmin, ZMAX => $zmax );
+  $Display->display_data($tmpFrm, \%options, -1);
+}
