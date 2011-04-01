@@ -38,6 +38,11 @@ error if not specified.
 Name of fitted model to plot. No default. The pipeline will terminate
 with an error if not specified.
 
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (true).
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -100,14 +105,28 @@ my $model = get_prim_arg($_PRIM_ARGS_, "MODEL", undef);
 
 return ORAC__TERM unless ($image && $model);
 
-_FIND_IMAGE_STATISTICS_ IMAGE=$image
-  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+# Should I be verbose? (Default to yes)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$image");
+my ($ORAC_STATUS, $title) = $Mon{ndfpack_mon}->get("ndftrace","title");
+my $newtitle = "'$title'";
+my $extra = "...";
+if ($Frm->uhdr("PLOT_MF_FIT")) {
+  $extra = " for matched-filtered map...";
+  $newtitle = "'$title - matched filter fit'";
+} elsif ($Frm->uhdr("PLOT_DATAFIT")) {
+  $extra = " for data map...";
+  $newtitle = "'$title - map fit'";
+}
+orac_print "Plotting image profile + 2-d fit$extra\n" if ($verbose);
+
+_FIND_IMAGE_STATISTICS_ IMAGE=$image VERBOSE=0
+my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
 my $zmax = 1.1*$results->{MAX};
 my $zmin = 1.1*$results->{MIN};
 my $peakpos = $results->{PEAKPOS};
 
-$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$image");
-my ($ORAC_STATUS, $title) = $Mon{ndfpack_mon}->get("ndftrace","title");
 for my $i (0 .. 1) {
   my $section = ($i==0) ? ",$peakpos->[1]:$peakpos->[1]," : "$peakpos->[0]:$peakpos->[0],,";
   my $indata = $image ."($section)";
@@ -124,13 +143,10 @@ for my $i (0 .. 1) {
   $Frm->push_intermediates($data, $model);
 
   my $region = 0;
-  my $newtitle;
   if ($Frm->uhdr("PLOT_MF_FIT")) {
     $region = ($i==0) ? 3 : 4;
-    $newtitle = "'$title - matched filter fit'";
   } elsif ($Frm->uhdr("PLOT_DATAFIT")) {
     $region = ($i==0) ? 1 : 2;
-    $newtitle = "'$title - map fit'";
   } else {
     $region = ($i==0) ? 5 : 6;
     $newtitle = "'$title'";
