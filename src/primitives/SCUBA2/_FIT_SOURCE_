@@ -46,6 +46,11 @@ Method for fitting the source. Valid options are C<BEAMFIT> or
 C<PSF>. Default is C<BEAMFIT>. In practice, anything other than C<PSF>
 will implies C<BEAMFIT>.
 
+=item B<MODEL>
+
+A flag to denote whether the primitive should return the results of
+the fit as a new NDF. Default is 0 (no).
+
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
@@ -113,6 +118,11 @@ Array reference with the FWHM of the major axis and its uncertainty.
 
 Array reference with the FWHM of the minor axis and its uncertainty.
 
+=item MODELFIT
+
+Name of the file containing the results of the fit (only if the
+B<MODEL> argument is true).
+
 =item ORIENT
 
 Array reference with the fit orientation and its uncertainty, in
@@ -135,7 +145,9 @@ units of AMP*FWHM^2.
 
 =head1 OUTPUT FILES
 
-None.
+Will create a file with suffix C<_modelfit> if the B<MODEL> argument
+is true. However, it is added to the intermediates array and should be
+deleted at the end of the recipe.
 
 =head1 AUTHOR
 
@@ -143,8 +155,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2010-2011 the University of British Columbia. All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -175,6 +187,11 @@ unless (defined $in) {
 
 # Should we be verbose? (Default to yes)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Return fitted model?
+my $modelfit = get_prim_arg($_PRIM_ARGS_, "MODEL", 0);
+$modelfit = ($modelfit) ? $Frm->inout("_modelfit") : "!";
+$Frm->push_intermediates($modelfit);
 
 # Which method is being used?
 my $fit_method = lc(get_prim_arg($_PRIM_ARGS_, "METHOD", "beamfit"));
@@ -243,7 +260,9 @@ if ( $numgood >= $minpix ) {
     my $fixback = ($Cal->iscalsource($Frm->uhdr("ORAC_OBJECT"))) ? 0 : "!";
     my $pos = '"'.$xypos->[0].", ".$xypos->[1].'"';
     my $var = "false";
-    $args .= " ndf=$in mode=interface pos=$pos variance=$var fitarea=$box fixback=$fixback";
+    # Make use of the $psf temp file to store the residuals
+    my $resid = ($modelfit ne "!") ? $psf : "!";
+    $args .= " ndf=$in mode=interface pos=$pos variance=$var fitarea=$box fixback=$fixback resid=$resid";
     @params = qw/ majfwhm minfwhm orient amp centre sum rms gamma /;
   } else {
     # PSF
@@ -293,6 +312,11 @@ if ( $numgood >= $minpix ) {
 				       );
       @total = ($fitresults{sum}, $fluxerr);
 
+      # Calculate model fit from residuals if requested
+      if ($modelfit ne "!") {
+	$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$psf out=$modelfit");
+      }
+
     } else {
       # PSF - doesn't return errors so assume they're zero
       @amp = ($fitresults{amp1}, 0);
@@ -304,6 +328,11 @@ if ( $numgood >= $minpix ) {
       @minfwhm = ($fitresults{fwhm}, 0);
       @majfwhm = ($axisr * $fitresults{fwhm}, 0);
       @total = ($fitresults{total}, 0);
+
+      # Store model fit if requested
+      if ($modelfit ne "!") {
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$psf out=$modelfit");
+      }
 
       # Calculate RMS of PSF fit
       my $subsq = new ORAC::TempFile;
@@ -357,6 +386,7 @@ if ( $numgood >= $minpix ) {
 	."  AMP  = $amp1 $units, TOTAL FLUX = $flux1 ($totalunits)\n";
     }
     $_PRIM_ARGS_->{FIT} = 1;
+    $_PRIM_ARGS_->{MODELFIT} = $modelfit;
   } elsif ( $METHOD_STATUS == 234127368 ) {
     # Beamfit error
     # PDA error status: PDA__FICMX: Failed to invert the curvature
