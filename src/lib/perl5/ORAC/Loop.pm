@@ -1460,9 +1460,14 @@ sub task_flag_file {
 
 =item B<_is_in_data_out>
 
-Returns true if the file given is in ORAC_DATA_OUT
+If the file is present in ORAC_DATA_OUT the name in
+ORAC_DATA_OUT is returned. Otherwise returns undef. The
+ORAC_DATA_OUT version of the filename is returned
+so that a soft link can be detected by the caller even
+if the file supplied to this routine points to a file
+outside ORAC_DATA_OUT.
 
-  isin = _is_in_data_out( $file );
+  $file_in_data_out = _is_in_data_out( $file );
 
 Can include a full path. ORAC_DATA_OUT will be prepended
 if the file name is not absolute.
@@ -1473,6 +1478,9 @@ sub _is_in_data_out {
   my $testfile = shift;
   return unless defined $testfile;
 
+  # if the filename we are given is not absolute we still
+  # can not know for sure that the file is in ORAC_DATA_OUT
+  # because a relative path can include directories.
   $testfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $testfile )
     unless File::Spec->file_name_is_absolute( $testfile );
 
@@ -1486,16 +1494,16 @@ sub _is_in_data_out {
   my $cmpfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $filename );
   return unless -e $cmpfile; # is not in ORAC_DATA_OUT
 
-  # and compare the two using stat
+  # and compare the two using stat (which reads through soft links)
   my @oristat = stat($testfile);
   my @cmpstat = stat($cmpfile);
 
   for my $field ( qw/ 0 1 2 3 4 5 6 7 9 10 11 12 / ) {
     if ( $oristat[$field] != $cmpstat[$field]) {
-      return 0;
+      return;
     }
   }
-  return 1; # are the same
+  return $cmpfile; # are the same so return the comparison path
 }
 
 =item B<clean_flag_file_and_entries>
@@ -1515,8 +1523,9 @@ sub clean_flag_file_and_entries {
   my @contents = _read_flagfiles( $file );
 
   for my $f (@contents) {
-    next unless _is_in_data_out( $f );
-    unlink $f;
+    my $path_in_data_out =  _is_in_data_out( $f );
+    next unless $path_in_data_out;
+    unlink $path_in_data_out;
   }
   unlink $file;
 }
