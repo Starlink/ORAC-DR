@@ -123,20 +123,53 @@ if (exists $ENV{ORAC_REMOTE_TASK} && defined $ENV{ORAC_REMOTE_TASK}
     && $ENV{ORAC_REMOTE_TASK} =~ /\w/) {
   @remotes = split(/,/, $ENV{ORAC_REMOTE_TASK});
 } else {
-  if ($ENV{ORAC_INSTRUMENT} =~ /_450/) {
-    @remotes = (qw/
-                    SC2DA4A@sc2da4a
-                    SC2DA4B@sc2da4b
-                    SC2DA4C@sc2da4c
-                    SC2DA4D@sc2da4d
-                  /);
-  } else {
-    @remotes = (qw/
-                    SC2DA8A@sc2da8a
-                    SC2DA8B@sc2da8b
-                    SC2DA8C@sc2da8c
-                    SC2DA8D@sc2da8d
-                  /);
+
+  # Hard wire the location of the frontend file
+  my $s2xml = "/jac_sw/itsroot/install/scuba2Da/data/instrument_scuba2.ent";
+  my $ocscfg;
+
+  if (-e $s2xml) {
+    $ocscfg = eval {
+      require JAC::OCS::Config::Instrument;
+      JAC::OCS::Config::Instrument->new( File => $s2xml,
+                                         validation => 0);
+    };
+  }
+
+  if ($ocscfg) {
+    # Decide on the subarray prefix
+    my $waveband = ( $ENV{ORAC_INSTRUMENT} =~ /450/ ? "450" : "850" );
+    # Now get the subarray information
+    my %receptors = $ocscfg->receptors;
+    for my $subarray ( keys %receptors ) {
+      my %details = %{$receptors{$subarray}};
+      if ($details{band}->label eq $waveband
+          && $details{health} eq 'ON') {
+        # We have a match
+        my $task = $details{task} . "@" . lc($details{task});
+        push(@remotes, $task);
+      }
+    }
+  }
+
+  # Fallback if @remotes is still empty
+  if (!@remotes) {
+    # Guess
+    if ($ENV{ORAC_INSTRUMENT} =~ /_450/) {
+      @remotes = (qw/
+                      SC2DA4A@sc2da4a
+                      SC2DA4B@sc2da4b
+                      SC2DA4C@sc2da4c
+                      SC2DA4D@sc2da4d
+                    /);
+    } else {
+      @remotes = (qw/
+                      SC2DA8A@sc2da8a
+                      SC2DA8B@sc2da8b
+                      SC2DA8C@sc2da8c
+                      SC2DA8D@sc2da8d
+                    /);
+    }
   }
 }
 
