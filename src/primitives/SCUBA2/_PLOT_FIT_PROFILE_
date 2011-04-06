@@ -128,6 +128,17 @@ my $zmax = 1.1*$results->{MAX};
 my $zmin = 1.1*$results->{MIN};
 my $peakpos = $results->{PEAKPOS};
 
+# Is the coordinate system an offset one?
+$Mon{ndfpack_mon}->obeyw("wcsattrib","mode=get ndf=$image name=skyrefis");
+($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $offset_coords = (lc($skyrefis) eq "origin") ? 1 : 0;
+
+# Change to offset coords for display (looks cleaner)
+if (!$offset_coords) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$image mode=mset setting='alignoffset=1,skyrefis=origin'");
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$model mode=mset setting='alignoffset=1,skyrefis=origin'");
+}
+
 for my $i (0 .. 1) {
   my $section = ($i==0) ? ",$peakpos->[1]:$peakpos->[1]," : "$peakpos->[0]:$peakpos->[0],,";
   my $indata = $image ."($section)";
@@ -156,11 +167,16 @@ for my $i (0 .. 1) {
   # Set title and axis attributes
   foreach my $file ($data, $model) {
     $Mon{ndfpack_mon}->obeyw("settitle","ndf=$file title=$newtitle");
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$file mode=set name=format newval=s");
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$file mode=set name=unit newval=arcsec");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$file mode=mset setting='format=s,unit=arcsec'");
   }
 
   # Display the data and fit
   my %options = ( REGION => $region, ZMIN => $zmin, ZMAX => $zmax );
   $Display->display_data($tmpFrm, \%options, -1);
+}
+
+# Now revert the offset attributes to their original state
+if (!$offset_coords) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$image mode=mset setting='alignoffset=0,skyrefis=ignored'");
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$model mode=mset setting='alignoffset=0,skyrefis=ignored'");
 }
