@@ -31,6 +31,12 @@ Size of square area in pixels in which to carry out the fit. Default
 depends on B<METHOD>. Must be at least 9 for C<BEAMFIT> or 6 for
 C<PSF>.
 
+=item B<FIXAMP>
+
+Flag to denote whether or not the amplitude of the fit should be fixed
+to be the peak value. Only used for C<BEAMFIT>. Default is 0 (do not
+fix the amplitude).
+
 =item B<GAUSSIAN>
 
 If true (non-zero), then the fit is forced to be a gaussian. Default
@@ -244,6 +250,17 @@ if ( $numgood >= $minpix ) {
   # Convert flag to logical
   $gaussian = ( $gaussian ) ? "true" : "false";
 
+  # Is the amplitude to be fixed at the peak value? Override with
+  # recipe parameter
+  my $fixamp = get_prim_arg($_PRIM_ARGS_, "FIXAMP", 0);
+  $fixamp = $Frm->uhdr("RECPAR_FIT_FIXAMP")
+    if (defined $Frm->uhdr("RECPAR_FIT_FIXAMP"));
+  if ($fixamp) {
+    # Note this will probably go horribly wrong if the image includes
+    # crappy values around the edge of the map
+    $fixamp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+  }
+
   # Introduce ourselves...
   orac_print "Fitting source with $fit_method... " if $verbose;
 
@@ -267,6 +284,7 @@ if ( $numgood >= $minpix ) {
     # Make use of the $psf temp file to store the residuals
     my $resid = ($modelfit ne "!") ? $psf : "!";
     $args .= " ndf=$in mode=interface pos=$pos variance=$var fitarea=$box fixback=$fixback resid=$resid";
+    $args .= " fixamp=$fixamp" if ($fixamp);
     @params = qw/ majfwhm minfwhm orient amp centre sum rms gamma /;
   } else {
     # PSF
@@ -304,6 +322,7 @@ if ( $numgood >= $minpix ) {
 
       # Amplitude, RMS and orientation with error
       @amp = @{$fitresults{amp}};
+      $amp[1] = 0.0 if ($fixamp);
       @orient = @{$fitresults{orient}};
       @gamma = @{$fitresults{gamma}};
       @posn = split(/\s+/, $fitresults{centre}->[0], 2);
