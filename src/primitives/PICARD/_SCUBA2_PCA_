@@ -1,0 +1,197 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_PCA_ - perform PCA analysis on SCUBA-2 time series data
+
+=head1 SYNOPSIS
+
+_SCUBA2_PCA_
+
+=head1 DESCRIPTION
+
+This primitive analyzes raw SCUBA-2 time series data by conducting
+Principal Components Analysis. The data are concatenated and
+pre-processed with C<sc2clean> before running through C<sc2pca> to
+calculate the PCA components. Finally, the power spectra of the PCA
+components are calculated.
+
+=head1 ARGUMENTS
+
+The are no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item SMURF:
+
+SC2CLEAN, SC2FFT, SC2PCA
+
+=item ORAC-DR PRIMITIVES:
+
+_COPY_RAW_DATA_, _GET_MAKEMAP_CONFIG_
+
+=back
+
+=head1 NOTES
+
+This primitive is for use with SCUBA-2 data only.
+
+=head1 OUTPUT DATA
+
+The Frame object is updated with three files: the PCA amplitudes,
+components as function of time and the power spectra for the PCA
+components.
+
+The Frame uhdr contains the entry C<PCA_RESULTS> and is 1 if the Frame
+contains PCA and power spectrum data, 0 otherwise.
+
+The Group uhdr contains the entry C<DATA> which is the number of data
+files found to date which will be concatenated to calculate the PCA
+components and power spectra.
+
+=head1 OUTPUT FILES
+
+Three files are created by this primitive with the following suffices:
+
+=over 2
+
+=item _pcaamp
+
+PCA amplitudes
+
+=item _pcacomp
+
+PCA component time series
+
+=item _pspec
+
+PCA component power spectra
+
+=back
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Does the Frame contain non-fastflat time series data?
+my $data = (lc($Frm->hdr("SEQ_TYPE")) eq lc($Frm->hdr("OBS_TYPE"))) ? 1 : 0;
+# Use DATA as a flag to indicate that the Frame contains a data file
+# and as a counter of the number of data files to clean, if
+# appropriate
+if (defined $Grp->uhdr("DATA")) {
+  $data += $Grp->uhdr("DATA");
+}
+$Grp->uhdr("DATA", $data);
+
+# Flag to indicate that no results were calculated this time through
+# the recipe - this will be set true on exit if the PCA results exist
+$Frm->uhdr("PCA_RESULTS",0);
+
+# Wait until the last member of the Group to process all data
+if ($Grp->lastmember($Frm)) {
+  if ($Grp->uhdr("DATA")) {
+    orac_print "Processing and analyzing data for subarray ".
+      ($Frm->hdr("SUBARRAY"))."\n";
+
+    # Coderef to check if a given file exists on disk
+    my $use_existing = sub {
+      my $file = shift;
+      return 0 unless ($Frm->uhdr("RECPAR_PCA_REUSE"));
+      $file .= ".sdf" unless ($file =~ /.sdf$/);
+      return (-e File::Spec->catfile($ENV{ORAC_DATA_OUT}, $file) ? 1 : 0);
+    };
+
+    # Check whether the PCA files already exist before running the
+    # calculation
+    my $pca_amp = $Frm->inout("_pcaamp");
+    my $pca_comp = $Frm->inout("_pcacomp");
+
+    # Store all the input files - do this whether or not the data are
+    # to be processed as it allows all the _raw copies to be deleted
+    # at the end of the recipe
+    push(my @infiles, map { $_->files} $Grp->members);
+    if ($use_existing->($pca_amp) && $use_existing->($pca_comp)) {
+      # Yay - use existing files
+      orac_print "Found existing PCA results:\n  $pca_amp\n  $pca_comp\n";
+    } else {
+      # PCA file do not exist - now check for cleaned data as we need to
+      # re-generate the PCA data
+      my $file = $Frm->file;
+      my $clean = $Frm->inout("_sc2cln");
+      if ( $use_existing->($clean) ) {
+	# OK - cleaned data exists so run PCA on this
+	orac_print "Found existing cleaned version of $file\n";
+      } else {
+	# Proceed with sc2clean
+	if ($Grp->uhdr("DATA") == 1) {
+	  orac_print "Cleaning time series data, $file...";
+	} else {
+	  orac_print "Cleaning time series data (".($Grp->uhdr("DATA"))." files)...";
+	}
+	$Frm->uhdr("MAKEMAP_CONFIG_TYPE", "normal");
+	_GET_MAKEMAP_CONFIG_
+	my $config = $_GET_MAKEMAP_CONFIG_{CONFIG} . ",compreprocess=1";
+	my $inlist = write_file_list(@infiles);
+	my $args = "in=^$inlist out=$clean noflat config='^$config'";
+	$Mon{smurf_mon}->obeyw("sc2clean","$args");
+	orac_print " done\n";
+	$Frm->file($clean);
+      }
+      orac_print "Running PCA on cleaned file, $clean...";
+      my $args = "in=$clean outamp=$pca_amp outcomp=$pca_comp";
+      $Mon{smurf_mon}->obeyw("sc2pca","$args");
+      orac_print " done\n";
+    }
+
+    # Add input files to Frame so they're deleted later
+    $Frm->files(@infiles);
+
+    my $pca_pspec = $Frm->inout("_pspec");
+    if ( $use_existing->($pca_pspec) ) {
+      orac_print "Found existing power spectra for $pca_comp:\n  $pca_pspec\n";
+    } else {
+      orac_print "Calculating power spectra of components from $pca_comp...";
+      my $args = "in=$pca_comp out=$pca_pspec power";
+      $Mon{smurf_mon}->obeyw("sc2fft","$args");
+      orac_print " done\n";
+    }
+
+    # Store the results: PCA amplitude, PCA components and PCA
+    # components power spectra
+    $Frm->files($pca_amp, $pca_comp, $pca_pspec);
+
+    # Set the
+    $Frm->uhdr("PCA_RESULTS",1);
+  } else {
+    orac_warn " No data to process (darks and fastramps only)\n";
+  }
+} else {
+  # Take a copy of the input data - this will probably be deleted later
+  _COPY_RAW_DATA_ VERBOSE=0
+}

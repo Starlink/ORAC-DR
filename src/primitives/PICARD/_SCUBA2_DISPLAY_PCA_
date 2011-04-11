@@ -1,0 +1,173 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_DISPLAY_PCA_ - display results of PCA analysis of SCUBA-2 data
+
+=head1 SYNOPSIS
+
+_SCUBA2_DISPLAY_PCA_
+
+=head1 DESCRIPTION
+
+This primitive display the results of the PCA calculations performed
+by L<_SCUBA2_PCA_|_SCUBA2_PCA_>. For each of the selected PCA
+components, the display shows the amplitude (scaled between +/-
+2-sigma), the time series for that component and its power spectrum.
+
+Results may be displayed for up to 8 components (the first 6 by
+default), displayed in two Kapview windows.
+
+A temporary Frame object is used to display each result separately.
+
+=head1 ARGUMENTS
+
+The are no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA:
+
+NDFCOPY, SETTITLE
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+This primitive is for use with SCUBA-2 data only.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Return immediately if there are no results to display
+return ORAC__OK unless ($Frm->uhdr("PCA_RESULTS"));
+
+# List of components - first 6 by default
+my @comps = ($Frm->uhdr("RECPAR_PCA_COMP")) ?
+  (@{$Frm->uhdr("RECPAR_PCA_COMP")}) : (0..5);
+
+my %dispopt = ( TOOL => "kapview",
+		TYPE => "image",
+		XAUTOSCALE => 1,
+		YAUTOSCALE => 1,
+		ZAUTOSCALE => 0,
+#		KEY => "true"
+	      );
+my %linpopt = ( TOOL => "kapview",
+		TYPE => "graph",
+		XAUTOSCALE => 1,
+		MODE => "point"
+	      );
+
+# Retrieve the PCA and power spectra files
+my $pca_amp = $Frm->file(1);
+my $pca_comp = $Frm->file(2);
+my $pca_pspec = $Frm->file(3);
+
+# Create a temporary Frame
+my $Frmobj = $Frm->new();
+my $tmp_file = ORAC::TempFile->new();
+
+my $comps = $comps[0];
+my $comptxt = "component";
+if (@comps > 2) {
+  $comps = join(", ",@comps[0..$#comps-1]) . " and $comps[-1]";
+  $comptxt .= "s";
+} elsif (@comps == 2) {
+  $comps = "$comps[0] and $comps[1]";
+  $comptxt .= "s";
+}
+my $subarray = $Frm->hdr("SUBARRAY");
+orac_print "Displaying results for $comptxt $comps\n";
+foreach my $i (0 .. $#comps) {
+  my $comp = $comps[$i];
+  my $region = 17 + 4*$i;
+  my $window = 0;
+  if ($region > 32) {
+    $region -= 16;
+    $window++;
+  }
+
+  # PCA component amplitude
+  my $args = "in=$pca_amp(,,$comp) out=$tmp_file";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$tmp_file title='$subarray component $comp'");
+  $Frmobj->file($tmp_file);
+
+  _FIND_IMAGE_STATISTICS_ IMAGE=$tmp_file HISTAT=0 VERBOSE=0
+  my %results = %{$_FIND_IMAGE_STATISTICS_{RESULTS}};
+
+  $dispopt{REGION} = $region;
+  $dispopt{ZMAX} = 2 * $results{SIGMA};
+  $dispopt{ZMIN} = -$dispopt{ZMAX};
+  $dispopt{WINDOW} = $window;
+  # Display data
+  $Display->display_data($Frmobj, \%dispopt, 1);
+
+  # Component as a function of time
+  $region++;
+  $args = "in=$pca_comp($comp,,) out=$tmp_file trim trimwcs";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$tmp_file title='$subarray comp $comp time series'");
+  $Frmobj->file($tmp_file);
+
+  $linpopt{REGION} = $region;
+  $linpopt{WINDOW} = $window;
+  $linpopt{YLOG} = 0;
+  $linpopt{YAUTOSCALE} = 0;
+  $linpopt{YMIN} = -0.05;
+  $linpopt{YMAX} = 0.05;
+  # Display data
+  $Display->display_data($Frmobj, \%linpopt, 1);
+
+  # Component power spectrum
+  $region++;
+  $args = "in=$pca_pspec(,$comp,,1) out=$tmp_file trim trimwcs";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$tmp_file title='$subarray comp $comp power spectrum'");
+  $Frmobj->file($tmp_file);
+
+  $linpopt{REGION} = $region;
+  $linpopt{YLOG} = 1;
+  $linpopt{YAUTOSCALE} = 0;
+  $linpopt{YMIN} = 1e-11;
+  $linpopt{YMAX} = 1e-4;
+  # Display data
+  $Display->display_data($Frmobj, \%linpopt, 1);
+
+}
