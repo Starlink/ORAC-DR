@@ -1299,9 +1299,15 @@ sub graph {
   if( exists( $options{LMODE} ) ) {
     $lmode = "lmode=" . $options{LMODE};
   }
+  my $mode = "line";
+  if( exists( $options{MODE} ) ) {
+    # Linplot supports minimum match, first letter is good enough
+    my $optmode = lc(substr($options{MODE},0,1));
+    $mode = $optmode if ($optmode =~ /[l|g|h|p]/);
+  }
 
   # Construct string for linplot options
-  my $args = "clear mode=line $range $errbar $lmode";
+  my $args = "clear mode=$mode $range $errbar $lmode";
 
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
