@@ -337,7 +337,9 @@ possible to search the Frame subheaders when evaluating the rules.
 
 sub mask {
   my $self = shift;
-  return $self->GenericIndexAccessor( "mask", 0, 1, 0, 1, @_ );
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( "mask", 0, 1, 0, $warn, @_ );
 }
 
 =item B<dark>
