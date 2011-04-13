@@ -185,10 +185,10 @@ my @full_lb = ( 1, 1 );
 my @full_ub = ( -1, -1 );
 
 my $fi = 0;
-my @chunk_ntile;
 my $chunk_index = 0;
 my $sumsize = 0;
 my @chfiles;
+my @all_tiles;
 my $num_files = @$files;
 my $ORAC_STATUS;
 
@@ -240,18 +240,23 @@ foreach my $i ( 1 .. $num_files ) {
 # Form tiles for current chunk.  Use a suffix to delineate the chunks.
       my ( $in, $out ) = $Grp->inout( "_cube" );
       $out .= "_ch" . "$chunk_index";
+      my $outfiles = "tile$$";
 
 # Process the current manageable chunk of input time series into spectral
 # cubes.
       orac_print "Creating cube $out from " . join( ", ", @chfiles ) . "...\n";
 
-      $Mon{'smurf_mon'}->obeyw( "makecube", "$params trim=f in='^" . $chlist->file . "' out=$out" );
+      $Mon{'smurf_mon'}->obeyw( "makecube", "$params trim=f in='^" . $chlist->file . "' out=$out outfiles=$outfiles" );
       orac_say "done.";
       undef $chlist;
 
-# Find and record the number of tiles in the current chunk.
-      ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
-      push @chunk_ntile, $ntile;
+# Append the names of the created files to an array for later allocation
+# into respective tiles.
+      open my $out_fh, "<", "$outfiles" or die "Could not find MAKECUBE output file list $outfiles: $!\n";
+      my @chunk_tiles = <$out_fh>;
+      close $out_fh;
+      unlink( "$outfiles" );
+      push ( @all_tiles, @chunk_tiles );
 
 # Start a new list of files for the new chunk.
       if ( $i < $num_files ) {
@@ -262,51 +267,44 @@ foreach my $i ( 1 .. $num_files ) {
    }
 }
 
-my $total_chunk = $chunk_index;
-
 # Reset the tile dimensions to the original value.
 $tiledims *= -1;
 
 # Assign files in each chunk to the grand-mosaic tiles.
 # =====================================================
-#
+
 ( undef, my $out ) = $Grp->inout( "_cube" );
-if ( $total_chunk > 1 ) {
-   my ( @tiles_main, @tiles_exp_time, @tiles_eff_time, @tiles_tsys );
+if ( $chunk_index > 1 ) {
 
-   foreach my $c ( 1 .. $total_chunk ) {
-      foreach my $t ( 1 .. $chunk_ntile[$c - 1] ) {
-         my $chunk_file = $out . "_ch" . $c;
-
-# Mimic MAKECUBE naming.
-         if ( $chunk_ntile[$c - 1] > 1 ) { $chunk_file .= "_" . $t }
+# Extract the files for the current tile made from the various chunks.
+   foreach my $t ( 1 .. $totaltile ) {
+      my $pattern = "_$t\$";
+      my @match_files = grep{ /$pattern/ } @all_tiles;
 
 # The tiles generated in chunks should be the same as if all the time
 # series were supplied together.  Assignments to tiles should be
 # straightforward.
-         if ( -e $chunk_file . ".sdf" ) {
-            $tiles_main[$t] .= $chunk_file . " ";
-            $tiles_exp_time[$t] .= $chunk_file . ".MORE.SMURF.EXP_TIME" . " ";
-            if ( $tsys_present ) {
-               $tiles_tsys[$t] .= $chunk_file . ".MORE.SMURF.TSYS" . " ";
-               $tiles_eff_time[$t] .= $chunk_file . ".MORE.SMURF.EFF_TIME" . " ";
-            }
+      my ( @tiles_main, @tiles_exp_time, @tiles_eff_time, @tiles_tsys );
+      foreach my $chunk_file ( @match_files ) {
+         chomp( $chunk_file );
+         push @tiles_main, $chunk_file;
+         push @tiles_exp_time, $chunk_file . ".MORE.SMURF.EXP_TIME";
+         if ( $tsys_present ) {
+            push @tiles_tsys, $chunk_file . ".MORE.SMURF.TSYS";
+            push @tiles_eff_time, $chunk_file . ".MORE.SMURF.EFF_TIME";
          }
       }
-   }
+
 
 # Reassemble each tile as it if were created by MAKECUBE.
 # =======================================================
-   foreach my $c ( 1 .. $totaltile ) {
 
 # Extract the number and names of the NDFs to combine.
-      $tiles_main[$c] =~ s/^\s+//;
-      my @frames = split ( ' ', $tiles_main[$c] );
-      my $nframe = @frames;
+      my $nframe = @tiles_main;
 
 # Mimic MAKECUBE's output-NDF naming convention, i.e. exclude the
 # _<tile> suffix if there is only one tile.
-      my $mmout = ( $totaltile > 1 ) ? $out . "_" . $c : $out;
+      my $mmout = ( $totaltile > 1 ) ? $out . "_" . $t : $out;
 
       if ( $nframe > 1 ) {
 
@@ -319,7 +317,7 @@ if ( $total_chunk > 1 ) {
 
          my $mm_params = "usevar method=mean genvar nozero noscale";
          foreach my $i ( 1.. $nframe ) {
-            print $mmlist_fh $frames[ $i - 1 ] . "\n";
+            print $mmlist_fh $tiles_main[ $i - 1 ] . "\n";
          }
          $mmlist->handle->close;
 
@@ -328,10 +326,10 @@ if ( $total_chunk > 1 ) {
 # knows about the SMURF extensions that are also NDFs, MAKEMOS does not.
 
 # First combine the main arrays.
-         my $mmout = $out . "_" . $c;
-         orac_print "\nRunning MAKEMOS on Tile $c to form $mmout from:\n";
+         my $mmout = $out . "_" . $t;
+         orac_print "\nRunning MAKEMOS on Tile $t to form $mmout from:\n";
          foreach my $i ( 1.. $nframe ) {
-            orac_print "  " . $frames[ $i - 1 ] . "\n";
+            orac_print "  " . $tiles_main[ $i - 1 ] . "\n";
          }
          $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mm_params in='^" . $mmlist->file . "' out=$mmout" );
          orac_print "  done.\n\n";
@@ -348,9 +346,8 @@ if ( $total_chunk > 1 ) {
          my $mslist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
          my $mslist_fh = $mslist->handle;
 
-         my @exp_frames = split ( ' ', $tiles_exp_time[$c] );
          foreach my $i ( 1.. $nframe ) {
-            print $mslist_fh $exp_frames[ $i - 1 ] . "\n";
+            print $mslist_fh $tiles_exp_time[ $i - 1 ] . "\n";
          }
          $mslist->handle->close;
 
@@ -362,7 +359,7 @@ if ( $total_chunk > 1 ) {
 # MSTATS will leave a cube with a degenerate final axis.  Remove that axis.
          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_exp_time out=$exp_time_out trim" );
 
-         orac_print "Summing exposure times on Tile $c to form $exp_time_out.\n";
+         orac_print "Summing exposure times on Tile $t to form $exp_time_out.\n";
 
          undef $temp_exp_time;
          undef $mslist;
@@ -387,9 +384,8 @@ if ( $total_chunk > 1 ) {
             $mslist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
             $mslist_fh = $mslist->handle;
 
-            my @tsys_frames = split ( ' ', $tiles_tsys[$c] );
             foreach my $i ( 1.. $nframe ) {
-               print $mslist_fh $tsys_frames[ $i - 1 ] . "\n";
+               print $mslist_fh $tiles_tsys[ $i - 1 ] . "\n";
             }
             $mslist->handle->close;
 
@@ -400,7 +396,7 @@ if ( $total_chunk > 1 ) {
 
 # MSTATS will leave a cube with a degenerate final axis.  Remove that axis.
             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_tsys out=$tsys_out trim" );
-            orac_print "Averaging system temperatures on Tile $c to form $tsys_out.\n";
+            orac_print "Averaging system temperatures on Tile $t to form $tsys_out.\n";
 
             undef $temp_tsys;
             undef $mslist;
@@ -427,9 +423,7 @@ if ( $total_chunk > 1 ) {
             my $dlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
             my $dlist_fh = $dlist->handle;
 
-            orac_print "Combining T_eff on Tile $c to form $eff_time_out.\n";
-            my @eframes = split ( ' ', $tiles_eff_time[$c] );
-            my @tframes = split ( ' ', $tiles_tsys[$c] );
+            orac_print "Combining T_eff on Tile $t to form $eff_time_out.\n";
             my ( @numerator, @denominator );
 
             foreach my $i ( 1.. $nframe ) {
@@ -441,7 +435,7 @@ if ( $total_chunk > 1 ) {
                push @denominator, $temp_d;
 
 # Constrain the Tsys to avoid divide by zeroes.
-               my $maths_in = "ia=" . $eframes[ $i - 1 ] . " ib=" . $tframes[ $i - 1 ] . " fb=max(0.1,IB)";
+               my $maths_in = "ia=" . $tiles_eff_time[ $i - 1 ] . " ib=" . $tiles_tsys[ $i - 1 ] . " fb=max(0.1,IB)";
                my $maths_out = "exp=ia/fb out=$temp_n";
                $Mon{'kappa_mon'}->obeyw( "maths", "$maths_in $maths_out" );
 
@@ -516,17 +510,17 @@ if ( $total_chunk > 1 ) {
 # Remove chunk NDFs now we have finished using the ones for the current
 # tile.
          foreach my $i ( 1.. $nframe ) {
-            my $chunkndf =  $frames[ $i - 1 ] . ".sdf";
+            my $chunkndf =  $tiles_main[ $i - 1 ] . ".sdf";
             unlink( $chunkndf ) or orac_warn "Unable to remove chunk $chunkndf.\n";
          }
 
       } elsif ( $nframe == 1 ) {
-         orac_print "Only one file contributes to Tile $c\n";
-         orac_print "Rename ". $frames[0] . " to $mmout \n";
-         copy( $frames[0] . ".sdf", $mmout . ".sdf" );
+         orac_print "Only one file contributes to Tile $t\n";
+         orac_print "Rename ". $tiles_main[0] . " to $mmout \n";
+         copy( $tiles_main[0] . ".sdf", $mmout . ".sdf" );
 
       } else {
-         orac_print "No files contribute to Tile $c\n";
+         orac_print "No files contribute to Tile $t.\n";
       }
    }
 }
