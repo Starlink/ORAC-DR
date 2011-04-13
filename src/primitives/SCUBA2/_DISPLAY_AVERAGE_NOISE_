@@ -93,55 +93,75 @@ USA.
 =cut
 
 # Only proceed if the observation has ended
-if ( $Frm->uhdr("OBSEND")) {
+my $proceed = $Frm->uhdr("OBSEND");
+
+# Always proceed in the QL
+$proceed = 1 if ($Frm->uhdr("QUICKLOOK"));
+
+if ( $proceed ) {
   # Which component is being displayed?
   my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
   # Reset comp if we get something we don't recognize
   $comp = ( $comp =~ /^err/ ) ? "err" : "data";
 
-  # Tell users what's happening
-  orac_print "Calculating average noise properties from existing noise images\n";
-
   # Need to sort Group and create new members containing files for the
   # same subarray
   my $subArrayGrp = $Grp->sort_by_subarray;
 
-  my @avnoise;
-  # Now the Group contains only Frames sorted by subarray, so loop
-  # over the (good) members
+  # Count the number of files - if there is only 1 per Frame object
+  # then there are not enough files to give to stackframes
+  my @frames;
   foreach my $Frmobj ( $subArrayGrp->members ) {
-    # Stack the noise images
-    my $stack = new ORAC::TempFile;
-    my $stackfile = $stack->file;
-    my $in = write_file_list( $Frmobj->files );
-    $Mon{smurf_mon}->obeyw("stackframes","in=^$in out=$stackfile sort=true sortby=MJD");
-
-    my $out = $Frmobj->inout( "_noi" );
-    $out = $Frmobj->strip_subscan( $out );
-    $Mon{kappa_mon}->obeyw("collapse","in=$stackfile out=$out axis=MJD estimator=mean");
-
-    # Now stack the NEP images
-    my @nep = map { $_.".more.smurf.nep" } $Frmobj->files;
-    $in = write_file_list( @nep );
-    $Mon{smurf_mon}->obeyw("stackframes","in=^$in out=$stackfile sort=true sortby=MJD");
-    my $tmp = new ORAC::TempFile;
-    my $tmpout = $tmp->file;
-    $Mon{kappa_mon}->obeyw("collapse","in=$stackfile out=$tmpout axis=MJD estimator=mean");
-
-    # Copy the average NEP image to the average noise image
-    my $nepout = $out . ".more.smurf.nep";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmpout out=$nepout");
-
-    push(@avnoise, $out);
+    push(@frames, $Frmobj) if ($Frmobj->nfiles > 1);
   }
 
-  # Store the averaged noise images in the current Frame
-  $Frm->files(@avnoise);
+  if ( @frames ) {
+    # Tell users what's happening
+    orac_print "Calculating average noise properties from existing noise images\n";
 
-  # Set the NOISE flag to indicate the Frame contains the results of a
-  # noise calculation
-  $Frm->uhdr("NOISE",1);
+    my @avnoise;
+    # Now the Group contains only Frames sorted by subarray, so loop
+    # over the (good) members
+    foreach my $Frmobj ( @frames ) {
+      # Stack the noise images
+      my $stack = new ORAC::TempFile;
+      my $stackfile = $stack->file;
+      my $in = write_file_list( $Frmobj->files );
+      $Mon{smurf_mon}->obeyw("stackframes","in=^$in out=$stackfile sort=true sortby=MJD");
 
-  # Display noise
-  _DISPLAY_NOISE_ LOGFILE=0 COMP=$comp
+      my $out = $Frmobj->inout( "_noi" );
+      $out = $Frmobj->strip_subscan( $out );
+      $Mon{kappa_mon}->obeyw("collapse","in=$stackfile out=$out axis=MJD estimator=mean");
+
+      # Now stack the NEP images
+      my @nep = map { $_.".more.smurf.nep" } $Frmobj->files;
+      $in = write_file_list( @nep );
+      $Mon{smurf_mon}->obeyw("stackframes","in=^$in out=$stackfile sort=true sortby=MJD");
+      my $tmp = new ORAC::TempFile;
+      my $tmpout = $tmp->file;
+      $Mon{kappa_mon}->obeyw("collapse","in=$stackfile out=$tmpout axis=MJD estimator=mean");
+
+      # Copy the average NEP image to the average noise image
+      my $nepout = $out . ".more.smurf.nep";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmpout out=$nepout");
+
+      push(@avnoise, $out);
+    }
+
+    # Proceed if there are files to display
+    if (@avnoise) {
+      $Frm->push_intermediates(@avnoise);
+      # Localize $Frm for display purposes
+      my $Frm = $Frm->new();
+      # Store the averaged noise images in the current Frame
+      $Frm->files(@avnoise);
+
+      # Set the NOISE flag to indicate the Frame contains the results of a
+      # noise calculation
+      $Frm->uhdr("NOISE",1);
+
+      # Display noise
+      _DISPLAY_NOISE_ LOGFILE=0 COMP=$comp
+    }
+  }
 }
