@@ -96,6 +96,12 @@ USA.
 
 =cut
 
+# Check for a solution before attempting to mosaic
+unless ($Frm->uhdr("RESP_NEW")) {
+  orac_warn "No responsivities to display\n";
+  return ORAC__OK;
+}
+my $prev = $Frm->uhdr("RESP_OLD");
 
 # Derive the list of current/previous filenames
 my @files = map { $_->files } $Grp->members;
@@ -173,6 +179,8 @@ foreach my $soln ("PROPOSED", "CURRENT") {
     @infiles = @curfiles;
     $ext = "resp_new";
   } else {
+    # Skip creation of previous responsivity mosaic if there is no solution
+    next unless ($prev);
     @infiles = @prefiles;
     $ext = "resp_old";
   }
@@ -210,24 +218,29 @@ foreach my $soln ("PROPOSED", "CURRENT") {
 }
 orac_print " done.";
 
-# Create the `percentage change' image
-my $deltafile = $out.".more.smurf.resp_delta";
-my $exp = "PA*(IA-IB)/IB";
-my $args = "exp=$exp IA=$out[0] IB=$out[1] PA=100.0 out=$deltafile";
-$Mon{kappa_mon}->obeyw("maths","$args");
-$args = "ndf=$deltafile title='Percentage change'";
-$Mon{ndfpack_mon}->obeyw("settitle","$args");
+my $pcresp;
+if ($prev) {
+  # Create the `percentage change' image
+  my $deltafile = $out.".more.smurf.resp_delta";
+  my $exp = "PA*(IA-IB)/IB";
+  my $args = "exp=$exp IA=$out[0] IB=$out[1] PA=100.0 out=$deltafile";
+  $Mon{kappa_mon}->obeyw("maths","$args");
+  $args = "ndf=$deltafile title='Percentage change'";
+  $Mon{ndfpack_mon}->obeyw("settitle","$args");
 
-# Store this as another extension in flatfield file
-my $pcresp = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_pcrsp")));
-$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$deltafile out=$pcresp");
+  # Store this as another extension in flatfield file
+  $pcresp = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_pcrsp")));
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$deltafile out=$pcresp");
 
-# Calculate responsivity ratio image - note there is no display
-# associated with this image and should probably not be created in the
-# QL or SUMMIT pipelines
-my $ratio = $out . ".more.smurf.resp_ratio";
-$args = "in1=$out[0] in2=$out[1] out=$ratio title='Responsivity ratio: proposed/current'";
-$Mon{kappa_mon}->obeyw("div","$args");
+  # Calculate responsivity ratio image - note there is no display
+  # associated with this image and should probably not be created in the
+  # QL or SUMMIT pipelines
+  unless ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) {
+    my $ratio = $out . ".more.smurf.resp_ratio";
+    $args = "in1=$out[0] in2=$out[1] out=$ratio title='Responsivity ratio: proposed/current'";
+    $Mon{kappa_mon}->obeyw("div","$args");
+  }
+}
 
 # Find min/max of current responsivity image so previous image can
 # be displayed on same scale
@@ -240,16 +253,19 @@ my %options = ( SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
 
 # Display the results
 orac_print " Displaying data...\n";
+orac_warn "No previous solution to display - percentage change image will not be created\n" unless ($prev);
 my $tmpFrm = $Frm->new();
 $tmpFrm->files(@out);
 $Display->display_data( $tmpFrm, \%options, -1 );
 
-# Now display the percentage change image
-$tmpFrm->files( ($pcresp) );
-# Display limits for delta image
-($zmin, $zmax) = (-10.0, 10.0);
-%options = ( SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
-$Display->display_data($tmpFrm, \%options, -1);
+if ($pcresp) {
+  # Now display the percentage change image
+  $tmpFrm->files( ($pcresp) );
+  # Display limits for delta image
+  ($zmin, $zmax) = (-10.0, 10.0);
+  %options = ( SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
+  $Display->display_data($tmpFrm, \%options, -1);
 
-# Don't need to keep this file
-$Frm->push_intermediates($pcresp);
+  # Don't need to keep this file
+  $Frm->push_intermediates($pcresp);
+}
