@@ -102,6 +102,12 @@ flatfield file called C<RESP_DELTA> (under .MORE.SMURF).
 If the B<RESPRATIO> parameter is true, then the responsivity ratio
 image is also stored as an NDF extension called C<RESP_RATIO>.
 
+The current global Frame object has two entries in the uhdr, called
+C<RESP_OLD> and C<RESP_NEW> which are flags to denote whether or not
+current and previous responsivity solutions exist. Note that in other
+primitives (called earlier in the recipe) these entries store the
+names of the respective solutions.
+
 =head1 OUTPUT FILES
 
 A (hidden) flag file is written with the extension C<.ok> which
@@ -182,6 +188,10 @@ if ( $proceed ) {
   my $logmsg = ($uselog) ? " (full results written to log.$logtype)" : "";
   orac_print "\nAnalyzing responsivity solutions$logmsg:\n";
 
+  # Number of good values in previous solution - use this to catch the
+  # case when there is no previous solution, or it was bad
+  my $prevgood = 0;
+  my $newgood = 0;
   foreach my $Subgrp ( @Grps ) {
     my @frames = $Subgrp->members;
     # Retrieve the representative Frame object
@@ -211,8 +221,9 @@ if ( $proceed ) {
 
     # Check there are enough solutions to analyze - unset the CLIP parameter
     if ( $Frmobj->uhdr("NUMGOOD") < 10 ) {
-      my $numgood = $Frmobj->uhdr("NUMGOOD");
-      orac_warn "Very few good solutions for subarray $subarray ($numgood)\n";
+      my $soltext = ($Frmobj->uhdr("NUMGOOD") == 0) ? "Zero" : "Very few good";
+      orac_warn "$soltext solutions for subarray $subarray ("
+	  .($Frmobj->uhdr("NUMGOOD")).")\n";
       $clip = "";
     }
 
@@ -222,6 +233,7 @@ if ( $proceed ) {
       # Analyze current resp file - use STATS for sigma-clipping
       _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 PERCENTILES=$percentiles
       my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+      $newgood += $results{NUMGOOD};
       # Now get the mode using HISTAT
       if ( $results{NUMGOOD} > 0 ) {
         _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0
@@ -245,6 +257,7 @@ if ( $proceed ) {
       _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 PERCENTILES=$percentiles
       my %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
       # Now get the mode using HISTAT
+      $prevgood += $previous{NUMGOOD};
       if ( $previous{NUMGOOD} > 0 ) {
         _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0
         $previous{MODE} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MODE};
@@ -430,6 +443,8 @@ if ( $proceed ) {
     }
     $Frmobj->intermediates(@newintermediates);
   }
+  $Frm->uhdr("RESP_OLD", ($prevgood == 0 ? 0 : 1));
+  $Frm->uhdr("RESP_NEW", ($newgood == 0 ? 0 : 1));
 
   my @flatfiles = map { $_->file } $Grp->members;
   if ( @flatfiles ) {
