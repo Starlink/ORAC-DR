@@ -94,6 +94,7 @@ SMURF: MAKECUBE.
 
 =head1 REQUIRED PERL MODULES
 
+File::Basename.
 File::Copy.
 
 =head1 AUTHORS
@@ -120,6 +121,7 @@ Place, Suite 330, Boston, MA 02111-1307, USA.
 
 =cut
 
+use File::Basename;
 use File::Copy;
 use constant MEGABYTE => 1048576;
 
@@ -230,6 +232,7 @@ foreach my $i ( 1 .. $num_files ) {
 
 # Form text file listing the chunk's members for MAKECUBE.
       my $chlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+      my $chfilename = basename( $chlist->file );
       my $chlist_fh = $chlist->handle;
 
       for ( my $k = 0; $k < $chunk; $k++ ) {
@@ -240,23 +243,25 @@ foreach my $i ( 1 .. $num_files ) {
 # Form tiles for current chunk.  Use a suffix to delineate the chunks.
       my ( $in, $out ) = $Grp->inout( "_cube" );
       $out .= "_ch" . "$chunk_index";
-      my $outfiles = "tile$$";
+
+# Obtain a name of a text file to list the output tiles, but the file
+# itself is created by MAKECUBE.
+      my $outfiles = new ORAC::TempFile;
+      unlink $outfiles->file;
+      my $outfilename = basename( $outfiles->file );
 
 # Process the current manageable chunk of input time series into spectral
 # cubes.
       orac_print "Creating cube $out from " . join( ", ", @chfiles ) . "...\n";
 
-      $Mon{'smurf_mon'}->obeyw( "makecube", "$params trim=f in='^" . $chlist->file . "' out=$out outfiles=$outfiles" );
+      $Mon{'smurf_mon'}->obeyw( "makecube", "$params trim=f in='^$chfilename' out=$out outfiles=$outfilename" );
       orac_say "done.";
       undef $chlist;
 
 # Append the names of the created files to an array for later allocation
 # into respective tiles.
-      open my $out_fh, "<", "$outfiles" or die "Could not find MAKECUBE output file list $outfiles: $!\n";
-      my @chunk_tiles = <$out_fh>;
-      close $out_fh;
-      unlink( "$outfiles" );
-      push ( @all_tiles, @chunk_tiles );
+      push ( @all_tiles, read_file_list( $outfiles->file ) );
+      undef $outfiles;
 
 # Start a new list of files for the new chunk.
       if ( $i < $num_files ) {
@@ -331,7 +336,7 @@ if ( $chunk_index > 1 ) {
          foreach my $i ( 1.. $nframe ) {
             orac_print "  " . $tiles_main[ $i - 1 ] . "\n";
          }
-         $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mm_params in='^" . $mmlist->file . "' out=$mmout" );
+         $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mm_params in='^$mmlist' out=$mmout" );
          orac_print "  done.\n\n";
          undef $mmlist;
 
