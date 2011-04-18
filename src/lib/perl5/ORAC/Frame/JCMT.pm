@@ -203,7 +203,7 @@ sub find_base_position {
     # Attempt to read from JCMTSTATE
     try {
       $state{TCS_TR_SYS} = $self->jcmtstate( "TCS_TR_SYS" );
-      if ($state{TCS_TR_SYS} ne 'APP') {
+      if (defined $state{TCS_TR_SYS} && $state{TCS_TR_SYS} ne 'APP') {
         for my $i (qw/ TCS_TR_BC1 TCS_TR_BC2 / ) {
           $state{$i} = $self->jcmtstate( $i );
         }
