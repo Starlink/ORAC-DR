@@ -1,0 +1,128 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+REDUCE_FOCUS_SUMMIT - derive focus information in the summit pipeline
+
+=head1 DESCRIPTION
+
+This recipe combines images from a FOCUS observation, removes sky
+emission and corrects for extinction. When enough data exist - defined
+as the existence of a minimum number of images for the last of the
+expected focus positions - the images for each focus position are
+combined and a data cube is created with SMU offset in mm as the third
+axis.
+
+Once the cube has been created, a flag file is written to indicate to
+the telescope POINTING_FOCUS task that processing is complete. The
+recipe also makes its own estimate of the best-fit focus position by
+fitting a parabola to the fitted peak flux densities at each SMU
+position. The solution is written to a log file, C<log.focus>.
+
+This primitive is largely the same as L<REDUCE_FOCUS|REDUCE_FOCUS>
+with minor modifications to handle data as they are taken.
+
+=head1 NOTES
+
+=over 2
+
+=item *
+
+The best-fit focus position is written to C<log.focus>.
+
+=item *
+
+The C<minimum number of images> referred to above is defined as the
+mean number of images obtained for each of the preceding focus
+positions. The recipe may fail to produce a cube if the pipeline does
+not receive enough data, even once the observation has ended. This is
+because the OBSEND flag in the FITS header will only be true for the
+final frame and thus the QL/summit pipelines may not see it.
+
+=item *
+
+No data are displayed until the cube of focus images has been created.
+
+=item *
+
+See also L<REDUCE_FOCUS|REDUCE_FOCUS>.
+
+=back
+
+=head1 DISPLAY
+
+The Frame image is not displayed.
+
+The Group data are displayed in a Kapview window with the image at
+each focus pisition displayed in a separate panel.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Standard introduction
+_SCUBA2_HELLO_
+
+# This is the summit pipeline
+_SUMMIT_STEER_
+
+# Process fast-ramp flatfield files
+_PROCESS_FASTFLAT_
+
+# Create image to analyze - use bilinear method to allow the peak
+# position to be determined more accurately. We don't care about
+# variances so force genvar to false.
+_CREATE_IMAGE_FRAME_ SPREAD=BILINEAR GENVAR=0 SYSTEM=AZEL
+
+# Remove sky - a simple mean level should be good enough. This step
+# will be ignored for SCAN data as it will have been carried out in
+# qlmakemap.
+_REMOVE_DC_SKY_ VERBOSE=0
+
+# Correct for extinction, using a single correction factor across the
+# entire image. This step will be ignored for SCAN data (see above).
+_EXTINCTION_CORRECT_FRAME_ EXTCOR=QUICKER
+
+# Remove any residual background
+_REMOVE_BACKGROUND_FROM_IMAGE_ FORCE=1
+
+# Apply most recent calibration factor - though this is not entirely
+# necessary for a FOCUS observation
+_CALIBRATE_DATA_
+
+# Create cube for further processing - the pipeline hands off control
+# to the telescope POINTING_FOCUS task at this point
+_CREATE_FOCUS_CUBE_
+
+# Make an internal estimate of the best-fit focus position for the
+# current axis
+_FIND_FOCUS_OFFSETS_
+
+# Delete temporary files, keeping only calibrated data. Note that the
+# last file created by the frame will not be deleted because it is
+# never replaced by anything so will never get pushed onto the
+# intermediates array
+#_DELETE_TEMP_FILES_ KEEP=_cal,_foc\$ ALSOGRP=1
+_DELETE_TEMP_FILES_GROUP_ KEEP=_foc\$ OBSEND=1 ALSOGRP=1
