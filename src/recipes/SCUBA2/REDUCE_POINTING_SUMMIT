@@ -1,0 +1,146 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+REDUCE_POINTING_SUMMIT - Process POINTING observations in the summit pipeline
+
+=head1 DESCRIPTION
+
+This recipe combines images from a POINTING observation, removes sky
+emission and corrects for extinction before calculating the offsets in
+Azimuth and Elevation from the nominal (0,0) position. The recipe also
+determines the beam size and the flux conversion factor (FCF) and
+writes them to log files.
+
+The image is processed with a matched filter before estimating the
+pointing offsets, but this output is not retained on disk. The reduced
+product remains the Group coadd.
+
+For additional record keeping, the source position is fitted and
+offsets in Azimuth and Elevation from the nominal (0,0) position are
+derived and logged. Note, however, that these may not be identical to
+those derived by the telescope POINTING_FOCUS task.
+
+This recipe is largely the same as L<REDUCE_POINTING|REDUCE_POINTING>
+with minor modifications specific to handle data as they are taken.
+
+=head1 NOTES
+
+=over 2
+
+=item *
+
+The pointing offsets, beam size and FCF are written to the log files
+C<log.pointing>, C<log.beam> and C<log.fcf>.
+
+=item *
+
+This recipe deals with both the 2-D DA-processed images and the time
+series data. Primitives which are meant for 2-D images are no-ops for
+time-series data.
+
+=item *
+
+The pointing offsets can be calculated from the centroid position or
+from a fit to the source: see the C<METHOD> parameter for
+_FIND_POINTING_OFFSETS_. The default is to determine the centroid.
+
+=back
+
+=head1 DISPLAY
+
+The Frame image is not displayed.
+
+The Group image is displayed in Gaia window 2; its variance is
+displayed in window 3.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Standard introduction
+_SCUBA2_HELLO_
+
+# This is the summit pipeline
+_SUMMIT_STEER_
+
+# Process fast-ramp flatfield files
+_PROCESS_FASTFLAT_
+
+# Combine subarrays into a single image. This is a no-op for SCAN
+# data.
+_ALIGN_AND_MOSAIC_SUBARRAY_
+
+# Remove sky - assume a simple DC level is good enough.  This is a
+# no-op for SCAN data.
+_REMOVE_DC_SKY_ VERBOSE=0
+
+# Correct for extinction, using a single correction factor across the
+# entire image.  This is a no-op for SCAN data.
+_EXTINCTION_CORRECT_FRAME_ EXTCOR=QUICK
+
+# Create image to analyze
+_CREATE_IMAGE_FRAME_ SPREAD=BILINEAR MAKEMOS_METHOD=SIGMA GENVAR=1 MAKEMOS=1 SYSTEM=AZEL
+
+# Trim images to a given size - 75 arcsec seems to work well at
+# suppressing artefacts around the map edges and improving the chance
+# of a successful fit
+_CROP_IMAGE_FRAME_ HEIGHT=75 WIDTH=75
+
+# Remove any residual background
+_REMOVE_BACKGROUND_FROM_IMAGE_ FORCE=1 MASK=1 METHOD=FITSURFACE
+
+# Calibrate data - this will calculate a FCF if a standard source has
+# been observed
+_FIND_CALIBRATION_MAP_
+_CALIBRATE_DATA_
+
+_TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GRAPHIC=1
+
+# Create Group file
+_MAKE_MOSAIC_GROUP_ COADD_MODE=RUNNING
+
+_TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 GRAPHIC=1
+
+# Display it
+_DISPLAY_GROUP_
+
+# Determine beam properties from the Group file
+_FIND_BEAM_SIZE_ GROUP=1
+
+# Apply the matched filter to improve signal-to-noise (especially
+# useful at 450 um). Wait until the observation has ended to match the
+# expectations of _FIND_POINTING_OFFSETS_.
+_APPLY_MATCHED_FILTER_ GROUP=1 STORE=1 OBSEND=1
+
+# Determine the pointing offsets and write results to a log file.
+# Note that a flag file is not written
+_FIND_POINTING_OFFSETS_
+
+# Delete temporary files, keeping calibrated data and flatfield
+# solutions. Note that the last file created by the frame will not be
+# deleted because it is never replaced by anything so will never get
+# pushed onto the intermediates array
+_DELETE_TEMP_FILES_ KEEP=_reduced,_flat ALSOGRP=1
