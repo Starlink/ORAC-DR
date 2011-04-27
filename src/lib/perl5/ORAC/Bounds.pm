@@ -492,6 +492,7 @@ sub calc_spectral_bounds {
                                                    Starlink::AST::SpecFrame->new( "MaxAxes=100" ),
                                                  );
   return unless defined $fsout;
+  return unless $fsout->HasAttribute( "StdofRest" ); # Defensive
 
   # Make sure we have the right attributes
   $fsout->Set( 'system' => 'FREQ',
@@ -555,6 +556,7 @@ sub calc_spatial_corners {
                                                 Starlink::AST::SkyFrame->new( "MaxAxes=100" ),
                                               );
   return unless defined $fsout;
+  return unless $fsout->HasAttribute( "SkyRefIs" ); # Defensive
 
   # Make sure we have the right attributes
   $fsout->Set( 'system' => 'ICRS',
