@@ -181,102 +181,113 @@ unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" 
   $estimator = "MEDIAN";
 }
 
+# Only need to use HISTAT if the estimator is the MODE
+my $histat = ($estimator eq "MODE") ? 1 : 0;
+
 # Print lots of info? Default to yes.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
-
-# Define a region according to SIZE
-my $region = "$image(0~$box,0~$box,)";
-
-# Obtain noise/sigma from variance in given image
-_FIND_IMAGE_STATISTICS_ IMAGE=$region COMP=ERR VERBOSE=0
-my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
-
-# Check sigma was defined
-unless ( $sigma ) {
-  # Use simple alternative method, unlikely to be remotely accurate...
-  _FIND_IMAGE_STATISTICS_ IMAGE=$image HISTAT=0 VERBOSE=0
-  $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
-}
-
-_FIND_IMAGE_STATISTICS_ IMAGE=$region VERBOSE=0 HISTAT=0
-my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-my $max = $results{MAX};
-my $peak_sn = $max / $sigma;
 
 # Flag to denote point source - initialize to zero
 my $point = 0;
 
-# Proceed if the peak signal-to-noise ratio exceeds the given
-# threshold
-my $sn_thresh = get_prim_arg($_PRIM_ARGS_, "SNTHRESH", 7);
-if ( $peak_sn > $sn_thresh ) {
-  my $numpix = $results{NUMPIX};
-  my $numgood = $results{NUMGOOD};
-  my $numbad = 0;
-  if ( $numpix != $numgood ) {
-    $numbad = $numpix - $numgood;
-    orac_warn "Search region contains $numbad bad pixels (out of $numpix)\n";
+# Define a region according to SIZE
+my $region = "$image(0~$box,0~$box,)";
+
+# Calculate image stats and check for good values before continuing
+_FIND_IMAGE_STATISTICS_ IMAGE=$region VERBOSE=0 HISTAT=0
+my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+
+if ($results{NUMGOOD} > 0) {
+  # Obtain noise/sigma from variance in given image
+  _FIND_IMAGE_STATISTICS_ IMAGE=$region COMP=ERR VERBOSE=0 HISTAT=$histat
+  my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+
+  # Check sigma was defined
+  unless ( $sigma ) {
+    # Use simple alternative method, unlikely to be remotely accurate...
+    _FIND_IMAGE_STATISTICS_ IMAGE=$image HISTAT=0 VERBOSE=0
+    $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
   }
+  my $max = $results{MAX};
+  my $peak_sn = $max / $sigma;
 
-  # Threshold this region to find the number of pixels with a value
-  # exceeding half of the peak signal-to-noise
-  my $thresh = $max / 2;
-  my $threshed = new ORAC::TempFile;
-  my $thrfile = $threshed->file;
-  my $args = "in=$region out=$thrfile thrlo=$thresh thrhi=$max newlo=bad newhi=$max";
-  $Mon{kappa_mon}->obeyw("thresh","$args");
-  _FIND_IMAGE_STATISTICS_ IMAGE=$thrfile VERBOSE=0
-  my %thresults = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-  my $numsig = $thresults{NUMGOOD};
-  my $numnotsig = $thresults{NUMPIX} - $numsig;
 
-  # What's the definition of a good source? Must be at least 7
-  # pixels. If it's a point source, then the number of significant
-  # pixels should be less than half the total. If it's extended but
-  # still centrally peak then let's say that the number of significant
-  # pixels can be 2/3 the total. Any more than that and the source is
-  # not sufficiently centrally-peaked.
-  if ( $numsig >= 5 ) {
-    my $fracsig = $numsig / $numpix;
-    if ($numsig < $numnotsig) {
-      $point = 1;
-    } elsif ($fracsig < 0.67) {
-      $point = -1;
+  # Proceed if the peak signal-to-noise ratio exceeds the given
+  # threshold
+  my $sn_thresh = get_prim_arg($_PRIM_ARGS_, "SNTHRESH", 7);
+  if ( $peak_sn > $sn_thresh ) {
+    my $numpix = $results{NUMPIX};
+    my $numgood = $results{NUMGOOD};
+    my $numbad = 0;
+    if ( $numpix != $numgood ) {
+      $numbad = $numpix - $numgood;
+      orac_warn "Search region contains $numbad bad pixels (out of $numpix)\n";
     }
-    if ($point) {
-      # Find the centroid if requested
-      my $pointtext = ( $point == 1 ) ? "point-like " : "resolved ";
-      if ( $centroid ) {
-	_CENTROID_IMAGE_ IMAGE=$region
-	if ( defined $_CENTROID_IMAGE_{RESULTS} ) {
-	  $_ASSESS_IMAGE_{POSITION} = $_CENTROID_IMAGE_{RESULTS};
-	  # OK we have a source and a centroid
-	  orac_say "Image $image appears to have a ".$pointtext."centroid near (0,0)"
-	    if $verbose;
+
+    # Threshold this region to find the number of pixels with a value
+    # exceeding half of the peak signal-to-noise
+    my $thresh = $max / 2;
+    my $threshed = new ORAC::TempFile;
+    my $thrfile = $threshed->file;
+    my $args = "in=$region out=$thrfile thrlo=$thresh thrhi=$max newlo=bad newhi=$max";
+    $Mon{kappa_mon}->obeyw("thresh","$args");
+    _FIND_IMAGE_STATISTICS_ IMAGE=$thrfile VERBOSE=0
+    my %thresults = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+    my $numsig = $thresults{NUMGOOD};
+    my $numnotsig = $thresults{NUMPIX} - $numsig;
+
+    # What's the definition of a good source? Must be at least 7
+    # pixels. If it's a point source, then the number of significant
+    # pixels should be less than half the total. If it's extended but
+    # still centrally peak then let's say that the number of significant
+    # pixels can be 2/3 the total. Any more than that and the source is
+    # not sufficiently centrally-peaked.
+    if ( $numsig >= 5 ) {
+      my $fracsig = $numsig / $numpix;
+      if ($numsig < $numnotsig) {
+	$point = 1;
+      } elsif ($fracsig < 0.67) {
+	$point = -1;
+      }
+      if ($point) {
+	# Find the centroid if requested
+	my $pointtext = ( $point == 1 ) ? "point-like " : "resolved ";
+	if ( $centroid ) {
+	  _CENTROID_IMAGE_ IMAGE=$region
+	    if ( defined $_CENTROID_IMAGE_{RESULTS} ) {
+	      $_ASSESS_IMAGE_{POSITION} = $_CENTROID_IMAGE_{RESULTS};
+	      # OK we have a source and a centroid
+	      orac_say "Image $image appears to have a ".$pointtext."centroid near (0,0)"
+		if $verbose;
+	    } else {
+	      # We have a source but no centroid
+	      orac_warn "Image $image appears to contain a significant peak but no centroid could be determined\n"
+		if $verbose;
+	    }
 	} else {
-	  # We have a source but no centroid
-	  orac_warn "Image $image appears to contain a significant peak but no centroid could be determined\n"
+	  # User decided not to determine a centroid
+	  orac_say "Image $image appears to have a ".$pointtext."source near (0,0)"
 	    if $verbose;
 	}
       } else {
-	# User decided not to determine a centroid
-	orac_say "Image $image appears to have a ".$pointtext."source near (0,0)"
+	# We have emission but it's too extended
+	orac_warn "Image $image contains significant emission but appears to be extended\n"
 	  if $verbose;
       }
     } else {
-      # We have emission but it's too extended
-      orac_warn "Image $image contains significant emission but appears to be extended\n"
+      # We have emission but not enough of it
+      orac_warn "Image $image has significant emission but no source could be identified\n"
 	if $verbose;
     }
   } else {
-    # We have emission but not enough of it
-    orac_warn "Image $image has significant emission but no source could be identified\n"
+    # No significant emission
+    orac_warn "Image $image does not contain a significant peak\n"
       if $verbose;
   }
+
 } else {
-  # No significant emission
-  orac_warn "Image $image does not contain a significant peak\n"
-    if $verbose;
+  orac_warn "Image $image has no good values\n" if ($verbose);
 }
 
+# Store flag to indicate point source
 $_ASSESS_IMAGE_{POINT} = $point;
