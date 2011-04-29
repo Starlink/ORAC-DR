@@ -1,0 +1,205 @@
+# -*-cperl-*-
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array, Starlink::HDSPACK, Statistics::Descriptive.
+
+=cut
+
+use JCMT::ACSIS::Array;
+use Statistics::Descriptive;
+
+   my $params;
+
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+
+    orac_say("Performing bad baseline detection.");
+
+    # Set/get filenames.
+    my ( $in, $out ) = $Frm->inout( "_blmasked", $i );
+
+    # We need the dimensions of the input file for later.
+    _GET_DIMENSIONS_ FILE=$in
+    my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+    my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+    #print "Boundaries\n";
+    #print "axis 1 ".$lbnd->[0]." ".$ubnd->[0]."\n";
+    #print "axis 2 ".$lbnd->[1]." ".$ubnd->[1]."\n";
+    #print "axis 3 ".$lbnd->[2]." ".$ubnd->[2]."\n";
+
+    my $temp1file = new ORAC::TempFile;
+    my $temp2file = new ORAC::TempFile;
+    my $temp3file = new ORAC::TempFile;
+
+    # Retrieve the list of bad detectors from the calibration system ONLY
+    # ignoring the ones set locally
+    $Cal->bad_receptors("MASTER");
+    my @baddets = $Cal->bad_receptors_list;
+    orac_say "Receptors disabled by the calibration system: " . join( ",", sort @baddets );
+    $Cal->bad_receptors("INDEXORMASTER");
+    my @tmp = $Cal->bad_receptors_list; # this second reading of INDEXORMASTER is done to setup the survey (survey_br)
+
+    # Collapse around the central 75% using the Csigma estimator to get
+    #
+    orac_say("Collapsing image...");
+    $params = "in=$in(~75%,,) out=$temp1file estimator=Csigma";
+    $params .= " axis=spec trim=true wlim=0.0 variance=false";
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+    # Get stats for each receptor not in the bad_receptors list
+    my %receptor_stats;
+    my %receptor_rms;
+    my $array_stats = new Statistics::Descriptive::Sparse;
+    my $array = new JCMT::ACSIS::Array( File => $temp1file );
+    my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+    foreach my $receptor ( @receptors ) {
+      my $pixel = $array->pixel( $receptor );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file($pixel,)" );
+      my ( $ORAC_STATUS, $pixmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      orac_say("RMS for receptor $receptor: ".sprintf("%.2f",$pixmean));
+
+      if( ! defined( $receptor_stats{$receptor} ) ) {
+        $receptor_stats{$receptor} = new Statistics::Descriptive::Sparse;
+      }
+      if( $pixmean > 0 ) {
+        $receptor_stats{$receptor}->add_data( $pixmean );
+      }
+    }
+      foreach my $receptor ( keys %receptor_stats ) {
+	if( $receptor_stats{$receptor}->count != 0 ) {
+	  $receptor_rms{$receptor} = $receptor_stats{$receptor}->mean();
+	} else {
+	  $receptor_rms{$receptor} = 'bad';
+	}
+      }
+     #orac_say("Receptors @baddets are set to bad in the calibration system and will not be used.");
+    _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=RMS
+
+
+    # Measure sigma and std dev
+    my @values;
+    my $sigma;
+    my $median;
+    my $stat = Statistics::Descriptive::Full->new();
+    while (my ($k,$v) = each %receptor_rms) {
+      push @values,$v;
+    }
+    $stat->add_data( @values );
+   if( $stat->count != 0 ) {
+    $sigma = $stat->standard_deviation();
+    $median = $stat->median();
+  }
+
+    # Calculate pixel number
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file order=true" );
+    my ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+
+    # Thresholding at mean+2 sigma level
+    my $threshold=$median+2*$sigma;
+    orac_say("Turning off spectra with CSigma above ".sprintf("%.2f",$threshold));
+    $params = "in=$temp1file out=$temp2file thrlo=-100000 newlo=bad thrhi=$threshold newhi=bad";
+    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+    ($ORAC_STATUS, my $numhi ) = $Mon{'kappa_mon'}->get( "thresh","numhi" );
+    my $perc_rejected=sprintf("%.1f",($numhi/$numpix)*100);
+    orac_say("Rejected $perc_rejected % of the samples");
+
+    # Get number of pixel rejected for each receptor.
+    my %receptor_stats_thresh;
+    my %receptor_fracbad;
+    my $array_stats_thresh = new Statistics::Descriptive::Sparse;
+    my $array_thresh = new JCMT::ACSIS::Array( File => $temp2file );
+    my @receptors_thresh = $array_thresh->receptors;
+    my @bad_receptors;
+    foreach my $receptor ( @receptors_thresh ) {
+      my $pixel = $array->pixel( $receptor );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp2file($pixel,)" );
+      ( $ORAC_STATUS, my $badpix ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+      ( $ORAC_STATUS, my $totpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+      my $frac_rejected = sprintf("%.1f",$badpix/$totpix*100);
+      orac_say("Receptor: $receptor, Fraction bad: $frac_rejected, Bad pixels: $badpix, Total pixels: $totpix.");
+
+      if( ! defined( $receptor_stats_thresh{$receptor} ) ) {
+        $receptor_stats_thresh{$receptor} = new Statistics::Descriptive::Sparse;
+      }
+        $receptor_stats_thresh{$receptor}->add_data( $frac_rejected );
+    }
+      foreach my $receptor ( keys %receptor_stats_thresh ) {
+	if( $receptor_stats_thresh{$receptor}->count != 0 ) {
+	  $receptor_fracbad{$receptor} = $receptor_stats_thresh{$receptor}->mean();
+	  if ($receptor_fracbad{$receptor}>50) {push @bad_receptors,$receptor;}
+	} else {
+	  $receptor_fracbad{$receptor} = 'bad';
+	}
+      }
+
+    #push @bad_receptors,"H04";
+    # Sort out bad receptors. They'll be added to the calibration system
+    # for either the specific survey or for everything, and only for the
+    # current LOFREQ +/- 1 GHz.
+    my $lofreq = $Frm->hdr( "LOFREQS" );
+    my $survey_br = defined( $Frm->uhdr( "SURVEY_BR" ) ) ? $Frm->uhdr( "SURVEY_BR" ) : 'Telescope';
+
+
+    if( scalar( @bad_receptors ) > 0 ) {
+      my %recep_hash = ( %{$Frm->hdr},
+                         LOFREQ_MAX => $lofreq + 1,
+                         LOFREQ_MIN => $lofreq - 1,
+                         DETECTORS => ( join ',',@bad_receptors ),
+                         SURVEY_BR => $survey_br,
+                       );
+
+      orac_say "Masking receptor(s) " . join( ",", sort @bad_receptors )." for survey $survey_br";
+      my $method=$Cal->bad_receptors();
+      #print "Cal method is $method\n";
+      $Cal->bad_receptors_qa_index->add( $in, \%recep_hash );
+      $Cal->bad_receptors_qa_index->add( $out, \%recep_hash );
+    }
+    #@baddets = $Cal->bad_receptors_list;
+    #foreach my $receptor ( @baddets ) {
+    #  print "Receptor $receptor is set to bad \n";
+    #}
+
+    _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_fracbad TYPE=BAD(%)
+
+
+
+    _GET_DIMENSIONS_ FILE=$temp2file
+    my $sslbnd = $_GET_DIMENSIONS_{LBOUND};
+    my $ssubnd = $_GET_DIMENSIONS_{UBOUND};
+
+    print "Boundaries of thresholded image\n";
+    print "axis 1 ".$sslbnd->[0]." ".$ssubnd->[0]."\n";
+    print "axis 2 ".$sslbnd->[1]." ".$ssubnd->[1]."\n";
+
+    # Expand the thresholded image to the size of the initial cube
+    $params = "in=$temp2file out=$temp3file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+    $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+    # Copy bad pixels to output image
+    $params = "in=$in ref=$temp3file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+
+    _GET_DIMENSIONS_ FILE=$out
+    $lbnd = $_GET_DIMENSIONS_{LBOUND};
+    $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+    #print "Boundaries of the final frame \n";
+    #print "axis 1 ".$lbnd->[0]." ".$ubnd->[0]."\n";
+    #print "axis 2 ".$lbnd->[1]." ".$ubnd->[1]."\n";
+    #print "axis 3 ".$lbnd->[2]." ".$ubnd->[2]."\n";
+    # Set the product.
+    $Frm->product( "_blmasked" );
+
+    # Update the Frm object.
+    $Frm->file( $i, $out );
+
+  }
+
+  # Display if necessary.
+  $Display->display_data( $Frm ) if defined $Display;
+
+  # Tidy-up output.
+  orac_print "\n";
+
+
