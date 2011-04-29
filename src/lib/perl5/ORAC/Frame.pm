@@ -274,6 +274,10 @@ problem (eg the recipe responsible for processing the frame failed to
 complete).
 
 This flag is used by the B<ORAC::Group> class to determine membership.
+A negative value indicates that the frame is good but should be hidden
+from the group.
+
+The return value from isgood() will always be defined.
 
 =cut
 

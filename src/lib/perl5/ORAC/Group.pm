@@ -683,7 +683,8 @@ The format of the index file should be of the form:
 
 This method returns a list, the first element being an array reference
 to the good members, and the second being an array reference to the
-bad (or removed) members.
+bad (or removed) members. Hidden members (negative isgood()) will
+not be returned.
 
 =cut
 
@@ -707,7 +708,7 @@ sub check_membership {
 
     next unless UNIVERSAL::can($member, 'isgood');
 
-    if ($member->isgood) {
+    if ($member->isgood > 0) {
 
       # Now compare the current frame with the bad observation
       # index list. This routine will return undef if there was
@@ -731,7 +732,7 @@ sub check_membership {
         push @bad, $member;
       }
 
-    } else {
+    } elsif (!$member->isgood) {
 
       push @bad, $member;
 
