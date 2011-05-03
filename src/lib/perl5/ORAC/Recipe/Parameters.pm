@@ -98,6 +98,40 @@ sub filename {
   return $self->{File};
 }
 
+=item B<recipe_name_from_params>
+
+Given a translated header hash, see if the parameter
+file contains an override for the recipe name.
+
+  $recipe = $par->recipe_name_from_params( \%hdr );
+
+Returns undef if no override is found.
+
+=cut
+
+sub recipe_name_from_params {
+  my $self = shift;
+  my $hdr = shift;
+
+  my $recname;
+  if (exists $hdr->{ORAC_OBJECT} && defined $hdr->{ORAC_OBJECT}
+      && exists $hdr->{ORAC_OBSERVATION_TYPE}
+      && defined $hdr->{ORAC_OBSERVATION_TYPE} ) {
+    my %allpars = $self->_parameters();
+    my $key = "RECIPES_" . uc($hdr->{ORAC_OBSERVATION_TYPE});
+
+    if (exists $allpars{$key}) {
+      my $object = uc($hdr->{ORAC_OBJECT});
+      $object =~ s/\s//g;
+
+      if (exists $allpars{$key}->{$object}) {
+        $recname = $allpars{$key}->{$object};
+      }
+    }
+  }
+  return $recname;
+}
+
 =item B<for_recipe>
 
 Retrieves the parameters associated with a particular recipe.
@@ -344,6 +378,17 @@ and with spaces removed) can be specified along with recipe names. If
 a recipe is being processed with a particular object the parameters
 for the recipe itself and the object variant of the recipe will be
 merged with the object taking precedence.
+
+Recipe name overrides can also be specified by using the object
+name for a particular observation type
+
+ [RECIPES_SCIENCE]
+ OBJECT1=REDUCE_SCIENCE
+ OBJECT2=REDUCE_FAINT_SOURCE
+
+ [RECIPES_POINTING]
+
+where object names have spaces removed.
 
 =head1 AUTHORS
 

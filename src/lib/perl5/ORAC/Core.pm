@@ -313,12 +313,22 @@ sub orac_process_frame {
     $RecipeName = $args{CmdLineRecipe};
     orac_print "Using recipe $RecipeName specified on command-line\n";
   } else {
-    # Retrieve recipe name from frame object
-    my $frmrecipe = $Frm->recipe;
+    my $override;
 
-    # copy it
-    $RecipeName = $frmrecipe;
-    orac_print "Using recipe $RecipeName provided by the frame\n";
+    # First see if we have a parameters override for the recipe name
+    if ( exists $args{RecPars} && defined $args{RecPars}) {
+      $override = $args{RecPars}->recipe_name_from_params( $Frm->uhdr );
+    }
+
+    if (defined $override) {
+      orac_print "Using recipe $override provided by recipe parameter file\n";
+      $RecipeName = $override;
+    } else {
+      # Retrieve recipe name from frame object
+      $RecipeName = $Frm->recipe;
+      orac_print "Using recipe $RecipeName provided by the frame\n";
+    }
+
   }
   ;
 
