@@ -32,7 +32,7 @@ The results are written to a log file, C<log.nefd>.
 
 The following arguments are supported:
 
-=over 4
+=over 2
 
 =item B<ESTIMATOR>
 
@@ -70,12 +70,11 @@ The following external tasks are used:
 
 =item KAPPA
 
-COPYBAD
+COPYBAD, MATHS
 
 =item ORAC-DR PRIMITIVES:
 
-_FIND_IMAGE_STATISTICS_, _FIND_VARIANCE_, _GET_LOG_PARAMETERS_,
-_MASK_AST_REGION_
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_
 
 =back
 
@@ -83,7 +82,7 @@ _MASK_AST_REGION_
 
 Points to note when deriving the NEFD from an image:
 
-=over 4
+=over 2
 
 =item * The data must be calibrated.
 
@@ -104,7 +103,8 @@ deriving the NEFD from NOISE observations.
 =head1 OUTPUT DATA
 
 If no log file is to be written, then the primitive hash contains the
-key C<NEFD> with the calculated NEFD.
+keys C<NEFD>, C<EFFNEFD> and C<NBOL_NEFD> with the calculated NEFD and
+effective NEFDs and the number of bolometers used in the calculation.
 
 =head1 OUTPUT FILES
 
@@ -116,7 +116,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008-2010 University of British Columbia. All Rights
+Copyright (C) 2008-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -162,8 +162,10 @@ unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" 
 }
 # Only use HISTAT to calculate the mode
 my $histat = ($estimator eq "MODE") ? 1 : 0;
-my ($nefd, $znefd, $nefdmethod);
+my ($nefd, $effnefd, $znefd, $nefdmethod, $nbol);
 if ($usenoise) {
+  #### Calculate NEFD from sky noise data ####
+
   # First check we have noise data available in the current Frame
   if ( $Frm->uhdr("NOISE") ) {
     $nefdmethod = "NOISE";
@@ -232,6 +234,7 @@ if ($usenoise) {
 
       _FIND_IMAGE_STATISTICS_ IMAGE=$maskedfile VERBOSE=0 HISTAT=$histat COMP=DATA
       my $nep = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+      $nbol = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
 
       # Multiply NEP by combined FCF/transmission factor to get NEFD
       my $info = shift(@fileinfo) if ($onsky);
@@ -241,6 +244,7 @@ if ($usenoise) {
       # sqrt(2) corrects for the Hz -> s conversion. Except now the
       # sqrt(2) is not thought to be needed.
       $nefd = $nep * $fcf;
+      $effnefd = $nefd / sqrt($nbol);
 
       # Similarly calculate zenith NEFD which must be a smaller number
       # and accounts for airmass and tau
@@ -249,6 +253,7 @@ if ($usenoise) {
       if (defined $nefd) {
 	my $subarray = $Frm->subarray($noisefile);
 	my $pnefd = sprintf "%6.2f", $nefd;
+	my $penefd = sprintf "%6.2f", $effnefd;
 
 	orac_print("Subarray $subarray:\n","green");
 	if ($onsky) {
@@ -256,9 +261,10 @@ if ($usenoise) {
 	  my $trans = sprintf "%.1f", 100.0 / $info->{extcor};
 	  my $airmass = sprintf "%6.4f", $info->{airmass};
 
-	  orac_print ("Measured NEFD = $pnefd mJy/beam s**0.5, "
+	  orac_print ("Measured  NEFD  = $pnefd mJy/beam s**0.5, "
 		      ."sky trans = $trans %, A = $airmass\n", "green");
-	  orac_print ("  Zenith NEFD = $pznefd mJy/beam s**0.5\n", "green");
+	  orac_print ("Effective NEFD = $penefd mJy/beam s**0.5\n", "green");
+	  orac_print ("   Zenith NEFD = $pznefd mJy/beam s**0.5\n", "green");
 	} else {
 	  orac_print ("Dark NEFD = $pnefd mJy/beam s**0.5\n", "green");
 	}
@@ -273,6 +279,7 @@ if ($usenoise) {
     $uselog = 0;
   }
 } else {
+  #### Calculate NEFD from map ####
 
   my $Obj = ( $groupflag ) ? $Grp : $Frm;
 
@@ -280,7 +287,7 @@ if ($usenoise) {
   if ( $groupflag ) {
     return ORAC__OK unless $Obj->file_exists;
   } else {
-    return ORAC__OK unless $Obj->isgood;
+    return ORAC__OK unless ($Obj->isgood > 0);
   }
 
   # This primitive must be run after files have been combined into a
@@ -314,11 +321,20 @@ if ($usenoise) {
     # Obtain NEFD estimate from NEFD image
     _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage VERBOSE=0 HISTAT=$histat
     $nefd = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+    # Calculate effective NEFD by dividing out the number of
+    # contributing bolometers
+    $effnefd = $nefd / sqrt($Frm->hdr("NBOLOEFF"));
 
     if ( $nefd ) {
-      my $pnefd = sprintf "%6.2f", $nefd;
-      orac_print ("Calculated NEFD = $pnefd mJy/beam s**0.5 from $frmgrp image $datafile\n",
-		  "green") if $verbose;
+      if ($verbose) {
+	my $pnefd = sprintf "%6.2f", $nefd;
+	orac_print "Calculated NEFD = $pnefd mJy/beam s**0.5 from $frmgrp image $datafile\n", "green";
+	if (!$groupflag) {
+	  my $penefd = sprintf "%6.2f", $effnefd;
+	  $nbol = sprintf "%d", $Frm->hdr("NBOLOEFF");
+	  orac_print "Effective NEFD  = $penefd mJy/beam s**0.5 using $nbol bolometers\n", "green";
+	}
+      }
 
     } else {
       orac_warn "Unable to derive NEFD using current $frmgrp image\n";
@@ -334,13 +350,16 @@ if ($usenoise) {
 # Write results to a log file if desired
 if ( $uselog && defined $nefd ) {
   my $logtype = "nefd";
-  my @names = ("NEFD", "Zenith_NEFD", "Method");
+  my @names = ("NEFD", "Zenith_NEFD", "Effective_NEFD", "Nbol", "Method");
   # Reformat NEFD for printing
   $nefd = sprintf "%9.5f", $nefd;
+  $effnefd = (defined $effnefd) ? sprintf "%9.5f", $effnefd : "*****";
   $znefd = (defined $znefd) ? sprintf "%9.5f", $znefd : "*****";
-  my @values = ($nefd, $znefd, $nefdmethod);
+  my @values = ($nefd, $znefd, $effnefd, $nbol, $nefdmethod);
   _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$groupflag
 } else {
   # If we're not writing a log file, return the NEFD to the caller
   $_CALCULATE_NEFD_{NEFD} = $nefd;
+  $_CALCULATE_NEFD_{EFFNEFD} = $effnefd;
+  $_CALCULATE_NEFD_{NBOL_NEFD} = $nbol;
 }
