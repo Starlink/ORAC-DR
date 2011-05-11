@@ -120,13 +120,6 @@ if (@flats) {
   my %previous = %{$Grp->uhdr("FASTFLATSOL")}
     if defined $Grp->uhdr("FASTFLATSOL");
 
-  # Calculate the number of files per subarray in the input Frame:
-  # batch mode processing will have multiple files, QL only 1 - unless
-  # the obs was terminated immediately following the fastramp
-  # measurement...
-  my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
-  my $batch = ($nfilespersub > 1) ? 1 : 0;
-
   # Create a temporary override of Frm to allow primitives to work.
   # Retrieve the current value of the PROCESS_FASTFLAT flag and the
   # name of a resistor config file if given, and store in the new
@@ -136,6 +129,13 @@ if (@flats) {
   my $Frm = $Frm->new(\@flats);
   $Frm->uhdr("PROCESS_FASTFLAT", $fastflat);
   $Frm->uhdr("RECPAR_RESIST_CFG", $resist) if (defined $resist);
+
+  # Calculate the number of files per subarray in the Frame: batch
+  # mode processing will have multiple files, QL only 1 - unless the
+  # obs was terminated immediately following the fastramp
+  # measurement...
+  my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
+  my $batch = ($nfilespersub > 1) ? 1 : 0;
 
   # The QL pipeline will only have 1 file per subarray, as will
   # observations which failed in some way (so that the trailing
@@ -164,8 +164,8 @@ if (@flats) {
 
   my @Frms;
   if ($batch) {
-    # multiple files per subarray = batch mode
-    # split Frm into Frms with all the same subscan number
+    # Multiple files per subarray = batch mode
+    # so split Frm into Frms with all the same subscan number
 
     # This method *assumes* that the files are ordered by subarray in
     # the Frame: ie file1 = sub1_file1, file2 = sub1_file2 etc.
@@ -200,9 +200,11 @@ if (@flats) {
     { # Localize Grp here (again!) just to get the flatfield calculation -
       # alternative is to patch _CALCULATE_FLATFIELD_ to take a group
       # object
-      my $Grp = $Grp->new;
+      my $Grp = $Grp->new("fastflat_previous");
       $Grp->allmembers($Frms[0]);
       $Grp->uhdr(%{$uhdr});
+
+      orac_print "\nCalculating the first flatfield solution...\n";
 
       # Calculate the flatfield solution
       _CALCULATE_FLATFIELD_
@@ -218,6 +220,8 @@ if (@flats) {
     }
     # Store the fastflats for retrieval by _ANALYZE_FLATFIELD_ below
     $Grp->uhdr("FASTFLATSOL",\%previous) if (%previous);
+    $Grp->uhdr("BATCH_FLAT", 1);
+    orac_print "\nCalculating the second flatfield solution...\n";
   }
   # Calculate the flatfield solution
   _CALCULATE_FLATFIELD_
