@@ -117,17 +117,17 @@ my (%store, @rawfastflats, @flatfiles);
 
 # Now process those files identified
 if (@flats) {
-  my %previous = %{$Grp->uhdr("FASTFLATSOL")}
-    if defined $Grp->uhdr("FASTFLATSOL");
+  # Retrieve previous solutions if they exist - this must be done
+  # first as the method relies on fiddling the hdr of the global Frame
+  # object
+  _RETRIEVE_FASTFLATS_ TYPE=SOL
+  my $previous = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
 
   # Create a temporary override of Frm to allow primitives to work.
-  # Retrieve the current value of the PROCESS_FASTFLAT flag and the
-  # name of a resistor config file if given, and store in the new
-  # localized Frm.
-  my $fastflat = $Frm->uhdr("PROCESS_FASTFLAT");
+  # Retrieve the name of a resistor config file if given, and store in
+  # the new localized Frm.
   my $resist = $Frm->uhdr("RECPAR_RESIST_CFG");
   my $Frm = $Frm->new(\@flats);
-  $Frm->uhdr("PROCESS_FASTFLAT", $fastflat);
   $Frm->uhdr("RECPAR_RESIST_CFG", $resist) if (defined $resist);
 
   # Calculate the number of files per subarray in the Frame: batch
@@ -190,11 +190,14 @@ if (@flats) {
   $Grp->uhdr("FASTFLAT",1);
   # Set the Frame uhdr obsend flag to force flatfield analysis
   $Frm->uhdr("OBSEND",1);
-  # Store (copied) raw file names for later retrieval when making a map
-  $_PROCESS_FASTFLAT_{FLATS} = [$Frm->files];
+  # Set PROCESS_FASTFLAT to true because if we're here then we're, uh,
+  # processing fastflats
+  $Frm->uhdr("PROCESS_FASTFLAT", 1);
   push(@rawfastflats, $Frm->files);
 
   if ( @Frms > 1 ) {
+    # Store a Grp flag that can be used downstream
+    $Grp->uhdr("BATCH_FLAT", 1);
     # If batch, process the first fast-ramp file to create a
     # `previous' file
     { # Localize Grp here (again!) just to get the flatfield calculation -
@@ -204,49 +207,25 @@ if (@flats) {
       $Grp->allmembers($Frms[0]);
       $Grp->uhdr(%{$uhdr});
 
-      orac_print "\nCalculating the first flatfield solution...\n";
-
       # Calculate the flatfield solution
+      orac_print "\nCalculating the first flatfield solution...\n";
       _CALCULATE_FLATFIELD_
-
-      # Each Frame will only contain 1 file, the flatfield solution. Take
-      # a copy so it's not overwritten by the second fastflat.
-      foreach my $tmpfrm ($Grp->members) {
-	my $fastflat = $tmpfrm->inout("_fastflat");
-	my $args = "in=".($tmpfrm->file)." out=$fastflat";
-	$Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
-	$previous{$tmpfrm->hdr("SUBARRAY")} = $fastflat;
-      }
+      # Store the results in the $previous hash reference
+      $previous = {map { $_->hdr("SUBARRAY") => $_->file } $Grp->members};
     }
-    # Store the fastflats for retrieval by _ANALYZE_FLATFIELD_ below
-    $Grp->uhdr("FASTFLATSOL",\%previous) if (%previous);
-    $Grp->uhdr("BATCH_FLAT", 1);
     orac_print "\nCalculating the second flatfield solution...\n";
   }
+  # Store the fastflats for retrieval by _ANALYZE_FLATFIELD_ below
+  $Grp->uhdr("FASTFLATS",$previous) if ($previous);
   # Calculate the flatfield solution
   _CALCULATE_FLATFIELD_
 
-  # Determine which files to keep on completion
-  my $keep;
-  if ( $obsend_on_entry ) {
-    # End of observation so only keep _flat
-    $keep = "_flat";
-
-    # Now we're done with the fastflats, add them to the intermediates
-    # array so they can be tidied up.
-    $Frm->push_intermediates(values %previous);
-  } else {
+  # Determine which files to keep on completion - always keep the
+  # flatfield solutions on disk
+  my $keep = "_flat";
+  if ( !$obsend_on_entry ) {
     # First time processing fast-ramps so keep the raw data too
-    $keep = "_flat,_rawflat";
-
-    # Each Frame will only contain 1 file, the flatfield solution. Take
-    # a copy so it's not overwritten by the second fastflat.
-    foreach my $tmpfrm ($Grp->members) {
-      my $fastflat = $tmpfrm->inout("_fastflat");
-      my $args = "in=".($tmpfrm->file)." out=$fastflat";
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
-      $store{$tmpfrm->hdr("SUBARRAY")} = $fastflat;
-    }
+    $keep .= ",_rawflat";
   }
 
   if ($batch) {
@@ -266,23 +245,19 @@ if (@flats) {
 
   # Store the flatfield solutions
   @flatfiles = map { $_->file } $Grp->members;
+  # $Frm and $Grp go out of scope here, return to original
 }
 
-# Store the fastflats for retrieval the next time through the recipe
-$Grp->uhdr("FASTFLATSOL",\%store) if (%store);
-if (@rawfastflats) {
-  $Grp->uhdr("FASTFLATS", \@rawfastflats);
-
-  unless ($Frm->uhdr("OBSEND")) {
-    my $Frmobj = $Frm->new;
-    $Frmobj->files(@rawfastflats);
-
-    my %rawfiles = $Frmobj->get_files_by_subarray;
-    foreach my $subarray (sort keys %rawfiles) {
-      $Frmobj->files( @{$rawfiles{$subarray}} );
-      $Frmobj->hdr("SUBARRAY" => $subarray);
-      $Cal->fastflatindex->add( $Frmobj->file, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
-    }
+# Store raw fastflats in Calibration system, but only if they will be
+# needed in successive recipe calls by the pipeline
+if (@rawfastflats && !$Frm->uhdr("OBSEND")) {
+  my $Frmobj = $Frm->new;
+  $Frmobj->files(@rawfastflats);
+  my %rawfiles = $Frmobj->get_files_by_subarray;
+  foreach my $subarray (sort keys %rawfiles) {
+    $Frmobj->files( @{$rawfiles{$subarray}} );
+    $Frmobj->hdr("SUBARRAY" => $subarray);
+    $Cal->fastflatindex->add( $Frmobj->file, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
   }
 }
 

@@ -178,12 +178,8 @@ if ( $proceed ) {
   my $respratio = get_prim_arg( $_PRIM_ARGS_, "RESPRATIO", 0 );
 
   # List of alternative `previous' fastflat solutions for comparison
-  my %fastflats = %{$Grp->uhdr("FASTFLATSOL")}
-    if (defined $Grp->uhdr("FASTFLATSOL"));
-
-  # Loop over subarrays... Use subgrps method to return list of Groups
-  # sorted by subarray
-  my @Grps = $Grp->subgrps( "SUBARRAY" );
+  my %fastflats = %{$Grp->uhdr("FASTFLATS")}
+    if (defined $Grp->uhdr("FASTFLATS"));
 
   my $logmsg = ($uselog) ? " (full results written to log.$logtype)" : "";
   orac_print "\nAnalyzing responsivity solutions$logmsg:\n";
@@ -192,23 +188,21 @@ if ( $proceed ) {
   # case when there is no previous solution, or it was bad
   my $prevgood = 0;
   my $newgood = 0;
-  foreach my $Subgrp ( @Grps ) {
-    my @frames = $Subgrp->members;
-    # Retrieve the representative Frame object
-    my $Frmobj = $frames[0];
+  foreach my $Frmobj ( $Grp->members ) {
     # Retrieve flatfield solution
     my $flatfile = $Frmobj->file;
-
-    # If this is a FASTFLAT then look for the earlier solution
-    if (defined $fastflats{$Frmobj->hdr("SUBARRAY")}) {
-      my $newprevious = $fastflats{$Frmobj->hdr("SUBARRAY")} .".more.smurf.resp_new";
-      my $cpargs = "in=$newprevious out=".($Frmobj->uhdr("RESP_OLD"));
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
-    }
+    my $subarray = $Frmobj->hdr('SUBARRAY');
 
     # Get responsivity file names
     my $respfile = $Frmobj->uhdr("RESP_NEW");
     my $previous = $Frmobj->uhdr("RESP_OLD");
+
+    # If this is a FASTFLAT then look for the earlier solution
+    if (defined $fastflats{$subarray}) {
+      my $newprevious = $fastflats{$subarray} .".more.smurf.resp_new";
+      my $cpargs = "in=$newprevious out=$previous";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
+    }
 
     # Get the responsivity units if info is being displayed to the screen
     my $units;
@@ -216,8 +210,6 @@ if ( $proceed ) {
       $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$respfile");
       (my $ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
     }
-
-    my $subarray = $Frmobj->hdr('SUBARRAY');
 
     # Check there are enough solutions to analyze - unset the CLIP parameter
     if ( $Frmobj->uhdr("NUMGOOD") < 10 ) {

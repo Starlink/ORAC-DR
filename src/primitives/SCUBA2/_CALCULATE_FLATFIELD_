@@ -10,20 +10,20 @@ _CALCULATE_FLATFIELD_
 
 =head1 DESCRIPTION
 
-Calculate a flatfield solution from a dedicated flatfield
-observation. On completion of the observation (the OBSEND FITS header
-flag must be true) the new flatfield solution is determined for each
-subarray. A responsivity image may be generated from this solution and
-will be used for subsequent analysis of the flatfield. A similar image
-is derived for the existing flatfield solution (which will be included
-in the raw data) and stored for comparison with the current
-responsivity data.
+Calculate a flatfield solution from a flatfield observation. On
+completion of the observation (the OBSEND FITS header flag must be
+true) the new flatfield solution is determined for each subarray. A
+responsivity image may be generated from this solution and will be
+used for subsequent analysis of the flatfield. A similar image is
+derived for the existing flatfield solution (which will be included in
+the raw data) and stored for comparison with the current responsivity
+data.
 
 =head1 ARGUMENTS
 
 This primitive supports the following arguments:
 
-=over 4
+=over 2
 
 =item B<METHOD>
 
@@ -52,7 +52,11 @@ for a ramp and 3 for a discrete flatfield.
 
 The following external tasks are used:
 
-=over 4
+=over 2
+
+=item KAPPA:
+
+NDFCOPY
 
 =item SMURF:
 
@@ -90,7 +94,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2010 Science & Technology Facilities Council.
-Copyright (C) 2008-2009 University of British Columbia.  All Rights
+Copyright (C) 2008-2009,2011 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -112,41 +116,39 @@ USA.
 
 # Flatfield can only be calculated after the observation has ended
 if ( $Frm->uhdr("OBSEND") ) {
-
-  # Issues:
-  # - Resp must be given for each subarray, unless generated automatically
-  #   (then resp is a flag)
-
-  # Input arguments
-
-  # Method
+  # Input arguments...
+  # Flatfield calculation method
   my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "POLYNOMIAL");
 
   # Mask bolometers based on responsivity?
   my $respmask = get_prim_arg( $_PRIM_ARGS_, "RESPMASK", 1 );
   $respmask = ( $respmask ) ? "respmask" : "norespmask";
 
-  # Minimum S/N ratio to accept responsivity solutions. Default depends on whether
-  # this is a fast flat or an explicit flatfield observation.
+  # Minimum S/N ratio to accept responsivity solutions. Default
+  # depends on whether this is a fast flat or an explicit flatfield
+  # observation.
   my $defsnr = ( $Frm->hdr("OBS_TYPE") =~ /flatfield/i ? 3 : 10 );
   my $snrmin = get_prim_arg( $_PRIM_ARGS_, "SNRMIN", $defsnr );
 
   # The only acceptable input value for resp is the null parameter,
   # !. Anything else will ensure the pipeline determines an output
-  # file name. Also this primitive has to deal with multiple
-  # subarrays, which will have different output results.
+  # file name.
   my $resp = get_prim_arg( $_PRIM_ARGS_, "RESP", "" );
   if ( $resp eq "!" ) {
     orac_warn "No responsivity image will be written: flatfield solution can not be analyzed\n";
   }
 
-  # Create a new group where the frame objects only contain files from
-  # a single subarray
+  # Retrieve existing flatfield solutions
+  my %fastflats = %{$Grp->uhdr("FASTFLATS")}
+    if (defined $Grp->uhdr("FASTFLATS"));
+
+  # Create a new temporary group where the frame objects only contain
+  # files from a single subarray
   my $subarrayGrp = $Grp->sort_by_subarray;
 
-  # Loop over subarrays.
+  # Loop over subarrays
+  my @out;
   foreach my $Frmobj ( $subarrayGrp->members ) {
-
     # Determine name of output file
     my $out = $Frmobj->inout( "_flat" );
     $out = $Frmobj->strip_subscan( $out )
@@ -179,15 +181,24 @@ if ( $Frm->uhdr("OBSEND") ) {
     # Store the responsivity file if created, and calculate the
     # previous solution
     unless ( $resp eq "!" ) {
-      # Calculate previous responsivity solution and store it as an
-      # extension in the flatfield file. Since all the files in the
-      # Frame object have the same flatfield info, we can use any to
-      # calculate the previous responsivity - so use the first one.
+      # Determine the previous responsivity solution and store it as
+      # an extension in the flatfield file. Either use an existing
+      # solution or calculate from the internal solution.
       my $previous = $out.".MORE.SMURF.RESP_OLD";
-      $args = "in=".$Frmobj->file." out=$previous";
-      $Mon{smurf_mon}->obeyw("calcresp","$args");
-      # Add this file to the Frame object uhdr, to be used later for
-      # display purposes
+      if ($fastflats{$subarray}) {
+	# Copy existing solution
+	my $prevflat = $fastflats{$subarray};
+        my $prevresp = $prevflat . ".MORE.SMURF.RESP_NEW";
+        $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$prevresp out=$previous");
+      } else {
+	# Calculate the responsivity from the internal flatfield
+	# solution
+        $args = "in=".$Frmobj->file." out=$previous";
+	$Mon{smurf_mon}->obeyw("calcresp","$args");
+      }
+
+      # Store the previous solution in the Frame object uhdr, to be
+      # used later for display purposes
       $Frmobj->uhdr( "RESP_OLD", $previous);
 
       # Store current responsivity solution as an extension in the
@@ -204,23 +215,13 @@ if ( $Frm->uhdr("OBSEND") ) {
 
     # Store the flatfield file in the template Frame object
     $Frmobj->files($out);
-
-    # Later primitives are going to assume we have processed
-    # frames in $Grp so we clear out the group and copy the
-    # frames in from $subarrayGrp
-    $Grp->allmembers( $subarrayGrp->members );
+    push(@out, $out);
   }
-
-  # Now create an ok file to indicate the processing is complete.
-  # List of flatfield file names for writing to flag (.ok) file
-  my @flatfiles = map { $_->file } $Grp->members;
-  if ( @flatfiles ) {
-    $Frm->uhdr("FLATFIELD",1);
-  } else {
-    $Frm->uhdr("FLATFIELD",0);
-  }
-} else {
-  # If we're not processing this time round, make a copy so the data
-  # are available when the time comes.
-  _COPY_RAW_DATA_
+  # Set a flag to indicate that the Frames in Grp contain flatfielded
+  # data
+  $Frm->uhdr("FLATFIELD", (@out ? 1 : 0) );
+  # Later primitives are going to assume we have processed
+  # Frames in $Grp so we clear out the group and copy the
+  # frames in from $subarrayGrp
+  $Grp->allmembers( $subarrayGrp->members );
 }
