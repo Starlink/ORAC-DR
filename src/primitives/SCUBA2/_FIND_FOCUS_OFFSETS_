@@ -180,6 +180,9 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       orac_err "Error: no list of FOCUS positions in Group header. Did something go wrong?\n";
     }
 
+    # Store the fitted amplitudes in a hash - default to -1 if no
+    # source could be located
+    my %amps;
     orac_print "Locating and fitting peak positions...\nPlane " if $verbose;
     for my $plane ($focsteplo..$focstephi) {
       orac_print "$plane..." if $verbose;
@@ -202,6 +205,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
 	  $fwhm *= sqrt($axisr);
 	  # Add the Amplitude, its uncertainty and FWHM to the arrays
 	  # if valid values were returned - but the amplitude should be positive!
+	  $amps{$plane} = $amp;
 	  if ($amp > 0) {
 	    push (@amps, $amp);
 	    push (@damps, $damp);
@@ -215,15 +219,24 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
 	}
       } else {
 	orac_warn " Unable to locate centroid for plane $plane in focus cube\n";
+	$amps{$plane} = -1;
       }
     }
     orac_print " done\n";
 
     # Warn user if too many fits failed: need 3 points to define a quadratic
     my $npts = scalar(@amps);
+    # Midpoint plane - assumes there is an odd number os SMU positions
+    my $midpt = 0.5 * ($focstephi + $focsteplo);
     if ( $npts < 3 || scalar(@fwhms) < 3 ) {
       orac_print "\n";
       orac_warn "Insufficient number of amplitudes ($npts) - unable to determine focus offsets\n";
+    } elsif ($amps{$midpt} < 0 && ($amps{$midpt-1} < 0 || $amps{$midpt+1} < 0)) {
+      # Catch the case where there appears to be enough fits, but
+      # they're unrealistic - in this case the central SMU position
+      # and either of the positions either side have negative
+      # ampltiudes
+      orac_warn "Fits to central SMU positions failed - unable to determine focus offsets\n";
     } else {
       orac_print "Calculating best-fit focus position with $npts measurements... "
 	if $verbose;
