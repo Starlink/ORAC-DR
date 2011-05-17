@@ -379,7 +379,7 @@ sub flat {
   my $self = shift;
   # Do not warn about non-matching calibrations
   my $warn = 0;
-  return $self->GenericIndexAccessor( "flat", 0, 1, 0, $warn, @_ );
+  return $self->GenericIndexAccessor( "flat", -1, 1, 0, $warn, @_ );
 }
 
 =item B<fastflat>
@@ -400,7 +400,7 @@ sub fastflat {
   my $self = shift;
   # Do not warn about non-matching calibrations
   my $warn = 0;
-  return $self->GenericIndexAccessor( "fastflat", 0, 1, 0, $warn, @_ );
+  return $self->GenericIndexAccessor( "fastflat", -1, 1, 0, $warn, @_ );
 }
 
 =back
