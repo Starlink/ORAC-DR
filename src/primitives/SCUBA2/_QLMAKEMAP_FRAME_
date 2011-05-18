@@ -111,24 +111,35 @@ my $system = uc(get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING"));
 my (@infiles, @fastflats);
 # Use all files in current Frame, except for POINTING and FOCUS
 # observations where the instrument aperture is defined
-if (($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i ||
-     $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) &&
-    defined $Frm->hdr("INSTAP") ) {
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i ||
+    $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
 
   my %allfiles = $Frm->get_files_by_subarray;
-  my $instap = $Frm->instap_subarray;
-  orac_print "Selecting files from subarray $instap only... ";
-  my $infiles = $allfiles{$instap};
-  if ($infiles) {
-    @infiles = @{$infiles};
-    my $origsub = $Frm->hdr("SUBARRAY");
-    $Frm->hdr(SUBARRAY => $instap);
-    push(@fastflats, $Cal->fastflat);
-    $Frm->hdr(SUBARRAY => $origsub);
-    orac_print "done\n";
+  my @subarrays = sort keys %allfiles;
+
+  my $these_arrays;
+  if (defined $Frm->hdr("INSTAP")) {
+    @subarrays = ($Frm->instap_subarray);
+    $these_arrays = "subarray $subarrays[0]";
+  } elsif (@subarrays > 3) {
+    # Use the B and D subarrays
+    @subarrays = ($subarrays[1], $subarrays[3]);
+    $these_arrays = "subarrays ". (join(" and ", @subarrays));
+  }
+  foreach my $subarray (@subarrays) {
+    my $infiles = $allfiles{$subarray};
+    if ($infiles) {
+      push(@infiles, @{$infiles});
+      my $origsub = $Frm->hdr("SUBARRAY");
+      $Frm->hdr(SUBARRAY => $subarray);
+      push(@fastflats, $Cal->fastflat);
+      $Frm->hdr(SUBARRAY => $origsub);
+    }
+  }
+  if (@infiles) {
+    orac_print "Selecting files from $these_arrays only...\n";
   } else {
-    orac_print "\n";
-    orac_warn "Unable to retrieve data for the instrument aperture, $instap: using all data\n";
+    orac_warn "Unable to retrieve data for $these_arrays: using all data\n";
     @infiles = $Frm->files;
   }
 } else {
