@@ -11,11 +11,11 @@ _FIND_FOCUS_OFFSETS_
 =head1 DESCRIPTION
 
 This primitive takes the data cube formed by _CREATE_FOCUS_CUBE_ and
-loops over each plane (SMU position) to fit the source with a PSF. The
-amplitude is stored and used to create a 1-D NDF of amplitude as a
-function of focus position. A quadratic is fitted to these data and
-the best-fit focus position calculated. The result is written to a log
-file if desired.
+loops over each plane (SMU position) to obtain the signal at the
+centre position. The amplitudes are stored and used to create a 1-D
+NDF of amplitude as a function of focus position. A quadratic is
+fitted to these data and the best-fit focus position calculated. The
+result is written to a log file if desired.
 
 =head1 ARGUMENTS
 
@@ -57,8 +57,11 @@ _CENTROID_IMAGE, _FIT_SOURCE_, _GET_LOG_PARAMETERS_
 
 =head1 NOTES
 
-The fit for focus position will only be carried out if a source could
-be fitted in three or more planes of the cube.
+The primitive only uses positive amplitudes for fitting the focus
+position (negative amplitudes are ignored).
+
+The fit for focus position will only be carried out if positive
+signals were measured in three or more planes of the cube.
 
 =head1 OUTPUT FILES
 
@@ -163,8 +166,6 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
     # Obtain name of cube to analyze
     my $focuscube = $Grp->file;
 
-    orac_print "Processing FOCUS cube... " if $verbose;
-
     # Get the relevant info from the cube
     $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$focuscube");
     my ($ORAC_STATUS, @vals) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
@@ -180,55 +181,34 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       orac_err "Error: no list of FOCUS positions in Group header. Did something go wrong?\n";
     }
 
-    # Store the fitted amplitudes in a hash - default to -1 if no
-    # source could be located
+    # Store the amplitudes in a hash - default to -1 for planes which
+    # might be missing (if that file was skipped in the QL pipeline,
+    # say)
     my %amps;
-    orac_print "Locating and fitting peak positions...\nPlane " if $verbose;
     for my $plane ($focsteplo..$focstephi) {
-      orac_print "$plane..." if $verbose;
+      $amps{$plane} = -1;
       # Retrieve filename to determine centroid
       my $focusfile = "$focuscube(,,$plane)";
-      # Get estimate of source position for fitting in offset coords
-      _CENTROID_IMAGE_ IMAGE=$focusfile VERBOSE=0
-      my $results = $_CENTROID_IMAGE_{RESULTS};
-      my @xy = (defined $results) ? @{ $results } : (undef, undef);
-      if ( defined $xy[0] && defined $xy[1] ) {
-	# Fit a 2-D gaussian to the source
-	_FIT_SOURCE_ IMAGE=$focusfile XYPOS=\@xy VERBOSE=0 BOX=21
-	if ( $_FIT_SOURCE_{FIT} == 1 ) {
-	  # Store fit parameters
-	  my $amp = $_FIT_SOURCE_{AMPLITUDE}->[0];
-	  my $damp = $_FIT_SOURCE_{AMPLITUDE}->[1];
-	  my $fwhm = $_FIT_SOURCE_{MINFWHM}->[0];
-	  my $axisr = $_FIT_SOURCE_{AXISR};
-	  # Calculate mean FWHM
-	  $fwhm *= sqrt($axisr);
-	  # Add the Amplitude, its uncertainty and FWHM to the arrays
-	  # if valid values were returned - but the amplitude should be positive!
-	  $amps{$plane} = $amp;
-	  if ($amp > 0) {
-	    push (@amps, $amp);
-	    push (@damps, $damp);
-	    push (@fwhms, $fwhm);
-	    push (@fitted, $plane-1);
-	  } else {
-	    orac_warn " Fit to plane $plane yields a negative amplitude\n";
-	  }
-	} else {
-	  orac_warn " Unable to fit source for plane $plane in focus cube\n";
-	}
+      $Mon{kappa_mon}->obeyw("look","ndf=$focusfile comp=data centre='0,0' size=1");
+      ($ORAC_STATUS, my $amp) = $Mon{kappa_mon}->get("look","value");
+      $Mon{kappa_mon}->obeyw("look","ndf=$focusfile comp=err centre='0,0' size=1");
+      ($ORAC_STATUS, my $damp) = $Mon{kappa_mon}->get("look","value");
+
+      $amps{$plane} = $amp;
+      if ($amp > 0) {
+	push (@amps, $amp);
+	push (@damps, $damp);
+	push (@fitted, $plane-1);
       } else {
-	orac_warn " Unable to locate centroid for plane $plane in focus cube\n";
+	orac_warn "Amplitude of plane $plane is negative\n";
       }
-      $amps{$plane} = -1 unless (defined $amps{$plane});
     }
-    orac_print " done\n";
 
     # Warn user if too many fits failed: need 3 points to define a quadratic
     my $npts = scalar(@amps);
-    # Midpoint plane - assumes there is an odd number os SMU positions
+    # Midpoint plane - assumes there is an odd number of SMU positions
     my $midpt = 0.5 * ($focstephi + $focsteplo);
-    if ( $npts < 3 || scalar(@fwhms) < 3 ) {
+    if ( $npts < 3 ) {
       orac_print "\n";
       orac_warn "Insufficient number of amplitudes ($npts) - unable to determine focus offsets\n";
     } elsif ($amps{$midpt} < 0 && ($amps{$midpt-1} < 0 || $amps{$midpt+1} < 0)) {
