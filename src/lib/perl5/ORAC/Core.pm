@@ -411,6 +411,7 @@ sub orac_process_frame {
        File::Spec->canonpath($ENV{"ORAC_DATA_IN"})
        ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
     foreach my $raw ( $Frm->raw ) {
+      $raw = $Frm->fullfname( $raw );
       unlink($raw) if (-l $raw);
     }
   }
