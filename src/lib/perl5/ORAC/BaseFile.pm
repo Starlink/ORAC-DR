@@ -1460,6 +1460,21 @@ sub translate_hdr {
   }
 }
 
+=item B<fullfname>
+
+Convert the supplied string to the actual file on disk. This would be
+a string stored in the files() attribute. Normally a no-op but for the
+case of Starlink a suffix will be added.
+
+  $full = $Frm->fullfname( $file );
+
+=cut
+
+sub fullfname {
+  my $self = shift;
+  return $_[0];
+}
+
 =back
 
 =begin __PRIVATE__

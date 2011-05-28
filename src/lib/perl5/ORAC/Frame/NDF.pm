@@ -98,6 +98,8 @@ sub erase {
     $status = unlink $file;
   } elsif ($file !~ /\./) {
     # No suffix at all, try appending an '.sdf'
+    # Do not use fullfname() method since we do not want
+    # HDS components to be stripped
     $file .= '.sdf';
     $status = unlink $file;
   } else {
@@ -192,24 +194,6 @@ C<.sdf> so that HDS containers can be supported (and files
 that already have the extension)  -- but note that
 this version of the method does not look inside HDS containers
 looking for NDFs.
-
-=cut
-
-sub file_exists {
-  my $self = shift;
-  my $file = $self->file(@_);
-
-  # Strip anything after the first dot (in case extensions already
-  # present)
-  $file =~ s/\..*$//;
-
-  # Check for file existence
-  if (-e "$file.sdf") {
-    return 1;
-  } else {
-    return 0;
-  }
-}
 
 =item B<inout>
 

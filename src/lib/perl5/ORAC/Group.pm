@@ -843,7 +843,9 @@ Returns ORAC__OK if successful, ORAC__ERROR otherwise.
 
 sub erase {
   my $self = shift;
-  my $status = unlink $self->file;
+  my $file = $self->file;
+  my $fullname = $self->fullfname( $file );
+  my $status = unlink $fullname;
 
   return ORAC__ERROR if $status == 0;
   return ORAC__OK;
@@ -862,10 +864,9 @@ file as stored on disk (e.g. a .sdf extension).
 
 sub file_exists {
   my $self = shift;
-  if (-e $self->file) {
-    return 1;
-  }
-  return 0;
+  my $file = $self->file;
+  my $fullname = $self->fullfname( $file );
+  return (-e $fullname);
 }
 
 

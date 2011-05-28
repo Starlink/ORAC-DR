@@ -643,6 +643,25 @@ sub set_app_name {
   NDF::ndf_happn( "$baseapp $extra $sha", $status );
 }
 
+=item B<fullfname>
+
+Convert the supplied string to the actual file on disk. This would be
+a string stored in the files() attribute. HDS components are removed
+from the name and ".sdf" is added.
+
+  $full = $Frm->fullfname( $file );
+
+=cut
+
+sub fullfname {
+  my $self = shift;
+  my $file = shift;
+
+  # Strip anything after the first dot, in case extension is present.
+  $file =~ s/\..*$//;
+  return $file . ".sdf";
+}
+
 =back
 
 =head1 PRIVATE METHODS

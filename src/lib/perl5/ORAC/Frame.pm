@@ -559,13 +559,10 @@ The optional argument refers to the file number.
 
 sub file_exists {
   my $self = shift;
-  if (-e $self->file(@_)) {
-    return 1;
-  }
-  return 0;
+  my $file = $self->file(@_);
+  my $fullname = $self->fullfname( $file );
+  return (-e $fullname );
 }
-
-
 
 =item B<file_from_bits>
 

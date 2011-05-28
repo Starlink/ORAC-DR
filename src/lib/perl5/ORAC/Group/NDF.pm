@@ -201,45 +201,6 @@ sub coaddswrite {
   return ORAC__ERROR;
 }
 
-
-=item B<erase>
-
-Erases the current group file. Assumes a C<.sdf> extension.
-Returns ORAC__OK if successful, ORAC__ERROR otherwise.
-
-=cut
-
-sub erase {
-  my $self = shift;
-
-  my $file = $self->file() . ".sdf";
-  my $status = unlink $file;
-
-  return ORAC__ERROR if $status == 0;
-  return ORAC__OK;
-}
-
-=item B<file_exists>
-
-Checks for the existence of the Group file(). Assumes a C<.sdf>
-extension.
-
-=cut
-
-sub file_exists {
-  my $self = shift;
-  my $file = $self->file;
-
-  # Strip anything after the first dot, in case extension is present.
-  $file =~ s/\..*$//;
-
-  if (-e "$file.sdf") {
-    return 1;
-  } else {
-    return 0;
-  }
-}
-
 =back
 
 =head1 REQUIREMENTS
