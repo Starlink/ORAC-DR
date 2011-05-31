@@ -131,9 +131,16 @@ USA.
 # Should I be verbose? (Default to yes)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-# Flag to indicate if we have a FOCUS observation
+# Flag to indicate if we have a FOCUS observation - skip non-focus
+# sequences (ie fastflats)
 my $focusobs = ( lc($Frm->uhdr("ORAC_OBSERVATION_TYPE")) eq "focus" ) ? 1 : 0;
 $focusobs = 0 if ($Frm->hdr("SEQ_TYPE") !~ /focus/i);
+# However, what happens if we get to the end of the obs and no cube
+# has been created? Just try creating a cube with whatever data exist.
+if ($Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE")) {
+  orac_print "\nObservation has ended with no cube created - creating one now\n";
+  $focusobs = 1;
+}
 
 # Get current focus position
 my $curfocposn = $Frm->hdrval("FOCPOSN");
@@ -199,7 +206,7 @@ if ( $Grp->uhdr("FOCUSNUM") ) {
 # is skipped in the QL/SUMMIT pipelines but hopefully that will be a
 # rarer event than skipping any one of the other positions.
 my $lastpos = 0.5 * ($Frm->hdr("NFOCSTEP") - 1.0) * $Frm->hdr("FOCSTEP");
-my $is_lastpos = (abs($lastpos - $curfocposn) < 1e-5) ? 1 : 0;
+my $is_lastpos = (abs($lastpos - $curfocposn) < 1e-5 || $Frm->uhdr("OBSEND")) ? 1 : 0;
 
 # Check if we are on the last focus position and whether we have
 # enough data to create the Focus cube, by setting the OBSEND flag to
@@ -382,13 +389,10 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   my $midfile = "$cubename(,,$midplane)";
   # Find the centroid just in case the source is way off centre - in
   # practice just using 0,0 seems to work well enough
-  my @xypos;
   orac_print "adjusting WCS to put source at image centre...\n" if $verbose;
-  if ($Frm->uhdr("NEWIMAGE") == 1) {
-    _CENTROID_IMAGE_ IMAGE=$midfile
-    @xypos = ( $_CENTROID_IMAGE_{RESULTS}->[0],
-	       $_CENTROID_IMAGE_{RESULTS}->[1]);
-  }
+  _CENTROID_IMAGE_ IMAGE=$midfile
+  my @xypos = ( $_CENTROID_IMAGE_{RESULTS}->[0],
+		$_CENTROID_IMAGE_{RESULTS}->[1]);
   # Now slide all the images so that the source lies at 0,0 in the
   # mid-focus position image. Note that due to off-axis aberrations,
   # the source may still shift from 0,0 away from the in-focus SMU
