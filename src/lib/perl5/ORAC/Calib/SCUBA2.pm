@@ -86,10 +86,11 @@ my %NEP = ( '850' => 7.0e-17, '450' => 2.1e-16 );
 # Should probably put calibrator flux information in a different
 # file
 
-# Need to store fluxes for each filter
-# Use Jy
-
-my %PHOTFLUXES = (
+# List of known secondary calibrator fluxes - one hash contains the
+# total flux (ASECFLUXES) while the other contains the flux per beam
+# (BEAMFLUXES). For most secondary calibrators these are the same
+# thing as they are unresolved.
+my %ASECFLUXES = (
                'HLTAU' => {
                            '850' => 2.36,
                            '450' => 10.4,
@@ -101,6 +102,40 @@ my %PHOTFLUXES = (
                'CRL2688' => {
                              '850' => 6.4,
                              '450' => 29.7,
+                            },
+               '16293-2422' => {
+                                '850' => 22.9,
+                                '450' => 169.6,
+                               },
+               'V883ORI' => {
+                             '850' => 1.34,
+                             '450' => 7.28,
+                            },
+               'ALPHAORI' => {
+                              '850' => 0.629,
+                              '450' => 1.39,
+                             },
+               'TWHYA' => {
+                           '850' => 1.37,
+                           '450' => 3.9,
+                          },
+               'ARP220' => {
+                            '850' => 0.688,
+                            '450' => 2.77,
+                           },
+              );
+my %BEAMFLUXES = (
+               'HLTAU' => {
+                           '850' => 2.36,
+                           '450' => 10.4,
+                          },
+               'CRL618' => {
+                            '850' => 4.7,
+                            '450' => 11.8,
+                           },
+               'CRL2688' => {
+                             '850' => 5.9,
+                             '450' => 22.0,
                             },
                '16293-2422' => {
                                 '850' => 22.9,
@@ -188,14 +223,18 @@ sub default_fcfs {
 
 =item B<secondary_calibrator_fluxes>
 
-Return the lookup table of fluxes for secondary calibrators.
+Return the lookup table of fluxes for secondary calibrators. Takes an
+optional parameter which returns the total fluxes rather than the `per
+beam' values.
 
- %photfluxes = $cal->secondary_calibrator_fluxes();
+ %photfluxes = $cal->secondary_calibrator_fluxes( $ismap );
 
 =cut
 
 sub secondary_calibrator_fluxes {
-  return %PHOTFLUXES;
+  my $self = shift;
+  my $ismap = shift if (@_);
+  return (defined $ismap && $ismap) ? %ASECFLUXES : %BEAMFLUXES;
 }
 
 =item B<fwhm>
