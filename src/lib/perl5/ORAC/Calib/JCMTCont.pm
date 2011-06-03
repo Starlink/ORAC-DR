@@ -284,10 +284,9 @@ sub fluxcal {
   my $flux = undef;
 
   # Check in the fluxes hash for a value
-  my %PHOTFLUXES = $self->secondary_calibrator_fluxes;
+  my %PHOTFLUXES = $self->secondary_calibrator_fluxes($ismap);
   if (exists $PHOTFLUXES{$source}) {
     # Source exists in calibrator list
-
     if (exists $PHOTFLUXES{$source}{$filter}) {
       $flux = $PHOTFLUXES{$source}{$filter};
     }
