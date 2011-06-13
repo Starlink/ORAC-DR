@@ -377,22 +377,24 @@ sub orac_calc_instrument_settings {
            );
   };
 
-  # SCUBA-2 and ACSIS support recsuffix options
-  # Add -batch if not today.
+  # SCUBA-2 and ACSIS support recsuffix options.
+  # Add -batch if not today for non-QL/SUMMIT pipelines.
   my $jcmt_args = sub {
-    my @rec;
+    my (@rec, $nobatch);
     if (exists $options{mode} && defined $options{mode}) {
       if ($options{mode} eq 'QL') {
-        push(@rec, "-recsuffix", "QL" );
+        push(@rec, "-recsuffix", "QL", "-grptrans", undef, "-nobatch", undef);
+	$nobatch = 1;
         # SCUBA2 disables the display in QL mode and uses DRAMA
         if ($inst eq 'SCUBA2') {
-          push(@rec,  "-loop" => "task" );
+          push(@rec,  "-loop", "task");
         }
       } elsif ($options{mode} eq 'SUMMIT') {
-        push(@rec, "-recsuffix", "SUMMIT");
+        push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef);
+	$nobatch = 1;
       }
     }
-    if( ! $istoday ) {
+    if( ! $istoday && !$nobatch) {
       push( @rec, "-batch" => undef );
     }
     return ( $oracdr_args->(), @rec );
