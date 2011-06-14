@@ -596,6 +596,8 @@ ORAC_DATA_CAL.
 The C<config_type> is usually stored as a uhdr entry for the current
 Frame object.
 
+The C<pipeline> argument is ignored if the config type is given as C<moon>.
+
 =cut
 
 sub makemap_config {
@@ -608,13 +610,17 @@ sub makemap_config {
   if ( %args ) {
 
     # Append labels in the following order: config_type and pipeline.
-    if ( defined $args{config_type} ) {
-      $configfile .= "_".$args{config_type}
-        unless ( $args{config_type} eq "normal" );
+    my $config_type = lc($args{config_type}) if (defined $args{config_type});
+    if ( $config_type ) {
+      $configfile .= "_".$config_type
+        unless ( $config_type eq "normal" );
     }
 
     # Check for SUMMIT or QL pipeline
-    my $pipeline = (defined $args{pipeline}) ? lc($args{pipeline}) : "";
+    my $pipeline = "";
+    if (defined $args{pipeline}) {
+      $pipeline = lc($args{pipeline}) unless ($config_type && $config_type eq "moon");
+    }
     if ($pipeline eq "ql" || $pipeline eq "summit") {
       # Note different base dir
       @basedir = ($ENV{'ORAC_DATA_CAL'});
