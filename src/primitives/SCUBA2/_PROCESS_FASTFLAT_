@@ -86,6 +86,20 @@ USA.
 
 my @flats;
 
+# Check duration of observation - abort fastflat processing if less
+# than 1000 samples (5 sec) since a complete ramp usually takes about
+# 3.5 sec
+my $seq_length = $Frm->hdr("SEQEND") - $Frm->hdr("SEQSTART") + 1;
+if ($seq_length < 1000) {
+  my $seq_type = $Frm->hdr("SEQ_TYPE");
+  orac_warn "Very short $seq_type files with only $seq_length samples\n";
+  # Abort if this is fastflat data
+  if ($seq_type =~ /fastflat/i) {
+    orac_err "Data stream too short to determine flatfield solution\n";
+    return ORAC__TERM;
+  }
+}
+
 # Have to treat FOCUS observations a little differently because each
 # Frame corresponds to a separate SMU position.
 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
@@ -144,8 +158,8 @@ if (@flats) {
   # The QL pipeline will only have 1 file per subarray, as will
   # observations which failed in some way (so that the trailing
   # fastramp was not carried out). How can the two cases be
-  # distinguished so QL processing goes ahead while bad observations
-  # are omitted?
+  # distinguished so QL/SUMMIT processing goes ahead while bad
+  # observations are omitted?
 
   # If the number of subarrays equals the number of fastramp files
   # then there are not enough fastramp files to compare so terminate
@@ -160,8 +174,9 @@ if (@flats) {
   # fastramps per subarray - what if 1 subarray has only 1?
 
   # Copy the raw files so they persist during successive passes
-  # through the recipe - only done for the QL pipeline as fastflat
-  # processing batch doesn't care about processing the science data
+  # through the recipe - only done for the QL/SUMMIT pipelines as
+  # fastflat processing batch doesn't care about processing the
+  # science data
   if (!$batch) {
     _COPY_RAW_DATA_ SUFFIX=_rawflat
   }
