@@ -38,6 +38,11 @@ Flag to specify whether data should be flatfielded. Default is 0 (no).
 Flag to denote whether to keep power spectra files on disk on
 exit. Default is 0 (no).
 
+=item B<NSAMP>
+
+Number of samples to use in calculation. Default is to use all the
+data.
+
 =item B<THRESH>
 
 Threshold (in standard deviations) for defining good bolometers
@@ -62,7 +67,7 @@ NDFCOPY, SETTITLE
 
 =item SMURF:
 
-SC2CLEAN, SC2CONCAT, SC2FFT
+SC2CLEAN, SC2FFT
 
 =back
 
@@ -133,6 +138,16 @@ if ($proceed) {
 
   my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
+  # Number of samples to use in the calculation - default is to use all the data
+  my $nsamp = get_prim_arg($_PRIM_ARGS_, "NSAMP", undef);
+  # Check that nsamp is reasonable...
+  my $num_samples = $Frm->hdrval("SEQEND",-1) - $Frm->hdrval("SEQSTART", 0) + 1;
+  if ($nsamp > $num_samples) {
+    orac_warn "Requested number of samples exceeds number to be processed - using available data ($num_samples samples)\n";
+    undef $nsamp;
+  }
+  my $datafrac = int(100.0 * $nsamp/$num_samples) if ($nsamp);
+
   # Parameters for sc2concat
   my $doflat = ($flat) ? "flat" : "noflat";
 
@@ -145,7 +160,9 @@ if ($proceed) {
   my %subfiles = $Frm->get_files_by_subarray;
 
   my $spectrum = ($nsubarrays == 1) ? "spectrum" : "spectra";
-  orac_print "Calculating average power $spectrum for" if ($verbose);
+  my $extra = ($datafrac) ? " using $datafrac % of available data" : "";
+  orac_print "Calculating average power $spectrum$extra:\n" if ($verbose);
+  orac_print "  Processing" if ($verbose);
 
   _RETRIEVE_FASTFLATS_
   my $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
@@ -154,44 +171,45 @@ if ($proceed) {
   my $i = 0;
   # Process each subarray separately
   foreach my $subarray (sort keys %subfiles) {
-    # Step 1: concatenate files
     orac_print " $subarray..." if ($verbose);
     $i++;
     my $out = $Frm->inout("_avpspec", $i);
     my @infiles = @{$subfiles{$subarray}};
+    if ($nsamp) {
+      @infiles = map {$_ . "(,,1:$nsamp)"} @infiles;
+    }
     push(@infiles, $fastflats->{$subarray}) if ($fastflats);
     my $inlist = write_file_list( @infiles );
+    # Step 1: do some basic cleaning - this could be a many-to-1
+    # operation, depending on the number of files but for the
+    # QL/SUMMIT pipelines it is a 1-to-1 (plus fastflats)
     my $temp1 = new ORAC::TempFile;
     my $tempfile1 = $temp1->file;
     my $args = "in=^$inlist out=$tempfile1 $doflat";
+    $args = "in=^$inlist out=$tempfile1 $doflat config='^$cleancfg'";
     # Add the alternative resistor values if the data are to be flatfielded
     $args .= " resist=".($Frm->uhdr("RECPAR_RESIST_CFG"))
       if (defined $Frm->uhdr("RECPAR_RESIST_CFG") && $flat);
-    $Mon{smurf_mon}->obeyw("sc2concat","$args");
-
-    # Step 2: do some basic cleaning - this is a 1-to-1 operation
-    my $temp2 = new ORAC::TempFile;
-    my $tempfile2 = $temp2->file;
-    $args = "in=$tempfile1 out=$tempfile2 config='^$cleancfg'";
     $Mon{smurf_mon}->obeyw("sc2clean","$args");
 
-    # Step 3: calculate average power spectrum - reuse tempfile1 for
-    # output file
-    $args = "in=$tempfile2 out=$tempfile1 avpspec avpspecthresh=$thresh";
+    # Step 2: calculate average power spectrum
+    my $temp2 = new ORAC::TempFile;
+    my $tempfile2 = $temp2->file;
+    $args = "in=$tempfile1 out=$tempfile2 avpspec avpspecthresh=$thresh";
     $Mon{smurf_mon}->obeyw("sc2fft","$args");
     my ($ORAC_STATUS, $ngood) = $Mon{smurf_mon}->get("sc2fft","ngood");
 
     # Threshold the spectrum at 1e7 for display purposes and copy out
     # first axis from this 4-d file for linplot
-    $Mon{kappa_mon}->obeyw("stats","ndf=$tempfile1");
+    $Mon{kappa_mon}->obeyw("stats","ndf=$tempfile2");
     ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
     if ( $max > 1.0e7 ) {
-      # Can reuse tempfile2 here
-      my $args = "in=$tempfile1 out=$tempfile2 thrlo=0 newlo=0 thrhi=1.0e7 newhi=1.0e7";
+      # Can reuse tempfile1 here
+      my $args = "in=$tempfile2 out=$tempfile1 thrlo=0 newlo=0 thrhi=1.0e7 newhi=1.0e7";
       $Mon{kappa_mon}->obeyw("thresh","$args");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile2(,0,0,1) trim trimwcs out=$out");
-    } else {
       $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1(,0,0,1) trim trimwcs out=$out");
+    } else {
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile2(,0,0,1) trim trimwcs out=$out");
     }
 
     # Set a suitable title - included subscan number for QL/SUMMIT pipelines
@@ -202,7 +220,7 @@ if ($proceed) {
 
     push(@avpspec, $out);
   }
-  orac_print " done" if ($verbose);
+  orac_print " done." if ($verbose);
 
   if ( $display_spectra ) {
     # We don't want to store these power spectra as the current files in
@@ -212,7 +230,7 @@ if ($proceed) {
     $dispFrm->files(@avpspec);
     # Display power spectrum
     if (defined $Display) {
-      orac_print " - Displaying $spectrum" if ($verbose);
+      orac_print " Displaying $spectrum..." if ($verbose);
       $Display->display_data($dispFrm);
     }
     undef $dispFrm;
