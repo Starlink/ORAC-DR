@@ -104,15 +104,11 @@ unless ($Frm->uhdr("RESP_NEW")) {
 }
 my $prev = $Frm->uhdr("RESP_OLD");
 
-# Derive the list of current/previous filenames
+# Derive the list of current/previous filenames - the assumption here
+# is that each Frame in the Group contains 1 file per subarray
 my @files = map { $_->files } $Grp->members;
 my @curfiles = map { $_ .".more.smurf.resp_new" } @files;
 my @prefiles = map { $_ .".more.smurf.resp_old" } @files;
-
-# Set the coordinate frame to FPLANE
-foreach my $file (@curfiles, @prefiles) {
-  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$file frame=fplane");
-}
 
 # Reference subarray
 my $short = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 1 : 0;
@@ -133,40 +129,7 @@ unless ($ref) {
   $refsub = $subs[0];
   $ref = $ref{$refsub};
 }
-
-# Now use knowledge of the orientation of the arrays to get the X and
-# Y axes pointing the right way. Note s4d is the `right way up', so no
-# need to flip or rotate.
-my ($flip, $rotate, $axis, $angle) = (0, 0, 0, 0);
-if ($refsub eq "s8b") {
-  # Flip about Y-axis (flip axis 1)
-  $flip = 1;
-  $axis = 1;
-} elsif ( $refsub eq "s4a" || $refsub eq "s8c" ) {
-  # Rotate 90 CW
-  $rotate = 1;
-  $angle = 90;
-} elsif ( $refsub eq "s4b" ) {
-  # Rotate 180
-  $rotate = 1;
-  $angle = 180;
-} elsif ( $refsub eq "s8d" ) {
-  # Flip about X-axis (flip axis 2)
-  $flip = 1;
-  $axis = 2;
-} elsif ( $refsub eq "s4c" ) {
-  # Rotate 90 CCW, flip about X (axis 2)
-  $rotate = 1;
-  $angle = -90;
-  $flip = 1;
-  $axis = 1;
-} elsif ( $refsub eq "s8a" ) {
-  # Rotate 90 CW, flip about X (axis 2)
-  $rotate = 1;
-  $angle = 90;
-  $flip = 1;
-  $axis = 1;
-}
+my %refimage = ( refsub => $refsub );
 
 orac_print "\nCreating combined responsivity images...";
 
@@ -190,35 +153,19 @@ foreach my $soln ("PROPOSED", "CURRENT") {
     $ext = "resp_old";
   }
 
-  my $inlist = write_file_list( @infiles );
-  my $mos = ORAC::TempFile->new();
-
-  # Combine responsivity images using nearest-neighbour
+  my $outname = $out . ".more.smurf.$ext";
   my $mosref = $ref.".more.smurf.$ext";
-  my $args = "in=^$inlist out=$mos ref=$mosref lbnd=! ubnd=! method=nearest";
-  $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+  my $fpmos = ORAC::TempFile->new();
 
-  # Perform the required flip and/or rotation
-  my $processed = $mos;
-  my $rot = ORAC::TempFile->new();
-  my $flipped = ORAC::TempFile->new();
-  if ($rotate) {
-    $Mon{kappa_mon}->obeyw("rotate","in=$mos out=$rot angle=$angle");
-    $processed = $rot;
-  }
-  if ($flip) {
-    $mos = $rot if ($rotate);
-    $Mon{kappa_mon}->obeyw("flip","in=$mos out=$flipped dim=$axis");
-    $processed = $flipped;
-  }
+  $refimage{refimage} = $mosref;
+  _MAKE_MOSAIC_FPLANE_ INFILES=\@infiles OUT=$fpmos REFERENCE=\%refimage
 
   # Save result to a file - first store the resp_new as the main data
   # component, then as an NDF extension
   if ($ext eq "resp_new") {
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$out");
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$fpmos out=$out");
   }
-  my $outname = $out . ".more.smurf.$ext";
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$outname");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$fpmos out=$outname");
 
   my $title = "$newsoln $wave solution";
   $title .= " (QL)" if ($Frm->uhdr("QUICKLOOK"));
