@@ -6,14 +6,24 @@ _CHECK_MAP_BOUNDS_ - check image size and return modified image bounds
 
 =head1 SYNOPSIS
 
- _CHECK_MAP_BOUNDS_
+ _CHECK_MAP_BOUNDS_ IN=$inlist TASK=$task
 
 =head1 DESCRIPTION
 
 This primitive checks the size of an output image which would be
 created by the given input data. If the image exceeds a size which
 would result in a file on disk larger than 2 GB, the image bounds are
-reduced.
+reduced. The user must specify the task to use: either KAPPA
+C<WCSMOSAIC> or SMURF C<MAKEMAP>.
+
+If running C<MAKEMAP>, there is a further check that the modified
+bounds are smaller than the map size given in the FITS header
+(allowing for the SCUBA-2 field of view). If not, the new bounds are
+set to encompass the specified map size, again allowing for the
+SCUBA-2 field-of-view. The reason for this check is to trap cases
+where the positional information in the data is incorrect - there is
+no point creating a 2 GB file if the map was supposed to correspond to
+something a fraction of that size.
 
 The user B<must> specify a filename containing the list of files to
 process and the task to be used to process those data. The primitive
@@ -93,7 +103,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia. All Rights
+Copyright (C) 2010-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -166,18 +176,50 @@ if ( $MON_STATUS == ORAC__OK ) {
     orac_warn "Size will exceed 2 GB: reducing to include central $pc_scalefactor % of mapped area\n";
 
     my $newxsize = int($xsize * $scalefactor);
-    my $newysize = int($newxsize * $ysize / $xsize);
-    my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
-    my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
+    my $newysize = int($ysize * $scalefactor);
+
+    orac_print "Determining new bounds for output image:\n";
+    if ($task eq "makemap") {
+      # If we're not coadding files then the output map should not be
+      # any larger than that specified in the FITS header. But, we have
+      # to assume a default pixel scale of 4"/2" at 850/450 um
+      # respectively to convert map size to pixels.
+      use Astro::SLA qw(:constants);
+      my $pixsize = ($Frm->hdr("FILTER") =~ /850/) ? 4 : 2;
+      my $map_pa = DD2R * $Frm->hdr("MAP_PA");
+      my $map_width = int(($Frm->hdr("MAP_WDTH") * cos($map_pa) +
+			   $Frm->hdr("MAP_HGHT") * sin($map_pa)) / $pixsize);
+      my $map_height = int(($Frm->hdr("MAP_HGHT") * cos($map_pa) +
+			    $Frm->hdr("MAP_WDTH") * sin($map_pa)) / $pixsize);
+      # Allow for a FoV extra coverage - assume 8-arcmin FoV = 480"
+      my $border = 480.0 / $pixsize;
+      $map_width += $border;
+      $map_height += $border;
+      # Calculate the number of pixels corresponding to the requested map area
+      my $mappix = $map_width * $map_height;
+      my $newmappix = $newxsize * $newysize;
+      # If twice this number is less than the new map area then use
+      # it. The factor of 2 allows for the case that the new map size
+      # is only a little bit bigger than the requested map size, and a
+      # map that has only twice the number of pixels probably won't
+      # significantly longer to process.
+      if (2*$mappix < $newmappix) {
+	orac_warn "New size exceeds defined map size: something has probably gone wrong\n";
+	orac_warn "Using map size from header, but results should be examined for problems\n";
+	$newxsize = $map_width if ($newxsize > $map_width);
+	$newysize = $map_height if ($newysize > $map_height);
+      }
+    }
+
+    my $dx = int(($xsize - $newxsize) / 2.0);
+    my $dy = int(($ysize - $newysize) / 2.0);
     # Reduce the X, Y bounds equally.
     $lbound[0] += $dx;
     $ubound[0] -= $dx;
     $lbound[1] += $dy;
     $ubound[1] -= $dy;
 
-    orac_print "Determining new bounds for output image:\n";
-    orac_print "Old image dimensions are $xsize x $ysize\n";
-    orac_print "New image dimensions are $newxsize x $newysize\n";
+    orac_print "Old dimensions are $xsize x $ysize - new dimensions are $newxsize x $newysize\n";
 
     # Set some entries in the primitive hash
     $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 1;
