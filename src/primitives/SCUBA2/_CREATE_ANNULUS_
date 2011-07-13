@@ -1,0 +1,143 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_ANNULUS_ - create an annulus by masking out circular regions in an image
+
+=head1 SYNOPSIS
+
+ _CREATE_ANNULUS_
+
+ _CREATE_ANNULUS_ IMAGE=$image ANNULUS=$annulus
+
+ _CREATE_ANNULUS_ IMAGE=$image ANNULUS=$annulus XYPOS=\@xy INNER=50 OUTER=75
+
+=head1 DESCRIPTION
+
+This primitive creates an annulus by masking a circular region within
+and without the given inner and outer radii, returning the annulus
+image.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<ANNULUS>
+
+Output image containing annulus. Default uses the C<inout> method to
+create a file with suffix C<_ann>.
+
+=item B<GROUP>
+
+Flag to indicate whether the default input file is from the current
+Frame or Group. Default is 0 (Frame).
+
+=item B<IMAGE>
+
+Input image. Default is either the current Frame or Group image.
+
+=item B<INNER>
+
+The inner radius of the aperture in arcsec. Default is 30 arcsec.
+
+=item B<OUTER>
+
+The outer radius of the aperture in arcsec. Default is 60 arcsec.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is true.
+
+=item B<XYPOS>
+
+An array reference containing the formatted X, Y coordinates in the
+chosen frame. Default is to use the position in the SkyRef WCS
+attribute for absolute coordinate systems or (0,0) for offset
+coordinate systems. Primitive aborts with an error if no default could
+be identified.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES:
+
+_DEFINE_APERTURE_, _MASK_IMAGE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The Frame object is not updated.
+
+=head1 OUTPUT FILES
+
+The annulus image, either given as an argument or with suffix C<_ann>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# If using a default file, is it from the Frame or the Group?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Set the input/output file names
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", $Obj->file );
+my $ann_image = get_prim_arg( $_PRIM_ARGS_, "ANNULUS", scalar($Obj->inout("_ann")) );
+
+# Should I be verbose (default to yes)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+# Set inner and out radiui of annulus - default is 30 and 60 arcsec
+my $radius_in = get_prim_arg( $_PRIM_ARGS_, "INNER", 30.0 );
+my $radius_out = get_prim_arg( $_PRIM_ARGS_, "OUTER", 60.0 );
+if ($radius_out <= $radius_in) {
+  orac_warn "Outer radius ($radius_out), less than inner radius ($radius_in): assuming defaults\n";
+  $radius_in = 30.0;
+  $radius_out = 60.0;
+}
+
+# Optional position of aperture - if not given, the sky reference position is used
+my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
+
+my $mask_in = ORAC::TempFile->new();
+
+# First, mask out the region inside the inner radius
+_DEFINE_APERTURE_ IMAGE=$in XYPOS=$xypos RADIUS=$radius_in
+my $aperture = $_DEFINE_APERTURE_{APERTURE};
+_MASK_IMAGE_ IMAGE=$in VERBOSE=$verbose INVERT=0 APERTURE=$aperture MASKED=$mask_in
+
+# Second, mask out the region outside the outer radius
+_DEFINE_APERTURE_ IMAGE=$in XYPOS=$xypos RADIUS=$radius_out
+$aperture = $_DEFINE_APERTURE_{APERTURE};
+_MASK_IMAGE_ IMAGE=$mask_in VERBOSE=$verbose INVERT=1 APERTURE=$aperture MASKED=$ann_image
