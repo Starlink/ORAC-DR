@@ -12,6 +12,8 @@ _FIND_INTEGRATED_INTENSITY_ - aperture photometry of image using statistics
 
  _FIND_INTEGRATED_INTENSITY_ IMAGE=$image XYPOS=\@xy RADIUS=50 ESTIMATOR=MEAN
 
+ _FIND_INTEGRATED_INTENSITY_ IMAGE=$image XYPOS=\@xy RADIUS=50 ANNULUS=1 INNER=1.5 OUTER=2.5
+
 =head1 DESCRIPTION
 
 This primitive calculates the integrated intensity by summing up
@@ -34,6 +36,12 @@ The following arguments are supported:
 
 =over 4
 
+=item B<ANNULUS>
+
+A flag to denote whether the background should be estimated from an
+annulus centred on the target position. See also the arguments
+B<INNER> and B<OUTER>. Default is 0 (no).
+
 =item B<ESTIMATOR>
 
 Choice of background estimation method. May be C<mean>, C<median> or
@@ -48,6 +56,16 @@ file).
 =item B<IMAGE>
 
 Input image. No default.
+
+=item B<INNER>
+
+Inner radius of annulus to use for background estimate, as a multiple
+of the aperture radius. Default is 1.25.
+
+=item B<OUTER>
+
+Outer radius of annulus to use for background estimate, as a multiple
+of the aperture radius. Default is 2.0.
 
 =item B<RADIUS>
 
@@ -82,7 +100,7 @@ APERADD
 
 =item ORAC-DR PRIMITIVES:
 
-_DEFINE_APERTURE, _FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_, _MASK_IMAGE_
+_CREATE_ANNULUS_, _DEFINE_APERTURE_, _FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_, _MASK_IMAGE_
 
 =back
 
@@ -220,8 +238,24 @@ if ( $removeback ) {
   my $bgoutobj = new ORAC::TempFile;
   my $bgout = $bgoutobj->file;
 
-  # Mask the input image - mask everything *inside* the aperture
-  _MASK_IMAGE_ IMAGE=$in MASKED=$bgout XYPOS=$xypos INVERT=0 APERTURE=$aperture
+  # Should an annulus be used for background estimation?
+  my $annulus = get_prim_arg($_PRIM_ARGS_, "ANNULUS", 0);
+  if ($annulus) {
+    # Define the inner and outer radii - the input parameters are
+    # multiples of the aperture radius, but _CREATE_ANNULUS_ wants
+    # arcsec so do the multiplication here
+    my $inner = get_prim_arg($_PRIM_ARGS_, "INNER", 1.25);
+    my $outer = get_prim_arg($_PRIM_ARGS_, "OUTER", 2.0);
+    $inner *= $radius;
+    $outer *= $radius;
+
+    # Mask the image to create an annulus
+    _CREATE_ANNULUS_ IMAGE=$in ANNULUS=$bgout XYPOS=$xypos INNER=$inner OUTER=$outer
+
+  } else {
+    # Mask the input image - mask everything *inside* the aperture
+    _MASK_IMAGE_ IMAGE=$in MASKED=$bgout XYPOS=$xypos INVERT=0 APERTURE=$aperture
+  }
 
   # Now calculate stats of the masked file to get the background level
   # outside the source aperture
