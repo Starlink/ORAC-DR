@@ -1,0 +1,242 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_PHOTOM_ - perform aperture photometry on SCUBA-2 images
+
+=head1 SYNOPSIS
+
+_SCUBA2_PHOTOM_
+
+=head1 DESCRIPTION
+
+This PICARD primitive is designed to calculate ...
+
+=head1 ARGUMENTS
+
+This primitive has one argument:
+
+=over 4
+
+=item B<LOGFILE>
+
+A flag to denote whether to write results to a logfile. Overridden by
+the presence of the C<RECPAR_LOGFILE> recipe parameter. Default is 1.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+SCUBA2: _APERTURE_PHOTOMETRY_, _FIND_INTEGRATED_INTENSITY_,
+_FIND_MAP_PEAK_, _GET_MAP_CENTRE_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+A log file, C<log.flux>.
+
+=head1 LOGFILE FORMAT
+
+The logfile has the following columns:
+
+=over 2
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Source
+
+The source name.
+
+=item Mode
+
+The observing mode.
+
+=item Filter
+
+The filter name.
+
+=item Elevation
+
+The elevation of the observation.
+
+=item CSO
+
+Equivalent CSO tau derived from the tau used to reduce
+the observation.
+
+=item Tau
+
+The tau value used for the reduction.
+
+=item Seeing
+
+The seeing value as stored in the header.
+
+=item Sum
+
+Sum of all values within the aperture, corrected for the background,
+in the same units as the input data.
+
+=item Flux
+
+Total flux within the aperture, corrected for the background, in units
+of (original units) * arcsec**2.
+
+=item Err
+
+Uncertainty in the total flux (in same units).
+
+=item Radius
+
+Aperture radius in arcsec.
+
+=item Inner
+
+Inner radius of annulus used for background estimate as a multiple of
+the aperture radius.
+
+=item Outer
+
+Outer radius of annulus used for background estimate as a multiple of
+the aperture radius.
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print ("\nCalling _SCUBA2_PHOTOM_: perform aperture photometry on SCUBA-2 images\n", "yellow");
+
+# Are results to be written to a logfile? Override with recipe
+# parameter
+my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
+$logfile = $Frm->uhdr("RECPAR_LOGFILE")
+  if (defined $Frm->uhdr("RECPAR_LOGFILE"));
+
+# Aperture radius
+my $ap_radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 30.0);
+$ap_radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
+  if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS"));
+
+# Inner and outer radii for noise annulus
+my $inner = get_prim_arg($_PRIM_ARGS_, "INNER", 1.25);
+$inner = $Frm->uhdr("RECPAR_ANNULUS_INNER")
+  if (defined $Frm->uhdr("RECPAR_ANNULUS_INNER"));
+if ($inner < 1.0) {
+  $inner = 1.25;
+  orac_warn "INNER smaller than aperture radius: setting to default (1.25)\n";
+}
+my $outer = get_prim_arg($_PRIM_ARGS_, "OUTER", 2.0);
+$outer = $Frm->uhdr("RECPAR_ANNULUS_OUTER")
+  if (defined $Frm->uhdr("RECPAR_ANNULUS_OUTER"));
+if ($outer < $inner) {
+  $outer = 2.0;
+  orac_warn "OUTER less than INNER: setting to default (2.0)\n";
+}
+
+# Fit the source position - start with a default
+_GET_MAP_CENTRE_
+my $xypos = $_GET_MAP_CENTRE_{XYPOS};
+_FIND_MAP_PEAK_ GROUP=0 FITPEAK=1 PLOTFIT=0 VERBOSE=0
+my ($x, $y) = @{$_FIND_MAP_PEAK_{POSITION}};
+$xypos = [$x, $y] if ( $x && $y );
+
+# Perform photometry using chosen method - autophotom overrides all other choices
+my ($sum, $totalflux);
+if ($Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+  _APERTURE_PHOTOMETRY_ RADIUS=$ap_radius INNER=$inner OUTER=$outer XYPOS=$xypos
+  $sum = $_APERTURE_PHOTOMETRY_{SUM};
+  $totalflux = $_APERTURE_PHOTOMETRY_{TOTALFLUX};
+} else {
+  # Has the user specified that an annulus should be used for background estimation?
+  if ($Frm->uhdr("RECPAR_ANNULUS")) {
+    _FIND_INTEGRATED_INTENSITY_ RADIUS=$ap_radius XYPOS=$xypos ANNULUS=1 INNER=$inner OUTER=$outer
+  } else {
+    _FIND_INTEGRATED_INTENSITY_ RADIUS=$ap_radius XYPOS=$xypos
+  }
+  $sum = $_FIND_INTEGRATED_INTENSITY_{SUM};
+  $totalflux = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
+}
+
+
+# Retrieve results and write to desired output
+my %results = ( SUM => $sum, TOTALFLUX => $totalflux );
+unless ($Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+  foreach my $value ( qw/ NUMGOOD NUMPIX SIGMA SIGMATOTAL TOTALFLUXERR /) {
+    $results{$value} = $_FIND_INTEGRATED_INTENSITY_{$value};
+  }
+}
+
+if ($logfile) {
+  my $log_inner = "****";
+  my $log_outer = "****";
+  if ($Frm->uhdr("RECPAR_ANNULUS") || $Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+    $log_inner = $inner;
+    $log_outer = $outer;
+  }
+  # Write results to a log file
+  orac_print "Storing results in log.flux\n";
+  my $logtype = "flux";
+  my @names = ("Sum", "Total", "Err", "Radius", "Inner", "Outer");
+  my @values = ( $results{SUM}, $results{TOTALFLUX},
+		 ($results{TOTALFLUXERR}) ? $results{TOTALFLUXERR} : 0.0,
+		 $ap_radius, $log_inner, $log_outer );
+  _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names
+} else {
+  # Print to screen
+  orac_print "Aperture photometry results for ".($Frm->hdr("OBJECT"))." (".($Frm->file)."):\n"
+    ."Sum  = ".(sprintf "%10.2f", $results{SUM})."\nFlux = ".(sprintf "%10.2f", $results{TOTALFLUX})."\n";
+  if ($results{TOTALFLUXERR}) {
+    orac_print "Err  = ".(sprintf "%10.2f", $results{TOTALFLUXERR})."\n";
+  }
+
+  orac_print "Using an aperture with r = $ap_radius arcsec";
+  if ($Frm->uhdr("RECPAR_ANNULUS") || $Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+    orac_print " and an annulus with radii $inner and $outer times that value";
+  }
+  orac_print "\n";
+}
