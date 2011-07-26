@@ -192,6 +192,12 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       ($ORAC_STATUS, my $amp) = $Mon{kappa_mon}->get("look","value");
       $Mon{kappa_mon}->obeyw("look","ndf=$focusfile comp=err centre='0,0' size=1");
       ($ORAC_STATUS, my $damp) = $Mon{kappa_mon}->get("look","value");
+      # If the uncertainty is BAD, use the average of the central 3x3 pixels
+      if ($damp == &NDF::VAL__BADD()) {
+	my $section = $focuscube."(0.0~3,0.0~3,$plane)";
+	$Mon{kappa_mon}->obeyw("stats","ndf=$section comp=err");
+	($ORAC_STATUS, $damp) = $Mon{kappa_mon}->get("stats","mean");
+      }
 
       $amps{$plane} = $amp;
       if ($amp > 0) {
@@ -205,7 +211,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
 
     # Warn user if too many fits failed: need 3 points to define a quadratic
     my $npts = scalar(@amps);
-    # Midpoint plane - assumes there is an odd number of SMU positions
+    # Midpoint plane - convert to an int in case there is an even number of SMU positions
     my $midpt = int(0.5 * ($focstephi + $focsteplo));
     if ( $npts < 3 ) {
       orac_print "\n";
@@ -231,7 +237,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       # Convert text array into a 1-D NDF with Figaro ASCIN. Write
       # uncertainties to file to get a weighted fit from fitpoly.
       my $args = "in=".$inresfile->file." out=".$outresfile->file
-	." lines=[1,$npts] colaxes=1 coldata=[2,3] colwidth=0.3";
+	." lines=[1,$npts] colaxes=1 coldata=[2,3] colwidth=0";
       $Mon{figaro4}->obeyw("ascin","$args");
 
       # Run FITPOLY to get fit
