@@ -120,7 +120,12 @@ maximum was found.
 
 The position of the peak. Reference to an array of x, y coordinates in
 the current coordinate frame (which will be empty if the calculation
-failed).
+failed). Undef if no significant maximum was found.
+
+=item SNR
+
+Signal-to-noise ratio at the peak position. Undef if no significant
+maximum was found, 0 if the uncertainty at the peak position is bad.
 
 =back
 
@@ -209,7 +214,7 @@ $Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$image_snr");
 # Check that SNR image has >5 sigma peaks
 $Mon{kappa_mon}->obeyw("stats","ndf=$image_snr");
 my ($ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
-my ($peakval, $peakerr, @xy, $peak, $dpeak, $posn);
+my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr, $posn);
 if ( $peaksn > 5 ) {
   my $image_mf = new ORAC::TempFile;
   _APPLY_MATCHED_FILTER_ IN=$image OUT=$image_mf STORE=0 VERBOSE=0
@@ -273,6 +278,7 @@ if ($fitpeak) {
     # only a little bit higher than this
     $dpeak = $amp->[1];
     $posn = $_FIT_SOURCE_{POSITION};
+    $snr = $_FIT_SOURCE_{SNR};
     orac_print " Fitted peak at $posn->[0], $posn->[1]\n" if ($verbose);
     my %fitpars = %_FIT_SOURCE_;
     $_PRIM_ARGS_->{BEAM} = \%fitpars;
@@ -286,16 +292,20 @@ if ($fitpeak) {
     $peak = $peakval;
     $dpeak = $peakerr;
     $posn = \@xy;
+    # Return a SNR of 0 if the uncertainty is not defined
+    $snr = ($dpeak && $dpeak > 0) ? $peak / $dpeak : 0;
     orac_print " Found peak at $posn->[0], $posn->[1]\n" if ($verbose);
   }
 } else {
+  # These will be undef, but return them anyway
   $peak = $peakval;
   $dpeak = $peakerr;
   $posn = \@xy;
+  $snr = $peaksnr;
 }
 
 # Store the result in the hash
 $_PRIM_ARGS_->{PEAK} = $peak;
 $_PRIM_ARGS_->{PEAKERR} = $dpeak;
 $_PRIM_ARGS_->{POSITION} = $posn;
-
+$_PRIM_ARGS_->{SNR} = $snr;
