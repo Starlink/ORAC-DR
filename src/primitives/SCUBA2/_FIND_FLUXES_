@@ -233,12 +233,8 @@ my ($pklog, $intlog);
 
 # Determine if the user wants to use the current Grp or Frm image
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
-my ($Obj, $in);
-if( $group ) {
-  $Obj = $Grp;
-} else {
-  $Obj = $Frm;
-}
+my $in;
+my $Obj = ( $group ) ? $Grp : $Frm;
 if ( $Obj->nfiles == 1 ) {
   $in = $Obj->file;
 } else {
@@ -247,165 +243,163 @@ if ( $Obj->nfiles == 1 ) {
 
 # What if the Group file does not exist yet?
 if ( $group  && $Grp->file_exists ) {
+  my (@intfluxes, @pkfluxes);
 
-my (@intfluxes, @pkfluxes);
+  # Are the data calibrated?
+  # If we are observing a standard source then just find the centroid.
 
-# Are the data calibrated?
+  # Find all of the sources in the current frame
+  _FIND_SOURCES_ IMAGE=$in
+  # Retrieve catalogue
+  my $catalogue = $_FIND_SOURCES_{CATALOGUE};
 
-# If we are observing a standard source then just find the centroid.
-
-# Find all of the sources in the current frame
-_FIND_SOURCES_ IMAGE=$in
-# Retrieve catalogue
-my $catalogue = $_FIND_SOURCES_{CATALOGUE};
-
-# Extractor does not understand offset coordinate systems, so we must
-# check and ensure we are working in an absolute system. In practice,
-# this means setting SkyRefIs = Ignored, AlignOffset = 0 and System =
-# ICRS. These attributes are reset on successful exit.
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system(1)");
-my ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
-($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-my $offset = ( lc($skyrefis) eq "origin" ) ? 1 : 0;
-if ( $offset ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='system(1)=icrs,skyrefis=ignored,alignoffset=0'");
-}
-
-# Check that the catalogue has sources in it
-if ( $catalogue->sizeof > 0 ) {
-  # Check if installed version of Kappa has a PSF task we can use
-  if ( $usepsf && starversion_lt('kappa', 'V0.15-0')) {
-    # warn
-    orac_warn "Your kappa version is too old to use PSF. Using stats to find total flux\n";
-    $usepsf = 0;
+  # Extractor does not understand offset coordinate systems, so we
+  # must check and ensure we are working in an absolute system. In
+  # practice, this means setting SkyRefIs = Ignored, AlignOffset = 0
+  # and System = ICRS. These attributes are reset on successful exit.
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system(1)");
+  my ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+  ($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  my $offset = ( lc($skyrefis) eq "origin" ) ? 1 : 0;
+  if ( $offset ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='system(1)=icrs,skyrefis=ignored,alignoffset=0'");
   }
 
-  # Define a flux conversion which allows the calculated `flux' to be
-  # converted into a real value depending on whether the data are
-  # calibrated in `per beam' or `per square arcsec' units (or even
-  # uncalibrated).
-  my $fluxcorr;
-  # Determine Pixel scale in arcsec
-  _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
-  my $pixelarea = $_GET_PIXEL_SCALE_{AREA};
-  my $units = $Obj->uhdr("ORAC_DATA_UNITS");
-  if ($units =~ /beam/) {
-    # Retrieve beam dimensions
-    my $fwhm = $Cal->fwhm;
-    # Load constants such as pi for calculating beam area
-    use Astro::SLA qw/ :constants /;
-    my $beamarea = DPI * $fwhm * $fwhm / 4.0; # sq arcsec
-    $fluxcorr = ($usepsf) ? $beamarea : $beamarea/$pixelarea ;
-  } elsif ($units =~ /arcsec/) {
-    $fluxcorr = ($usepsf) ? 1.0 : 1.0/$pixelarea;
-  } elsif ($units =~ /pW/) { # pW is effectively pW/pixel
-    $fluxcorr = ($usepsf) ? $pixelarea : 1.0;
+  # Check that the catalogue has sources in it
+  if ( $catalogue->sizeof > 0 ) {
+    # Check if installed version of Kappa has a PSF task we can use
+    if ( $usepsf && starversion_lt('kappa', 'V0.15-0')) {
+      # warn
+      orac_warn "Your kappa version is too old to use PSF. Using stats to find total flux\n";
+      $usepsf = 0;
+    }
+
+    # Define a flux conversion which allows the calculated `flux' to be
+    # converted into a real value depending on whether the data are
+    # calibrated in `per beam' or `per square arcsec' units (or even
+    # uncalibrated).
+    my $fluxcorr;
+    # Determine Pixel scale in arcsec
+    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+    my $pixelarea = $_GET_PIXEL_SCALE_{AREA};
+    my $units = $Obj->uhdr("ORAC_DATA_UNITS");
+    if ($units =~ /beam/) {
+      # Retrieve beam dimensions
+      my $fwhm = $Cal->fwhm;
+      # Load constants such as pi for calculating beam area
+      use Astro::SLA qw/ :constants /;
+      my $beamarea = DPI * $fwhm * $fwhm / 4.0; # sq arcsec
+      $fluxcorr = ($usepsf) ? $beamarea : $beamarea/$pixelarea ;
+    } elsif ($units =~ /arcsec/) {
+      $fluxcorr = ($usepsf) ? 1.0 : 1.0/$pixelarea;
+    } elsif ($units =~ /pW/) { # pW is effectively pW/pixel
+      $fluxcorr = ($usepsf) ? $pixelarea : 1.0;
+    } else {
+      orac_throw "Error: unknown units, $units \n";
+    }
+    # The flux units will be data_units * area (for calibrated data), so
+    # strip off the per beam or per arcsec**2 portion of the units
+    # string. Uncalibrated data will be unchanged
+    my @fluxunits = split(/\//, $units, 2);
+
+    my $ORAC_STATUS;
+
+    # Inform user what's going on if desired...
+    if ( $verbose ) {
+      my $fitmethod;
+      if ($usepsf) {
+	$fitmethod = "fitting a PSF";
+      } else {
+	$fitmethod = "aperture photometry";
+      }
+      orac_print "Calculating fluxes by $fitmethod\n";
+    }
+
+    # Define all the parameters we might need
+    my ($amp, $fwhm, $axisr, $totalflux);
+
+    # Set up log file entries - these will be the same for all sources in the field
+    if ($uselog) {
+      my $time = gmtime();
+      # Peak fluxes
+      $pklog = new ORAC::LogFile("log.peak");
+      $pklog->header("#Peak flux log file - created on $time UT",
+		     "#\n# UT                HST   Obs Source       Mode         Filter  El CSO    Tau  Seeing ID    RA          Dec       Peak       FWHM Units",
+		     "#----------------------------------------------------------------------------------------------------------------------------------------");
+      # Integrated fluxes
+      $intlog = new ORAC::LogFile("log.integrated");
+      $intlog->header("#Integrated flux log file - created on $time UT",
+		      "#\n# UT                HST   Obs Source       Mode         Filter El CSO    Tau  Seeing ID    RA          Dec       Flux Units",
+		      "#---------------------------------------------------------------------------------------------------------------------------");
+    }
+    # Retrieve logging parameters anyway
+    _GET_LOG_PARAMETERS_ GROUP=$group
+    my ( $uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see )
+      = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+
+    # Loop over all sources in the catalogue and run desired
+    # flux-calculation method
+    for my $i ( 1 .. $catalogue->sizeof ) {
+      my $source = $catalogue->starbyindex( $i - 1 ); # Catalogue is 0-indexed
+      # Retrieve Astro::Coords object associated with current source
+      my $coords = $source->coords;
+      my @xy = ($coords->ra, $coords->dec);
+
+      if ( $usepsf ) {
+	# Fit the source
+	_FIT_SOURCE_ METHOD=PSF IMAGE=$in XYPOS=\@xy VERBOSE=0
+	my $amplitude = $_FIT_SOURCE_{AMPLITUDE};
+	$amp = $amplitude->[0];
+	my $flux = $_FIT_SOURCE_{TOTALFLUX};
+	$totalflux = $flux->[0];
+	my $minfwhm = $_FIT_SOURCE_{MINFWHM};
+	$fwhm = $minfwhm->[0];
+	$axisr = $_FIT_SOURCE_{AXISR};
+	# Calculate geometric mean FWHM for logging
+	$fwhm *= sqrt($axisr);
+      } else {
+	# Use an aperture photometry method
+	_FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
+	$totalflux = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
+	$amp = $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX};
+	$fwhm = $Cal->fwhm;
+      }
+
+      # Convert flux to meaningful units
+      $totalflux /= $fluxcorr;
+
+      # Write info to log file if requested
+      if ( $uselog ) {
+	# Format for printing
+	$totalflux = sprintf "%6.3f", $totalflux;
+	$amp = sprintf "%6.3f", $amp;
+	$fwhm = sprintf "%6.2f", $fwhm;
+	# Set source ID - assumes there will be <100 objects in image
+	my $srcnum = sprintf "%02d", $i;
+
+	# Write the entry:
+	$pklog->addentry( "$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $xy[0] $xy[1]  $amp  $fwhm $fluxunits[0]");
+	$intlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $xy[0] $xy[1]  $totalflux $fluxunits[0]");
+      } else {
+	push (@intfluxes, $totalflux);
+	push (@pkfluxes, $amp);
+      }
+    }
   } else {
-    orac_throw "Error: unknown units, $units \n";
-  }
-  # The flux units will be data_units * area (for calibrated data), so
-  # strip off the per beam or per arcsec**2 portion of the units
-  # string. Uncalibrated data will be unchanged
-  my @fluxunits = split(/\//, $units, 2);
-
-  my $ORAC_STATUS;
-
-  # Inform user what's going on if desired...
-  if ( $verbose ) {
-    my $fitmethod;
-    if ($usepsf) {
-      $fitmethod = "fitting a PSF";
-    } else {
-      $fitmethod = "aperture photometry";
-    }
-    orac_print "Calculating fluxes by $fitmethod\n";
+    # Issue an error and skip the rest
+    orac_warn "Unable to determine fluxes, no sources found\n";
   }
 
-  # Define all the parameters we might need
-  my ($amp, $fwhm, $axisr, $totalflux);
-
-  # Set up log file entries - these will be the same for all sources in the field
-  if ($uselog) {
-    my $time = gmtime();
-    # Peak fluxes
-    $pklog = new ORAC::LogFile("log.peak");
-    $pklog->header("#Peak flux log file - created on $time UT",
-		   "#\n# UT                HST   Obs Source       Mode         Filter  El CSO    Tau  Seeing ID    RA          Dec       Peak       FWHM Units",
-		   "#----------------------------------------------------------------------------------------------------------------------------------------");
-    # Integrated fluxes
-    $intlog = new ORAC::LogFile("log.integrated");
-    $intlog->header("#Integrated flux log file - created on $time UT",
-		    "#\n# UT                HST   Obs Source       Mode         Filter El CSO    Tau  Seeing ID    RA          Dec       Flux Units",
-		    "#---------------------------------------------------------------------------------------------------------------------------");
+  # Reset WCS to input
+  if ( $offset ) {
+    my $args = "ndf=$in mode=mset setting='system(1)=".$cosys_in.",skyrefis=origin,alignoffset=1'";
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
   }
-  # Retrieve logging parameters anyway
-  _GET_LOG_PARAMETERS_ GROUP=$group
-  my ( $uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see )
-    = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
 
-  # Loop over all sources in the catalogue and run desired
-  # flux-calculation method
-  for my $i ( 1 .. $catalogue->sizeof ) {
-    my $source = $catalogue->starbyindex( $i - 1 ); # Catalogue is 0-indexed
-    # Retrieve Astro::Coords object associated with current source
-    my $coords = $source->coords;
-    my @xy = ($coords->ra, $coords->dec);
-
-    if ( $usepsf ) {
-      # Fit the source
-      _FIT_SOURCE_ METHOD=PSF IMAGE=$in XYPOS=\@xy VERBOSE=0
-      my $amplitude = $_FIT_SOURCE_{AMPLITUDE};
-      $amp = $amplitude->[0];
-      my $flux = $_FIT_SOURCE_{TOTALFLUX};
-      $totalflux = $flux->[0];
-      my $minfwhm = $_FIT_SOURCE_{MINFWHM};
-      $fwhm = $minfwhm->[0];
-      $axisr = $_FIT_SOURCE_{AXISR};
-      # Calculate geometric mean FWHM for logging
-      $fwhm *= sqrt($axisr);
-    } else {
-      # Use an aperture photometry method
-      _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
-      $totalflux = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
-      $amp = $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX};
-      $fwhm = $Cal->fwhm;
-    }
-
-    # Convert flux to meaningful units
-    $totalflux /= $fluxcorr;
-
-    # Write info to log file if requested
-    if ( $uselog ) {
-      # Format for printing
-      $totalflux = sprintf "%6.3f", $totalflux;
-      $amp = sprintf "%6.3f", $amp;
-      $fwhm = sprintf "%6.2f", $fwhm;
-      # Set source ID - assumes there will be <100 objects in image
-      my $srcnum = sprintf "%02d", $i;
-
-      # Write the entry:
-      $pklog->addentry( "$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $xy[0] $xy[1]  $amp  $fwhm $fluxunits[0]");
-      $intlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $xy[0] $xy[1]  $totalflux $fluxunits[0]");
-    } else {
-      push (@intfluxes, $totalflux);
-      push (@pkfluxes, $amp);
-    }
+  unless ($uselog) {
+    $_FIND_FLUXES_{INTFLUX} = ($catalogue->sizeof) ? \@intfluxes : undef;
+    $_FIND_FLUXES_{PEAKFLUX} = ($catalogue->sizeof) ? \@pkfluxes : undef;
   }
-} else {
-  # Issue an error and skip the rest
-  orac_warn "Unable to determine fluxes, no sources found\n";
-}
-
-# Reset WCS to input
-if ( $offset ) {
-  my $args = "ndf=$in mode=mset setting='system(1)=".$cosys_in.",skyrefis=origin,alignoffset=1'";
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-}
-
-unless ($uselog) {
-  $_FIND_FLUXES_{INTFLUX} = ($catalogue->sizeof) ? \@intfluxes : undef;
-  $_FIND_FLUXES_{PEAKFLUX} = ($catalogue->sizeof) ? \@pkfluxes : undef;
-}
 
 }
