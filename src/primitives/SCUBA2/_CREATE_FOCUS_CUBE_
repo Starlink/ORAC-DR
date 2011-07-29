@@ -398,33 +398,25 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   # nearest the actual focus). Nfoc should be odd but make it an int
   # just in case...
   my $midplane = int(($nfoc + 1) / 2);
-  my $midfile = "$cubename(,,$midplane)";
-  # Find the centroid just in case the source is way off centre - in
-  # practice just using 0,0 seems to work well enough
+  # Take a copy of the relevant plane in the cube
+  my $midfile = ORAC::TempFile->new();
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$cubename(,,$midplane) out=$midfile trim trimwcs");
+  # Find the peak position just in case the source is way off centre -
+  # adjust the WCS if so
   orac_print "adjusting WCS to put source at image centre...\n" if $verbose;
-  _CENTROID_IMAGE_ IMAGE=$midfile
-  my @xypos = ( $_CENTROID_IMAGE_{RESULTS}->[0],
-		$_CENTROID_IMAGE_{RESULTS}->[1]);
-  # Now slide all the images so that the source lies at 0,0 in the
-  # mid-focus position image. Note that due to off-axis aberrations,
-  # the source may still shift from 0,0 away from the in-focus SMU
-  # position.
-  if ( defined $xypos[0] && defined $xypos[1] ) {
-    _FIT_SOURCE_ IMAGE=$midfile XYPOS=\@xypos BOX=15 VERBOSE=1
-    my @newpos = (0, 0);
-    if ( $_FIT_SOURCE_{FIT} == 1 ) {
-      @newpos = ($_FIT_SOURCE_{POSITION}->[0], $_FIT_SOURCE_{POSITION}->[1]);
-    } else {
-      orac_warn "Fit to source failed - using centroid position to slide images\n";
-      @newpos = @xypos;
-    }
+  my $initpos = [0,0];
+  _FIND_MAP_PEAK_ PLOTFIT=0 IMAGE=$midfile FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
+  # If the peak could be determined, and had a S/N exceeding 10 then proceed with shift
+  my $SNR_MIN = 10.0;
+  if (defined $_FIND_MAP_PEAK_{PEAK} && $_FIND_MAP_PEAK_{SNR} > $SNR_MIN) {
+    my @newpos = ($_FIND_MAP_PEAK_{POSITION}->[0], $_FIND_MAP_PEAK_{POSITION}->[1]);
     if ( $newpos[0] ne "0" || $newpos[1] ne "0" ) {
       my $args = "stype=relative fid='0.0,0.0,0' obj='".
 	$newpos[0].",".$newpos[1].",0' ndf=$cubename";
       $Mon{kappa_mon}->obeyw("wcsslide","$args");
     }
   } else {
-    orac_warn "Unable to determine centroid of source at centre focus position: cube will not be adjusted\n";
+    orac_warn "Unable to locate a significant maximum - cube will not be adjusted\n";
   }
 
   # Store the cube name as the Grp file
