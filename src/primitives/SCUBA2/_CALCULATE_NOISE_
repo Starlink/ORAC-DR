@@ -6,7 +6,9 @@ _CALCULATE_NOISE_ - calculate a white noise image for each subarray
 
 =head1 SYNOPSIS
 
-_CALCULATE_NOISE_
+ _CALCULATE_NOISE_
+
+ _CALCULATE_NOISE_ CLIP=$clip FREQRANGE=1,10 FREQLO=0.25
 
 =head1 DESCRIPTION
 
@@ -21,11 +23,19 @@ ended.
 
 The following arguments are supported:
 
+=over 2
+
+=item B<CLIP>
+
+A hash reference containing the names and values of supported clipping
+parameters. If not specified C<calcnoise> will use its default
+values. Will be overridden by recipe parameters if specified.
+
 =item B<FREQRANGE>
 
 Comma-separated pair of numbers indicating the frequency range (Hz)
 over which to measure white noise portion of power spectrum. Default
-is 2,10 (i.e. 2-10 Hz). May be overridden with the C<NOISE_FREQRANGE>
+is C<2,10> (i.e. 2-10 Hz). May be overridden with the C<NOISE_FREQRANGE>
 recipe parameter.
 
 =item B<FREQLO>
@@ -34,8 +44,8 @@ Lower frequency at which to measure power spectrum. Default is 0.5 Hz.
 
 =item B<VERBOSE>
 
-Flag to denote whether to display extra information. Default is 0
-(no).
+Flag to denote whether to display extra information. Default is 1
+(yes).
 
 =back
 
@@ -43,13 +53,21 @@ Flag to denote whether to display extra information. Default is 0
 
 The following external task is used:
 
-=over 4
+=over 2
 
 =item SMURF:
 
 CALCNOISE
 
 =back
+
+=head1 NOTES
+
+The B<CLIP> parameter must be a hash reference with keys equal to the
+relevant C<CALCNOISE> arguments. Supported arguments are
+C<nepcliplow>, C<nepcliphigh>, C<noicliplow>, C<noicliphigh>. The
+low/high values may be given as a comma-separated pair of values to
+the recipe parameters C<NEP_CLIP> and C<NOI_CLIP>.
 
 =head1 OUTPUT DATA
 
@@ -123,6 +141,31 @@ if ( $proceed ) {
   my $obsend_on_entry = $Frm->uhdr("OBSEND");
   $Frm->uhdr("OBSEND", 1);
 
+  # Additional parameters for calcnoise - keep leading space before first parameter
+  my $allargs = " power=! freq=[$freqrange] flow=$freqlo tseries=!";
+  # Noise config file
+  my $config = File::Spec->catfile($ENV{STARLINK_DIR}, "share", "smurf", "dimmconfig_calcnoise.lis");
+  $config = $Frm->uhdr("RECPAR_NOISE_CONFIG") if (defined $Frm->uhdr("RECPAR_NOISE_CONFIG"));
+  $allargs .= ($config eq "!") ? " config=$config" : " config=^$config";
+  # Resistor config file
+  my $resist = $Frm->uhdr("RECPAR_RESIST_CFG")
+    if (defined $Frm->uhdr("RECPAR_RESIST_CFG"));
+  $allargs .= " resist=^$resist" if ($resist);
+  # Clipping parameters
+  my $clip_par = get_prim_arg($_PRIM_ARGS_, "CLIP", undef);
+  $clip_par = $Frm->uhdr("RECPAR_NOISECLIP") if (defined $Frm->uhdr("RECPAR_NOISECLIP"));
+  my $clip = "";
+  if ($clip_par && ref($clip_par) eq "HASH") {
+    my %clip_par = %{$clip_par};
+    foreach my $par (keys %clip_par) {
+      $clip .= " $par=$clip_par{$par}";
+    }
+  }
+  $allargs .= $clip if ($clip ne "");
+  # Flatfield SNR
+  my $flatsnr = $Frm->uhdr("RECPAR_FLATSNR") if ($Frm->uhdr("RECPAR_FLATSNR"));
+  $allargs .= " flatsnr=$flatsnr" if ($flatsnr);
+
   # Print out some information for the user
   if ($verbose) {
     my @freqlohi = split( /\,/, $freqrange, 2);
@@ -142,9 +185,6 @@ if ( $proceed ) {
   # for. While calcnoise can handle data from all subarrays at once
   # in practice we separate things out for simplicity.
   orac_print "Calculating noise for ";
-
-  my $resist = $Frm->uhdr("RECPAR_RESIST_CFG")
-    if (defined $Frm->uhdr("RECPAR_RESIST_CFG"));
 
   # Retrieve any fastflat ramps
   _RETRIEVE_FASTFLATS_
@@ -169,8 +209,8 @@ if ( $proceed ) {
     # Calculate the noise
     my $outfiles = ORAC::TempFile->new();
     unlink $outfiles->file;
-    my $args = "in=^$inlist out=^$outlist outfiles=$outfiles power=! freq=[$freqrange] flow=$freqlo config=! tseries=!";
-    $args .= " resist=^$resist" if ($resist);
+    my $args = "in=^$inlist out=^$outlist outfiles=$outfiles";
+    $args .= $allargs;
     $Mon{smurf_mon}->obeyw("calcnoise","$args");
 
     # Read the actual list of output files written. For skydip
