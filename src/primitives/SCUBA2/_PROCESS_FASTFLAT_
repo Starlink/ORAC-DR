@@ -23,7 +23,17 @@ measurements.
 
 =head1 ARGUMENTS
 
-This primitive has no arguments.
+This primitive has the following argument:
+
+=over 2
+
+=item B<STORERAW>
+
+A flag to force the raw fast flats to be stored in the Calibration
+system for later retrieval in the same recipe. Default is 0 (do not
+store).
+
+=back
 
 =head1 EXTERNAL TASKS
 
@@ -84,6 +94,10 @@ USA.
 
 =cut
 
+# Force the raw fast flats to be stored for later retrieval - not
+# useful for most recipes
+my $storeraw = get_prim_arg($_PRIM_ARGS_, "STORERAW", 0);
+
 my @flats;
 
 # Check duration of observation - abort fastflat processing if less
@@ -123,7 +137,7 @@ push(@flats, @newflats) if @newflats;
 my $obsend_on_entry = $Frm->hdrval("OBSEND",-1);
 
 # Hash for fastflat files to be stored, indexed by subarray
-my (%store, @rawfastflats, @flatfiles);
+my (%store, @rawfastflats, @flatfiles, $batch);
 
 # Now process those files identified
 if (@flats) {
@@ -149,7 +163,7 @@ if (@flats) {
   # obs was terminated immediately following the fastramp
   # measurement...
   my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
-  my $batch = ($nfilespersub > 1) ? 1 : 0;
+  $batch = ($nfilespersub > 1) ? 1 : 0;
 
   # The QL pipeline will only have 1 file per subarray, as will
   # observations which failed in some way (so that the trailing
@@ -208,7 +222,8 @@ if (@flats) {
   # Set PROCESS_FASTFLAT to true because if we're here then we're, uh,
   # processing fastflats
   $Frm->uhdr("PROCESS_FASTFLAT", 1);
-  push(@rawfastflats, $Frm->files);
+#  push(@rawfastflats, $Frm->files);
+  @rawfastflats = map { $_->files} @Frms;
 
   if ( @Frms > 1 ) {
     # Store a Grp flag that can be used downstream
@@ -265,14 +280,37 @@ if (@flats) {
 
 # Store raw fastflats in Calibration system, but only if they will be
 # needed in successive recipe calls by the pipeline
-if (@rawfastflats && !$Frm->uhdr("OBSEND")) {
-  my $Frmobj = $Frm->new;
-  $Frmobj->files(@rawfastflats);
-  my %rawfiles = $Frmobj->get_files_by_subarray;
-  foreach my $subarray (sort keys %rawfiles) {
-    $Frmobj->files( @{$rawfiles{$subarray}} );
-    $Frmobj->hdr("SUBARRAY" => $subarray);
-    $Cal->fastflatindex->add( $Frmobj->file, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+if (@rawfastflats && (!$Frm->uhdr("OBSEND") || $storeraw)) {
+  # Code ref to store the fastflats in the calibration system - takes
+  # a Frame object as a single argument
+  my $store_fastflats = sub {
+    my $Frmobj = shift;
+    return unless ($Frmobj);
+    my %rawfiles = $Frmobj->get_files_by_subarray;
+    foreach my $subarray (sort keys %rawfiles) {
+      $Frmobj->files( @{$rawfiles{$subarray}} );
+      $Frmobj->hdr("SUBARRAY" => $subarray);
+      foreach my $i (1 .. $Frmobj->nfiles) {
+	$Cal->fastflatindex->add( $Frmobj->file($i), {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+      }
+    }
+  };
+  # If multiple fastflats per observation, must store each group
+  # separately to get the correct timestamp in the index file
+  my $fastflatFrm = $Frm->new;
+  $fastflatFrm->files(@rawfastflats);
+  my $nrawff = $fastflatFrm->nfiles;
+  my @nsubscans = $fastflatFrm->hdrvals("NSUBSCAN");
+  if (@nsubscans > 1) {
+    foreach my $nsubscan (@nsubscans) {
+      my $Frmobj = $Frm->new;
+      my @fastflats = map { $fastflatFrm->file($_) }
+	grep { $fastflatFrm->hdrval("NSUBSCAN", $_-1) == $nsubscan } (1 .. $nrawff);
+      $Frmobj->files(@fastflats);
+      $store_fastflats->($Frmobj);
+    }
+  } else {
+    $store_fastflats->($fastflatFrm);
   }
   # Set the PROCESS_FASTFLAT flag to indicate that fastflats have been
   # processed and that no further processing should take place
@@ -280,7 +318,7 @@ if (@rawfastflats && !$Frm->uhdr("OBSEND")) {
 }
 
 # Store the _flat files in the global Frame
-if (@flatfiles) {
+if (@flatfiles && !$batch) {
   $Frm->files(@flatfiles);
   $Frm->isgood(-1);
 }
