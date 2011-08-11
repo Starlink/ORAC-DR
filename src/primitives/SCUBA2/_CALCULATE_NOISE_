@@ -76,6 +76,25 @@ The current Frame object is updated with the output noise files.
 The Frame uhdr is updated to set an entry called C<NOISE> which is 1
 if noise images were calculated, otherwise 0.
 
+The Frame uhdr also contains the following hash references (with keys
+of the subarrays in use):
+
+=over 2
+
+=item WEIGHTED_NEP
+
+The weight noise equivalent power;
+
+=item EFF_NEP
+
+The effective NEP;
+
+=item NEPGOODBOL
+
+The number of good bolometers used in the NEP calculations.
+
+=back
+
 =head1 OUTPUT FILES
 
 A noise file is created for each subarray with the suffix C<_noi>
@@ -190,8 +209,9 @@ if ( $proceed ) {
   _RETRIEVE_FASTFLATS_
   my $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
 
-  # Calculate noise for each subarray
-  my @alloutfiles;
+  # Calculate noise for each subarray - retrieve effective NEP and
+  # number of good bolometers
+  my (@alloutfiles, %effnep, %nbol, %wnep);
   foreach my $subarray (@subarrays) {
     orac_print "$subarray...";
     my @infiles = @{$files{$subarray}};
@@ -213,6 +233,16 @@ if ( $proceed ) {
     $args .= $allargs;
     $Mon{smurf_mon}->obeyw("calcnoise","$args");
 
+    # Retrieve the effective NEP and the number of
+    # bolometers. Implicit here is that there is only one noise file
+    # per subarray - that should be true, but it might always. In
+    # which case the entries in the output hashes will be the last
+    # values calculated.
+    my ($ORAC_STATUS, $effnep) = $Mon{smurf_mon}->get("calcnoise", "effnep");
+    ($ORAC_STATUS, my $nbol) = $Mon{smurf_mon}->get("calcnoise", "nepgoodbol");
+    $effnep{$subarray} = $effnep;
+    $nbol{$subarray} = $nbol;
+
     # Read the actual list of output files written. For skydip
     # observations this will be one file per elevation per subarray.
     push (@alloutfiles, read_file_list( $outfiles->file ));
@@ -232,6 +262,34 @@ if ( $proceed ) {
 
   # Return OBSEND to original state
   $Frm->uhdr("OBSEND", $obsend_on_entry);
+
+  # Now calculate the weighted NEP - this assumes there is one noise
+  # file per subarray as the output hash will have duplicate entries
+  # overwritten
+  for my $i (1 .. $Frm->nfiles) {
+    my $nep = ORAC::TempFile->new();
+    my $in = $Frm->file($i) . ".more.smurf.nep";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$nep");
+
+    my $invnep = ORAC::TempFile->new();
+    my $invnepsq = ORAC::TempFile->new();
+    my $expr = "1./ia";
+    $Mon{kappa_mon}->obeyw("maths","exp=$expr ia=$nep out=$invnep");
+    $Mon{kappa_mon}->obeyw("mult","in1=$invnep in2=$invnep out=$invnepsq");
+    _FIND_IMAGE_STATISTICS_ IMAGE=$invnep VERBOSE=0
+    my $sum1 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
+    _FIND_IMAGE_STATISTICS_ IMAGE=$invnepsq VERBOSE=0
+    my $sum2 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
+    my $subarray = $Frm->hdrval("SUBARRAY", $i-1);
+    # Protect against divide-by-zero
+    $wnep{$subarray} = ($sum2 != 0 ) ? $sum1 / $sum2 : 0;
+  }
+
+  # Store the weighted, effective NEPs and number of good bolometers for each
+  $Frm->uhdr("WEIGHTED_NEP",\%wnep);
+  $Frm->uhdr("EFF_NEP",\%effnep);
+  $Frm->uhdr("NEPGOODBOL",\%nbol);
+
 } else {
   # Copy raw noise data to output for the SUMMIT pipeline
   if ( $Frm->uhdr("SUMMIT") && !$Frm->uhdr("PROCESS_FASTFLAT") ) {
