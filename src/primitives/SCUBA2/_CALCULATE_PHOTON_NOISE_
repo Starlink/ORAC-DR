@@ -1,0 +1,187 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALCULATE_PHOTON_NOISE_ - calculate a photon noise image for each subarray
+
+=head1 SYNOPSIS
+
+ _CALCULATE_PHOTON_NOISE_
+
+ _CALCULATE_PHOTON_NOISE_ FREQRANGE=1,20 FREQLO=0.25
+
+=head1 DESCRIPTION
+
+This primitive calculates a photon noise equivalent power (NEP) image
+for each subarray by taking the quadrature difference between open-
+and closed-shutter noise measurements. A new file is written for each
+subarray.
+
+A log file is also written with various parameters
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=item B<FREQRANGE>
+
+Comma-separated pair of numbers indicating the frequency range (Hz)
+over which to measure white noise portion of power spectrum. Default
+is 2,10 (i.e. 2-10 Hz). May be overridden with the C<NOISE_FREQRANGE>
+recipe parameter.
+
+=item B<FREQLO>
+
+Lower frequency at which to measure power spectrum. Default is 0.5 Hz.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1
+(yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES:
+
+_ADD_LOG_ENTRY_, _CALCULATE_NOISE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The current Frame object is updated with the output files.
+
+=head1 OUTPUT FILES
+
+A photon NEP file is created for each subarray with the suffix C<_phnep>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Should we be verbose (default to yes)?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+
+# Low frequency measurement point
+my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.5 );
+
+# High frequency measurement range for estimating white part of
+# spectrum, override with recipe parameter if present
+my $freqrange = get_prim_arg( $_PRIM_ARGS_, "FREQRANGE", "2,10" );
+$freqrange = $Frm->uhdr("RECPAR_NOISE_FREQRANGE")
+  if ($Frm->uhdr("RECPAR_NOISE_FREQRANGE"));
+
+# Force obsend to true (in case it's not already)
+my $obsend_on_entry = $Frm->uhdr("OBSEND");
+$Frm->uhdr("OBSEND", 1);
+
+# Get the first on-sky files that aren't fastramps
+my %rawsky;
+for my $i (1 .. $Frm->nfiles) {
+  my $subarray = $Frm->hdrval("SUBARRAY", $i-1);
+  my $file = $Frm->file($i);
+  $rawsky{$subarray} = $file
+    if ($Frm->hdrval("SHUTTER",$i-1) == 1 &&
+	$Frm->hdrval("SEQ_TYPE",$i-1) !~ /fastflat/i &&
+	!defined $rawsky{$subarray}
+       );
+}
+
+# This uhdr entry should be defined - something weird happened if it's not
+my $numsamples = (defined $Frm->uhdr("DARKSAMPLES")) ? $Frm->uhdr("DARKSAMPLES") : 2000;
+# Override with a recipe parameter
+$numsamples = $Frm->uhdr("RECPAR_NOISE_SAMPLES") if (defined $Frm->uhdr("RECPAR_NOISE_SAMPLES"));
+
+# Copy out the relevant number of samples for comparison with the
+# darks
+my @rawsky2;
+$Frm->files(values %rawsky);
+for my $i (1 .. $Frm->nfiles) {
+  my $in = $Frm->file($i) . "(,,1:$numsamples)";
+  my $out = $Frm->inout("_raw", $i);
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+  push(@rawsky2, $out);
+}
+$Frm->files(@rawsky2);
+
+# Unset the PROCESS_FASTFLAT uhdr entry
+$Frm->uhdr("PROCESS_FASTFLAT",0);
+$Frm->readhdr;
+# Store the new header in the calibration object
+$Cal->thingone($Frm->hdr);
+$Cal->thingtwo($Frm->uhdr);
+
+# Calculate the noise from the on-sky data
+_CALCULATE_NOISE_ VERBOSE=$verbose FREQLO=$freqlo FREQRANGE=$freqrange
+
+# Retrieve results for on-sky and dark noise files
+my %skynoi = $Frm->get_files_by_subarray;
+my $dkFrm = $Grp->frame($Grp->num);
+my %drknoi = $dkFrm->get_files_by_subarray;
+
+# Calculate the photon noise contribution
+my @phnep;
+my $expr = "'sqrt(ia**2-ib**2)'";
+my $i=0;
+foreach my $subarray (sort keys %skynoi) {
+  $i++;
+  my $skynep = $skynoi{$subarray}->[0] . ".more.smurf.nep";
+  my $drknep = $drknoi{$subarray}->[0] . ".more.smurf.nep";
+  my $out = $Frm->inout("_phnep", $i);
+  $Mon{kappa_mon}->obeyw("maths","ia=$skynep ib=$drknep exp=$expr out=$out");
+  push(@phnep, $out);
+}
+
+# Write out a log file with the relevant info
+my $logtype = "photnoise";
+my @parnames = qw/ Subarray Seq_type Subscan Shutter DarkHeat PixHeat Transmission NEPeff Nbolo WNEP /;
+my @logpar;
+foreach my $Frmobj ($dkFrm,  $Frm) {
+  my $tauval = $Cal->tau($Frmobj->hdr("FILTER"));
+  my $trans = (defined $tauval && defined $Frmobj->hdrval("AMSTART"))
+    ? sprintf "%.3f", exp(-$tauval * $Frmobj->hdrval("AMSTART")) : "*****";
+  my $maxindex = $Frmobj->numsubarrays - 1;
+  my $wnep = $Frmobj->uhdr("WEIGHTED_NEP");
+  my $effnep = $Frmobj->uhdr("EFF_NEP");
+  my $nbol = $Frmobj->uhdr("NEPGOODBOL");
+  for my $i (0 .. $maxindex) {
+    my $subarray = $Frmobj->hdrval("SUBARRAY",$i);
+    @logpar = ($subarray, $Frmobj->hdrval("SEQ_TYPE", $i),
+	       $Frmobj->hdrval("NSUBSCAN", $i), $Frmobj->hdrval("SHUTTER", $i),
+	       $Frmobj->hdrval("DARKHEAT", $i), $Frmobj->hdrval("PIXHEAT", $i), $trans,
+	       $effnep->{$subarray}, $nbol->{$subarray}, $wnep->{$subarray}
+	      );
+    _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@logpar PARAMS=\@parnames PARLIST=FULL
+  }
+}
+
+# Mark the dark noise frame as "ignored"
+$dkFrm->isgood(-1);
