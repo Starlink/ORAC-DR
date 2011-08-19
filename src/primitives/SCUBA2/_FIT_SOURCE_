@@ -145,7 +145,8 @@ The RMS of the fit, in the current units.
 
 =item SNR
 
-The signal-to-noise ratio of the fitted peak.
+The signal-to-noise ratio of the fitted peak. Undef if the variance is
+not defined.
 
 =item TOTALFLUX
 
@@ -381,8 +382,24 @@ if ( $numgood >= $minpix ) {
       my $section = $in."($posn[0]~3,$posn[1]~3)";
       $Mon{kappa_mon}->obeyw("stats","ndf=$section comp=err");
       ($ORAC_STATUS, $err) = $Mon{kappa_mon}->get("stats","mean");
+      if ($err == 0) {
+	# Check for good *map* values
+	$Mon{kappa_mon}->obeyw("stats","ndf=$section comp=data");
+	($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
+	if ($mean > 0) {
+	  orac_warn "No good variance in central 3x3 pixels - checking 7x7\n";
+	  $section = $in."($posn[0]~7,$posn[1]~7)";
+	  $Mon{kappa_mon}->obeyw("stats","ndf=$section comp=err");
+	  ($ORAC_STATUS, $err) = $Mon{kappa_mon}->get("stats","mean");
+	} else {
+	  # Now, if the mean is 0 then the map data at the peak are
+	  # bad - is this fatal?
+	  orac_warn "Map has bad values at peak - fit is likely to be poor\n";
+	}
+      }
     }
-    my $snr = $amp[0] / $err;
+    # SNR is undef if variance is bad
+    my $snr = $amp[0] / $err if ($err != 0 );
 
     # Store results in primitive hash
     $_PRIM_ARGS_->{AMPLITUDE} = \@amp;
@@ -407,7 +424,7 @@ if ( $numgood >= $minpix ) {
       my $amp1 = sprintf "%5.2e", $amp[0];
       my $flux1 = sprintf "%5.2e", $total[0];
       my $gamma = sprintf "%5.2f", $gamma[0];
-      $snr = sprintf "%5.2f", $snr;
+      $snr = ($snr) ? sprintf "%5.2f", $snr : "undef";
 
       # Report correct units for total fluxes if data are calibrated
       # in (say) mJy/beam, and correct the reported total flux for the
