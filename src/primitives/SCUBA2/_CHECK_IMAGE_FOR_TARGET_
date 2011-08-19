@@ -8,7 +8,9 @@ _CHECK_IMAGE_FOR_TARGET_ - check for good pixels near the position of the target
 
   _CHECK_IMAGE_FOR_TARGET_
 
-  _CHECK_IMAGE_FOR_TARGET_ GOODPIX=75
+  _CHECK_IMAGE_FOR_TARGET_ GOODPIX=75 BOX=25
+
+  _CHECK_IMAGE_FOR_TARGET_ BOX=!
 
 =head1 DESCRIPTION
 
@@ -25,7 +27,9 @@ The following arguments are supported:
 
 =item B<BOX>
 
-Size of the box in pixels to examine. Default is 19.
+Size of the box in pixels to examine. Default is 19 except for
+calibrators which use a box size of 7 pixels. May be the null
+parameter, C<!>, to indicate that the entire image should be analyzed.
 
 =item B<GOODPIX>
 
@@ -91,20 +95,33 @@ USA.
 # but that the target source may not have been covered, or that the
 # peak has been flagged as bad by the map-maker.
 if ($Frm->uhdr("NEWIMAGE")) {
-
   # Percentage of pixels that must be good to consider tha targe
   # source to have mapped
   my $goodpix = get_prim_arg($_PRIM_ARGS_, "GOODPIX", 50.0);
 
   # Size of region to examine
   my $box = get_prim_arg($_PRIM_ARGS_, "BOX", 19);
+  # Use a smaller box for calibrators
+  $box = 7 if ($Cal->iscalsource($Frm->hdr("OBJECT")));
 
-  my $image = $Frm->file . "(0~$box,0~$box,)";
+  my $image = ($box eq "!") ? $Frm->file : $Frm->file . "(0~$box,0~$box,)";
   _FIND_IMAGE_STATISTICS_ IMAGE=$image VERBOSE=0 HISTAT=0
-  my $ratio = 100.0 * $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD} /
+  my $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+  if ( $numgood > 0) {
+    my $ratio = 100.0 * $numgood /
       $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMPIX};
-  if ($ratio < $goodpix) {
-    orac_warn "Fewer than ".(sprintf "%d", $goodpix)."% good pixels in central ".$box."x".$box." pixels: target source may not be present\n";
-    $Frm->uhdr("NEWIMAGE", -1);
+    if ($ratio < $goodpix) {
+      orac_warn "Fewer than ".(sprintf "%d", $goodpix)."% good pixels in central ".$box."x".$box." pixels: target source may not be present\n";
+      $Frm->uhdr("NEWIMAGE", -1);
+    }
+  } else {
+    if ($box eq "!") {
+      orac_err "Map created but contains no good pixels\n";
+      $Frm->isgood(0);
+      $Frm->uhdr("NEWIMAGE", 0);
+    } else {
+      orac_warn "Map created but contains no good values in central ".$box."x".$box." pixels\n";
+      $Frm->uhdr("NEWIMAGE", -1);
+    }
   }
 }
