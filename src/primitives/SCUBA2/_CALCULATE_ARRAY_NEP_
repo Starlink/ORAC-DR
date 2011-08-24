@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_CALCULATE_ARRAY_NEP_ - derive the effective or RMS NEP for a subarray
+_CALCULATE_ARRAY_NEP_ - derive the effective, weighted or RMS NEP for a subarray
 
 =head1 SYNOPSIS
 
@@ -22,11 +22,16 @@ NEP_eff = sqrt( 1 / sum_i (1/NEP_i)**2  )
 where NEP_i is the NEP for bolometer i and the sum is over all
 bolometers (1 to N_bol). Optionally the effective NEP may be
 normalized by multiplying by the square-root of the number of
-bolometers (see the parameter B<NORM> below).
+bolometers (see the parameter B<NORM> below) to get a characteristic
+per-bolometer NEP.
 
 The RMS NEP is simply:
 
 NEP_rms = sqrt( (sum_i (NEP_i)**2) / N_bol  )
+
+The weighted NEP is given by
+
+NEP_wt = sum_i (1/NEP_i) / sum_i (1/NEP_i)**2
 
 =head1 ARGUMENTS
 
@@ -41,8 +46,8 @@ NEP file itself, not the top-level container NDF.
 
 =item B<NEPTYPE>
 
-Type of NEP to return (effective or RMS). May be C<eff> or
-C<rms>. Default is C<eff>.
+Type of NEP to return (effective or RMS). May be C<eff>,
+C<rms> or C<weight>. Default is C<eff>.
 
 =item B<NORM>
 
@@ -116,9 +121,18 @@ orac_err "_CALCULATE_ARRAY_NEP_ requires in input file"
 
 # Type of NEP to calculate
 my $result = lc(get_prim_arg($_PRIM_ARGS_, "NEPTYPE", "eff"));
+my $weight = ($result =~ /^w/) ? 1 : 0;
 
-# Calculate the square or the reciprocal square of the NEP image
-my $exp = ($result eq "rms") ? "(ia**2)" : "(1./ia**2)";
+# Calculate the square, reciprocal and/or the reciprocal square of the
+# NEP image
+my $exp;
+if ($result eq "rms") {
+  $exp = "(ia**2)";
+} elsif ($result eq "eff") {
+  $exp = "(1./ia**2)";
+} elsif ($weight) {
+  $exp = "(1./ia)";
+}
 my $out = new ORAC::TempFile;
 my $outfile = $out->file;
 my $args = "ia=$nepfile exp=$exp out=$outfile";
@@ -133,17 +147,27 @@ my ($num, $denom);
 if ($result eq "rms") {
   $num = $results{SUM};
   $denom = $results{NUMGOOD};
-} else {
+} elsif ($result eq "eff") {
   # Should the effective NEP be normalized by the number of bolometers?
   # Default to no.
   my $norm = get_prim_arg($_PRIM_ARGS_, "NORM", 0);
 
   $num = ( $norm ) ? $results{NUMGOOD} : 1.0;
   $denom = $results{SUM};
+} elsif ($weight) {
+  $num = $results{SUM};
+
+  my $outwt = ORAC::TempFile->new();
+  $Mon{kappa_mon}->obeyw("mult","in1=$outfile in2=$outfile out=$outwt");
+  _FIND_IMAGE_STATISTICS_ HISTAT=0 IMAGE=$outwt VERBOSE=0
+  $denom = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
 }
 
 # Protect against divide-by-zero
-my $nep = ( $denom != 0 ) ? sqrt( $num / $denom ) : undef;
+my $ratio = ( $denom != 0 ) ? $num / $denom : undef;
+if ($ratio) {
+  my $nep = ($weight) ? $ratio : sqrt($ratio);
+  $_CALCULATE_ARRAY_NEP_{NEPVAL} = $nep;
+  $_CALCULATE_ARRAY_NEP_{NUMGOOD} = $results{NUMGOOD};
+}
 
-$_CALCULATE_ARRAY_NEP_{NEPVAL} = $nep;
-$_CALCULATE_ARRAY_NEP_{NUMGOOD} = $results{NUMGOOD};
