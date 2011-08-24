@@ -163,7 +163,7 @@ if ( $proceed ) {
   # Additional parameters for calcnoise - keep leading space before first parameter
   my $allargs = " power=! freq=[$freqrange] flow=$freqlo tseries=!";
   # Noise config file
-  my $config = File::Spec->catfile($ENV{STARLINK_DIR}, "share", "smurf", "dimmconfig_calcnoise.lis");
+  my $config = File::Spec->catfile($ENV{STARLINK_DIR}, "share", "smurf", "dimmconfig_calcnoise_com.lis");
   $config = $Frm->uhdr("RECPAR_NOISE_CFG") if (defined $Frm->uhdr("RECPAR_NOISE_CFG"));
   $allargs .= ($config eq "!") ? " config=$config" : " config=^$config";
   # Resistor config file
@@ -212,7 +212,7 @@ if ( $proceed ) {
 
   # Calculate noise for each subarray - retrieve effective NEP and
   # number of good bolometers
-  my (@alloutfiles, %effnep, %nbol, %wnep);
+  my (@alloutfiles, %effnep, %nbol);
   foreach my $subarray (@subarrays) {
     orac_print "$subarray...";
     my @infiles = @{$files{$subarray}};
@@ -264,43 +264,34 @@ if ( $proceed ) {
   # Return OBSEND to original state
   $Frm->uhdr("OBSEND", $obsend_on_entry);
 
-  # Now calculate the weighted NEP - this assumes there is one noise
-  # file per subarray as the output hash will have duplicate entries
-  # overwritten
-  orac_print "Calculating weighted NEPs...\n";
-  for my $i (1 .. $Frm->nfiles) {
-    my $nep = ORAC::TempFile->new();
-    my $in = $Frm->file($i) . ".more.smurf.nep";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$nep");
-
-    my $invnep = ORAC::TempFile->new();
-    my $invnepsq = ORAC::TempFile->new();
-    my $expr = "1./ia";
-    $Mon{kappa_mon}->obeyw("maths","exp=$expr ia=$nep out=$invnep");
-    $Mon{kappa_mon}->obeyw("mult","in1=$invnep in2=$invnep out=$invnepsq");
-    _FIND_IMAGE_STATISTICS_ IMAGE=$invnep VERBOSE=0
-    my $sum1 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
-    _FIND_IMAGE_STATISTICS_ IMAGE=$invnepsq VERBOSE=0
-    my $sum2 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
-    my $subarray = $Frm->hdrval("SUBARRAY", $i-1);
-    # Protect against divide-by-zero
-    $wnep{$subarray} = ($sum2 != 0 ) ? $sum1 / $sum2 : 0;
-  }
-
-  # Store the weighted, effective NEPs and number of good bolometers for each
-  $Frm->uhdr("WEIGHTED_NEP",\%wnep);
-  $Frm->uhdr("EFF_NEP",\%effnep);
-  $Frm->uhdr("NEPGOODBOL",\%nbol);
-  if ($verbose) {
-    orac_print " Sub     NEP_w      NEP_eff    Nbol\n------------------------------------\n", "green";
-    foreach my $subarray (keys %wnep) {
-      my $wnep = sprintf "%0.3e", $wnep{$subarray};
-      my $effnep = sprintf "%0.3e", $effnep{$subarray};
-      my $nbol = sprintf "%4d", $nbol{$subarray};
-      orac_print " $subarray:  $wnep   $effnep   $nbol\n", "green";
+  # For noise observations calculate and report the effective and
+  # weighted NEPs. Do not do this for NEP observations as they are
+  # calculated separately in the recipe.
+  if ($Frm->hdr("OBS_TYPE") ne "NEP") {
+    # Now calculate the weighted NEP - this assumes there is one noise
+    # file per subarray as the output hash will have duplicate entries
+    # overwritten
+    orac_print "Calculating weighted NEPs...\n";
+    my %wnep;
+    for my $i (1 .. $Frm->nfiles) {
+      my $in = $Frm->file($i) . ".more.smurf.nep";
+      _CALCULATE_ARRAY_NEP_ IN=$in NEPTYPE=weight
+      $wnep{$Frm->hdrval("SUBARRAY", $i-1)} = $_CALCULATE_ARRAY_NEP_{NEPVAL};
+    }
+    # Store the weighted, effective NEPs and number of good bolometers for each
+    $Frm->uhdr("WEIGHTED_NEP",\%wnep);
+    $Frm->uhdr("EFF_NEP",\%effnep);
+    $Frm->uhdr("NEPGOODBOL",\%nbol);
+    if ($verbose) {
+      orac_print " Sub     NEP_w      NEP_eff    Nbol\n------------------------------------\n", "green";
+      foreach my $subarray (sort keys %wnep) {
+	my $wnep = sprintf "%0.3e", $wnep{$subarray};
+	my $effnep = sprintf "%0.3e", $effnep{$subarray};
+	my $nbol = sprintf "%4d", $nbol{$subarray};
+	orac_print " $subarray:  $wnep   $effnep   $nbol\n", "green";
+      }
     }
   }
-
 } else {
   # Copy raw noise data to output for the SUMMIT pipeline
   if ( $Frm->uhdr("SUMMIT") && !$Frm->uhdr("PROCESS_FASTFLAT") ) {
