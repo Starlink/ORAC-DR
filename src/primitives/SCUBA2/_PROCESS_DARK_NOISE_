@@ -106,32 +106,51 @@ $freqrange = $Frm->uhdr("RECPAR_NOISE_FREQRANGE")
 my $obsend_on_entry = $Frm->uhdr("OBSEND");
 $Frm->uhdr("OBSEND", 1);
 
-# Retrieve dark frames only
+# Retrieve *first* set of dark files only - ignore the rest
 my @darks;
 for my $i ( 1 .. $Frm->nfiles ) {
-  push(@darks, $Frm->file($i)) if ($Frm->hdrval("SHUTTER", $i-1) == 0.0);
+  push(@darks, $Frm->file($i))
+    if ($Frm->hdrval("SHUTTER", $i-1) == 0.0 && $Frm->hdrval("NSUBSCAN", $i-1) == 1);
 }
 
-# Localize Frm here to calculate the noise, retrieve the processed
-# files at the end and store in a new Frame object
-my ($uhdr, @dknoi, $darksamples);
-{
-  $uhdr = $Frm->uhdr;
-  my $Frm = $Frm->new;
-  $Frm->files(@darks);
-  $Frm->uhdr(%{$uhdr});
-  _CALCULATE_NOISE_ FREQRANGE=$freqrange FREQLO=$freqlo
-  @dknoi = $Frm->files;
-  $uhdr = $Frm->uhdr;
-  # Retrieve the number of dark samples - these should all be the same
-  $darksamples = $Frm->hdrval("SEQEND") - $Frm->hdrval("SEQSTART") + 1;
+my $darksamples;
+if (defined $Frm->uhdr("RECPAR_NOISE_SAMPLES")) {
+  $darksamples = $Frm->uhdr("RECPAR_NOISE_SAMPLES");
+  my $tmpFrm = $Frm->new();
+  $tmpFrm->files(@darks);
+  @darks = ();
+  for my $i (1 .. $tmpFrm->nfiles) {
+    my $in = $tmpFrm->file($i) . "(,,1:$darksamples)";
+    my $out = $tmpFrm->inout("_raw", $i);
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+    push(@darks, $out);
+  }
 }
-my $dkFrm = $Frm->new();
-$dkFrm->files(@dknoi);
-$dkFrm->uhdr(%{$uhdr}) if ($uhdr);
 
-# Store the number of samples in the dark files
-$Frm->uhdr("DARKSAMPLES", $darksamples);
+if (@darks) {
+  # Localize Frm here to calculate the noise, retrieve the processed
+  # files at the end and store in a new Frame object
+  my ($uhdr, @dknoi);
+  {
+    $uhdr = $Frm->uhdr;
+    my $Frm = $Frm->new;
+    $Frm->files(@darks);
+    $Frm->uhdr(%{$uhdr});
+    _CALCULATE_NOISE_ FREQRANGE=$freqrange FREQLO=$freqlo
+    @dknoi = $Frm->files;
+    $uhdr = $Frm->uhdr;
+    # Retrieve the number of dark samples - these should all be the same
+    $darksamples = ($Frm->hdrval("SEQEND") - $Frm->hdrval("SEQSTART") + 1) unless ($darksamples);
+  }
+  my $dkFrm = $Frm->new();
+  $dkFrm->files(@dknoi);
+  $dkFrm->uhdr(%{$uhdr}) if ($uhdr);
 
-# Add this Frame object to the Group for later analysis
-$Grp->push($dkFrm);
+  # Store the number of samples in the dark files
+  $Frm->uhdr("DARKSAMPLES", $darksamples);
+
+  # Add this Frame object to the Group for later analysis
+  $Grp->push($dkFrm);
+} else {
+  orac_warn "Frame contains no DARKs\n";
+}
