@@ -1,0 +1,143 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CHECK_DATA_RANGE_ - check to see if data range exceeds fastflat ramps
+
+=head1 SYNOPSIS
+
+_CHECK_DATA_RANGE_
+
+=head1 DESCRIPTION
+
+This primitive checks the range of data values in the raw timeseries
+data and compares it with the fastramp flatfield range to determine
+whether any bolometers exceed the range over which the flatfield
+solution is valid. The number for each subarray is reported separately
+and stored in a log file, C<log.bolorange>
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA
+
+COLLAPSE, COPYBAD, STATS, SUB, THRESH
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_LOG_ENTRY_, _RETRIEVE_FASTFLATS_
+
+=back
+
+=head1 NOTES
+
+This primitive is designed to be used in the QL pipeline only and
+works only on raw data.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Log file called C<log.bolorange>
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+if ($Frm->hdr("SEQ_TYPE") !~ /fastflat/i) {
+  my ($fastramps, %flatrange);
+  # Retrieve existing fastflats and flatfield solutions
+  _RETRIEVE_FASTFLATS_ TYPE=SOL
+  my $flats = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
+  _RETRIEVE_FASTFLATS_
+  my $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
+  # Sort files by subarray to match the fastflats
+  my %files = $Frm->get_files_by_subarray;
+
+  # Temp files to (re)use
+  my $tempfile1 = ORAC::TempFile->new();
+  my $tempfile2 = ORAC::TempFile->new();
+  my $tempfile3 = ORAC::TempFile->new();
+  my $flatrange = ORAC::TempFile->new();
+  my $datarange = ORAC::TempFile->new();
+
+  # Define a coderef to do the collapse and subtraction
+  my $flat;
+  my $collapse_and_subtract = sub {
+    my ($infile, $outfile) = @_;
+
+    # Collapse file with min/max and subtract to get range
+    my $args = "in=$infile out=$tempfile1 axis='mjd' estimator=min";
+    $Mon{kappa_mon}->obeyw("collapse","$args");
+    $args = "in=$infile out=$tempfile2 axis='mjd' estimator=max";
+    $Mon{kappa_mon}->obeyw("collapse","$args");
+    $args = "in1=$tempfile2 in2=$tempfile1 out=$tempfile3";
+    $Mon{kappa_mon}->obeyw("sub","$args");
+
+    # Copy bad pixels in from flatfield
+    $args = "in=$tempfile3 out=$outfile ref=$flat";
+    $Mon{kappa_mon}->obeyw("copybad","$args");
+  };
+
+  # Loop over each subarray
+  foreach my $subarray ( sort keys %files ) {
+    $flat = $flats->{$subarray};
+
+    # Calculate flatrange from fastflat
+    $collapse_and_subtract->($fastflats->{$subarray}, $flatrange);
+    # Calculate datarange from data file
+    $collapse_and_subtract->($files{$subarray}->[0], $datarange);
+
+    # Calculate ffrange - datarange
+    my $args = "in1=$flatrange in2=$datarange out=$tempfile3";
+    $Mon{kappa_mon}->obeyw("sub","$args");
+
+    # Threshold rangediff, set pixels >0 to BAD
+    $args = "in=$tempfile3 out=$tempfile1 thrlo=-2e5 newlo=-2e5 thrhi=0 newhi=bad";
+    $Mon{kappa_mon}->obeyw("thresh","$args");
+
+    # Calculate nbol in thresholded rangediff -> report number below zero
+    $Mon{kappa_mon}->obeyw("stats","ndf=$tempfile1");
+    my ($ORAC_STATUS, $nbol) = $Mon{kappa_mon}->get("stats","NUMGOOD");
+    if ($nbol > 0) {
+      orac_warn "$subarray had ".(sprintf "%2d", $nbol)." bolometers go out of range\n";
+      # Write results to a log file?
+      my $logtype = "bolorange";
+      my @params = ("Subarray", "Subscan", "Nbol");
+      my @values = ($subarray, $Frm->hdr("NSUBSCAN"), $nbol);
+      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@params
+    }
+  }
+
+}
