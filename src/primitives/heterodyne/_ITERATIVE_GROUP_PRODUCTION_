@@ -167,11 +167,12 @@ None.
 
 =head1 AUTHORS
 
-Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>,
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 Science and Technology Facilities
+Copyright (C) 2008, 2011 Science and Technology Facilities
 Council.  All Rights Reserved.
 
 =cut
@@ -206,9 +207,11 @@ $rebin = ( defined( $Frm->uhdr( "RECPAR_REBIN" ) ) ?
 
 # Only process if we're on the last member of a group.
 if( $Grp->lastallmembers( $Frm ) ) {
-
+  my $copyGrp = $Grp;
   my @members = $Grp->members;
   my ( $good, $bad ) = $Grp->check_membership;
+
+  my $makegroup;
   if( ! @$good ) {
     orac_warn "No good members in current group. Cannot do group processing.\n";
 
@@ -216,7 +219,36 @@ if( $Grp->lastallmembers( $Frm ) ) {
     foreach my $Obj ( @members ) {
       _QA_WRITE_REPORT_ OBJ=$Obj
     }
+    $makegroup = 0;
 
+    # Create a new group where all the frames are deemed to be good.
+    # ==============================================================
+    # 
+    # This particularly includes ones that have failed QA, so that the
+    # observation products are created.
+    $Grp = new $Grp;
+    $Grp->name( $copyGrp->name );
+    $Grp->file( $copyGrp->file );
+    %{$Grp->hdr} = %{$copyGrp->hdr};
+    %{$Grp->uhdr} = %{$copyGrp->uhdr};
+
+    foreach my $Obj ( $copyGrp->allmembers ) {
+
+      # Make a deep copy of the Frame.  The fikles method copies the
+      # hdr for raw data, but not the uhdr.
+      my $tempFrm = $Frm->new( $Obj->files );
+      %{$tempFrm->uhdr} = %{$Obj->uhdr};
+
+      # Store all Frames as good.
+      $tempFrm->isgood( 1 );
+      $Grp->push( $tempFrm );
+
+      # Ensure current Frame matches the final Frame in the new group
+      # so that subsequent # $Grp->lastallmembers checks compare like
+      # with like.
+      $Frm = $tempFrm;
+    }
+    
   } else {
 
     # We need to write QA info for each member that didn't end up in
@@ -226,59 +258,61 @@ if( $Grp->lastallmembers( $Frm ) ) {
     }
 
     orac_print "Beginning iterative group production.\n";
+    $makegroup = 1;
+  }
 
-    # Merge AST Regions for scans only.
-    if( lc( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) ) eq 'scan' ) {
-      _MERGE_AST_REGIONS_
+  # Merge AST Regions for scans only.
+  if( lc( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) ) eq 'scan' ) {
+    _MERGE_AST_REGIONS_
+  }
+
+  my $iter = 1;
+  while( $iter <= $iterations ) {
+
+    orac_say "Iteration $iter of $iterations.\n";
+
+    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
+
+    if( $edges ) {
+      _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
+    } else {
+      _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=1
     }
 
-    my $iter = 1;
-    while( $iter <= $iterations ) {
+    _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
 
-      orac_say "Iteration $iter of $iterations.\n";
+    _CREATE_NOISE_MAP_ GROUP=1 QA=$qa
 
-      _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
-
-      if( $edges ) {
-        _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
-      } else {
-        _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=1
+    if( defined( $rebin ) ) {
+      foreach my $res ( split ",", $rebin ) {
+        _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
       }
-
-      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
-
-      _CREATE_NOISE_MAP_ GROUP=1 QA=$qa
-
-      if( defined( $rebin ) ) {
-        foreach my $res ( split ",", $rebin ) {
-          _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
-        }
-      }
-
-      _RECREATE_MASKED_OBS_FILES_ INTERP=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize TILEBORDER=$tileborder
-
-      _REMOVE_BASELINE_MASKED_TIMESERIES_
-
-      if( $flatfield ) {
-        _REMOVE_FLAT_FIELD_ GROUP=2
-      }
-
-      _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
-
-      _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
-
-      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
-
-      my $writeqa = ( $iter == $iterations );
-      _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
-
-      _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
-
-      $iter++;
     }
 
+    _RECREATE_MASKED_OBS_FILES_ INTERP=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize TILEBORDER=$tileborder
+
+    _REMOVE_BASELINE_MASKED_TIMESERIES_
+
+    if( $flatfield ) {
+      _REMOVE_FLAT_FIELD_ GROUP=2
+    }
+
+    _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+
+    _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
+
+    _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+
+    my $writeqa = ( $iter == $iterations );
+    _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
+
+    _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+
+    $iter++;
+  }
+
+  if ( $makegroup ) {
     orac_say "Iterations completed. Creating final group files.\n";
-
     _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
 
     if( $edges ) {
@@ -297,12 +331,23 @@ if( $Grp->lastallmembers( $Frm ) ) {
       }
     }
 
-    # Write QA report.
-    foreach my $goodObj( $Grp->members ) {
-      _QA_WRITE_REPORT_ OBJ=$goodObj
-    }
-    _QA_WRITE_REPORT_ OBJ=$Grp
+  } else {
 
+    # Restore the original group with the bad observations flagged.
+    $Grp = $copyGrp;
+
+    # The iteration does generate a first pass at the group objects,
+    # but these were based upon entirely bad data, so must be removed.
+    orac_print( "Removing group files which were derived from bad observations.\n");
+    unlink glob( $Grp->file . "*" );
+  }
+
+  # Write QA report.
+  foreach my $goodObj( $Grp->members ) {
+    _QA_WRITE_REPORT_ OBJ=$goodObj
+  }
+  if ( $makegroup ) {
+    _QA_WRITE_REPORT_ OBJ=$Grp
   }
 
 }
