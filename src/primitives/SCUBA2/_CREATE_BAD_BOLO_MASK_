@@ -93,7 +93,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008-2010 University of British Columbia. All Rights
+Copyright (C) 2008-2011 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -155,60 +155,70 @@ if ( $Frm->uhdr("NOISE") ) {
     # Loop over the files in the Frame - there should be no more than
     # 4 files (future check), corresponding to each of the four
     # subarrays at the current wavelength.
+    my $nbol_nep = $Frm->uhdr("NEPGOODBOL");
     foreach my $i ( 1 .. $Frm->nfiles ) {
 
       # NEP file
       my $nepfile = $Frm->file( $i ).".MORE.SMURF.NEP";
+      my $subarray = $Frm->hdrval("SUBARRAY", $i-1);
+      my $nepgoodbol = $nbol_nep->{$subarray} if ($nbol_nep);
 
-      # Calculate the NEP value corresponding to the best percentage
-      # specified - this is the nep_spec
-      if ( $usebest ) {
-	my $args = "ndf=$nepfile percentiles=$best_pc";
-	$Mon{kappa_mon}->obeyw("histat","$args");
-	(my $ORAC_STATUS, $nep_spec) = $Mon{kappa_mon}->get("histat","perval");
-	orac_print " with NEP < ". (sprintf "%5.3e", $nep_spec). "\n" if ($verbose);
-      }
+      # Only create the bad bolo mask if necessary - if all the
+      # bolometers are bad then something went wrong
+      if (defined $nepgoodbol && $nepgoodbol > 0) {
 
-      # Threshold to set out-of-range values to bad
-      my $thresh = new ORAC::TempFile;
-      my $threshfile = $thresh->file;
-      my $args = "in=$nepfile out=$threshfile thrhi=$nep_spec thrlo=0 newhi=bad newlo=bad";
-      $Mon{kappa_mon}->obeyw("thresh","$args");
+	# Calculate the NEP value corresponding to the best percentage
+	# specified - this is the nep_spec
+	if ( $usebest ) {
+	  my $args = "ndf=$nepfile percentiles=$best_pc";
+	  $Mon{kappa_mon}->obeyw("histat","$args");
+	  (my $ORAC_STATUS, $nep_spec) = $Mon{kappa_mon}->get("histat","perval");
+	  orac_print " with NEP < ". (sprintf "%5.3e", $nep_spec). "\n" if ($verbose);
+	}
 
-      # Threshold again with inverted selection to set everything to
-      # unity and hey presto - instant bad bolo mask
-      # Define name of mask from name of current file
-      my $mask = $Frm->inout("_bbm", $i);
-      $args = "in=$threshfile out=$mask thrhi=0 thrlo=$nep_spec newlo=1";
-      $Mon{kappa_mon}->obeyw("thresh","$args");
+	# Threshold to set out-of-range values to bad
+	my $thresh = new ORAC::TempFile;
+	my $threshfile = $thresh->file;
+	my $args = "in=$nepfile out=$threshfile thrhi=$nep_spec thrlo=0 newhi=bad newlo=bad";
+	$Mon{kappa_mon}->obeyw("thresh","$args");
 
-      # Find number of good bolometers in output mask
-      $Mon{kappa_mon}->obeyw("stats","ndf=$mask");
-      my ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
-      if ( $ngood == 0 ) {
-	orac_err "Bad bolometer mask has too few good bolometers ($ngood good)\n";
+	# Threshold again with inverted selection to set everything to
+	# unity and hey presto - instant bad bolo mask
+	# Define name of mask from name of current file
+	my $mask = $Frm->inout("_bbm", $i);
+	$args = "in=$threshfile out=$mask thrhi=0 thrlo=$nep_spec newlo=1";
+	$Mon{kappa_mon}->obeyw("thresh","$args");
+
+	# Find number of good bolometers in output mask
+	$Mon{kappa_mon}->obeyw("stats","ndf=$mask");
+	my ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+	if ( $ngood == 0 ) {
+	  orac_err "Bad bolometer mask has too few good bolometers ($ngood good)\n";
+	} else {
+	  orac_print "Bad bolometer mask $mask created from $ngood bolometers\n"
+	    if ($verbose);
+
+	  # Write some helpful FITS keywords:
+	  # 1) The NEP spec used to create the mask - MASK_NEP
+	  $args = "ndf=$mask edit=write keyword=MASK_NEP value=$nep_spec mode=interface comment='[W Hz**-0.5] NEP value used to define mask' position=!";
+	  $Mon{ndfpack_mon}->obeyw("fitsmod","$args");
+	  # 2) Number of bolometers in mask - NBOLMASK
+	  $args = "ndf=$mask edit=write keyword=NBOLMASK value=$ngood mode=interface comment='Number of bolometers in mask' position=!";
+	  $Mon{ndfpack_mon}->obeyw("fitsmod","$args");
+	  # 3) Number of good bolometers from flatfield - NBOLFLAT
+	  $Mon{kappa_mon}->obeyw("stats","ndf=$nepfile");
+	  ($ORAC_STATUS, my $nbol) = $Mon{kappa_mon}->get("stats","numgood");
+	  $args = "ndf=$mask edit=write keyword=NBOLFLAT value=$nbol mode=interface comment='Number of valid bolometers from flatfield' position=!";
+	  $Mon{ndfpack_mon}->obeyw("fitsmod","$args");
+
+	  # Register with the Calibration system - note that cal system must
+	  # deal with the different subarrays. The easiest way is to add a
+	  # uhdr entry for SUBARRAY and put the right value in it.
+	  $Frm->subarray($i);
+	  $Cal->maskindex->add($mask, {%{$Frm->hdr}, %{$Frm->uhdr}});
+	}
       } else {
-	orac_print "Bad bolometer mask $mask created from $ngood bolometers\n"
-	  if ($verbose);
-
-	# Write some helpful FITS keywords:
-	# 1) The NEP spec used to create the mask - MASK_NEP
-	$args = "ndf=$mask edit=write keyword=MASK_NEP value=$nep_spec mode=interface comment='[W Hz**-0.5] NEP value used to define mask' position=!";
-	$Mon{ndfpack_mon}->obeyw("fitsmod","$args");
-	# 2) Number of bolometers in mask - NBOLMASK
-	$args = "ndf=$mask edit=write keyword=NBOLMASK value=$ngood mode=interface comment='Number of bolometers in mask' position=!";
-	$Mon{ndfpack_mon}->obeyw("fitsmod","$args");
-	# 3) Number of good bolometers from flatfield - NBOLFLAT
-	$Mon{kappa_mon}->obeyw("stats","ndf=$nepfile");
-	($ORAC_STATUS, my $nbol) = $Mon{kappa_mon}->get("stats","numgood");
-	$args = "ndf=$mask edit=write keyword=NBOLFLAT value=$nbol mode=interface comment='Number of valid bolometers from flatfield' position=!";
-	$Mon{ndfpack_mon}->obeyw("fitsmod","$args");
-
-	# Register with the Calibration system - note that cal system must
-	# deal with the different subarrays. The easiest way is to add a
-	# uhdr entry for SUBARRAY and put the right value in it.
-	$Frm->subarray($i);
-	$Cal->maskindex->add($mask, {%{$Frm->hdr}, %{$Frm->uhdr}});
+	orac_warn "Unable to create a bad bolometer mask: $subarray has no good bolometers\n";
       }
     }
   } else {
