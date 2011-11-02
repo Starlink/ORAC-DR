@@ -67,6 +67,11 @@ A flag to indicate whether an output image is created of the ratio of
 the current and previous responsivities. Default is 0 (do not
 calculate the ratio image).
 
+=item B<WRITEFLAG>
+
+A flag to denote whether a flagfile (also known as a C<.ok> file)
+should be written after processing. Default is 1 (true).
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -155,6 +160,15 @@ if ( $proceed ) {
   my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
   my $logtype = "flatfield";
 
+  # Write a flag file if requested but never for fastflats taken as
+  # part of pointing and focus observations due to a name clash with
+  # those flag files which obviously are more important
+  my $writeflagfile = get_prim_arg($_PRIM_ARGS_, "WRITEFLAG", 1);
+  if ($Frm->hdr("OBS_TYPE") ne "pointing" &&
+      $Frm->hdr("OBS_TYPE") ne "focus" ) {
+    $writeflagfile = 0;
+  }
+
   # Get ERR argument
   my $err = get_prim_arg( $_PRIM_ARGS_, "ERR", 0 );
 
@@ -237,6 +251,7 @@ if ( $proceed ) {
 	  if ($results{NUMGOOD} > 0);
 	$results{MODE} = 0.0;
       }
+      # Add a label
       $results{LABEL} = "END  ";
 
       # Calculate how many values have been dropped due to
@@ -300,9 +315,21 @@ if ( $proceed ) {
       # Print a simple message if the results are being written to a
       # log file, otherwise use the same format as for the other
       # statistics below
+      my $colour = "green";
       my $msg = ($uselog) ? " $subarray: " : " NGOOD   = ";
+      if ($numdiff < 0) {
+	# Issue warning or error if the decrease in the number of good
+	# bolometers exceeds 10 or 20 %
+        if ($deltapc > 20) {
+          $colour = "red";
+          orac_err "Number of good bolometers for $subarray has dropped by >20 %\n";
+        } elsif ($deltapc > 10) {
+          $colour = "cyan";
+          orac_warn "Number of good bolometers for $subarray has dropped by >10 %\n";
+	}
+      }
       orac_print ("$msg".(sprintf "%4d", $results{NUMGOOD}).
-		  " good solutions ( $numstring )\n", "green");
+                  " good solutions ( $numstring )\n", $colour);
 
       # Loop over the statistics calculated above and reformat to
       # store in the array(s) as necessary
@@ -442,13 +469,7 @@ if ( $proceed ) {
   $Frm->uhdr("RESP_NEW", ($newgood == 0 ? 0 : 1));
 
   my @flatfiles = map { $_->file } $Grp->members;
-  if ( @flatfiles ) {
-    # Write a flag file, but not for fastflats taken as part of
-    # pointing and focus observations due to a name clash with those
-    # flag files which obviously are more important
-    if ($Frm->hdr("OBS_TYPE") ne "pointing" &&
-	$Frm->hdr("OBS_TYPE") ne "focus" ) {
-      _WRITE_FLAG_FILE_ FILES=\@flatfiles PREFIX=s
-    }
+  if ( @flatfiles && $writeflagfile ) {
+    _WRITE_FLAG_FILE_ FILES=\@flatfiles PREFIX=s
   }
 }
