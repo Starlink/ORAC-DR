@@ -166,6 +166,8 @@ __PACKAGE__->CreateBasicAccessors( mask => {},
 				   fastflat => {},
 				   flat => {},
 				   dark => {},
+				   setupflat => {},
+				   noise => {},
 );
 
 =head1 PUBLIC METHODS
@@ -427,7 +429,7 @@ Return (or set) the name of the current fast-ramp flatfield file(s).
 
   $fastflat = $Cal->fastflat;
 
-We have one fast-ramp flatfield file per subarray. Note that the user
+There is one fast-ramp flatfield file per subarray. Note that the user
 must set the subarray with the Frame class C<subarray()> method before
 a suitable calibration entry can be found. This is due to the fact
 that it is not possible to search the Frame subheaders when evaluating
@@ -440,6 +442,49 @@ sub fastflat {
   # Do not warn about non-matching calibrations
   my $warn = 0;
   return $self->GenericIndexAccessor( "fastflat", -1, 1, 0, $warn, @_ );
+}
+
+
+=item B<setupflat>
+
+Return the name of the matching fast-ramp flatfield file from the most
+recent C<SETUP> observation.
+
+  $setupflat = $Cal->setupflat;
+
+There is one fast-ramp flatfield file per subarray. Note that the user
+must set the subarray with the Frame class C<subarray()> method before
+a suitable calibration entry can be found. This is due to the fact
+that it is not possible to search the Frame subheaders when evaluating
+the rules.
+
+=cut
+
+sub setupflat {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( "setupflat", -1, 1, 0, $warn, @_ );
+}
+
+=item B<noise>
+
+Return the name of the matching noise observation.
+
+  $noise = $Cal->noise;
+
+There is one noise file per subarray. Note that the user must set the
+subarray with the Frame class C<subarray()> method before a suitable
+entry can be found. This is due to the fact that it is not possible to
+search the Frame subheaders when evaluating the rules.
+
+=cut
+
+sub noise {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( "noise", -1, 1, 0, $warn, @_ );
 }
 
 =back
