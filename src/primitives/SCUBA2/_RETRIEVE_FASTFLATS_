@@ -28,8 +28,9 @@ This primitive supports the following argument:
 
 =item B<TYPE>
 
-Type of flatfield data to return. May be C<RAW> or C<SOL> to return
-the raw data or a calculated flatfield solution. Default is C<RAW>.
+Type of flatfield data to return. May be C<RAW>, C<SETUP> or C<SOL> to
+return the raw data, a raw dark fastramp from a SETUP observation, or
+a calculated flatfield solution. Default is C<RAW>.
 
 =back
 
@@ -38,9 +39,6 @@ the raw data or a calculated flatfield solution. Default is C<RAW>.
 This primitive uses no external tasks.
 
 =head1 OUTPUT DATA
-
-The Frame hdr entry C<SUBARRAY> will be present on exit, though it
-will be C<undef> if not previously defined.
 
 If any suitable fastflats were found, the primitive hash contains the
 entries C<FASTFLATS>, which contains a reference to an array of the
@@ -54,7 +52,12 @@ None.
 
 =head1 NOTES
 
-None.
+The distinction between a C<raw> fastflat and a C<setup> is purely one
+of convenience, as in some cases they may point to the same
+file. However, a C<setup> fastflat is usually retrieved from a
+different observation than the current one, and therefore requires
+different rules for retrieval than the usual C<raw> fastflat (which is
+always associated with the current observation).
 
 =head1 AUTHOR
 
@@ -86,14 +89,19 @@ USA.
 my $flat_type = lc(get_prim_arg($_PRIM_ARGS_, "TYPE", "raw"));
 
 # Name of calibration method call
-my $method = ($flat_type eq "raw") ? "fastflat" : "flat";
+my $method = "raw";
+my %methods = ( raw => "fastflat",
+		setup => "setupflat",
+		sol => "flat"
+	      );
+$method = $methods{$flat_type} if (defined $methods{$flat_type});
 
 my (@fastflats, %fastflats);
 # Cycle through the subarrays present and retrieve the relevant
 # fastflat
-my $origsub = $Frm->hdr("SUBARRAY");
+my $origsub = $Frm->uhdr("SUBARRAY");
 foreach my $subarray ($Frm->subarrays) {
-  $Frm->hdr(SUBARRAY => $subarray);
+  $Frm->uhdr("SUBARRAY", $subarray);
   my $fflat = $Cal->$method;
   if ($fflat) {
     # Only store if the file exists on disk - assumed to be the
@@ -106,7 +114,7 @@ foreach my $subarray ($Frm->subarrays) {
   }
 }
 # Store original value for the subarray hdr
-$Frm->hdr(SUBARRAY => $origsub);
+$Frm->uhdr("SUBARRAY", $origsub);
 
 # Store results in primitive hash
 if (@fastflats) {
