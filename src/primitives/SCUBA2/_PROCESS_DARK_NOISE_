@@ -110,17 +110,30 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.5 );
 
 # High frequency measurement range for estimating white part of
-# spectrum, override with recipe parameter if present
+# spectrum - this will be overriden in _CALCULATE_NOISE_ by the
+# NOISE_FREQRANGE recipe parameter if present
 my $freqrange = get_prim_arg( $_PRIM_ARGS_, "FREQRANGE", "2,10" );
-$freqrange = $Frm->uhdr("RECPAR_NOISE_FREQRANGE")
-  if ($Frm->uhdr("RECPAR_NOISE_FREQRANGE"));
 
 # For the QL and summit pipelines, there should only be dark data in
 # the Frame. Another check that could be done here is that the
 # QL/summit pipelines should have the SHUTTER keyword in the hdr, and
 # not in subheaders which will be the case for the offline pipeline.
-if ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) {
-  if ($Frm->uhdr("DARKONLY") && !$Frm->uhdr("PROCESS_FASTFLAT")) {
+my $online = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) ? 1 : 0;
+if ($online || $Frm->hdr("OBS_TYPE") =~ /setup/i) {
+
+  # Define a flag for whether to proceed - true for DARKONLY Frames,
+  # false for fastflat-only frames
+  my $proceed = ($Frm->uhdr("DARKONLY")) ? 1 : 0;
+  $proceed = 0 if ($Frm->uhdr("PROCESS_FASTFLAT"));
+  # However, always proceed in the offline case
+  $proceed = 1 if (!$online);
+
+  if ($proceed) {
+
+    # Tell the pipeline that we're done with fastflats
+    if (!$online) {
+      $Frm->uhdr("PROCESS_FASTFLAT", 0) if ($Frm->uhdr("PROCESS_FASTFLAT"));
+    }
     # Calculate the noise from this initial dark
     _CALCULATE_NOISE_ FREQRANGE=$freqrange FREQLO=$freqlo
 
@@ -129,7 +142,7 @@ if ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) {
     _DISPLAY_NOISE_
 
     # Write a flag file for the TCS to pick up if this is a setup observation
-      if ($Frm->hdr("OBS_TYPE") =~ /setup/i) {
+    if ($Frm->hdr("OBS_TYPE") =~ /setup/i) {
       my @files = $Frm->files;
       _RETRIEVE_FASTFLATS_ TYPE=SOL
       my @flats = @{$_RETRIEVE_FASTFLATS_{FASTFLATS}} if ($_RETRIEVE_FASTFLATS_{FASTFLATS});
