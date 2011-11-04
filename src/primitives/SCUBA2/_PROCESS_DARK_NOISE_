@@ -11,11 +11,18 @@ _PROCESS_DARK_NOISE_
 =head1 DESCRIPTION
 
 This primitive calculates a noise image for each subarray using only
-the initial DARK in the observation.
+the initial DARK in the observation. If called from the quick-look or
+summit pipelines the dark data are processed and left on disk, with an
+entry added in the calibration system.
+
+For offline processing, the dark data are stored in their own Frame
+object for later processing.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
+
+=over 2
 
 =item B<FREQRANGE>
 
@@ -37,13 +44,13 @@ Flag to denote whether to display extra information. Default is 1
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
-=over 4
+=over 2
 
 =item ORAC-DR PRIMITIVES:
 
-_CALCULATE_NOISE_
+_CALCULATE_NOISE_, _DELETE_TEMP_FILES_, _DISPLAY_NOISE_, _WRITE_FLAG_FILE_
 
 =back
 
@@ -51,12 +58,24 @@ _CALCULATE_NOISE_
 
 The current Frame object is updated with the output noise files.
 
-The Frame uhdr contains a new entry, C<DARKSAMPLES>, which lists the
+For offline processing:
+
+=over 2
+
+=item * The Frame uhdr contains a new entry, C<DARKSAMPLES>, which lists the
 number of samples in the dark files.
+
+=item * The Group object will have a new Frame stored
+which contains the processed dark noise data.
+
+=back
 
 =head1 OUTPUT FILES
 
 A noise file is created for each subarray with the suffix C<_noi>.
+
+A flag file is created for SETUP observations which contains the names
+of the current noise images and flatfield solutions.
 
 =head1 AUTHOR
 
@@ -84,12 +103,6 @@ USA.
 
 =cut
 
-my $obstype = lc($Frm->hdr("OBS_TYPE"));
-if  ($obstype eq "noise") {
-  $obstype = "darknoise" if (defined $Frm->hdr("OBJECT") && $Frm->hdr("OBJECT") eq "DARK");
-}
-return ORAC__OK if ($obstype eq "setup" || $obstype eq "ramp" || $obstype eq "darknoise" || $obstype eq "focus");
-
 # Should we be verbose (default to yes)?
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
@@ -102,55 +115,94 @@ my $freqrange = get_prim_arg( $_PRIM_ARGS_, "FREQRANGE", "2,10" );
 $freqrange = $Frm->uhdr("RECPAR_NOISE_FREQRANGE")
   if ($Frm->uhdr("RECPAR_NOISE_FREQRANGE"));
 
-# Force obsend to true (in case it's not already)
-my $obsend_on_entry = $Frm->uhdr("OBSEND");
-$Frm->uhdr("OBSEND", 1);
-
-# Retrieve *first* set of dark files only - ignore the rest
-my @darks;
-for my $i ( 1 .. $Frm->nfiles ) {
-  push(@darks, $Frm->file($i))
-    if ($Frm->hdrval("SHUTTER", $i-1) == 0.0 && $Frm->hdrval("NSUBSCAN", $i-1) == 1);
-}
-
-my $darksamples;
-if (defined $Frm->uhdr("RECPAR_NOISE_SAMPLES")) {
-  $darksamples = $Frm->uhdr("RECPAR_NOISE_SAMPLES");
-  my $tmpFrm = $Frm->new();
-  $tmpFrm->files(@darks);
-  @darks = ();
-  for my $i (1 .. $tmpFrm->nfiles) {
-    my $in = $tmpFrm->file($i) . "(,,1:$darksamples)";
-    my $out = $tmpFrm->inout("_raw", $i);
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
-    push(@darks, $out);
-  }
-}
-
-if (@darks) {
-  # Localize Frm here to calculate the noise, retrieve the processed
-  # files at the end and store in a new Frame object
-  my ($uhdr, @dknoi);
-  {
-    $uhdr = $Frm->uhdr;
-    my $Frm = $Frm->new;
-    $Frm->files(@darks);
-    $Frm->uhdr(%{$uhdr});
+# For the QL and summit pipelines, there should only be dark data in
+# the Frame. Another check that could be done here is that the
+# QL/summit pipelines should have the SHUTTER keyword in the hdr, and
+# not in subheaders which will be the case for the offline pipeline.
+if ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) {
+  if ($Frm->uhdr("DARKONLY") && !$Frm->uhdr("PROCESS_FASTFLAT")) {
+    # Calculate the noise from this initial dark
     _CALCULATE_NOISE_ FREQRANGE=$freqrange FREQLO=$freqlo
-    @dknoi = $Frm->files;
-    $uhdr = $Frm->uhdr;
-    # Retrieve the number of dark samples - these should all be the same
-    $darksamples = ($Frm->hdrval("SEQEND") - $Frm->hdrval("SEQSTART") + 1) unless ($darksamples);
+
+    # Display the noise images plus calculate the effective NEP for
+    # each array
+    _DISPLAY_NOISE_
+
+    # Write a flag file for the TCS to pick up if this is a setup observation
+      if ($Frm->hdr("OBS_TYPE") =~ /setup/i) {
+      my @files = $Frm->files;
+      _RETRIEVE_FASTFLATS_ TYPE=SOL
+      my @flats = @{$_RETRIEVE_FASTFLATS_{FASTFLATS}} if ($_RETRIEVE_FASTFLATS_{FASTFLATS});
+      push (@files, @flats) if (@flats);
+      _WRITE_FLAG_FILE_ FILES=\@files
+    }
+    # Tidy up but keep the noise images
+    _DELETE_TEMP_FILES_ KEEP=_noi
   }
-  my $dkFrm = $Frm->new();
-  $dkFrm->files(@dknoi);
-  $dkFrm->uhdr(%{$uhdr}) if ($uhdr);
-
-  # Store the number of samples in the dark files
-  $Frm->uhdr("DARKSAMPLES", $darksamples);
-
-  # Add this Frame object to the Group for later analysis
-  $Grp->push($dkFrm);
 } else {
-  orac_warn "Frame contains no DARKs\n";
+  my $obstype = lc($Frm->hdr("OBS_TYPE"));
+  if  ($obstype eq "noise") {
+    $obstype = "darknoise" if (defined $Frm->hdr("OBJECT") && $Frm->hdr("OBJECT") eq "DARK");
+  }
+
+  # Do not proceed for setups, any kind of flatfield ramp or dark noises
+  # because none of these observation types contain a mix of dark and
+  # sky data. Skip focus observations too for now until I put effort
+  # into dealing with those data.
+  return ORAC__OK if ($obstype eq "setup" || $obstype eq "ramp" || $obstype eq "darknoise"
+		      || $obstype eq "focus");
+
+  # Force obsend to true (in case it's not already)
+  my $obsend_on_entry = $Frm->uhdr("OBSEND");
+  $Frm->uhdr("OBSEND", 1);
+
+  # Retrieve *first* set of dark files only - ignore the rest
+  my @darks;
+  for my $i ( 1 .. $Frm->nfiles ) {
+    push(@darks, $Frm->file($i))
+      if ($Frm->hdrval("SHUTTER", $i-1) == 0.0 && $Frm->hdrval("NSUBSCAN", $i-1) == 1);
+  }
+
+  # Copy out the required number of samples if requested
+  my $darksamples;
+  if (defined $Frm->uhdr("RECPAR_NOISE_SAMPLES")) {
+    $darksamples = $Frm->uhdr("RECPAR_NOISE_SAMPLES");
+    my $tmpFrm = $Frm->new();
+    $tmpFrm->files(@darks);
+    @darks = ();
+    for my $i (1 .. $tmpFrm->nfiles) {
+      my $in = $tmpFrm->file($i) . "(,,1:$darksamples)";
+      my $out = $tmpFrm->inout("_raw", $i);
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+      push(@darks, $out);
+    }
+  }
+
+  if (@darks) {
+    # Localize Frm here to calculate the noise, retrieve the processed
+    # files at the end and store in a new Frame object
+    my ($uhdr, @dknoi);
+    {
+      $uhdr = $Frm->uhdr;
+      my $Frm = $Frm->new;
+      $Frm->files(@darks);
+      $Frm->uhdr(%{$uhdr});
+      _CALCULATE_NOISE_ FREQRANGE=$freqrange FREQLO=$freqlo
+      @dknoi = $Frm->files;
+      $uhdr = $Frm->uhdr;
+      # Retrieve the number of dark samples - these should all be the same
+      $darksamples = ($Frm->hdrval("SEQEND") - $Frm->hdrval("SEQSTART") + 1) unless ($darksamples);
+    }
+    my $dkFrm = $Frm->new();
+    $dkFrm->files(@dknoi);
+    $dkFrm->uhdr(%{$uhdr}) if ($uhdr);
+
+    # Store the number of samples in the dark files
+    $Frm->uhdr("DARKSAMPLES", $darksamples);
+
+    # Add this Frame object to the Group for later analysis
+    $Grp->push($dkFrm);
+  } else {
+    orac_warn "Frame contains no DARKs\n";
+  }
 }
