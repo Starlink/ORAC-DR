@@ -555,34 +555,6 @@ sub findgroup {
   return $self->SUPER::findgroup( $extra );
 }
 
-=item B<findrecipe>
-
-Return the recipe associated with the frame.  The state of the object
-is automatically updated via the recipe() method.
-
-=cut
-
-sub findrecipe {
-  my $self = shift;
-
-  my $recipe = undef;
-  my $mode = $self->hdr('SAM_MODE');
-
-  # Check for RECIPE. Have to make sure it contains something (anything)
-  # other than UNKNOWN.
-  if (exists $self->hdr->{RECIPE} && $self->hdr->{RECIPE} ne 'UNKNOWN'
-      && $self->hdr->{RECIPE} =~ /\w/) {
-    $recipe = $self->hdr->{RECIPE};
-  } else {
-    $recipe = 'QUICK_LOOK';
-  }
-
-  # Update the recipe
-  $self->recipe($recipe);
-
-  return $recipe;
-}
-
 =item B<get_files_by_subarray>
 
 Return a hash with subarray names as keys and values containing a list
