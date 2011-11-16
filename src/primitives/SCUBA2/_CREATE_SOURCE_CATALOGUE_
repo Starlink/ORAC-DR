@@ -11,7 +11,10 @@ _CREATE_SOURCE_CATALOGUE_ - create a catalogue of sources in an image
 =head1 DESCRIPTION
 
 This primitive is designed to perform the optimal source extraction
-and catalogue creation for both compact and extended sources.
+and catalogue creation for both compact and extended sources. The
+input image is passed through a matched filter, the output from which
+is used to create a signal-to-noise ratio image which is fed into the
+source finder.
 
 Source finding is performed using CUPID:findclumps and may use any of
 the supported methods. The best way to control source detection is by
@@ -26,7 +29,7 @@ the current Frame object contains more than one file.
 
 The following arguments are supported:
 
-=over 4
+=over 2
 
 =item B<DETECT>
 
@@ -50,8 +53,7 @@ Minimum number of connected pixels defining a source. Default is 9.
 =item B<SMOOTH_FWHM>
 
 FWHM of Gaussian used to smooth the image before subtracting as part
-of applying a matched filter. Default is wavelength dependent (30" at
-850 um; 20" at 450 um).
+of applying a matched filter. Default is 30".
 
 =item B<VERBOSE>
 
@@ -64,7 +66,7 @@ user. Default is 1 (true).
 
 The following external tasks are used:
 
-=over 4
+=over 2
 
 =item ORAC-DR PRIMITIVES
 
@@ -77,9 +79,11 @@ _FIND_SOURCES_
 
 Input arguments may be overridden by survey-specific choices.
 
+Currently only compact sources are supported.
+
 =head1 OUTPUT DATA
 
-....
+None.
 
 =head1 OUTPUT FILES
 
@@ -129,16 +133,25 @@ my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 # Be verbose? Default to yes.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-# Trim image to map size so results are not biassed by noise around
-# the edge of the map
-_CROP_IMAGE_FRAME_
+# Proceed flag - initialize to unity
+my $proceed = 1;
+# But set to false for cases when the group file is to be processed
+# and it does not yet exist
+$proceed = 0 if ($group && !$Grp->file_exists);
 
-# Apply the matched filter
-_APPLY_MATCHED_FILTER_ GROUP=$group STORE=1 SMOOTH_FWHM=$smooth_fwhm
+if ($proceed) {
 
-# Calculate S/N map
-_CALC_SCUBA2_SNR_ GROUP=$group STORE=1 VERBOSE=0
+  # Trim image to map size so results are not biassed by noise around
+  # the edge of the map
+  _CROP_IMAGE_FRAME_
 
-# Run CUPID
-_FIND_SOURCES_ GROUP=$group WRITE_CATALOGUE=1 METHOD=$method MINPIX=$minpix DETECT_SIGMA=$detect
+  # Apply the matched filter
+  _APPLY_MATCHED_FILTER_ GROUP=$group STORE=1 SMOOTH_FWHM=$smooth_fwhm
 
+  # Calculate S/N map
+  _CALC_SCUBA2_SNR_ GROUP=$group STORE=1 VERBOSE=0
+
+  # Run CUPID
+  _FIND_SOURCES_ GROUP=$group WRITE_CATALOGUE=1 METHOD=$method MINPIX=$minpix DETECT_SIGMA=$detect
+
+}
