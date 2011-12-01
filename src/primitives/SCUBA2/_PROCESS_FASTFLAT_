@@ -111,7 +111,7 @@ USA.
 my $storeraw = get_prim_arg($_PRIM_ARGS_, "STORERAW", 0);
 my $processff = get_prim_arg($_PRIM_ARGS_, "PROCESS_DATA", 1);
 
-my @flats;
+my (@flats, @nonflats);
 
 # Check duration of observation - abort fastflat processing if less
 # than 1000 samples (5 sec) since a complete ramp usually takes about
@@ -126,20 +126,35 @@ if ($seq_length < 1000 && $Frm->hdr("SEQ_TYPE") =~ /fastflat/i) {
 # Have to treat FOCUS observations a little differently because each
 # Frame corresponds to a separate SMU position.
 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
-  # Retrieve existing files marked as fast ramps if appropriate
-  if ($Grp->lastmember($Frm)) {
-    @flats = @{$Grp->uhdr("FASTRAMPFLATS")}
-      if (defined $Grp->uhdr("FASTRAMPFLATS"));
-  } else {
-    # Otherwise copy the data so it persists, retrieve any fast ramps
-    # from the current Frame (storing their names in the Grp uhdr),
-    # and terminating the recipe immediately. This block should never
-    # be reached in the QL pipeline because each new file becomes a
-    # new Group and thus the Frame is always the last member.
-    _COPY_RAW_DATA_ SUFFIX=_rawflat
-    my @newflats = $Frm->get_fastramp_flats;
-    $Grp->uhdr("FASTRAMPFLATS", \@newflats);
-    return ORAC__TERM;
+  # However, the fast ramps always turn up in a mixed Frame, either
+  # with the initial dark (first ramp) or the final on-sky data (last
+  # ramp) because of the FOCPOSN keyword. Pick out the on-sky data so
+  # they can be stored again at the end of this primitive.
+  unless (defined $Frm->hdr("SEQ_TYPE")) {
+    for my $i (1 .. $Frm->nfiles) {
+      push(@nonflats, $Frm->file($i)) if ($Frm->hdrval("SEQ_TYPE",$i-1) eq "focus");
+    }
+  }
+
+  # Only do the following if the fastflat data are to be processed
+  if ($processff) {
+    # Retrieve existing files marked as fast ramps if appropriate
+    if ($Grp->lastmember($Frm)) {
+      @flats = @{$Grp->uhdr("FASTRAMPFLATS")}
+	if (defined $Grp->uhdr("FASTRAMPFLATS"));
+    } else {
+      unless (@nonflats) {
+	# Otherwise copy the data so it persists, retrieve any fast ramps
+	# from the current Frame (storing their names in the Grp uhdr),
+	# and terminating the recipe immediately. This block should never
+	# be reached in the QL pipeline because the fastflats are placed
+	# in a new Group and thus the Frame is always the last member.
+	_COPY_RAW_DATA_ SUFFIX=_rawflat
+	my @newflats = $Frm->get_fastramp_flats;
+	$Grp->uhdr("FASTRAMPFLATS", \@newflats);
+	return ORAC__TERM;
+      }
+    }
   }
 }
 # Retrieve and store the fast ramp files
@@ -296,7 +311,13 @@ if (@flats) {
   @flatfiles = map { $_->file } $Grp->members;
   # $Frm and $Grp go out of scope here, return to original
   } else {
-    push(@rawfastflats, @flats);
+    # Make a copy of the raw data before storing for focus
+    # observations as each SMU position is processed separately, so
+    # the data must persist for multiple passes through the recipe
+    if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") {
+      _COPY_RAW_DATA_ SUFFIX=_rawflat VERBOSE=0
+    }
+    push(@rawfastflats, $Frm->get_fastramp_flats);
   }
 }
 
@@ -339,11 +360,18 @@ if (@rawfastflats && (!$Frm->uhdr("OBSEND") || $storeraw)) {
   # Set the PROCESS_FASTFLAT flag to indicate that fastflats have been
   # processed and that no further processing should take place
   $Frm->uhdr("PROCESS_FASTFLAT", 1);
+  $Frm->isgood(-1);
 }
 
 # Store the _flat files in the global Frame - except for setup
 # observations
 if (@flatfiles && !$batch && $Frm->hdr("OBS_TYPE") !~ /setup/i) {
   $Frm->files(@flatfiles);
-  $Frm->isgood(-1);
+}
+
+# Store the non-fastramp files - this should only be populated for
+# offline Focus processing
+if (@nonflats) {
+  $Frm->files(@nonflats);
+  $Frm->readhdr;
 }
