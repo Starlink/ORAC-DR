@@ -191,12 +191,14 @@ sub find_base_position {
     $state{TCS_TR_SYS} = $self->hdr("TRACKSYS");
 
     if ($state{TCS_TR_SYS} ne 'APP' &&
-        defined $self->hdr("BASEC1") &&
-        defined $self->hdr("BASEC2") ) {
+        defined $self->hdrval("BASEC1") &&
+	defined $self->hdrval("BASEC2") &&
+	$self->hdrval("BASEC1") ne "" &&
+	$self->hdrval("BASEC2") ne "") {
       # converting degrees to radians
       for my $c (qw/ C1 C2 /) {
-        my $ang = Astro::Coords::Angle->new( $self->hdr("BASE$c"), units => "deg");
-        $state{"TCS_TR_B$c"} = $ang->radians;
+	my $ang = Astro::Coords::Angle->new( $self->hdrval("BASE$c"), units => "deg");
+	$state{"TCS_TR_B$c"} = $ang->radians;
       }
     }
   } else {
