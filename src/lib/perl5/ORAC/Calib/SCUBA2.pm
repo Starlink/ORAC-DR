@@ -57,24 +57,25 @@ $DEBUG = 0;                     # Turn off debugging mode
 
 # Define default SCUBA-2 gains
 
-# FCF can vary with time. Index by filter and then ARCSEC/BEAM
-# UT date is used for START and END. If none there then assume open
-# ended. If only START assume currently applicable
-# The arrays are populated in order
-# START and END are inclusive
+# FCF can vary with time. Index by filter and then ARCSEC/BEAM UT date
+# is used for START and END. If none there then assume open ended. If
+# only START assume currently applicable The arrays are populated in
+# order START and END are inclusive. ARCSEC values currently derived
+# from the BEAM values assuming beamsizes of 14" and 7.5" at 850 and 450
+# um respectively.
 
 my %FCFS = ('850' => [             # Assumed to be in date order
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC=> 2.25,
-                    BEAM  => 500,
+                    ARCSEC=> 3.12,
+                    BEAM  => 480,
                    }
                   ],
          '450' => [
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC => 6.3,
-                    BEAM   => 400,
+                    ARCSEC => 6.56,
+                    BEAM   => 290,
                    }
                   ],
         );
