@@ -1,0 +1,212 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_RMS_ACTUAL_DEMAND_ - calculate the RMS difference between the actual and demand azimuth
+
+=head1 SYNOPSIS
+
+ _CALC_RMS_ACTUAL_DEMAND_
+
+=head1 DESCRIPTION
+
+This primitive reads the C<JCMTSTATE> state structure from the first
+file in the current Frame and calculates the RMS difference between
+the actual and demand azimuths and elevations. The results are written
+to the screen and to a log file, C<log.posdiff>.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_LOG_ENTRY_
+
+=item PERL MODULES
+
+Astro::SLA, JSA::Headers, Statistics::Descriptive
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=back
+
+=head1 OUTPUT FILES
+
+A log file C<log.posdiff>.
+
+=head1 LOGFILE FORMAT
+
+The logfile has the following columns:
+
+=over 2
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Subscan
+
+Current subscan number.
+
+=item Az
+
+Mean azimuth in degrees.
+
+=item El
+
+Mean elevation in degrees.
+
+=item Max d-Az
+
+Maximum difference in azimuth (arcsec).
+
+=item Min d-Az
+
+Minimum difference in azimuth (arcsec).
+
+=item Max d-El
+
+Maximum difference in elevation (arcsec).
+
+=item Min d-El
+
+Minimum difference in elevation (arcsec).
+
+=item RMS d-Az
+
+RMS difference in azimuth (arcsec).
+
+=item RMS d-El
+
+RMS difference in elevation (arcsec).
+
+=back
+
+=head1 NOTES
+
+This primitive is designed to work with the quick-look pipeline only
+and should not be called for other instances of the pipeline.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Only continue for sequences where the telescope is moving
+my $proceed = ($Frm->hdr("SEQ_TYPE") =~ /point/i
+	       || $Frm->hdr("SEQ_TYPE") =~ /^sc/i
+	       || $Frm->hdr("SEQ_TYPE") =~ /focus/i) ? 1 : 0;
+
+if ($proceed) {
+
+  # Read JCMTSTATE from file
+  use JSA::Headers qw/ read_jcmtstate /;
+  my %jcmtstate = read_jcmtstate( $Frm->file );
+
+  # Retrieve Az/El values from state structure
+  my @azactual = @{$jcmtstate{"TCS_AZ_AC1"}} if (defined $jcmtstate{"TCS_AZ_AC1"});
+  my @azdemand = @{$jcmtstate{"TCS_AZ_DC1"}} if (defined $jcmtstate{"TCS_AZ_DC1"});
+  my @elactual = @{$jcmtstate{"TCS_AZ_AC2"}} if (defined $jcmtstate{"TCS_AZ_AC2"});
+  my @eldemand = @{$jcmtstate{"TCS_AZ_DC2"}} if (defined $jcmtstate{"TCS_AZ_DC2"});
+
+  # Sanity checks - check each array is defined and that they all
+  # contain the same number of elements
+  my $allok = (@azactual && @azdemand && @elactual && @eldemand &&
+	       (scalar(@azactual) == scalar(@azdemand)) &&
+	       (scalar(@elactual) == scalar(@eldemand)) &&
+	       (scalar(@azactual) == scalar(@elactual))
+	      ) ? 1 : 0;
+
+  if ($allok) {
+    orac_print "Calculating RMS actual-demand azimuth difference: ";
+    # Calculate the differences
+    my @delta_az = map { ($azactual[$_] - $azdemand[$_]) * cos($elactual[$_]) } 0 .. $#azactual;
+    my @delta_el = map { $elactual[$_] - $eldemand[$_] } 0 .. $#azactual;
+
+    # Calculate the square of the differences
+    my @delta_az_sq = map { $delta_az[$_]*$delta_az[$_] } 0 .. $#delta_az;
+    my @delta_el_sq = map { $delta_el[$_]*$delta_el[$_] } 0 .. $#delta_el;
+
+    # Now calculate the mean/min/max values
+    use Statistics::Descriptive;
+    use Astro::SLA qw/ :constants /;
+
+    # Mean Az/El for reporting
+    my $az = sprintf "%.2f", 0.5 * ( $Frm->hdr("AZSTART") + $Frm->hdr("AZEND"));
+    my $el = sprintf "%.2f", 0.5 * ( $Frm->hdr("ELSTART") + $Frm->hdr("ELEND"));
+
+    # Min/max deviations
+    my $azstat = Statistics::Descriptive::Full->new();
+    $azstat->add_data(\@delta_az);
+    my $dazmax = sprintf "%.3f", DR2AS * $azstat->max;
+    my $dazmin = sprintf "%.3f", DR2AS * $azstat->min;
+
+    my $elstat = Statistics::Descriptive::Full->new();
+    $elstat->add_data(\@delta_el);
+    my $delmax = sprintf "%.3f", DR2AS * $elstat->max;
+    my $delmin = sprintf "%.3f", DR2AS * $elstat->min;
+
+    # OK now calculate the RMS in arcsec - simply calculate the
+    # square root of the mean of the deltasq array
+    $azstat = Statistics::Descriptive::Full->new();
+    $azstat->add_data(\@delta_az_sq);
+    $elstat = Statistics::Descriptive::Full->new();
+    $elstat->add_data(\@delta_el_sq);
+
+    my $azrms = sprintf "%.3f", DR2AS * sqrt($azstat->mean);
+    my $colour = ($azrms < 5) ? "green" : ($azrms < 15 ? "cyan" : "red");
+    orac_print " $azrms arcsec\n", "$colour";
+    my $elrms = sprintf "%.3f", DR2AS * sqrt($elstat->mean);
+
+    # Write RMS in log file
+    my $logtype = "posdiff";
+    my @values = ( $Frm->hdr("NSUBSCAN"), $az, $el, $dazmax, $dazmin, $delmax, $delmin,
+		   $azrms, $elrms );
+    my @names = ( "Subscan", "Az", "El", "Max d-Az", "Min d-Az",
+		  "Max d-El", "Min d-El", "RMS d-Az", "RMS d-El" );
+    _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=0 PARLIST=BRIEF
+
+  } else {
+    orac_err "Unable to calculate azimuth differences: inconsistent values reading from JCMTSTATE\n";
+  }
+}
