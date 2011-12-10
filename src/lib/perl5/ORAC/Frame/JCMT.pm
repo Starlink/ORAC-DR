@@ -190,15 +190,32 @@ sub find_base_position {
   if (defined $self->hdr("TRACKSYS") ) {
     $state{TCS_TR_SYS} = $self->hdr("TRACKSYS");
 
-    if ($state{TCS_TR_SYS} ne 'APP' &&
-        defined $self->hdrval("BASEC1") &&
-	defined $self->hdrval("BASEC2") &&
-	$self->hdrval("BASEC1") ne "" &&
-	$self->hdrval("BASEC2") ne "") {
-      # converting degrees to radians
-      for my $c (qw/ C1 C2 /) {
-	my $ang = Astro::Coords::Angle->new( $self->hdrval("BASE$c"), units => "deg");
-	$state{"TCS_TR_B$c"} = $ang->radians;
+    if ($state{TCS_TR_SYS} ne 'APP') {
+
+      # Now we have to look for BASEC1 which might be missing
+      # in the first subheader (DARK or FASTFLAT)
+      my $hdr = $self->hdr;
+      my $nsubheaders = 1;
+      $nsubheaders = scalar @{$hdr->{SUBHEADERS}}
+        if exists $hdr->{SUBHEADERS};
+
+      my %base;
+      for my $i (0..$nsubheaders-1) {
+        my $basec1 = $self->hdrval( "BASEC1", $i );
+        next unless (defined $basec1 && length($basec1) > 0);
+        my $basec2 = $self->hdrval( "BASEC2", $i );
+        if (defined $basec2 && length($basec2) > 0) {
+          $base{C1} = $basec1;
+          $base{C2} = $basec2;
+        }
+      }
+
+      if (exists $base{C1} && exists $base{C2}) {
+        # converting degrees to radians
+        for my $c (qw/ C1 C2 /) {
+          my $ang = Astro::Coords::Angle->new( $base{$c}, units => "deg");
+          $state{"TCS_TR_B$c"} = $ang->radians;
+        }
       }
     }
   } else {
