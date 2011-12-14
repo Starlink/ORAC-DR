@@ -33,7 +33,7 @@ use JSA::Headers qw/ read_jcmtstate /;
 use ORAC::Print;
 use ORAC::Error qw/ :try /;
 
-$VERSION = '1.01';
+$VERSION = '1.02';
 
 # Map AST Sky SYSTEM to JCMT TRACKSYS
 my %astToJCMT = (
@@ -45,6 +45,7 @@ my %astToJCMT = (
                  FK5 => "J2000",
                 );
 
+my %JCMTToAst = map { $astToJCMT{$_}, $_ } keys %astToJCMT;
 
 =head1 PUBLIC METHODS
 
@@ -274,16 +275,44 @@ sub find_base_position {
     }
   }
 
+  # Group allocation is normalised to ICRS coordinates so we need the base
+  # position in ICRS.
+  if (exists $state{TCS_TR_SYS}) {
+    my $obsra;
+    my $obsdec;
+    if ($state{TCS_TR_SYS} eq 'ICRS') {
+      $obsra = $state{TCS_TR_BC1};
+      $obsdec = $state{TCS_TR_BC2};
+    } else {
+      # Use AST to convert
+      my $astsys = ( exists $JCMTToAst{$state{TCS_TR_SYS}} ? $JCMTToAst{$state{TCS_TR_SYS}} : undef );
+      if (defined $astsys) {
+        my $skyframe = Starlink::AST::SkyFrame->new( "System=$astsys");
+        $skyframe->Set("skyref(1)=". $state{TCS_TR_BC1});
+        $skyframe->Set("skyref(2)=". $state{TCS_TR_BC2});
+        $skyframe->Set("system=ICRS");
+        $obsra = $skyframe->Get("SkyRef(1)");
+        $obsdec = $skyframe->Get("SkyRef(2)");
+      } else {
+        warnings::warnif("Could not understand coordinate frame $state{TCS_TR_SYS}. Assuming we are okay with BC1 and BC2");
+        $obsra = $state{TCS_TR_BC1};
+        $obsdec = $state{TCS_TR_BC2};
+      }
+    }
+    $state{TCS_TR_NORM1} = $obsra;
+    $state{TCS_TR_NORM2} = $obsdec;
+  }
+
   # See if we managed to read a tracking system
   if (!exists $state{TCS_TR_SYS}) {
     croak "Completely unable to read a tracking system from file $file !!!\n";
   }
 
   # if we have base positions, create string versions
-  if (exists $state{TCS_TR_BC1} && exists $state{TCS_TR_BC2} ) {
+  if (exists $state{TCS_TR_NORM1} && exists $state{TCS_TR_NORM2} ) {
     for my $c (qw/ 1 2 /) {
       my $class = "Astro::Coords::Angle" . ($c == 1 ? "::Hour" : "");
-      my $ang = $class->new( $state{"TCS_TR_BC$c"},
+      my $ang = $class->new( $state{"TCS_TR_NORM$c"},
                              units => 'rad' );
       $ang->str_ndp(0); # no decimal places
       $ang = $ang->string;
