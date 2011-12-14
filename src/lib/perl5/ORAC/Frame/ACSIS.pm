@@ -329,7 +329,7 @@ sub pattern_from_bits {
 
   my $padnum = $self->_padnum( $obsnum );
 
-  my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d{4}' . $self->rawsuffix;
+  my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d{4}' . $self->rawsuffix . '(\.gz)?';
 
   return qr/$pattern$/;
 }
