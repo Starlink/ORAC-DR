@@ -277,7 +277,7 @@ sub find_base_position {
 
   # Group allocation is normalised to ICRS coordinates so we need the base
   # position in ICRS.
-  if (exists $state{TCS_TR_SYS}) {
+  if (exists $state{TCS_TR_SYS} && exists $state{TCS_TR_BC1} && exists $state{TCS_TR_BC2}) {
     my $obsra;
     my $obsdec;
     if ($state{TCS_TR_SYS} eq 'ICRS') {
