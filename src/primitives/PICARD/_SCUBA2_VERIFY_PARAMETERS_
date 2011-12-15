@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_SCUBA2_VERIFY_PARAMETERS_ - read recipe parameters for SCUBA-2 processing
+_SCUBA2_VERIFY_PARAMETERS_ - recipe parameters for SCUBA-2 processing
 
 =head1 SYNOPSIS
 
@@ -31,8 +31,9 @@ _GET_RECPAR_CONFIG_
 
 =head1 NOTES
 
-See the documentation for the individual recipes for which parameters
-are used.
+Relies on the C<%RECPARS> hash being defined, though since every entry
+is checked before using it shouldn't matter if it is not. Of course,
+if it is not defined, then something went wrong.
 
 =head1 AUTHOR
 
@@ -60,90 +61,6 @@ USA.
 
 =cut
 
-# List of available recipe parameters
-my @recpars = (
-	       'ANNULUS',
-	       'ANNULUS_INNER',
-	       'ANNULUS_OUTER',
-	       'APERTURE_RADIUS',
-	       'AUTOPHOTOM',
-	       'BACKGROUND_FITMETHOD',
-	       'DISPLAY',
-	       'FINDBACK_BOX',
-	       'FIT_FIXAMP',
-	       'FIT_FIXBACK',
-	       'FIT_GAUSSIAN',
-	       'FIT_METHOD',
-	       'FITSURFACE_FITTYPE',
-	       'FITSURFACE_FITPAR',
-	       'FITSURFACE_KEEPSURFACE',
-	       'FLUX_850',
-	       'FLUX_450',
-	       'KEEPFILES',
-	       'LOGFILE',
-	       'MAP_WIDTH',
-	       'MAP_HEIGHT',
-	       'MAP_RADIUS',
-	       'MASK_SOURCE',
-	       'MOSAIC_TASK',
-	       'MAKEMOS_METHOD',
-	       'MAKEMOS_SIGMAS',
-	       'NEFD_CFP',
-	       'PCA_COMP',
-	       'PCA_FLATCLEAN',
-	       'PCA_REUSE',
-	       'PSF_MATCHFILTER',
-	       'PSF_NORM',
-	       'REGISTER_DEC',
-	       'REGISTER_IMAGES',
-	       'REGISTER_RA',
-	       'RESIST_CFG',
-	       'SMOOTH_DATA',
-	       'SMOOTH_FWHM',
-	       'STATS_ESTIMATOR',
-	       'USEFCF',
-	       'USEFCF_CALTYPE',
-	       'USEFWHM',
-	       'VERBOSE',
-	       'WCSMOSAIC_METHOD',
-	       'WCSMOSAIC_PARAMS',
-	      );
-
-# Retrieve object
-my $src = uc($Frm->hdr("OBJECT"));
-# Strip spaces from name
-$src =~ s/\s+//g;
-# Add source-specific fluxes to recipe parameters
-push(@recpars, "FLUX_850.$src","FLUX_450.$src");
-
-# Store given parameters
-ORAC::Recipe::Parameters::verify_parameters( \%RECPARS, \@recpars );
-
-# Allow a VERBOSE flag to get extra info printed to screen
-if ( defined $RECPARS{'VERBOSE'} ) {
-  $Frm->uhdr("RECPAR_VERBOSE", $RECPARS{VERBOSE});
-}
-
-### Writing a logfile ###
-# Flag to denote whether to collect info to write to a log file
-if ( defined $RECPARS{'LOGFILE'} ) {
-  $Frm->uhdr("RECPAR_LOGFILE", $RECPARS{LOGFILE});
-}
-# Do we want to write the CfP NEFD to a log file?
-if ( defined $RECPARS{'NEFD_CFP'} ) {
-  $Frm->uhdr("RECPAR_NEFD_CFP", $RECPARS{'NEFD_CFP'});
-}
-
-### Deleting files at the end of processing
-# Parameter to determine which files are left on disk - default to
-# deleting none
-# +1 = keep PCA files
-# -1 = keep all files
-#  0 = delete *all* files
-$Frm->uhdr("RECPAR_KEEPFILES",
-	   (defined $RECPARS{KEEPFILES})? $RECPARS{KEEPFILES} : -1);
-
-
 ### Aperture photometry and source masking ###
 # Radius of aperture for masking/photometry
 if ( defined $RECPARS{'APERTURE_RADIUS'} ) {
@@ -160,6 +77,7 @@ $Frm->uhdr("RECPAR_FLUX_850", $RECPARS{FLUX_850})
 $Frm->uhdr("RECPAR_FLUX_450", $RECPARS{FLUX_450})
   if ( defined $RECPARS{'FLUX_450'} );
 # Override with source-specific value if given by name
+my $src = $Frm->uhdr("SRCNAME");
 $Frm->uhdr("RECPAR_FLUX_850", $RECPARS{"FLUX_850.$src"})
   if ( defined $RECPARS{"FLUX_850.$src"} );
 $Frm->uhdr("RECPAR_FLUX_450", $RECPARS{"FLUX_450.$src"})
@@ -176,25 +94,6 @@ if ( $Frm->uhdr("RECPAR_USEFCF") && defined $RECPARS{'USEFCF_CALTYPE'}) {
 # Does the user want to use the FWHM derived in the recipe?
 if ( defined $RECPARS{'USEFWHM'} ) {
   $Frm->uhdr("RECPAR_USEFWHM", $RECPARS{USEFWHM});
-}
-
-### Map parameters ###
-# New map width and height - map radius overrides width and height
-if ( defined $RECPARS{'MAP_RADIUS'} ) {
-  $Frm->uhdr("RECPAR_MAP_RADIUS", $RECPARS{MAP_RADIUS});
-} else {
-  if ( defined $RECPARS{'MAP_WIDTH'} ) {
-    $Frm->uhdr("RECPAR_MAP_WIDTH", $RECPARS{MAP_WIDTH});
-  }
-  if ( defined $RECPARS{'MAP_HEIGHT'} ) {
-    $Frm->uhdr("RECPAR_MAP_HEIGHT", $RECPARS{MAP_HEIGHT});
-  }
-}
-
-### Displaying data ###
-# Flag to denote whether or not to display data
-if ( defined $RECPARS{'DISPLAY'} ) {
-  $Frm->uhdr("RECPAR_DISPLAY", $RECPARS{DISPLAY});
 }
 
 ### PSF properties for matched-filter ###
@@ -283,39 +182,6 @@ $Frm->uhdr("RECPAR_SMOOTH_DATA", $RECPARS{SMOOTH_DATA})
 $Frm->uhdr("RECPAR_SMOOTH_FWHM", $RECPARS{SMOOTH_FWHM})
   if (defined $RECPARS{SMOOTH_FWHM});
 
-### Mosaicking parameters ###
-# Mosaic task to use
-if (defined $RECPARS{MOSAIC_TASK}) {
-  $Frm->uhdr("RECPAR_MOSAIC_TASK", lc($RECPARS{MOSAIC_TASK}));
-} else {
-  $Frm->uhdr("RECPAR_MOSAIC_TASK", "wcsmosaic");
-}
-
-# Wcsmosaic/wcsalign parameters - required for all methods
-if (defined $RECPARS{WCSMOSAIC_METHOD}) {
-  # Store lower case string
-  $Frm->uhdr("RECPAR_WCSMOSAIC_METHOD", lc($RECPARS{WCSMOSAIC_METHOD}));
-
-  # Only store PARAMS for the relevant choices of METHOD
-  if ($Frm->uhdr("RECPAR_WCSMOSAIC_METHOD") !~ /^[near|bili]/) {
-    $Frm->uhdr("RECPAR_WCSMOSAIC_PARAMS", $RECPARS{WCSMOSAIC_PARAMS})
-      if (defined $RECPARS{WCSMOSAIC_PARAMS});
-  }
-}
-
-# Makemos parameters if required
-if ($Frm->uhdr("RECPAR_MOSAIC_TASK") eq "makemos") {
-  if (defined $RECPARS{MAKEMOS_METHOD}) {
-    $Frm->uhdr("RECPAR_MAKEMOS_METHOD", lc($RECPARS{MAKEMOS_METHOD}));
-    # The SIGMAS method requires a sigma to be defined - default to 4
-    # if not separately defined
-    if ($Frm->uhdr("RECPAR_MAKEMOS_METHOD") eq "sigmas") {
-      $Frm->uhdr("RECPAR_MAKEMOS_SIGMAS", (defined $RECPARS{MAKEMOS_SIGMAS})
-		 ? $RECPARS{MAKEMOS_SIGMAS} : 4.0);
-    }
-  }
-}
-
 # Use autophotom for aperture photometry?
 if (defined $RECPARS{AUTOPHOTOM}) {
   $Frm->uhdr("RECPAR_AUTOPHOTOM", $RECPARS{AUTOPHOTOM});
@@ -368,13 +234,6 @@ if (defined $RECPARS{PCA_COMP}) {
 # Flatfield flag for cleaning the data before running PCA
 $Frm->uhdr("RECPAR_PCA_FLATCLEAN", $RECPARS{PCA_FLATCLEAN})
   if (defined $RECPARS{PCA_FLATCLEAN});
-
-### Generic estimator for statistics ###
-if (defined $RECPARS{STATS_ESTIMATOR}) {
-  my $estimator = lc($RECPARS{STATS_ESTIMATOR});
-  $Frm->uhdr("RECPAR_STATS_ESTIMATOR", $RECPARS{STATS_ESTIMATOR})
-    if ($estimator eq "mean" || $estimator eq "mode" || $estimator eq "median");
-}
 
 # Alternative resistor values
 _GET_RECPAR_CONFIG_ CONFIG=RESIST
