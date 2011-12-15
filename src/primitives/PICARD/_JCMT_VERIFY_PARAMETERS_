@@ -1,0 +1,223 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_JCMT_VERIFY_PARAMETERS_ - read recipe parameters for processing JCMT data
+
+=head1 SYNOPSIS
+
+_JCMT_VERIFY_PARAMETERS_
+
+=head1 DESCRIPTION
+
+Sets up a few useful user-header entries for controlling the
+processing of JCMT data. Instrument-specific recipe parameters should
+be listed here, though setting the uhdr entries should be done with a
+dedicated primitive.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES:
+
+_SCUBA2_VERIFY_PARAMETERS_
+
+=back
+
+=head1 OUTPUT DATA
+
+The Frame uhdr contains entries for all valid recipe parameters given
+in the recipe parameter file.
+
+=head1 NOTES
+
+See the documentation for the individual recipes for which parameters
+are used.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# List of available generic recipe parameters
+my @recpars = (
+	       'DISPLAY',
+	       'KEEPFILES',
+	       'LOGFILE',
+	       'MAKEMOS_METHOD',
+	       'MAKEMOS_SIGMAS',
+	       'MAP_WIDTH',
+	       'MAP_HEIGHT',
+	       'MAP_RADIUS',
+	       'MOSAIC_TASK',
+	       'STATS_ESTIMATOR',
+	       'VERBOSE',
+	       'WCSMOSAIC_METHOD',
+	       'WCSMOSAIC_PARAMS',
+	      );
+
+# Set a flag for SCUBA-2 data - saves testing a string each time
+my $scuba2 = ($Frm->hdr("INSTRUME") eq "SCUBA-2") ? 1 : 0;
+
+if ($scuba2) {
+  # SCUBA-2-specific parameters
+  push (@recpars,
+	'ANNULUS',
+	'ANNULUS_INNER',
+	'ANNULUS_OUTER',
+	'APERTURE_RADIUS',
+	'AUTOPHOTOM',
+	'BACKGROUND_FITMETHOD',
+	'FINDBACK_BOX',
+	'FIT_FIXAMP',
+	'FIT_FIXBACK',
+	'FIT_GAUSSIAN',
+	'FIT_METHOD',
+	'FITSURFACE_FITTYPE',
+	'FITSURFACE_FITPAR',
+	'FITSURFACE_KEEPSURFACE',
+	'FLUX_850',
+	'FLUX_450',
+	'MASK_SOURCE',
+	'PCA_COMP',
+	'PCA_FLATCLEAN',
+	'PCA_REUSE',
+	'PSF_MATCHFILTER',
+	'PSF_NORM',
+	'REGISTER_DEC',
+	'REGISTER_IMAGES',
+	'REGISTER_RA',
+	'RESIST_CFG',
+	'SMOOTH_DATA',
+	'SMOOTH_FWHM',
+	'USEFCF',
+	'USEFCF_CALTYPE',
+	'USEFWHM',
+       );
+
+  # Retrieve object
+  my $src = uc($Frm->hdr("OBJECT"));
+  # Strip spaces from name
+  $src =~ s/\s+//g;
+  # Add source-specific fluxes to recipe parameters
+  push(@recpars, "FLUX_850.$src","FLUX_450.$src");
+  # Store the source name
+  $Frm->uhdr("SRCNAME",$src);
+} else {
+  # Placeholder for dealing with other instruments
+}
+
+# Store the valid recipe parameters in the %RECPARS hash
+ORAC::Recipe::Parameters::verify_parameters( \%RECPARS, \@recpars );
+
+# Now set uhdr entries for defined recipe parameters
+
+### User information ###
+# Allow a VERBOSE flag to get extra info printed to screen
+if ( defined $RECPARS{'VERBOSE'} ) {
+  $Frm->uhdr("RECPAR_VERBOSE", $RECPARS{VERBOSE});
+}
+# Flag to denote whether to collect info to write to a log file
+if ( defined $RECPARS{'LOGFILE'} ) {
+  $Frm->uhdr("RECPAR_LOGFILE", $RECPARS{LOGFILE});
+}
+
+### Keeping files at the end of processing ###
+# Parameter to determine which files created as part of the processing
+# are left on disk - default to keeping all created files
+# +1 = keep chosen files (primitive should define name)
+# -1 = keep all files
+#  0 = keep *no* files
+$Frm->uhdr("RECPAR_KEEPFILES",
+	   (defined $RECPARS{KEEPFILES})? $RECPARS{KEEPFILES} : -1);
+
+
+### Map parameters ###
+# New map width and height - map radius overrides width and height
+if ( defined $RECPARS{'MAP_RADIUS'} ) {
+  $Frm->uhdr("RECPAR_MAP_RADIUS", $RECPARS{MAP_RADIUS});
+} else {
+  if ( defined $RECPARS{'MAP_WIDTH'} ) {
+    $Frm->uhdr("RECPAR_MAP_WIDTH", $RECPARS{MAP_WIDTH});
+  }
+  if ( defined $RECPARS{'MAP_HEIGHT'} ) {
+    $Frm->uhdr("RECPAR_MAP_HEIGHT", $RECPARS{MAP_HEIGHT});
+  }
+}
+
+# Flag to denote whether or not to display data
+if ( defined $RECPARS{'DISPLAY'} ) {
+  $Frm->uhdr("RECPAR_DISPLAY", $RECPARS{DISPLAY});
+}
+
+
+### Mosaicking parameters ###
+# Mosaic task to use
+if (defined $RECPARS{MOSAIC_TASK}) {
+  $Frm->uhdr("RECPAR_MOSAIC_TASK", lc($RECPARS{MOSAIC_TASK}));
+} else {
+  $Frm->uhdr("RECPAR_MOSAIC_TASK", "wcsmosaic");
+}
+# Wcsmosaic/wcsalign parameters - required for all methods
+if (defined $RECPARS{WCSMOSAIC_METHOD}) {
+  # Store lower case string
+  $Frm->uhdr("RECPAR_WCSMOSAIC_METHOD", lc($RECPARS{WCSMOSAIC_METHOD}));
+
+  # Only store PARAMS for the relevant choices of METHOD
+  if ($Frm->uhdr("RECPAR_WCSMOSAIC_METHOD") !~ /^[near|bili]/) {
+    $Frm->uhdr("RECPAR_WCSMOSAIC_PARAMS", $RECPARS{WCSMOSAIC_PARAMS})
+      if (defined $RECPARS{WCSMOSAIC_PARAMS});
+  }
+}
+# Makemos parameters if required
+if ($Frm->uhdr("RECPAR_MOSAIC_TASK") eq "makemos") {
+  if (defined $RECPARS{MAKEMOS_METHOD}) {
+    $Frm->uhdr("RECPAR_MAKEMOS_METHOD", lc($RECPARS{MAKEMOS_METHOD}));
+    # The SIGMAS method requires a sigma to be defined - default to 4
+    # if not separately defined
+    if ($Frm->uhdr("RECPAR_MAKEMOS_METHOD") eq "sigmas") {
+      $Frm->uhdr("RECPAR_MAKEMOS_SIGMAS", (defined $RECPARS{MAKEMOS_SIGMAS})
+		 ? $RECPARS{MAKEMOS_SIGMAS} : 4.0);
+    }
+  }
+}
+
+### Generic estimator for statistics ###
+if (defined $RECPARS{STATS_ESTIMATOR}) {
+  my $estimator = lc($RECPARS{STATS_ESTIMATOR});
+  $Frm->uhdr("RECPAR_STATS_ESTIMATOR", $RECPARS{STATS_ESTIMATOR})
+    if ($estimator eq "mean" || $estimator eq "mode" || $estimator eq "median");
+}
+
+# Now deal with instrument-specific parameters
+if ($scuba2) {
+  _SCUBA2_VERIFY_PARAMETERS_
+}
