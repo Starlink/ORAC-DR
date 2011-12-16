@@ -153,11 +153,20 @@ or group does not know the processing mode.
 
 Returns undef if no association could be identified.
 
+The ASN_ID can be overridden by supplying it as an argument
+
+ $obj->asn_id( $asnid );
+
 =cut
 
 sub asn_id {
   my $self = shift;
   my $asn_txt = '';
+
+  return $self->{ASN_ID} = shift if @_;
+
+  # Return it if we have it
+  return $self->{ASN_ID} if defined $self->{ASN_ID};
 
   if ($self->is_frame) {
     $asn_txt = $self->group;
