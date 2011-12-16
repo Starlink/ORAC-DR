@@ -165,13 +165,23 @@ sub orac_store_frm_in_correct_grp {
 
   my $check_remove = 0;
 
-  # If we've been asked to only do one group ever (i.e. $transient is
-  # -1) then skip all of the stuff that sorts out which Group this
+  # If we've been asked to only do one group ever (i.e. $transient begins
+  # with a "-") then skip all of the stuff that sorts out which Group this
   # Frame is in and just put it in the Group.
   my $grpname;
+  my $override_grpasn;
 
-  if ( defined( $transient ) && $transient == -1 ) {
-    $grpname = 'ALL';
+  if ( defined( $transient ) && $transient =~ /^\-/ ) {
+    # We force an explicit group id in the Frame if this
+    # string is not -1
+    if ($transient eq "-1") {
+      $grpname = 'ALL'; # do not override Frm
+    } else {
+      $grpname = substr($transient, 1);
+      $Frm->group( $grpname );
+      $Frm->asn_id( $grpname ) if $Frm->can("asn_id");
+      $override_grpasn = 1; # we want to use this ASN_ID everywhere
+    }
   } else {
     # query Frame for its group
     $grpname = $Frm->group;
@@ -186,12 +196,14 @@ sub orac_store_frm_in_correct_grp {
   do {
 
     # Clear the group hash if we are transient
-    if ( defined( $transient ) && $transient == 1 ) {
+    if ( defined( $transient ) && $transient eq "1" ) {
       %$GrpHash = ();
     }
 
     # Create the group
     $Grp = new $GrpObjectType($grpname);
+    $Grp->asn_id( $grpname )
+      if ($override_grpasn && $Grp->can("asn_id"));
 
     # Store the Group object.
     $GrpHash->{$grpname} = $Grp;
