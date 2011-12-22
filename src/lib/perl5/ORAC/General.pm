@@ -41,7 +41,7 @@ use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
               sindeg dectodms hmstodec deg2rad rad2deg is_numeric
               write_file_list write_file_list_inout read_file_list
-              hardlink oractime2mjd
+              hardlink oractime2mjd oractime2dt oractime2iso
            );
 
 use Carp;
@@ -624,23 +624,55 @@ a modified Julian day.
 =cut
 
 sub oractime2mjd {
+  my $dt = oractime2dt( $_[0] );
+  return $dt->mjd if defined $dt;
+  return 0.0;
+}
+
+=item B<oractime2iso>
+
+Convert the standard ORACTIME format date (YYYYMMDD.frac) to
+an ISO format string.
+
+  $iso = oractime2iso( $oractime );
+
+=cut
+
+sub oractime2iso {
+  my $dt = oractime2dt( $_[0] );
+  return $dt->datetime if defined $dt;
+  return "0000-00-00T00:00:00";
+}
+
+=item B<oractime2dt>
+
+Convert the standard ORACTIME format date (YYYYMMDD.frac) to
+a DateTime object.
+
+  $dt = oractime2dt( $oractime );
+
+=cut
+
+sub oractime2dt {
   my $oractime = shift;
-  my $mjd = 0.0;
+  my $dt;
 
   if ($oractime =~ /(\d{4})(\d{2})(\d{2})(\..*)/) {
     my $yy = $1;
     my $mm = $2;
     my $dd = $3;
     my $frac = $4;
-    my $dt = DateTime->new(
-                           year => $yy,
-                           month => $mm,
-                           day => $dd,
-                           time_zone => 'UTC');
-    $mjd = $dt->mjd;
-    $mjd += $frac;
+    $dt = DateTime->new(
+                        year => $yy,
+                        month => $mm,
+                        day => $dd,
+                        time_zone => 'UTC');
+
+    # Ignore leap seconds
+    my $daysec = 86_400 * $frac;
+    $dt->add( seconds => $daysec );
   }
-  return $mjd;
+  return $dt;
 }
 
 =back
