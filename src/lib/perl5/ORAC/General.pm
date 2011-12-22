@@ -41,7 +41,7 @@ use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
               sindeg dectodms hmstodec deg2rad rad2deg is_numeric
               write_file_list write_file_list_inout read_file_list
-              hardlink
+              hardlink oractime2mjd
            );
 
 use Carp;
@@ -56,6 +56,7 @@ use POSIX qw//;
 use Math::Trig qw/ deg2rad rad2deg /;
 use Text::Balanced qw/ extract_bracketed extract_delimited /;
 use Scalar::Util qw/ blessed /;
+use DateTime;
 
 =head1 SUBROUTINES
 
@@ -611,6 +612,35 @@ sub hardlink {
   }
   my $linkstatus = link( $file, $link );
   return $linkstatus;
+}
+
+=item B<oractime2mjd>
+
+Convert the standard ORACTIME format date (YYYYMMDD.frac) to
+a modified Julian day.
+
+  $mjd = oractime2mjd( $oractime );
+
+=cut
+
+sub oractime2mjd {
+  my $oractime = shift;
+  my $mjd = 0.0;
+
+  if ($oractime =~ /(\d{4})(\d{2})(\d{2})(\..*)/) {
+    my $yy = $1;
+    my $mm = $2;
+    my $dd = $3;
+    my $frac = $4;
+    my $dt = DateTime->new(
+                           year => $yy,
+                           month => $mm,
+                           day => $dd,
+                           time_zone => 'UTC');
+    $mjd = $dt->mjd;
+    $mjd += $frac;
+  }
+  return $mjd;
 }
 
 =back
