@@ -1,0 +1,219 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_ANALYZE_NOISE_ - perform statistical analysis on noise results
+
+=head1 SYNOPSIS
+
+_ANALYZE_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive calculates various statistics of the noise properties
+for each subarray.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<LOGFILE>
+
+Flag to denote whether a log file should be written. Default is 1
+(yes).
+
+=item B<QA>
+
+Report quality assurance checks. Default is 1 (yes).
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1
+(yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_, _QA_NOISE_
+
+=back
+
+=head1 NOTES
+
+None.
+
+=head1 OUTPUT DATA
+
+The current Frame uhdr contains a hash C<%qa_report_info> which
+contains the results indexed by subarray.
+
+=head1 OUTPUT FILES
+
+Entries are written to the:
+
+=over 2
+
+=item 1
+
+calibration system, C<index.noise>; and
+
+=item 2
+
+log file, C<log.bolonoise>.
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Write out a log file (default to yes)?
+my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+
+# Should we be verbose (default to yes)?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+
+# Perform QA checks? Should be true for the QL pipeline
+my $check_qa = get_prim_arg( $_PRIM_ARGS_, "QA", 0);
+my %qa_report_info;
+
+# Which component is being displayed?
+my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
+# Reset comp if we get something we don't recognize
+$comp = "data" unless ( $comp =~ /^err/ );
+
+# Retrieve the hash (reference) with the number of bolometers used in
+# the NEP calculations and the effective NEPs
+my $nepgoodbol = $Frm->uhdr("NEPGOODBOL");
+my $effnep = $Frm->uhdr("EFF_NEP");
+my $wtnep = $Frm->uhdr("WEIGHTED_NEP");
+
+my $plotmax = 0;
+my $sumnumgood = 0;
+# Loop over each file in the current Frame
+for my $i ( 1 .. $Frm->nfiles ) {
+  my $noisefile = $Frm->file($i);
+  my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
+  my $nbol = (defined $nepgoodbol) ? $nepgoodbol->{$subarray} : 0;
+
+  if ($nbol > 0) {
+    # Find statistics for reporting
+    _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=1 COMP=$comp VERBOSE=0
+
+    my %results = %{$_FIND_IMAGE_STATISTICS_{RESULTS}};
+    $results{SUBARRAY} = $subarray;
+
+    $sumnumgood += $results{NUMGOOD};
+    $plotmax = $results{MEDIAN} if ($results{MEDIAN} > $plotmax);
+
+    # Check that we have good bolometers
+    $results{NBOLO} = $nbol;
+    $results{NGOOD} = $results{NUMGOOD};
+    if ( $results{NUMGOOD} > 0 ) {
+      $results{EFFNEP} = $effnep->{$subarray};
+      $results{WTNEP} = $wtnep->{$subarray};
+    } else {
+      $results{EFFNEP} = "Inf";
+      $results{WTNEP} = "Inf";
+      orac_warn "$noisefile has no good bolometers\n";
+    }
+    # Store results for logging and/or QA
+    $qa_report_info{$subarray} = \%results;
+  } else {
+    orac_warn "Skipping analysis of $subarray - no good bolometers\n";
+  }
+}
+
+# Print results to screen if desired
+if ($verbose) {
+  orac_print "\nResults for noise calculations:\n";
+  orac_print " Sub     NEP_w      NEP_eff    Nbol     Mean     Median     Mode\n--------------------------------------------------------------------\n", "green";
+  foreach my $subarray (sort keys %qa_report_info) {
+    my %results = %{$qa_report_info{$subarray}};
+    my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
+		  $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
+
+    my $wnep = sprintf "%0.3e", $results{WTNEP};
+    my $effnep = sprintf "%0.3e", $results{EFFNEP};
+    my $nbol = sprintf "%4d", $results{NBOLO};
+    my $mean = sprintf "%7.1f", $results{MEAN};
+    my $median = sprintf "%7.1f", $results{MEDIAN};
+    my $mode = sprintf "%7.1f", $results{MODE};
+
+    orac_print " $subarray:  $wnep   $effnep   $nbol   $mean   $median   $mode\n", "green";
+  }
+}
+
+# Store QA results if requested - the QA should only report values to
+# the screen if we are interested in the results, otherwise they get
+# stored silently.
+$Frm->uhdr("QA_REPORT_INFO", \%qa_report_info);
+my $qamsg = ($check_qa) ? 1 : 0;
+_QA_NOISE_ VERBOSE=$qamsg
+
+# Add entries in the calibration system - this has to be done after
+# the QA to get the noise pass/fail entries
+my $origsub = $Frm->uhdr("SUBARRAY");
+orac_print "Storing noise results in calibration system\n";
+foreach my $i (1 .. $Frm->nfiles) {
+  my $noisefile = $Frm->file($i);
+  my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
+  my %results = %{ $qa_report_info{$subarray} };
+  # Store results in the calibration system
+  foreach my $value ( qw/ MEAN MEDIAN MODE NGOOD EFFNEP SUBARRAY QA_NOISE /) {
+    $Frm->uhdr("$value", $results{$value});
+  }
+  $Cal->noiseindex->add($noisefile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
+}
+
+# Write results to a log file
+if ($uselog) {
+  my $logtype = "bolonoise";
+  orac_print "Writing results to log.bolonoise\n";
+  my @names = ("Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Shutter");
+  foreach my $subarray (sort keys %qa_report_info) {
+    my %results = %{$qa_report_info{$subarray}};
+    my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
+		  $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
+    _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
+  }
+}
+
+# Restore the SUBARRAY uhdr entry if necessary
+$Frm->uhdr("SUBARRAY", $origsub);
+
+# Store a couple of useful values to be used when displaying the noise
+# data
+$Frm->uhdr("NOISE_PLOTMAX", $plotmax);
+$Frm->uhdr("NOISE_NUMGOOD", $sumnumgood);
