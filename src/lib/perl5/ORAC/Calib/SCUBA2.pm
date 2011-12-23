@@ -240,6 +240,21 @@ sub secondary_calibrator_fluxes {
   return (defined $ismap && $ismap) ? %ASECFLUXES : %BEAMFLUXES;
 }
 
+=item B<subinst>
+
+The sub-instrument associated with this calibration object.
+Options are "450" or "850".
+
+  $subinst = $Cal->subinst();
+
+=cut
+
+sub subinst {
+   my $self = shift;
+   my $thingref = $self->thingone;
+   return ( $thingref->{FILTER}  =~ /^85/ ? "850" : 450);
+}
+
 =item B<fwhm>
 
 A simple method to set or retrieve the beam full-width-at-half-maximum
@@ -267,7 +282,7 @@ sub fwhm {
 
   if ( $fwhm == 0 ) {
     my $thingref = $self->thingone;
-    $fwhm = ( $thingref->{FILTER}  =~ /^85/ ) ? 14.0 : 7.5;
+    $fwhm = ( $self->subinst() eq '850') ? 14.0 : 7.5;
   }
   return $fwhm;
 }
@@ -332,8 +347,7 @@ Method to return the NEP spec for the current wavelength
 sub nep {
 
   my $self = shift;
-  my $filter = $self->thingone->{FILTER};
-  my $nepkey = ( $filter =~ /^85/ ) ? "850" : "450";
+  my $nepkey = $self->subinst();
 
   return $NEP{$nepkey};
 }
@@ -506,7 +520,7 @@ method.
 sub pixelscale {
   my $self = shift;
 
-  my $pixelscale = ( $self->{Thing1}->{FILTER}  =~ /^85/ ) ? 5.80 : 3.09;
+  my $pixelscale = ( $self->subinst() eq "850" ) ? 5.80 : 3.09;
 
   return $pixelscale;
 }
