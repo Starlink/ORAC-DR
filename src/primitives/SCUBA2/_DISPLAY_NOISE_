@@ -14,8 +14,7 @@ This primitive displays the bolometer noise data in a Kapview
 window. The subarrays are mosaicked in the focal plane and this image
 is displayed, allowing a direct comparison of the relative noise in
 each subarray. The noise image is displayed in the top row and a
-histogram in the bottom row. The statistics (mean, median and sigma)
-and effective NEP are reported separately for each subarray.
+histogram in the bottom row.
 
 The scale for the display (both the image and the histogram) is set by
 the median noise value multiplied by the C<THRESH> parameter.
@@ -53,7 +52,7 @@ NDFTRACE, SETTITLE, THRESH
 
 =item ORAC-DR PRIMITIVES:
 
-_ADD_LOG_ENTRY_, _CALCULATE_ARRAY_NEP_, _FIND_IMAGE_STATISTICS_, _MAKE_MOSAIC_FPLANE_
+_FIND_IMAGE_STATISTICS_, _MAKE_MOSAIC_FPLANE_
 
 =back
 
@@ -63,54 +62,8 @@ None.
 
 =head1 OUTPUT FILES
 
-Log file, C<log.bolonoise>.
-
 The mosaic of the noise images has a suffix C<_noimos> or C<_avnoimos>
 for the noise and average-noise mosaics respectively
-
-=head1 LOGFILE FORMAT
-
-The log file C<log.bolonoise> contains the following entries:
-
-=over 4
-
-=item UT
-
-The UT date in C<YYYYMMDD.frac> format.
-
-=item HST
-
-The time of the observation in Hawaii.
-
-=item Obs
-
-The observation number.
-
-=item Subarray
-
-The relevant subarray name.
-
-=item Median
-
-Median noise in pA Hz**-0.5.
-
-=item Mean
-
-Mean noise in pA Hz**-0.5.
-
-=item Mode
-
-Mode noise value in pA Hz**-0.5.
-
-=item Nbol
-
-Number of bolometers used in noise calculation.
-
-=item NEP_eff
-
-Effective NEP in W Hz**-0.5
-
-=back
 
 =head1 AUTHOR
 
@@ -146,102 +99,30 @@ my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
 # Reset comp if we get something we don't recognize
 $comp = "data" unless ( $comp =~ /^err/ );
 
-# Write out a log file?
-my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+# Set the units - they should be the same for all files...
+my $file = $Frm->file;
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
+my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
 
 # Threshold for displaying noise data - limit to 10 times the median
 # otherwise what's the point?
 my $thr = get_prim_arg( $_PRIM_ARGS_, "THRESH", 4 );
 $thr = 10 if ($thr > 10);
 
-# Set the units - they should be the same for all files...
-my $file = $Frm->file;
-$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
-my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
-my $nepunits = $units;
-$nepunits =~ s/pA/W/;
-
-# Retrieve the hash (reference) with the number of bolometers used in
-# the NEP calculations
-my $nepgoodbol = $Frm->uhdr("NEPGOODBOL");
-
-my $plotmax = 0;
-my $sumnumgood = 0;
-my $origsub = $Frm->uhdr("SUBARRAY");
-# Loop over each file in the current Frame
-for my $i ( 1 .. $Frm->nfiles ) {
-  my $noisefile = $Frm->file($i);
-  my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
-  my $nbol = (defined $nepgoodbol) ? $nepgoodbol->{$subarray} : 0;
-
-  if ($nbol > 0) {
-
-  # Find statistics for reporting
-  _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=1 COMP=$comp VERBOSE=0
-  my $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
-  my $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-  my $mean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
-  my $median = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-  my $mode = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MODE};
-  my $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
-  $sumnumgood += $numgood;
-
-  my $zmax = $thr * $median;
-  $plotmax = $zmax if ($zmax > $plotmax);
-
-  # Check that we have good bolometers
-  if ( $numgood > 0 ) {
-    my $noise = "Noise";
-    if ($Frm->uhdr("QUICKLOOK") && !$uselog) {
-      $noise = "Mean noise";
-    } elsif ($Frm->hdr("SEQ_TYPE") =~ /dark/i) {
-      $noise = "Dark noise";
-    }
-    orac_print "$noise statistics for subarray $subarray ($numgood bolometers):\n", "green";
-    orac_print " Median  = $median $units\n", "green";
-    orac_print " Mean    = $mean $units\n", "green";
-    orac_print " Mode    = $mode $units\n", "green";
-
-    # Calculate effective NEP for this image
-    my $nepfile = $noisefile . ".more.smurf.nep";
-    _CALCULATE_ARRAY_NEP_ IN=$nepfile
-    my $effnep = $_CALCULATE_ARRAY_NEP_{NEPVAL};
-    if ( $effnep ) {
-      $effnep = sprintf "%5.3e", $effnep;
-      orac_print " NEP_eff = $effnep  $nepunits\n", "green";
-    } else {
-      orac_warn "Unable to calculate effective NEP\n";
-      $effnep = "*****";
-    }
-
-    # Store results in calibration system
-    $Frm->uhdr("SUBARRAY", $subarray);
-    $Frm->uhdr("MEAN", $mean);
-    $Frm->uhdr("MEDIAN", $median);
-    $Frm->uhdr("MODE", $mode);
-    $Frm->uhdr("NGOOD", $numgood);
-    $Frm->uhdr("EFFNEP", $effnep);
-    $Cal->noiseindex->add($noisefile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
-
-    if ($uselog) {
-      my $logtype = "bolonoise";
-      my @names = ("Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Shutter");
-      my @values = ($subarray, $median, $mean, $mode, $numgood, $effnep, $Frm->hdr("SHUTTER"));
-      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
-    }
-  } else {
-    orac_warn "Skipping analysis of $noisefile - no good bolometers\n";
-  }
+# Check for the total numbe of good bolometers and the maximum value
+# for plotting - these were calculated by _ANALYZE_NOISE_
+my $sumnumgood = $Frm->uhdr("NOISE_NUMGOOD");
+my $plotmax = $Frm->uhdr("NOISE_PLOTMAX");
+my $display_ok = ($sumnumgood && $sumnumgood > 0) ? 1 : 0;
+if ($display_ok && $plotmax) {
+  $plotmax *= $thr;
 } else {
-  orac_warn "Skipping analysis of $subarray - no good bolometers\n";
-}
+  $display_ok = 0;
 }
 
-# Restore the SUBARRAY uhdr entry if necessary
-$Frm->uhdr("SUBARRAY", $origsub);
-
-# If there are good bolometers, proceed with making a mosaic and displaying it
-if ($sumnumgood > 0) {
+# If there are good bolometers, proceed with making a focal-plane
+# noise mosaic and displaying it
+if ($display_ok) {
   # Reference subarray
   my $short = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 1 : 0;
   my $refsub =  ($short) ? "s4d" : "s8b";
@@ -278,6 +159,8 @@ if ($sumnumgood > 0) {
     $title = "Average noise (".($Frm->uhdr("AVNOISE"))." files)";
   }
 
+  orac_print "\nDisplaying focal-plane mosaic for $title\n";
+
   my $out = $Frm->rewrite_outfile_subarray(scalar($Frm->inout($noimos)));
   my @out;
 
@@ -295,7 +178,7 @@ if ($sumnumgood > 0) {
   $Mon{kappa_mon}->obeyw("thresh","$thrargs");
   _FIND_IMAGE_STATISTICS_ IMAGE=$threshfile COMP=$comp VERBOSE=0
   my $nthrgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
-  $plotmax = sprintf "%5.3e", $plotmax;
+  $plotmax = sprintf "%g", $plotmax;
   my $threshpc = sprintf "%2.0f", 100.0 * $nthrgood / $sumnumgood;
   orac_print "Histogram shows $nthrgood bolometers ($threshpc %) below $plotmax $units\n\n", "green";
 
