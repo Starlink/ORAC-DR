@@ -1,0 +1,166 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_QA_NOISE_ - perform quality-assurance checks on noise results
+
+=head1 SYNOPSIS
+
+_QA_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive performs basic quality assurance checks on the outcome
+of the noise calculations, issuing pass/fail notices depending on
+whether the number of bolometers exceeds a minimum value, the noise
+and effective NEP are below thresholds specified in C<qa.ini>.
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=over 2
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1
+(yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+No external tasks are used.
+
+=head1 NOTES
+
+This primitive should only be used in the quicklook (QL) pipeline, and
+should not be called if any other timeseries processing (e.g
+map-making) is required.
+
+=head1 OUTPUT DATA
+
+The current Frame uhdr contains the updated C<%qa_report_info> hash
+which now contains the C<QA_NOISE> key for each subarray. The value of
+this key will be either C<passed> or C<failed>.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+if ($Frm->uhdr("QA_REPORT_INFO")) {
+
+  my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+  my %qa_report_info = %{ $Frm->uhdr("QA_REPORT_INFO") };
+  my %qa_results;
+
+  orac_print "\nPerforming noise QA analysis...\n";
+
+  use JSA::QA;
+  my $qa = new JSA::QA( file => $Cal->qaparams );
+
+  my $survey = ($Frm->uhdr("QUICKLOOK")) ? "QL" : $Frm->hdr("SURVEY");
+  my %opts = ( survey => $survey );
+
+  my @subarrays = $Frm->subarrays;
+
+  # Determine if this is Sky or Dark noise
+  my $type;
+  if ($Frm->hdr("SHUTTER") == 1) {
+    $type = "SKY";
+  } elsif ($Frm->hdr("SHUTTER") == 0) {
+    $type = "DARK";
+  }
+
+  # Check number of bolometers, median noise and effective NEP
+  if ($verbose) {
+    orac_print " Sub    Nbol     Noise     NEP_eff\n";
+    orac_print "-----------------------------------\n";
+  }
+  # Temporary until we get per-subarray thresholds
+  $opts{molecule} = $Frm->hdr("FILTER");
+
+  foreach my $subarray (@subarrays) {
+    orac_print " $subarray: " if ($verbose);
+    $opts{subarray} = $subarray;
+
+    # Number of bolometers
+    my $NBOLO = $qa->get_data( key => 'NBOLO', %opts);
+    my $nbol = $qa_report_info{$subarray}->{NBOLO};
+    my ($pass, $text, $textcol);
+    if ($nbol > $NBOLO) {
+      $text = "passed";
+      $textcol = "on_green";
+    } else {
+      $text = "failed";
+      $textcol = "on_red";
+    }
+    if ($verbose) {
+      orac_print " $text ", "bold white $textcol";
+      orac_print "  ";
+    }
+
+    my $key = $type . "NOISE";
+    my $MEAN_NOISE = $qa->get_data( key => $key, %opts);
+    my $mean = $qa_report_info{$subarray}->{MEAN};
+    if ($mean < $MEAN_NOISE) {
+      $text = "passed";
+      $textcol = "on_green";
+    } else {
+      $text = "failed";
+      $textcol = "on_red";
+    }
+    $qa_report_info{$subarray}->{QA_NOISE} = $text;
+    if ($verbose) {
+      orac_print " $text ", "bold white $textcol";
+      orac_print "  ";
+    }
+
+    $key = $type . "EFFNEP";
+
+    my $EFFNEP = $qa->get_data( key => 'EFFNEP', %opts);
+    my $effnep = $qa_report_info{$subarray}->{EFFNEP};
+    if ($effnep < $EFFNEP) {
+      $text = "passed";
+      $textcol = "on_green";
+    } else {
+      $text = "failed";
+      $textcol = "on_red";
+    }
+    if ($verbose) {
+      orac_print " $text ", "bold white $textcol";
+      orac_print "  ";
+      orac_print "\n";
+    }
+  }
+  orac_print "\n";
+  # Store the modified hash reference
+  $Frm->uhdr("QA_REPORT_INFO", \%qa_report_info);
+}
