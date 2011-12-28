@@ -287,6 +287,41 @@ sub fwhm {
   return $fwhm;
 }
 
+=item B<beamarea>
+
+Returns the beam area in units of arcsec^2/beam. The nominal
+values have been determined empirically from an ensemble
+of calibration data.
+
+  $beamarea = $Cal->beamarea();
+
+The optional parameter is a an aperture diameter in arcsec:
+
+  $beamarea = $Cal->beamarea( $diam );
+
+This value can be thought of as an ideal Gaussian of FWHM
+sqrt(beamarea/1.133). It will be slightly bigger than the
+nominal FWHM of the primary beam because error lobes are
+included.
+
+=cut
+
+sub beamarea {
+  my $self = shift;
+  my $diam = shift;
+
+  # Now the defaults
+  # Note that this is actually a function of aperture diameter
+  # but we currently do not have enough information for that.
+  my $ba;
+  if ($self->subinst() eq '850') {
+    $ba = 238.75;
+  } else {
+    $ba = 99.0;
+  }
+  return $ba;
+}
+
 =item B<beampar>
 
 A method to set or retrieve the full parameter set for the most recent
