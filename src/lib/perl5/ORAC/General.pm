@@ -450,7 +450,7 @@ sub convert_args_to_string {
       push @strs, "$key=" . $args{$key}->file;
     } elsif ( UNIVERSAL::isa( $args{$key}, "HASH" ) ) {
       if ( scalar keys %{$args{$key}} <= 5 ) {
-        push @strs, "$key={" . ( join ",", map { "$_=>$args{$key}{$_}" } keys %{$args{$key}} ) . "}";
+        push @strs, "$key={" . ( join ",", map { "$_=>".(defined $args{$key}{$_} ? $args{$key}{$_} : "undef") } keys %{$args{$key}} ) . "}";
       } else {
         push @strs, "$key={" . ( scalar keys %{$args{$key}} ) . " element hash}";
       }
