@@ -1,0 +1,179 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_ANNULUS_SCALE_ - calculate the annulus scale size given a radius
+
+=head1 SYNOPSIS
+
+  _CALC_ANNULUS_SCALE_ RADIUS=30 PRIMARGS=$_PRIM_ARGS_
+  _CALC_ANNULUS_SCALE_ RADIUS=30 INNER_RADIUS=50 OUTER=2.5 VERBOSE=1
+
+=head1 DESCRIPTION
+
+Calculates the INNER and OUTER scale given the caller primitive args
+and an associated $Frm object.
+
+Preference is given to the recipe parameter (INNER|OUTER)_RADIUS parameter,
+then (INNER|OUTER) recipe parameter, then the _RADIUS local primitive argument,
+then the (INNER|OUTER) primitive parameter, then the _RADIUS PRIMARGS argument
+(which would normally come from the caller primitive), then the (INNER|OUTER)
+caller primitive arguments and finally a default value.
+
+The default value for INNER is 1.25 and for OUTER is 2.0.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<RADIUS>
+
+The radius in arcsec. Must be provided.
+
+=item B<INNER>
+
+Inner scale factor for annulus in units of the aperture radius.
+Should be >1. Default is 1.25. May be overridden with the recipe
+parameter C<ANNULUS_INNER>.
+
+=item B<INNER_RADIUS>
+
+Explicit value of inner radius of annulus in arcsec. Should be larger
+than RADIUS. Supercedes the value of INNER if both are set. May be
+overridden with the recipe parameter C<ANNULUS_INNER_RADIUS>.
+
+=item B<OUTER>
+
+Outer scale factor for annulus in units of the aperture radius. Should
+be greater than B<INNER>. Default is 2.0. May be overridden with the
+recipe parameter C<ANNULUS_OUTER>.
+
+=item B<OUTER_RADIUS>
+
+Explicit value of inner radius of annulus in arcsec. Should be larger
+than RADIUS. Supercedes the value of OUTER if both are set. May be
+overridden with the recipe parameter C<ANNULUS_OUTER_RADIUS>.
+
+=item B<PRIMARGS>
+
+The primitive argument hash reference of the caller primitive. Used if
+no recipe parameters are specified and no local arguments.
+
+=item B<VERBOSE>
+
+Print aperture information if VERBOSE is true. Default is false.
+
+=back
+
+=head1 OUTPUT DATA
+
+The following entries are returned in the primitive hash
+C<%_CALC_ANNULUS_SCALE_> and are also stored in the frame uhdr:
+
+=over 4
+
+=item B<ANNULUS_INNER>
+
+The scale to use for the inner part of the annulus.
+
+=item B<ANNULUS_OUTER>
+
+The scale to use for the outer part of the annulus.
+
+=back
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+
+=head1  COPYRIGHT
+
+Copyright (C) 2011 Science and Technology Facilities Counil. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
+
+my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS", undef );
+orac_throw("Must call _CALC_ANNULUS_SCALE_ with a RADIUS argument")
+  unless defined $radius;
+
+my $caller_args = get_prim_arg( $_PRIM_ARGS_, "PRIMARGS", {});
+
+# Create a sub to share code for inner and outer
+my $calc_scale = sub {
+  my $scalestr = shift;
+  my $default = shift;
+  my $scale;
+
+  # Override RADIUS wins
+  my $rad = $Frm->uhdr("RECPAR_ANNULUS_${scalestr}_RADIUS");
+  return $rad/$radius if defined $rad;
+
+  # Override SCALE
+  return $Frm->uhdr("RECPAR_ANNULUS_$scalestr")
+    if defined $Frm->uhdr("RECPAR_ANNULUS_$scalestr");
+
+  # Local Argument radius
+  $rad = $_PRIM_ARGS_->{$scalestr."_RADIUS"};
+  return $rad/$radius if defined $rad;
+
+  # Local Argument scale
+  return $_PRIM_ARGS_->{$scalestr}
+    if defined $_PRIM_ARGS_->{$scalestr};
+
+  # Caller Argument radius
+  $rad = $caller_args->{$scalestr."_RADIUS"};
+  return $rad/$radius if defined $rad;
+
+  # Caller Argument scale
+  return $caller_args->{$scalestr}
+    if defined $caller_args->{$scalestr};
+
+  return $default;
+};
+
+my $inner = $calc_scale->("INNER", 1.25 );
+my $outer = $calc_scale->("OUTER", 2.0 );
+
+if ($inner < 1.0) {
+  $inner = 1.0;
+  orac_warn "INNER smaller than aperture radius: setting to 1.0\n";
+}
+
+my $area_ratio = $outer**2 - $inner**2;
+
+if ($area_ratio < 1.1) {
+  # Override with a value that gives us equal area with the aperture
+  $outer = sqrt( 1.0 + $inner**2);
+  $area_ratio = $outer**2 - $inner**2;
+  orac_warn "OUTER scale too small: setting to $outer so annulus area equals aperture area\n";
+}
+
+if ($verbose) {
+  orac_print "Using annulus with inner:outer scale of $inner:$outer (".($inner*$radius).
+    ":".($outer*$radius)." arcsec)\n";
+  orac_print "Annulus to aperture area ratio is $area_ratio\n";
+}
+
+$_PRIM_ARGS_->{ANNULUS_INNER} = $inner;
+$_PRIM_ARGS_->{ANNULUS_OUTER} = $outer;
+$Frm->uhdr( "ANNULUS_INNER", $inner );
+$Frm->uhdr( "ANNULUS_OUTER", $outer );
+
