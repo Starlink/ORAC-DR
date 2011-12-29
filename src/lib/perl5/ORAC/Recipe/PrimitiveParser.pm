@@ -809,8 +809,11 @@ sub _expand_primitive {
     # that refers to two primitives (presumably including the current one)
     my $clean = $line;
     $clean =~ s/\#.*//;
-    while ($clean =~ /(_\w+_){/g) {
-      my $arg_prim = $1;
+    # We have two things to match
+    #   a line with "$_PRIMITIVE_NAME_{KEY}"
+    #   or a line with "%_PRIMITVE_NAME_"
+    while ($clean =~ /(?:(?:\%(_\w+_)\b)|(?:(_\w+_)\{))/g) {
+      my $arg_prim = (defined $1 ? $1 : $2);
       next if $arg_prim eq $prim->name;
       $inserted_primargs{$arg_prim}++;
     }
