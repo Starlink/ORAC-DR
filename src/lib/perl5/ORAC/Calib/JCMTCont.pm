@@ -275,6 +275,9 @@ sub fluxcal {
   my $filter = shift;
   my $ismap = shift;
 
+  # Strip spaces
+  $source =~ s/\s//g;
+
   # Fluxes requires that the filter name does not include any non
   # numbers
   $filter =~ s/\D+//g;
@@ -498,6 +501,9 @@ sub iscalsource {
   my $source = uc(shift);
   my $filter;
   $filter = uc(shift) if @_;
+
+  # Strip spaces
+  $source =~ s/\s//g;
 
   # If we match a planet straightaway then it is a calibrator
   # regardless of filter (unless the filter is not available in fluxes)
