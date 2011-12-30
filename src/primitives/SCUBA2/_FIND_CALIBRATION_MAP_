@@ -206,6 +206,10 @@ if ( $proceed ) {
   # File to work on
   my $in = $Obj->file;
 
+  # Get the pixel scale for calculating fit boxes
+  _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+  my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
+
   # Get the current units so we quote the calibration factor
   $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
   my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
@@ -285,9 +289,11 @@ if ( $proceed ) {
     # Now run the matched-filter on the calibrator and fit the peak position
     _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group VERBOSE=0
     $Frm->uhdr("PLOT_MF_FIT", 1);
-    # Only need an 11-pixel box because the matched filter puts a ring
-    # around the source which we don't want to try and fit
-    _FIND_MAP_PEAK_ IMAGE=$_APPLY_MATCHED_FILTER_{OUT} VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=11 INITPOS=$initpos
+
+    # Use a box of about 1.5 FWHM because the beamfit algorithm does not
+    # know how to fit the negative ring.
+    my $box = $Cal->fwhm() * 1.5 / $pixscale;
+    _FIND_MAP_PEAK_ IMAGE=$_APPLY_MATCHED_FILTER_{OUT} VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
     my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
     my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
     if ($matched_peak) {
