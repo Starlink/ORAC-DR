@@ -755,11 +755,12 @@ sub strip_subscan {
 =item B<subarray>
 
 Return the name of the subarray given either a filename or the index
-into a Frame object. Takes a mandatory sole argument which is the file
-index or name. If the Frame header has subheaders then the subarray is
-obtained from the FITS header of the file and an entry is added to the
-Frame uhdr. Returns undef if the FITS header could not be retrieved or
-if no argument was given.
+into a Frame object. The subarray is also stored in the current Frame
+uhdr. Takes a mandatory sole argument which is the file index or
+name. If the Frame header has subheaders then the subarray is obtained
+from the FITS header of the file rather than assuming the subheader
+order is synchronized with that of the files. Returns undef if the
+FITS header could not be retrieved.
 
   my $subarray = $Frm->subarray( $i );
   my $subarray = $Frm->subarray( $Frm->file($i) );
@@ -801,16 +802,15 @@ sub subarray {
 
       # Store in Frm uhdr if defined
       $self->uhdr("SUBARRAY", $subarray) if (defined $subarray);
-      return $subarray;
     } else {
-      # No subarray in subheaders, return subarray from top-level header
-      return $self->hdr("SUBARRAY");
+      # No subarray in subheaders, store subarray from header
+      $self->uhdr("SUBARRAY", $self->hdr("SUBARRAY"));
     }
-
   } else {
     # No subheaders => only 1 subarray
-    return $self->hdr("SUBARRAY");
+    $self->uhdr("SUBARRAY", $self->hdr("SUBARRAY"));
   }
+  return $self->uhdr("SUBARRAY");
 }
 
 =item B<subarrays>
@@ -843,6 +843,10 @@ sub subarrays {
       my %subarrays;
       $subarrays{ $_->{SUBARRAY} }++ for @subhdrs;
       push(@subarrays, keys %subarrays);
+    } else {
+      # But if the subarray is not in the subheaders, store the
+      # subarray from the hdr
+      push(@subarrays, $self->hdr( "SUBARRAY" ));
     }
   }
 
