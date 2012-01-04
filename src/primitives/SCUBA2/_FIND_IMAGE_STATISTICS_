@@ -219,6 +219,7 @@ if ($region && $region > 0) {
 }
 
 my %results;
+# Call KAPPA histat if the MODE is required
 if ( $histat ) {
   # Set the HISTO argument to false
   $histo = 0;
@@ -230,12 +231,26 @@ if ( $histat ) {
   # Use HISTAT to calculate statistics
   my $args = "ndf=$in method=$modemethod comp=$comp";
   $args .= " percentiles=[$percentiles]" unless ($percentiles eq "!");
-  $Mon{kappa_mon}->obeyw("histat","$args");
-  # Retrieve the values
-  push ( @params, "mode");
-  ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("histat", @params);
-  $results{sigma} = -1.0;
-} else {
+  my $HISTAT_STATUS = $Mon{kappa_mon}->obeyw("histat","$args");
+  if ($HISTAT_STATUS == ORAC__OK) {
+    # Retrieve the values
+    push ( @params, "mode");
+    ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("histat", @params);
+    $results{sigma} = -1.0;
+  } elsif ($HISTAT_STATUS == 234521392) {
+    # KAP__HISTV: Insufficient values to compute ordered statistics
+    # This error is usually triggered by the presence of one or more
+    # significant outliers - trap and fall back on stats, letting the
+    # user know that the MODE will not be defined.
+    orac_err "Data may be too sparse: using stats but MODE will be undefined\n";
+    $histat = 0;
+  } else {
+    orac_err "Histat failed for an unknown reason - results will be undefined\n";
+  }
+}
+
+# Call KAPPA stats either as chosen or as fallback if histat fails
+if (!$histat) {
   # Do we want stats to calculate ordered statistics? Default to yes.
   my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
   $order = ($order) ? "order" : "noorder";
@@ -251,7 +266,7 @@ if ( $histat ) {
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("stats", @params);
 
   # Stats returns sigma = 0 if anything went wrong
-  $results{mode} = undef;
+  $results{mode} = "NaN";
 }
 
 my $avg    = $results{mean};
@@ -267,7 +282,7 @@ my $nbad   = $results{numbad};
 my $perval = $results{perval};
 
 orac_warn "All pixels in region are bad!\n" if ($ngood == 0 && $verbose);
-my $fracgood = $ngood/$ntotal;
+my $fracgood = (defined $ntotal && $ntotal > 0) ? $ngood/$ntotal : 0;
 
 # If the user wants to use STATS and wants a modal value as well...
 my $maxval = -1.0e9;
