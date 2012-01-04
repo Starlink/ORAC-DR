@@ -303,7 +303,7 @@ if ( $numgood >= $minpix ) {
     my $resid = ($modelfit ne "!") ? $psf : "!";
     $args .= " ndf=$in mode=interface pos=$pos variance=$var fitarea=$box fixback=$fixback resid=$resid";
     $args .= " fixamp=$fixamp" if ($fixamp);
-    @params = qw/ majfwhm minfwhm orient amp centre sum rms gamma /;
+    @params = qw/ majfwhm minfwhm orient amp centre sum rms gamma back/;
   } else {
     # PSF
     my $isize = ($box %2 == 0) ? $box/2 : ($box/2) + 1;
@@ -323,7 +323,7 @@ if ( $numgood >= $minpix ) {
     ($ORAC_STATUS, my %fitresults) = $Mon{kappa_mon}->mget("$fit_method",@params);
 
     # Results to store in the primitive hash
-    my (@majfwhm, @minfwhm, @amp, @orient, @gamma, @total, @posn, $axisr, $rms);
+    my (@majfwhm, @minfwhm, @amp, $bg, @orient, @gamma, @total, @posn, $axisr, $rms);
 
     # Format and store the results
     if ($use_beamfit) {
@@ -345,6 +345,7 @@ if ( $numgood >= $minpix ) {
       @gamma = @{$fitresults{gamma}};
       @posn = split(/\s+/, $fitresults{centre}->[0], 2);
       $rms = $fitresults{rms};
+      $bg = $fitresults{back}->[0];
 
       # Estimate error in total flux assuming uncertainties add in quadrature
       my $fluxerr = $fitresults{sum} * ( $amp[1]*$amp[1]/($amp[0]*$amp[0]) +
@@ -369,6 +370,7 @@ if ( $numgood >= $minpix ) {
       @minfwhm = ($fitresults{fwhm}, 0);
       @majfwhm = ($axisr * $fitresults{fwhm}, 0);
       @total = ($fitresults{total}, 0);
+      $bg = 0.0;
 
       # Store model fit if requested
       if ($modelfit ne "!") {
@@ -414,11 +416,15 @@ if ( $numgood >= $minpix ) {
     my $snr = $amp[0] / $err if ($err != 0 );
 
     # Now check ratio of fitted amplitude to peak signal. Determine
-    # the peak signal within the area defined by the fit box
+    # the peak signal within the area defined by half the fit box
+    # since we should be looking near the fitted peak
+    # Have to take the fitted background into account because the amplitude
+    # can be above a negative background
     my $section = $in."($posn[0]~$box,$posn[1]~$box)";
     $Mon{kappa_mon}->obeyw("stats","ndf=$section");
     ($ORAC_STATUS, my $peaksignal) = $Mon{kappa_mon}->get("stats","maximum");
-    my $peak_ratio = $amp[0] / $peaksignal;
+    my $peakfit = $amp[0] + $bg;
+    my $peak_ratio = $peakfit / $peaksignal;
     if ($peak_ratio > 1.1 || $peak_ratio < 0.9) {
       orac_warn "Fitted peak differs from map peak by ".(sprintf "%.1f", 100*abs($peak_ratio-1))." % (threshold is 10 %)\n";
     }
