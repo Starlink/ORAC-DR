@@ -1,0 +1,217 @@
+# -*-cperl-*-
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array, Starlink::HDSPACK, Statistics::Descriptive.
+
+=cut
+
+use JCMT::ACSIS::Array;
+use Statistics::Descriptive;
+
+my $params;
+
+my @bad_receptors;
+
+# Store the name of the first file in the list for the index.qa file
+my ( $first_file_in, $first_file_out)  = $Frm->inout( "_blmasked", 1 );
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+   orac_say( "Performing bad-baseline detection comparing trend with linear fit" );
+   if ( $i == 1 ) { orac_say( "The first file is $first_file_in." ) };
+   my @bad_receptors_local;
+
+# Set/get filenames.
+   my ( $in, $out ) = $Frm->inout( "_blmasked", $i );
+   ( $in, my $collapsed ) = $Frm->inout( "_spco", $i );
+   ( $in, my $residual ) = $Frm->inout( "_resp", $i );
+   ( $in, my $smoothed ) = $Frm->inout( "_fbsp", $i );
+
+# We need the dimensions of the input file for later.
+   _GET_DIMENSIONS_ FILE=$in
+   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+#   my $temp1file = new ORAC::TempFile( 0 );
+   my $temp1file = $collapsed;
+   my $temp2file = new ORAC::TempFile( 0 );
+   my $temp3file = new ORAC::TempFile( 0 );
+#   my $temp4file = new ORAC::TempFile( 0 );
+   my $temp4file = $smoothed;
+#   my $temp5file = new ORAC::TempFile( 0 );
+   my $temp5file = $residual;
+
+   my $temp6file = new ORAC::TempFile( 0 );
+   my $temp7file = new ORAC::TempFile( 0 );
+   my $temp8file = new ORAC::TempFile( 0 );
+
+# Form arrays of bad detectors.
+# =============================
+
+# Retrieve the list of bad detectors from the calibration system ONLY
+# ignoring the ones set locally.  The reading of INDEXORMASTER is
+# done to setup the survey (survey_br).
+   $Cal->bad_receptors( "MASTER" );
+   my @baddets = $Cal->bad_receptors_list;
+   orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+# Still need to invoke the bad_receptors_list method although the
+# resulting array is not used.
+   $Cal->bad_receptors( "INDEXORMASTER" );
+   my @tmpdets = $Cal->bad_receptors_list;
+
+# Get average noise for each receptor not in the bad_receptors list.
+# ==================================================================
+
+# Collapse time axis using a clipped mean to form average spectra for
+# each detector.  Although would like to use variance weighting, the
+# covariance matrix becomes huge.
+   orac_say( "  Collapsing time-series cube..." );
+   $params = "in=$in out=$temp1file estimator=Cmean clip=2.0";
+   $params .= " axis=time trim wlim=0.0 variance=false";
+   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Apply threshold to exclude spikes in the spectra.
+   orac_say( "  Thresholding the spectra at +/- 20 to exclude spikes." );
+   $params = "in=$temp1file out=$temp2file thrlo=-20 newlo=bad thrhi=20 newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Mask out the central region to exclude narrow astronomical line.
+   orac_say( "  Masking the central 5% to exclude the astronomical line." );
+   my $central_mask = 5;
+   my $chpix_section = "~$central_mask\%,";
+   my $params = "in=$temp2file out=$temp3file section='$chpix_section' newval=bad";
+   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+# Find the trends in the background.  This step prevents the rms from a
+# baseline fit being swamped by the noise.  The aim is to find whether
+# the linear fit is a good match to global shape of the baseline.  This aims to
+# identify ripples or turned-up ends of the spectra.
+   my $smooth_width = 101;
+   orac_say( "  Determine the smooth trends of the spectra using a filter width of $smooth_width pixels." );
+   my $boxparam = "[$smooth_width,1]";
+   $params = "in=$temp3file out=$temp4file box=$boxparam sub=false accept";
+   $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# Subtract linear baselines from smoothed spectrum for each detector.
+   orac_say( "  Fit linear baselines and subtract these from the trends." );
+   $params = "in=$temp4file out=$temp5file modifyin=false subtract auto";
+   $params .= " order=1 axis=spec method=single";
+   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+   my %receptor_stats;
+   my %receptor_rms;
+   my $array_stats = new Statistics::Descriptive::Sparse;
+   my $array = new JCMT::ACSIS::Array( File => $temp5file );
+
+# Form set of receptors that are not bad in the master list.
+   my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+
+   foreach my $receptor ( @receptors ) {
+      my $pixel = $array->pixel( $receptor );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file($pixel,)" );
+      my ( $ORAC_STATUS, $nel ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Calculate rms from the linear fit for the current receptor.  Exclude
+# the ends of each spectrum where the noise increases dramatically,
+# and could swamping the signal being measured.
+      if ( $nel > 0 ) {
+         $params = "ia=$temp5file(,$pixel) out=$temp6file exp='IA*IA/$nel'";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file(~90%,)" );
+         ( $ORAC_STATUS, my $ms ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+         my $rms = sqrt( $ms );
+orac_print( "  Receptor $receptor has rms $rms\n", 'red' );
+
+         if ( ! defined( $receptor_stats{$receptor} ) ) {
+            $receptor_stats{$receptor} = new Statistics::Descriptive::Sparse;
+         }
+
+         if ( $rms > 0 ) {
+            $receptor_stats{$receptor}->add_data( $rms );
+         }
+      }
+   }
+
+   foreach my $receptor ( keys %receptor_stats ) {
+      if ( $receptor_stats{$receptor}->count != 0 ) {
+         $receptor_rms{$receptor} = $receptor_stats{$receptor}->mean();
+      } else {
+         $receptor_rms{$receptor} = 'bad';
+      }
+   }
+
+   my $type = "RMS from linear baseline";
+   _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=$type
+
+# Measure the median and standard deviation of the residuals from the
+# linear trend across the detectors.
+   my @values;
+   my $sigma;
+   my $median;
+   my $stat = Statistics::Descriptive::Full->new();
+
+   while ( my ($k,$v) = each %receptor_rms ) {
+      push @values, $v;
+   }
+   $stat->add_data( @values );
+
+   if ( $stat->count != 0 ) {
+      $sigma = $stat->standard_deviation();
+      $median = $stat->median();
+   }
+
+# Flag those detectors whose rms deviation from the linear trend exceeds
+# median + 2-sigma level.
+   my $threshold = $median + 2 * $sigma;
+   orac_say( "  Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
+
+   while ( my ($k,$v) = each %receptor_rms ) {
+orac_print( "  Key: $k   value: $v \n", 'red' );
+      if ( $v > $threshold ) {
+         push @bad_receptors_local, $k;
+      }
+   }
+
+   orac_say( "List of bad receptor for file $in:" .
+             join( ",", sort( @bad_receptors_local ) ) );
+
+# Display if necessary.
+   $Display->display_data( $Frm ) if defined $Display;
+
+# Add the bad receptors for this frame to the master list.
+   foreach my $receptor ( @bad_receptors_local ) { push ( @bad_receptors, $receptor ) }
+}
+
+# Make sure each bad detector is mentioned only once.
+my %seen = ();
+my @bad_receptors_uniq = ();
+
+foreach my $item ( @bad_receptors ) {
+   push( @bad_receptors_uniq, $item ) unless $seen{$item}++;
+}
+
+my $lofreq = $Frm->hdr( "LOFREQS" );
+
+my $survey_br = defined( $Frm->uhdr( "SURVEY_BR" ) ) ? $Frm->uhdr( "SURVEY_BR" ) : 'Telescope';
+
+# Sort out bad receptors.  They'll be added to the calibration system
+# for either the specific survey or for everything, and only for the
+# current LOFREQ +/- 1 GHz.
+if ( scalar( @bad_receptors ) > 0 ) {
+   my %recep_hash = ( %{$Frm->hdr },
+                      LOFREQ_MAX => $lofreq + 1,
+                      LOFREQ_MIN => $lofreq - 1,
+                      DETECTORS => ( join ',',@bad_receptors_uniq ),
+                      SURVEY_BR => $survey_br,
+                    );
+
+   orac_say( "Masking receptor(s) " .
+             join( ",", sort @bad_receptors_uniq ) . " for survey $survey_br." );
+
+   $Cal->bad_receptors_qa_index->add( $first_file_in, \%recep_hash );
+
+}
+
+# Tidy-up output.
+orac_print "\n";
