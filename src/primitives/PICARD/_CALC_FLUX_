@@ -90,27 +90,29 @@ if (defined $Frm->uhdr("PICARD_RESULTS")) {
 my $infile = $Frm->file;
 
 # Calculate total flux within the aperture
-orac_print "Calculating source flux for $picard_results{source} ($picard_results{file})...";
-my $xypos = $Frm->uhdr("MAP_PEAK_POSITION");
-if (!$xypos) {
-  _FIND_MAP_PEAK_ GROUP=0 FITPEAK=1 PLOTFIT=0 VERBOSE=0
-  $xypos = $_FIND_MAP_PEAK_{POSITION};
+orac_print "Calculating source flux for $picard_results{source} ($picard_results{file})\n";
+if ($Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+  _APERTURE_PHOTOMETRY_ IMAGE=$infile RADIUS=$radius
+    $picard_results{flux_ap} = $_APERTURE_PHOTOMETRY_{TOTALFLUX};
+  $picard_results{imnoise} = (defined $_APERTURE_PHOTOMETRY_{TOTALFLUXERR}) ? $_APERTURE_PHOTOMETRY_{TOTALFLUXERR} : 0;
+} else {
+  my $xypos = $Frm->uhdr("MAP_PEAK_POSITION");
+  if (!$xypos) {
+    _FIND_MAP_PEAK_ GROUP=0 FITPEAK=1 PLOTFIT=0 VERBOSE=0
+      $xypos = $_FIND_MAP_PEAK_{POSITION};
+  }
+  # Test that $xypos contains an X, Y position
+  my ($x, $y) = @$xypos;
+  unless ( $x && $y) {
+    _GET_MAP_CENTRE_
+    $xypos = $_GET_MAP_CENTRE_{XYPOS};
+  }
+  _FIND_INTEGRATED_INTENSITY_ IMAGE=$infile RADIUS=$radius XYPOS=$xypos REMOVEBACK=0
+  $picard_results{flux_ap} = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
+  _CALC_IMAGE_NOISE_ IMAGE=$infile RADIUS=$radius METHOD=MINIMUM LOGFILE=0
+  $picard_results{imnoise} = (defined $_CALC_IMAGE_NOISE_{SIGMA}) ? $_CALC_IMAGE_NOISE_{SIGMA} : 0;
 }
-# Test that $xypos contains an X, Y position
-my ($x, $y) = @$xypos;
-unless ( $x && $y) {
-  _GET_MAP_CENTRE_
-  $xypos = $_GET_MAP_CENTRE_{XYPOS};
-}
-_FIND_INTEGRATED_INTENSITY_ IMAGE=$infile RADIUS=$radius XYPOS=$xypos REMOVEBACK=0
-$picard_results{flux_ap} = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
 
-# Calculate image noise
-orac_print " and image noise...";
-_CALC_IMAGE_NOISE_ IMAGE=$infile RADIUS=$radius METHOD=MINIMUM LOGFILE=0
-$picard_results{imnoise} = (defined $_CALC_IMAGE_NOISE_{SIGMA}) ? $_CALC_IMAGE_NOISE_{SIGMA} : 0;
-
-# Store the current results
-orac_print " done\n";
+orac_print "Flux = ".(sprintf "%.4f", $picard_results{flux_ap})." +/- ".(sprintf "%.4f", $picard_results{imnoise})."\n";
 
 $Frm->uhdr("PICARD_RESULTS", \%picard_results);
