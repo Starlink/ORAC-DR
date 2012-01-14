@@ -151,28 +151,57 @@ orac_print( "  Receptor $receptor has rms $rms\n", 'red' );
    my @values;
    my $sigma;
    my $median;
-   my $stat = Statistics::Descriptive::Full->new();
+   my $loop = 1;
+   my $i = 0;
 
-   while ( my ($k,$v) = each %receptor_rms ) {
-      push @values, $v;
-   }
-   $stat->add_data( @values );
+# Sigma clipping levels should not decrease.
+   my @clip_sigma = ( 2, 3 );
 
-   if ( $stat->count != 0 ) {
-      $sigma = $stat->standard_deviation();
-      $median = $stat->median();
-   }
+   while ( $i <= $#clip_sigma && $loop ) {
+      my $stat = Statistics::Descriptive::Full->new();
+
+# Assume no rejection.
+      $loop = 0;
+
+# Extract the rms values from the hash.
+      while ( my ($k,$v) = each %receptor_rms ) {
+         if ( $v ne "bad" ) { push @values, $v }
+      }
+
+# Remove the flagged values before adding the values to the statistics
+# object.
+#      @values = map{ $_ eq 'bad' ? ( ) : $_ } @values;
+      $stat->add_data( @values );
+
+      if ( $stat->count != 0 ) {
+         $sigma = $stat->standard_deviation();
+         $median = $stat->median();
+      }
 
 # Flag those detectors whose rms deviation from the linear trend exceeds
-# median + 2-sigma level.
-   my $threshold = $median + 2 * $sigma;
-   orac_say( "  Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
+# median + current sigma-clipping level.
+      my $threshold = $median + $clip_sigma[$i] * $sigma;
+      orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
+      orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations " );
 
-   while ( my ($k,$v) = each %receptor_rms ) {
+# This would be cleaner if there were a remove_data method in
+# Statistics::Descriptive::Full.
+      while ( my ($k,$v) = each %receptor_rms ) {
 orac_print( "  Key: $k   value: $v \n", 'red' );
-      if ( $v > $threshold ) {
-         push @bad_receptors_local, $k;
+         if ( $v ne 'bad' ) {
+            if ( $v > $threshold ) {
+               push @bad_receptors_local, $k;
+               $receptor_rms{$k} = 'bad';
+
+# Continue iteratively clipping as a detector has been flagged for
+# removal.
+               $loop = 1;
+            }
+         }
       }
+      $i++;
+      undef $stat;
+      undef @values;
    }
 
    orac_say( "List of bad receptor for file $in:" .
