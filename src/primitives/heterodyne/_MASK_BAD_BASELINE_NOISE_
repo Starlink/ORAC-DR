@@ -9,7 +9,22 @@ JCMT::ACSIS::Array, Starlink::HDSPACK, Statistics::Descriptive.
 use JCMT::ACSIS::Array;
 use Statistics::Descriptive;
 
-my $params;
+# Handle arguments.
+my $noise_clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", 2.0 );
+my $noise_percent = get_prim_arg( $_PRIM_ARGS_, "PERCENT", 40.0 );
+
+# Handle recipe parameter overrides.
+$noise_clip = ( defined( $Frm->uhdr( "RECPAR_BLNOISE_CLIP" ) ) ?
+             $Frm->uhdr( "RECPAR_BLNOISE_CLIP" )              :
+             $noise_clip );
+
+$noise_percent = ( defined( $Frm->uhdr( "RECPAR_BLNOISE_PERCENT" ) ) ?
+             $Frm->uhdr( "RECPAR_BLNOISE_PERCENT" )              :
+             $noise_percent );
+
+# Constrain parameters to allowed values.
+$noise_clip = max( 1.0, $noise_clip );
+$noise_percent = max( 10.0, min( 90.0, $noise_percent ) );
 
 my $params;
 my @bad_receptors;
@@ -115,8 +130,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file order=true" );
    my ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
 
-# Thresholding at median + 2-sigma level.
-   my $threshold = $median + 2 * $sigma;
+# Thresholding at the clipping level.
+   my $threshold = $median + $noise_clip * $sigma;
    orac_say( " Turning off spectra with clipped sigma above " . sprintf( "%.3f", $threshold ) );
    $params = "in=$temp1file out=$temp2file thrlo=-100000 newlo=bad thrhi=$threshold newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
