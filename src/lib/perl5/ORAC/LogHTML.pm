@@ -158,12 +158,25 @@ for (@colors) {
 sub _fixup_line {
   my $line = shift;
 
-  # convert spaces to non-breakable spaces and newlines to <BR>
+  # convert tabs to non-breakable spaces
   my $nbsp = "&nbsp;";
   my $tab = $nbsp x 8;
-  $line =~ s/\t/$tab/;
+  $line =~ s/\t/$tab/g;
+
+  # Sort out protected characters and spaces
+  my %ents = ( ">" => 'gt',
+               "<" => 'lt',
+               '"' => 'quot',
+               '~' => 'tilde',
+               " " => 'nbsp',
+             );
+  for my $e (keys %ents) {
+    my $ent = '&' . $ents{$e} . ';';
+    $line =~ s/$e/$ent/g;
+  }
+
+  # Newlines to <BR> has to happen after entity replacement
   $line =~ s/\n/<BR>\n/;
-  $line =~ s/ /$nbsp/g;
 
   # look for escape codes (see Tk::TextANSIColor)
   # Split into chunks
