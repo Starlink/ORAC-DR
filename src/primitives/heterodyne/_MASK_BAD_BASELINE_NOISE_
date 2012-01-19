@@ -1,8 +1,117 @@
 # -*-cperl-*-
 
+=head1 NAME
+
+_MASK_BAD_BASELINE_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive identifies bad detectors by comparing the noise properties
+of each detector's baseline.
+
+It determines representative noise for each non-bad detector by
+collapsing the central 75% of the spectra using a clipped standard
+estimator.  This returns the noise excluding the problem edges, and
+chosen estimator filters the astronomical signal and any glitches.
+Next the primitive reports the mean noise per receptor.
+
+It then evaluates the median and standard deviation of the
+distribution of clipped noise values for each detector.  Then it sets
+elements in each spectrum to bad if its noise exceeds the median
+noise plus some number of standard deviations (see the CLIP argument).
+A detector is deemed to be unreliable if the percentage of such
+flagged pixels exceeds a chosen limit given by the PERCENT argument,
+and is added to the bad-receptor calibration.  The percentage of
+overly noise elements for each receptor are tabulated.
+
+The rejected receptors are then marked bad in the output cube, and
+recorded in the bad_receptors_qa calibration.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLIP = REAL (Given)
+
+The maximum number of standard deviations above the median noise for
+which a detector's noise is regarded as acceptable.  The minimum
+allowed is 1.  This argument can be overridden by the
+RECPAR_BLNOISE_CLIP uhdr via the recipe parameter system.  [2.0]
+
+=item PERCENT = REAL (Given)
+
+A receptor is flagged as bad if the number of excessively noisy
+elements in its clipped-noise spectrum exceeds this percentage.  This
+argument can be overridden by the RECPAR_BLNOISE_PERCENT uhdr via the
+recipe parameter system.  Allowed values are 10 to 90.  [40.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS observations.
+
+=item *
+
+This primitive is suitable for spectral-line observations.
+
+=item *
+
+This primitive will run if the NOISY_BASELINE uhdr in the current
+Frame object is defined and true.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+A cleaned version of the supplied time-series cube in which the noisy
+detectors are set to bad.  It has the suffix _blnmasked (for
+BaseLine Noise).
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, COPYBAD, MANIC, STATS, THRESH.
+
 =head1 REQUIRED PERL MODULES
 
-JCMT::ACSIS::Array, Starlink::HDSPACK, Statistics::Descriptive.
+JCMT::ACSIS::Array, Statistics::Descriptive.
+
+=head1 AUTHORS
+
+Luca Rizzi  E<lt>l.rizzi@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011-2012 Science & Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
 
 =cut
 
@@ -86,6 +195,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Form set of receptors that are not bad in the master list.
    my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
 
+# Find the average noise for each valid detector.
    foreach my $receptor ( @receptors ) {
       my $pixel = $array->pixel( $receptor );
       $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file($pixel,)" );
@@ -109,6 +219,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    }
 
    _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=RMS
+
+# Eject deviant-noise detectors.
+# ==============================
 
 # Measure the median and standard deviation of the noise across detectors.
    my @values;
@@ -141,7 +254,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $perc_rejected = sprintf( "%.1f", ( $numhi / $numpix ) * 100 );
    orac_say( " Rejected $perc_rejected % of the samples." );
 
-# Get number of pixel rejected for each receptor.
+# Get number of pixels rejected for each receptor.
    my %receptor_stats_thresh;
    my %receptor_fracbad;
    my $array_stats_thresh = new Statistics::Descriptive::Sparse;
@@ -154,6 +267,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp2file($pixel,)" );
       ( $ORAC_STATUS, my $badpix ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
       ( $ORAC_STATUS, my $totpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+
+# This assumes that there were no bad values in the Csigma-collapsed
+# data.
       my $frac_rejected = sprintf( "%.3f", $badpix / $totpix * 100 );
 
       if ( ! defined( $receptor_stats_thresh{$receptor} ) ) {
@@ -195,6 +311,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Display if necessary.
    $Display->display_data( $Frm ) if defined $Display;
 
+# Update the bad-receptor calibration.
+# ====================================
+
 # Add the bad receptors for this frame to the master list.
    foreach my $receptor ( @bad_receptors_local ) { push ( @bad_receptors, $receptor ) }
 }
@@ -208,7 +327,6 @@ foreach my $item ( @bad_receptors ) {
 }
 
 my $lofreq = $Frm->hdr( "LOFREQS" );
-
 my $survey_br = defined( $Frm->uhdr( "SURVEY_BR" ) ) ? $Frm->uhdr( "SURVEY_BR" ) : 'Telescope';
 
 # Sort out bad receptors.  They'll be added to the calibration system
