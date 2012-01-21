@@ -67,15 +67,15 @@ $DEBUG = 0;                     # Turn off debugging mode
 my %FCFS = ('850' => [             # Assumed to be in date order
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC=> 3.12,
-                    BEAM  => 480,
+                    ARCSEC=> 2.45,
+                    BEAM  => 561,
                    }
                   ],
          '450' => [
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC => 6.56,
-                    BEAM   => 290,
+                    ARCSEC => 6.08,
+                    BEAM   => 606,
                    }
                   ],
         );
@@ -370,9 +370,9 @@ sub beamarea {
   # but we currently do not have enough information for that.
   my $ba;
   if ($self->subinst() eq '850') {
-    $ba = 238.75;
+    $ba = 229;
   } else {
-    $ba = 99.0;
+    $ba = 97.0;
   }
   return $ba;
 }
