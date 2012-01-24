@@ -51,6 +51,11 @@ The extent of the source spectral line measured in km/s.  This
 argument can be overridden by the RECPAR_BLLINEAR_LINEWIDTH uhdr
 via the recipe parameter system.  [25.0]
 
+=item MASK = LOGICAL (Given)
+
+Whether or not to mask bad detectors.  Masking is needed if a
+subsequent bad-baseline removal technique is employed.  [1]
+
 =item SCALELENGTH = INTEGER (Given)
 
 The smoothing scale length in pixels.  Features narrower than
@@ -143,6 +148,7 @@ use Statistics::Descriptive;
 # =================
 
 my $linear_clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "2.5,3.0" );
+my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 1 );
 my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", 25.0 );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 
@@ -187,9 +193,9 @@ my ( $first_file_in, $first_file_out)  = $Frm->inout( $osuffix, 1 );
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
    my @bad_receptors_local;
+   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
 
 # Set/get filenames.
-   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
    orac_say( "Perform bad-baseline detection comparing trend with linear fit for $in." );
    ( $in, my $collapsed ) = $Frm->inout( "_spco", $i );
    ( $in, my $residual ) = $Frm->inout( "_resp", $i );
@@ -205,8 +211,6 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp5file = $residual;
 
    my $temp6file = new ORAC::TempFile( 0 );
-   my $temp7file = new ORAC::TempFile( 0 );
-   my $temp8file = new ORAC::TempFile( 0 );
 
 # Form arrays of bad detectors.
 # =============================
@@ -369,15 +373,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       undef @values;
    }
 
+   @bad_receptors_local = sort( @bad_receptors_local );
    orac_say( " List of bad receptor for file $in: " .
-             join( ",", sort( @bad_receptors_local ) ) );
+             join( ",", @bad_receptors_local ) );
    orac_print "\n";
-
-# Display if necessary.
-   $Display->display_data( $Frm ) if defined $Display;
-
-# Update the bad-receptor calibration.
-# ====================================
 
 # Add the bad receptors for this frame to the master list.
    foreach my $receptor ( @bad_receptors_local ) { push ( @bad_receptors, $receptor ) }
@@ -390,6 +389,59 @@ my @bad_receptors_uniq = ();
 foreach my $item ( @bad_receptors ) {
    push( @bad_receptors_uniq, $item ) unless $seen{$item}++;
 }
+
+# Create masked cube.
+# ===================
+
+if ( $mask && scalar( @bad_receptors_uniq ) > 0 ) {
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+
+# Retrieve pixel bounds.
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbound = $_GET_DIMENSIONS_{LBOUND};
+      my $ubound = $_GET_DIMENSIONS_{UBOUND};
+
+# Create the ARDMASK for the given receptors and file.
+      my $array = new JCMT::ACSIS::Array( File => $in );
+      my @pixels = $array->pixel( @bad_receptors_uniq );
+            
+      open my $ardmask_fh, ">", "ardmask$$.dat" or orac_term "Could not open ARDMASK input file ardmask$$.dat: $!\n";
+      print $ardmask_fh "DIMENSION(3)\n";
+
+      foreach my $pixel ( @pixels ) {
+         my $str = "RECT(" . ( join ",", $lbound->[0] - 1,
+                                         $pixel - 1,
+                                         $lbound->[2] - 1,
+                                         $ubound->[0],
+                                         $pixel,
+                                         $ubound->[2]
+                             ) . ")\n";
+         print $ardmask_fh $str;
+      }
+      close $ardmask_fh;
+
+# Mask the regions.
+      $Mon{'kappa_mon'}->obeyw( "ardmask", "in=$in ardfile=ardmask$$.dat out=$out" );
+      unlink( "ardmask$$.dat" );
+
+# Provide commentary.
+      orac_say "$in to $out:";
+      orac_say " Masked receptor" . ( scalar( @pixels ) > 1 ? "s" : "" ) . " " . ( join ",", sort @receptors_uniq ) . ".";
+
+# Set the product.
+      $Frm->product( "Non-linear baseline masked" );
+
+# Update the Frm object.
+      $Frm->file( $i, $out );
+
+# Display if necessary.
+      $Display->display_data( $Frm ) if defined $Display;
+   }
+}
+                     
+# Update the bad-receptor calibration.
+# ====================================
 
 my $lofreq = $Frm->hdr( "LOFREQS" );
 my $survey_br = defined( $Frm->uhdr( "SURVEY_BR" ) ) ? $Frm->uhdr( "SURVEY_BR" ) : 'Telescope';
