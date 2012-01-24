@@ -9,8 +9,46 @@ JCMT::ACSIS::Array, Statistics::Descriptive.
 use JCMT::ACSIS::Array;
 use Statistics::Descriptive;
 
-my $params;
+# Handle arguments.
+# =================
 
+my $linear_clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "2.5,3.0" );
+my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", 25.0 );
+my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
+
+# Handle recipe parameter overrides.
+$linear_clip = ( defined( $Frm->uhdr( "RECPAR_BLLINEAR_CLIP" ) ) ?
+             $Frm->uhdr( "RECPAR_BLLINEAR_CLIP" )              :
+             $linear_clip );
+
+$central_mask = ( defined( $Frm->uhdr( "RECPAR_BLLINEAR_LINEWIDTH" ) ) ?
+             $Frm->uhdr( "RECPAR_BLLINEAR_LINEWIDTH" )         :
+             $central_mask );
+
+$smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BLLINEAR_SCALELENGTH" ) ) ?
+             $Frm->uhdr( "RECPAR_BLLINEAR_SCALELENGTH" )       :
+             $smooth_scale );
+
+# Convert list of standard-deviation clip levels to an array.
+my @clips = split( ',', $linear_clip );
+
+# Constrain parameters to allowed values.
+# ---------------------------------------
+$central_mask = max( 1.0, min( 100.0, $central_mask ) );
+$smooth_scale = max( 51, $smooth_scale );
+
+# Sigma clipping levels should not decrease. Do not set the initial
+# threshold too low lest we exclude acceptable but slightly deviant
+# detectors in an otherwise good set.
+my @clip_sigma = ();
+my $last = 2.0;
+foreach ( @clips ) {
+   push @clip_sigma, max( $last, $_ );
+}
+
+# Specify output and temporary filenames.
+# =======================================
+my $params;
 my @bad_receptors;
 
 # Store the name of the first file in the list for the index.qa file
@@ -80,7 +118,6 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Mask out the central region to exclude narrow astronomical line, but
 # even that has wings.  Allow for variable spectral range by using a
 # velocity range.
-   my $central_mask = "25.0";
    orac_say( " Masking the central $central_mask km/s to exclude the astronomical line." );
    my $chpix_section = "~$central_mask,";
    my $params = "in=$temp2file out=$temp3file section='$chpix_section' newval=bad";
@@ -90,9 +127,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # baseline fit being swamped by the noise.  The aim is to find whether
 # the linear fit is a good match to global shape of the baseline.  This aims to
 # identify ripples or turned-up ends of the spectra.
-   my $smooth_width = 101;
-   orac_say( " Determine the smooth trends of the spectra using a filter width of $smooth_width pixels." );
-   my $boxparam = "[$smooth_width,1]";
+   orac_say( " Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
+   my $boxparam = "[$smooth_scale,1]";
    $params = "in=$temp3file out=$temp4file box=$boxparam sub=false accept";
    $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
@@ -157,11 +193,6 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $loop = 1;
    my $i = 0;
 
-# Sigma clipping levels should not decrease. Do not set the initial
-# threshold too low lest we exclude acceptable but slightly deviant
-# detectors in an otherwise good set.
-   my @clip_sigma = ( 2.5, 3 );
-
    while ( $i <= $#clip_sigma && $loop ) {
       my $stat = Statistics::Descriptive::Full->new();
 
@@ -184,10 +215,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       }
 
 # Flag those detectors whose rms deviation from the linear trend exceeds
-# median + current sigma-clipping level.
+# median plus the current sigma-clipping level.
       my $threshold = $median + $clip_sigma[$i] * $sigma;
       orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
-      orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations " );
+      orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations." );
 
 # This would be cleaner if there were a remove_data method in
 # Statistics::Descriptive::Full.
