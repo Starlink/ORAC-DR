@@ -31,12 +31,14 @@ recorded in the bad_receptors_qa calibration.
 
 =over 4
 
-=item CLIP = REAL (Given)
+=item CLIP = STRING (Given)
 
 The maximum number of standard deviations above the median noise for
 which a detector's noise is regarded as acceptable.  The minimum
-allowed is 1.  This argument can be overridden by the
-RECPAR_BLNOISE_CLIP uhdr via the recipe parameter system.  [2.0]
+allowed is 1.   A comma-separated list will perform iterative sigma
+clipping of outliers, but standard deviations in the list should not
+decrease.  This argument can be overridden by the RECPAR_BLNOISE_CLIP
+uhdr via the recipe parameter system.  ["2.0,3.0"]
 
 =item PERCENT = REAL (Given)
 
@@ -119,7 +121,9 @@ use JCMT::ACSIS::Array;
 use Statistics::Descriptive;
 
 # Handle arguments.
-my $noise_clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", 2.0 );
+# =================
+
+my $noise_clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "2.0,3.0" );
 my $noise_percent = get_prim_arg( $_PRIM_ARGS_, "PERCENT", 40.0 );
 
 # Handle recipe parameter overrides.
@@ -131,9 +135,21 @@ $noise_percent = ( defined( $Frm->uhdr( "RECPAR_BLNOISE_PERCENT" ) ) ?
              $Frm->uhdr( "RECPAR_BLNOISE_PERCENT" )              :
              $noise_percent );
 
+# Convert list of standard-deviation clip levels to an array.
+my @clips = split( ',', $noise_clip );
+
 # Constrain parameters to allowed values.
-$noise_clip = max( 1.0, $noise_clip );
+# ---------------------------------------
 $noise_percent = max( 10.0, min( 90.0, $noise_percent ) );
+
+# Sigma clipping levels should not decrease. Do not set the initial
+# threshold too low lest we exclude acceptable but slightly deviant
+# detectors in an otherwise good set.
+my @clip_sigma = ();
+my $last = 2.0;
+foreach ( @clips ) {
+   push @clip_sigma, max( $last, $_ );
+}
 
 my $params;
 my @bad_receptors;
@@ -227,16 +243,47 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my @values;
    my $sigma;
    my $median;
-   my $stat = Statistics::Descriptive::Full->new();
+   my $loop = 1;
+   my $j = 0;
 
-   while ( my ($k,$v) = each %receptor_rms ) {
-      push @values, $v unless ( $v eq 'bad' );
-   }
-   $stat->add_data( @values );
+   while ( $j <= $#clip_sigma && $loop ) {
+      my $stat = Statistics::Descriptive::Full->new();
 
-   if ( $stat->count != 0 ) {
-      $sigma = $stat->standard_deviation();
-      $median = $stat->median();
+# Assume no rejection.
+      $loop = 0;
+
+# Extract the rms values from the hash.
+      while ( my ($k,$v) = each %receptor_rms ) {
+         push @values, $v unless ( $v eq 'bad' );
+      }
+      $stat->add_data( @values );
+
+      if ( $stat->count != 0 ) {
+         $sigma = $stat->standard_deviation();
+         $median = $stat->median();
+      }
+
+# Flag those detectors whose rms deviation from the linear trend exceeds
+# median plus the current sigma-clipping level.
+      my $threshold = $median + $clip_sigma[$j] * $sigma;
+
+# This would be cleaner if there were a remove_data method in
+# Statistics::Descriptive::Full.
+      while ( my ($k,$v) = each %receptor_rms ) {
+         if ( $v ne 'bad' ) {
+            if ( $v > $threshold ) {
+               $receptor_rms{$k} = 'bad';
+
+# Continue iteratively clipping as a detector's rms has been flagged as
+# an outlier.
+               $loop = 1;
+            }
+         }
+      }
+      orac_print( " Median: $median plus $clip_sigma[$j] standard deviations of $sigma.\n", 'red ' );
+      $j++;
+      undef $stat;
+      undef @values;
    }
 
 # Calculate the number of pixels and ordered statistics.
@@ -244,7 +291,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
 
 # Thresholding at the clipping level.
-   my $threshold = $median + $noise_clip * $sigma;
+   my $threshold = $median + $clip_sigma[1] * $sigma;
    orac_say( " Turning off spectra with clipped sigma above " . sprintf( "%.3f", $threshold ) );
    $params = "in=$temp1file out=$temp2file thrlo=-100000 newlo=bad thrhi=$threshold newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
