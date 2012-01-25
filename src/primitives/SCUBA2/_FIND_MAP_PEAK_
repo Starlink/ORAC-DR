@@ -69,6 +69,11 @@ entire image will be searched for the brightest peak.
 A flag to denote whether the fit should be plotted against the input
 data. Default is 0 (do not plot).
 
+=item B<USESNR>
+
+A flag to indicate that a signal-to-noise ratio map should be made to
+determine if a peak exists. Default is 1 (yes).
+
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
@@ -141,7 +146,7 @@ None.
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2009-2011 University of British Columbia.
+Copyright (C) 2009-2012 University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2000 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
@@ -207,14 +212,22 @@ if ($initpos) {
   }
 }
 
-# Now find the position of the brightest peak in the map
-my $image_snr = new ORAC::TempFile;
-# Make snr image
-$Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$image_snr");
-
-# Check that SNR image has >5 sigma peaks
-$Mon{kappa_mon}->obeyw("stats","ndf=$image_snr");
-my ($ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
+# Set a dummy value for the peak S/N if the user is confident that a
+# bright source exists
+my $peaksn = 10;
+# Is the peak s/n to be calculated?
+my $usesnr = get_prim_arg($_PRIM_ARGS_, "USESNR", 1);
+# Override with a recipe parameter
+$usesnr = $Frm->uhdr("RECPAR_USESNR") if (defined $Frm->uhdr("RECPAR_USESNR"));
+if ($usesnr) {
+  # Now find the position of the brightest peak in the map
+  my $image_snr = new ORAC::TempFile;
+  # Make snr image
+  $Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$image_snr");
+  # Check that SNR image has >5 sigma peaks
+  $Mon{kappa_mon}->obeyw("stats","ndf=$image_snr");
+  (my $ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
+}
 my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr, $posn);
 if ( $peaksn > 5 ) {
   my $image_mf = new ORAC::TempFile;
@@ -222,7 +235,7 @@ if ( $peaksn > 5 ) {
 
   # Find position of max value
   $Mon{kappa_mon}->obeyw("stats","ndf=$image_mf");
-  ($ORAC_STATUS, my $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
+  my ($ORAC_STATUS, $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
   # Split into coordinates
   @xy = split(/\,\s+/, $pkpos);
 
