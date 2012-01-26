@@ -179,10 +179,15 @@ frame object is returned.
 
  @keys = $Frm->framegroupkeys;
 
+This implementation includes an additional reference to an array
+containing alternate keys. ACSIS data uses IFFREQ to determine
+whethere subbands should be merged whereas DAS data uses SPECID.
+
 =cut
 
 sub framegroupkeys {
-  return (qw/ BWMODE IFFREQ UTDATE ORAC_OBSERVATION_NUMBER /);
+  return (qw/ BWMODE UTDATE ORAC_OBSERVATION_NUMBER /,
+         [qw/ SPECID IFFREQ/]);
 }
 
 =back
@@ -279,12 +284,18 @@ sub findgroup {
     $restfreq = $wcs->GetC("RestFreq");
   }
 
+  # This class handles ACSIS data and data converted with gsd2acsis
+  # DAS data might come with multiple IFFREQs so we include that here.
   # IFFREQ needs to be sprintfed but historically we did not so we can
   # not do it now.  For compatibility with the file headers when doing
   # a database query we have to convert integers to N.0 format
-  my $iffreq = $self->hdr( "IFFREQ" );
-  if ( int($iffreq) == $iffreq ) {
-    $iffreq = sprintf( "%.1f", $iffreq );
+  my $iffreq = '';
+  my @iffreqs = $self->hdrvals( "IFFREQ" );
+  for my $if (@iffreqs) {
+    if ( int($if) == $if ) {
+      $if = sprintf( "%.1f", $if );
+    }
+    $iffreq .= $if;
   }
 
   my $extra =  $self->hdr( "BWMODE" ) .
