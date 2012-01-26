@@ -122,6 +122,12 @@ sub framegroup {
   # see if we have any grouping keys
   my @grpkeys = $class->framegroupkeys();
 
+  # Look for alternates at the end
+  my @altkeys;
+  if (ref($grpkeys[$#grpkeys]) eq 'ARRAY') {
+    @altkeys = @{pop( @grpkeys )};
+  }
+
   # some times we need to retain the order of the input files
   my @grporder;
 
@@ -139,6 +145,19 @@ sub framegroup {
         $groupkey .= $header{$i} if defined $header{$i};
         $groupkey .= $gen_header{$i} if defined $gen_header{$i};
       }
+      for my $i (@altkeys) {
+        my $found;
+        if (defined $header{$i}) {
+          $groupkey .= $header{$i};
+          $found = 1;
+        }
+        if (defined $gen_header{$i}) {
+          $groupkey .= $gen_header{$i};
+          $found = 1;
+        }
+        last if $found; # Only want first key that finds something
+      }
+
       croak "File $filename does not have a defined grouping key"
         unless $groupkey;
       if (!exists $Grouped{$groupkey}) {
@@ -245,6 +264,10 @@ Returns UTDATE and OBSERVATION_NUMBER in base class, to allow
 simple disambiguation. This is required to allow the -file
 option to work since that relies on framegroupkeys as it
 reads all files at once.
+
+If the final element of the returned list is a reference
+to an array those items will be treated as alternate
+keywords and the first keyword to match will be used.
 
 =cut
 
