@@ -700,7 +700,7 @@ sub files_from_hdr {
     my @subhdrs = @{ $self->hdr->{SUBHEADERS} };
     my @files = $self->files;
     if (@subhdrs != @files) {
-      croak "files_from_hdr called with number of files different to number of subheaders";
+      croak "files_from_hdr called with number of files (".@files.") different to number of subheaders (".@subhdrs.")";
     }
   }
 
