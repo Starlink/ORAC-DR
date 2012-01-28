@@ -67,14 +67,14 @@ $DEBUG = 0;                     # Turn off debugging mode
 my %FCFS = ('850' => [             # Assumed to be in date order
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC=> 2.45,
-                    BEAM  => 561,
+                    ARCSEC=> 2.42,
+                    BEAM  => 556,
                    }
                   ],
          '450' => [
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC => 6.08,
+                    ARCSEC => 6.06,
                     BEAM   => 606,
                    }
                   ],
@@ -97,12 +97,12 @@ my %ASECFLUXES = (
                            '450' => 10.4,
                           },
                'CRL618' => {
-                            '850' => 4.7,
-                            '450' => 11.8,
+                            '850' => 5.2,
+                            '450' => 12.7,
                            },
                'CRL2688' => {
                              '850' => 6.4,
-                             '450' => 29.7,
+                             '450' => 30.3,
                             },
                '16293-2422' => {
                                 '850' => 22.9,
@@ -157,12 +157,12 @@ my %BEAMFLUXES = (
                            '450' => 9.4,
                           },
                'CRL618' => {
-                            '850' => 4.6,
-                            '450' => 10.9,
+                            '850' => 5.1,
+                            '450' => 11.9,
                            },
                'CRL2688' => {
                              '850' => 5.9,
-                             '450' => 22.0,
+                             '450' => 25.1,
                             },
                '16293-2422' => {
                                 '850' => 15.1,
@@ -370,9 +370,9 @@ sub beamarea {
   # but we currently do not have enough information for that.
   my $ba;
   if ($self->subinst() eq '850') {
-    $ba = 229;
+    $ba = 229.75;
   } else {
-    $ba = 97.0;
+    $ba = 100.0;
   }
   return $ba;
 }
