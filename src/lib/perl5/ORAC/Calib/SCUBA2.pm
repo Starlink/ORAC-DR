@@ -214,7 +214,11 @@ my %BEAMFLUXES = (
 
 # Some early data had HLTau taken with an object name of HLTauB
 $BEAMFLUXES{HLTAUB} = $BEAMFLUXES{HLTAU};
-$ASECFLUXES{HLTAUB} = $ASECFLUXES{HLTAUB};
+$ASECFLUXES{HLTAUB} = $ASECFLUXES{HLTAU};
+# Similarly MWC349A
+$BEAMFLUXES{MWC349A} = $BEAMFLUXES{MWC349};
+$ASECFLUXES{MWC349A} = $ASECFLUXES{MWC349};
+
 
 # Setup the object structure
 __PACKAGE__->CreateBasicAccessors( mask => {},
