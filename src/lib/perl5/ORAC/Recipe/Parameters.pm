@@ -271,6 +271,9 @@ sub _locate_file {
       return File::Spec->rel2abs($path);
     }
   }
+
+  orac_warn "Could not find specified recipe parameter file named $file\n";
+
   return;
 }
 
@@ -288,6 +291,9 @@ sub _parse_file {
   my %data;
   tie %data, "Config::IniFiles", ( -file => $file, -nocase => 1 );
   print "Recipe parameters: ". Dumper(\%data) if $DEBUG;
+
+  orac_warn "No recipe parameters found in recpars file $file\n"
+    unless keys %data;
 
   # Now we want to loop through the contents converting
   # keys to a fixed case, expanding comma separated lists
