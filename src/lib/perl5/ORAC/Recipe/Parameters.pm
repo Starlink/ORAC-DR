@@ -267,7 +267,9 @@ sub _locate_file {
                 $ENV{ORAC_DATA_CAL},
                 File::Spec->catfile( $ENV{'ORAC_DATA_CAL'}, 'recpars' ) ) {
     my $path = File::Spec->catfile( $dir, $file );
-    if ( -e $path) {
+    # We try to open the file instead of -e as we have had cases
+    # where -e fails over NFS despite the file existing.
+    if (open my $fh, $path) {
       return File::Spec->rel2abs($path);
     }
   }
