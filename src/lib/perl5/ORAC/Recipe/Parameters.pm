@@ -274,8 +274,6 @@ sub _locate_file {
     }
   }
 
-  orac_warn "Could not find specified recipe parameter file named $file\n";
-
   return;
 }
 
