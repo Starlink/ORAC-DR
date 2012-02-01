@@ -176,7 +176,7 @@ sub _fixup_line {
   }
 
   # Newlines to <BR> has to happen after entity replacement
-  $line =~ s/\n/<BR>\n/;
+  $line =~ s/\n/<BR>\n/g;
 
   # look for escape codes (see Tk::TextANSIColor)
   # Split into chunks
