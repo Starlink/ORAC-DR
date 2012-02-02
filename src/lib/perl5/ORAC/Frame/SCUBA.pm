@@ -483,7 +483,7 @@ are affected.
 If no sub-instrument is specified then the first file name
 is modified
 
-Note that this is different to the base class which accepts
+Note that this is different from the base class which accepts
 a file number as the second argument. This may need some
 rationalisation.
 

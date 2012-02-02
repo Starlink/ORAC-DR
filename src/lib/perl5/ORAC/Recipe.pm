@@ -455,7 +455,7 @@ The objects accessible to the recipe are:
 =item B<$CURRENT_RECIPE>
 
 Reference to string describing the current recipe. Passed in here
-because the executed recipe can be different to the requested
+because the executed recipe can be different from the requested
 recipe. Will be set with the value:
 
   Currently doing: $RecipeName
