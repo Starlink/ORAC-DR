@@ -155,64 +155,65 @@ for my $i ( 1 .. $Frm->nfiles ) {
   }
 }
 
-# Print results to screen if desired
-if ($verbose) {
-  orac_print "\nResults for noise calculations:\n";
-  orac_print " Sub     NEP_w      NEP_eff    Nbol     Mean     Median     Mode\n--------------------------------------------------------------------\n", "green";
-  foreach my $subarray (sort keys %qa_report_info) {
-    my %results = %{$qa_report_info{$subarray}};
-    my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
-		  $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
+# Display results if they exist
+if ($sumnumgood > 0) {
+  # Print results to screen if desired
+  if ($verbose) {
+    orac_print "\nResults for noise calculations:\n";
+    orac_print " Sub     NEP_w      NEP_eff    Nbol     Mean     Median     Mode\n--------------------------------------------------------------------\n", "green";
+    foreach my $subarray (sort keys %qa_report_info) {
+      my %results = %{$qa_report_info{$subarray}};
+      my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
+		    $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
 
-    my $wnep = sprintf "%0.3e", $results{WTNEP};
-    my $effnep = sprintf "%0.3e", $results{EFFNEP};
-    my $nbol = sprintf "%4d", $results{NBOLO};
-    my $mean = sprintf "%7.1f", $results{MEAN};
-    my $median = sprintf "%7.1f", $results{MEDIAN};
-    my $mode = sprintf "%7.1f", $results{MODE};
+      my $wnep = sprintf "%0.3e", $results{WTNEP};
+      my $effnep = sprintf "%0.3e", $results{EFFNEP};
+      my $nbol = sprintf "%4d", $results{NBOLO};
+      my $mean = sprintf "%7.1f", $results{MEAN};
+      my $median = sprintf "%7.1f", $results{MEDIAN};
+      my $mode = sprintf "%7.1f", $results{MODE};
 
-    orac_print " $subarray:  $wnep   $effnep   $nbol   $mean   $median   $mode\n", "green";
+      orac_print " $subarray:  $wnep   $effnep   $nbol   $mean   $median   $mode\n", "green";
+    }
   }
-}
 
-# Store QA results if requested - the QA should only report values to
-# the screen if we are interested in the results, otherwise they get
-# stored silently.
-$Frm->uhdr("QA_REPORT_INFO", \%qa_report_info);
-my $qamsg = ($check_qa) ? 1 : 0;
-_QA_NOISE_ VERBOSE=$qamsg
+  # Store QA results if requested - the QA should only report values to
+  # the screen if we are interested in the results, otherwise they get
+  # stored silently.
+  $Frm->uhdr("QA_REPORT_INFO", \%qa_report_info);
+  my $qamsg = ($check_qa) ? 1 : 0;
+  _QA_NOISE_ VERBOSE=$qamsg
 
-# Add entries in the calibration system - this has to be done after
-# the QA to get the noise pass/fail entries
-my $origsub = $Frm->uhdr("SUBARRAY");
-orac_print "Storing noise results in calibration system\n";
-foreach my $i (1 .. $Frm->nfiles) {
-  my $noisefile = $Frm->file($i);
-  my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
-  my %results = %{ $qa_report_info{$subarray} };
-  # Store results in the calibration system
-  foreach my $value ( qw/ MEAN MEDIAN MODE NGOOD EFFNEP SUBARRAY QA_NOISE /) {
-    $Frm->uhdr("$value", $results{$value});
+    # Add entries in the calibration system - this has to be done after
+    # the QA to get the noise pass/fail entries
+    my $origsub = $Frm->uhdr("SUBARRAY");
+  orac_print "Storing noise results in calibration system\n";
+  foreach my $i (1 .. $Frm->nfiles) {
+    my $noisefile = $Frm->file($i);
+    my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
+    my %results = %{ $qa_report_info{$subarray} };
+    # Store results in the calibration system
+    foreach my $value ( qw/ MEAN MEDIAN MODE NGOOD EFFNEP SUBARRAY QA_NOISE /) {
+      $Frm->uhdr("$value", $results{$value});
+    }
+    $Cal->noiseindex->add($noisefile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
   }
-  $Cal->noiseindex->add($noisefile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
-}
 
-# Write results to a log file
-if ($uselog) {
-  my $logtype = "bolonoise";
-  orac_print "Writing results to log.bolonoise\n";
-  my @names = ("Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Shutter");
-  foreach my $subarray (sort keys %qa_report_info) {
-    my %results = %{$qa_report_info{$subarray}};
-    my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
-		  $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
-    _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
+  # Write results to a log file
+  if ($uselog) {
+    my $logtype = "bolonoise";
+    orac_print "Writing results to log.bolonoise\n";
+    my @names = ("Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Shutter");
+    foreach my $subarray (sort keys %qa_report_info) {
+      my %results = %{$qa_report_info{$subarray}};
+      my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
+		    $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
+      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
+    }
   }
+  # Restore the SUBARRAY uhdr entry if necessary
+  $Frm->uhdr("SUBARRAY", $origsub);
 }
-
-# Restore the SUBARRAY uhdr entry if necessary
-$Frm->uhdr("SUBARRAY", $origsub);
-
 # Store a couple of useful values to be used when displaying the noise
 # data
 $Frm->uhdr("NOISE_PLOTMAX", $plotmax);
