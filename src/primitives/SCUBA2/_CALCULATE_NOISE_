@@ -105,7 +105,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009-2011 University of British Columbia. All Rights
+Copyright (C) 2009-2012 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -143,6 +143,40 @@ $proceed = 0 if ($Frm->uhdr("PROCESS_FASTFLAT"));
 # should allow dark noise data to pass through because those Frames
 # will be good.
 $proceed = 0 if ($Frm->uhdr("DARKONLY") && !$Frm->isgood);
+
+# Now check to see if suitable flatfield solutions exist - there is no
+# point conitinuing with making the noise calculation if the
+# flatfields failed
+my $fastflats;
+if ($proceed) {
+  # Retrieve a suitable fastflat ramp - this first check is meant to
+  # cover the online pipelines. In offline mode, the Frame will
+  # contain the fastflats already.
+  if (defined $Frm->hdr("SEQ_TYPE")) {
+    my $flattype = ($Frm->hdr("SEQ_TYPE") =~ /noise/i &&
+		    $Frm->hdr("OBS_TYPE") !~ /noise/i)
+      ? "setup" : "raw";
+    _RETRIEVE_FASTFLATS_ TYPE=$flattype
+    $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
+    if ($fastflats) {
+      # Now perform a sanity check to see if the flatfield solutions
+      # yielded good bolometers
+      _RETRIEVE_FASTFLATS_ TYPE=SOL ALLSUB=1
+      my $nbol = $_RETRIEVE_FASTFLATS_{NBOLO_SUB};
+      if ($nbol) {
+	my $ntotal = 0;
+	($ntotal += $nbol->{$_}) for (sort keys %{$nbol});
+	if ($ntotal == 0) {
+	  orac_warn "All flatfields failed - will not proceed with noise calculation\n";
+	  $proceed = 0;
+	}
+      }
+    } else {
+      # Issue a warning if no fastflats could be retrieved
+      orac_warn "Unable to retrieve a suitable fastramp: using the internal solution. Noise results may not be reliable.\n";
+    }
+  }
+}
 
 if ( $proceed ) {
   # OK now deal with input parameters
@@ -200,19 +234,6 @@ if ( $proceed ) {
   # Collect files
   my ($inlist, $outlist);
   my %files = $Frm->get_files_by_subarray;
-
-  # Retrieve a suitable fastflat ramp
-  my $fastflats;
-  if (defined $Frm->hdr("SEQ_TYPE")) {
-    my $flattype = ($Frm->hdr("SEQ_TYPE") =~ /noise/i && $Frm->hdr("OBS_TYPE") !~ /noise/i)
-    ? "setup" : "raw";
-    _RETRIEVE_FASTFLATS_ TYPE=$flattype
-    $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
-    # Issue a warning if no fastflats could be retrieved
-    unless ($fastflats) {
-      orac_warn "Unable to retrieve a suitable fastramp: using the internal solution. Noise results may not be reliable.\n";
-    }
-  }
 
   # Inform the user which subarrays are being used to calculate noise
   # for. While calcnoise can handle data from all subarrays at once
