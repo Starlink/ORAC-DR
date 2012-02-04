@@ -36,6 +36,7 @@ $VERSION = '1.0';
 
 use constant NO_RULES => '__NO_RULES__';
 use constant BLANK_VALUE => '***BLANK***';
+use constant SPACE => '_SPACE_';
 
 
 =head1 PUBLIC METHODS
@@ -378,6 +379,11 @@ sub slurpindex {
         if ( defined( $entry ) && uc( $entry ) eq BLANK_VALUE ) {
           $entry = " ";
         }
+	# Add whitespace back to strings
+	my $space = SPACE;
+	if ( defined( $entry ) && uc( $entry ) =~ /$space/ ) {
+          $entry =~ s/$space/ /g;
+        }
       }
 
       # If we are using the key from the file then we
@@ -589,6 +595,12 @@ sub index_to_text {
     } else {
       if ( /^\s+$/ ) {
         BLANK_VALUE;
+      } elsif ( /\s+/ ) {
+	my $entry = $_;
+	my $space = SPACE;
+	$entry =~ s/^\s+//;	# removing leading whitespace
+	$entry =~ s/\s/$space/g;	# remaining whitespace is replaced with SPACE
+	$entry;
       } else {
         $_
       }
