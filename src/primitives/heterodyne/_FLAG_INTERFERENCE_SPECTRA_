@@ -1,0 +1,167 @@
+use JCMT::ACSIS::Array;
+
+# Handle arguments.
+# =================
+
+my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.5,3.0,3.0" );
+my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "3.0" );
+
+# Handle recipe parameter overrides.
+$edge_clip = ( defined( $Frm->uhdr( "RECPAR_EDGE_CLIP" ) ) ?
+             $Frm->uhdr( "RECPAR_EDGE_CLIP" )              :
+             $edge_clip );
+$thresh_clip = ( defined( $Frm->uhdr( "RECPAR_THRESH_CLIP" ) ) ?
+             $Frm->uhdr( "RECPAR_THRESH_CLIP" )            :
+             $thresh_clip );
+
+# Convert list of standard-deviation clip levels to an array.
+my @clips = split( ',', $edge_clip );
+
+# Constrain parameters to allowed values.
+# ---------------------------------------
+
+# Sigma clipping levels should not decrease. Do not set the initial
+# threshold too low lest we exclude acceptable but slightly deviant
+# spectra in an otherwise good set.
+my @clip_sigma = ();
+my $last = 2.0;
+foreach ( @clips ) {
+   push @clip_sigma, max( $last, $_ );
+}
+
+$edge_clip = "[" . join( ",", @clip_sigma ) . "]";
+
+# Specify output and temporary filenames.
+# =======================================
+my $params;
+my $osuffix = "_nimasked";
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Set/get filenames.
+   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+   orac_say( "Determine spectra exhibiting noise interference in $in." );
+   ( $in, my $interference ) = $Frm->inout( "_imask", $i );
+   ( $in, my $imp ) = $Frm->inout( "_imp", $i );
+
+   my $temp1file = new ORAC::TempFile( 0 );
+   my $temp2file = new ORAC::TempFile( 0 );
+   my $temp3file = new ORAC::TempFile( 0 );
+   my $temp4file = new ORAC::TempFile( 0 );
+#   my $temp5file = new ORAC::TempFile( 0 );
+#   my $temp6file = new ORAC::TempFile( 0 );
+   my $temp5file = $imp;
+   my $temp6file = $interference;
+   my $temp7file = new ORAC::TempFile( 0 );
+
+# We need the dimensions of the input file for later.
+   _GET_DIMENSIONS_ FILE=$in
+   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+   my $nel = $ubnd->[0] - $lbnd->[0] + 1;
+
+# Form arrays of bad detectors.
+# =============================
+
+# Retrieve the list of bad detectors from the calibration system ONLY
+# ignoring the ones set locally.  The reading of INDEXORMASTER is
+# done to setup the survey (survey_br).
+   $Cal->bad_receptors( "MASTER" );
+   my @baddets = $Cal->bad_receptors_list;
+   orac_say( " Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+# Still need to invoke the bad_receptors_list method although the
+# resulting array is not used.
+   $Cal->bad_receptors( "INDEXORMASTER" );
+   my @tmpdets = $Cal->bad_receptors_list;
+   orac_say( " Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
+
+# Create a mask NDF.
+# ==================
+#
+# As we shall be filling every receptor plane with a mask of any nosiy
+# spectra, it is adequate to merely copy the input NDF.
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$temp6file" );
+
+# Find the interference.
+# ======================
+
+# The data thus appear noisy because of a 5-pixel frequency sinusoid
+# in an envelope whose amplitude oscillates with at least one other
+# frequency (around 60 pixels).
+   my $spec_percent = "~85%";
+   if ( ! defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ||
+        ! $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) { $spec_percent = "" }
+
+# Get average rms deviations for each receptor not in the bad_receptors list.
+# ===========================================================================
+   my $array = new JCMT::ACSIS::Array( File => $in );
+
+# Form set of receptors that are not bad in the master list.
+   my %keep;
+   @keep{ $array->receptors } = ( );
+   delete @keep{ @baddets };
+   my @receptors = keys %keep;
+   
+   foreach my $receptor ( @receptors ) {
+      orac_say( "Looking for noisy spectra arising from transient interference in receptor $receptor." );
+      my $pixel = $array->pixel( $receptor );
+
+# Since this has lots of zero crossings an edge detector is one way to
+# identify this inference signal.  Note as currently coded LAPLACE
+# only operates on two-dimensional data.
+      orac_say( " Computing squared Laplacian of spectra." );
+      $params = "in=$in($spec_percent,$pixel,) out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "laplace", "$params" );
+
+# Find the rms `edginess' i.e. a positive measure of the deviation from flatness.
+      $params = "ia=$temp1file out=$temp2file exp='sqrt(IA*IA/$nel)'";
+      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Collapse the spectral axis using a clipped mean to form average
+# edginess for each spectrum for the current detector.
+      orac_say( " Collapsing spectra to form average edge detection per spectrum." );
+      $params = "in=$temp2file out=$temp3file estimator=Cmean clip=2.0";
+      $params .= " axis=spec trim wlim=0.0 variance=false";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Estimate the normal level, excluding anomalous spectra.  This
+# assumes that most of the spectra are good.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file clip=$edge_clip" );
+      my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+      ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+      ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Threshold spectra whose mean rms edginess exceeds an arbitrary limit.
+# Exclude already masked detectors.
+      if ( $numgood > 0 ) {
+         my $threshold = $median + $thresh_clip * $sigma;
+         orac_say( " Turning off spectra with rms edginess above " . sprintf( "%.3f", $threshold ) );
+         $params = "in=$temp3file out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+         $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Expand the thresholded image to the size of the current receptor's
+# plane in the initial cube.
+         $params = "in=$temp4file out=$temp5file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Paste the data to the mask file.
+         my $params = "in=$temp6file p1=$temp5file out=$temp7file confine=false transp=false";
+         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp7file out=$temp6file" );
+      }
+   }
+
+# At this point $temp6file should have all the original receptors
+# checked for noisy spectra and have bad values for those spectra.
+# Copy the bad spectra to the output image.
+   $params = "in=$in ref=$temp6file out=$out";
+   $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+
+# Display if necessary.
+   $Display->display_data( $Frm ) if defined $Display;
+
+}
+
+# Tidy-up output.
+orac_print "\n";
