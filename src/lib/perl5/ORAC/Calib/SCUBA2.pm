@@ -773,7 +773,10 @@ sub makemap_config {
     # Check for SUMMIT or QL pipeline
     my $pipeline = "";
     if (defined $args{pipeline}) {
-      $pipeline = lc($args{pipeline}) unless ($config_type && $config_type eq "moon");
+      # Make exceptions for the moon and bright_compact
+      $pipeline = lc($args{pipeline})
+	unless ($config_type &&
+		($config_type eq "moon" || $config_type eq "bright_compact"));
     }
     if ($pipeline eq "ql" || $pipeline eq "summit") {
       # Note different base dir
