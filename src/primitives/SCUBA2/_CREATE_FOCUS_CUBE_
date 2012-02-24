@@ -131,19 +131,6 @@ USA.
 # Should I be verbose? (Default to yes)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-# Flag to indicate if we have a FOCUS observation - skip sequences
-# that consist solely of non-focus data (eg fastflats)
-my $focusobs = ( lc($Frm->uhdr("ORAC_OBSERVATION_TYPE")) eq "focus" ) ? 1 : 0;
-$focusobs = 0 if (defined $Frm->hdr("SEQ_TYPE") && $Frm->hdr("SEQ_TYPE") !~ /focus/i);
-# However, what happens if we get to the end of the obs and no cube
-# has been created? Just try creating a cube with whatever data exist.
-if ($Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE")) {
-  if ($Cal->isplanet($Frm->hdr("OBJECT"))) {
-    orac_print "\nObservation has ended with no cube created - creating one now\n";
-    $focusobs = 1;
-  }
-}
-
 # Get current focus position
 my $curfocposn = $Frm->hdrval("FOCPOSN");
 
@@ -200,6 +187,27 @@ if ( $Grp->uhdr("FOCUSNUM") ) {
   # Enter first key/value pair in hash and store reference in uhdr
   $focusnum{$curfocposn} = 1;
   $Grp->uhdr("FOCUSNUM",\%focusnum);
+}
+
+# Flag to indicate if we have a FOCUS observation - skip sequences
+# that consist solely of non-focus data (eg fastflats)
+my $focusobs = ( lc($Frm->uhdr("ORAC_OBSERVATION_TYPE")) eq "focus" ) ? 1 : 0;
+$focusobs = 0 if (defined $Frm->hdr("SEQ_TYPE") && $Frm->hdr("SEQ_TYPE") !~ /focus/i);
+# However, what happens if we get to the end of the obs and no cube
+# has been created? Just try creating a cube with whatever data exist.
+if ($Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE")) {
+  if ($Cal->isplanet($Frm->hdr("OBJECT"))) {
+    orac_print "\nObservation has ended with no cube created - creating one now\n";
+    $focusobs = 1;
+    # In the QL pipeline, if the observation has ended with no cube
+    # created, the current Frame will contain fastflat data which will
+    # have different a header than image-processing primitives expect
+    # so use the first "good" member of the Group as a template
+    # instead
+    if ($Frm->uhdr("QUICKLOOK") && $Frm->hdr("SEQ_TYPE") =~ /fastflat/i) {
+      $Frm = ($Grp->members)[0];
+    }
+  }
 }
 
 # Make use of the fact that the SMU is stepped an equal number of
@@ -261,7 +269,7 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   my @subgrps;
   for my $i ( 0 .. $#focposns ) {
     foreach my $subgrp ( @unsortedsubgrps ) {
-      if ( @{ $subgrp->members} ) {
+      if ( @{ $subgrp->members } ) {
        push ( @subgrps, $subgrp)
          if ($subgrp->members->[0]->hdrval("FOCPOSN") == $focposns[$i]);
       }
