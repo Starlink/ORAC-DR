@@ -65,13 +65,30 @@ USA.
 # This is the summit pipeline
 $Frm->uhdr("SUMMIT", 1);
 
-# Check for a single SEQ_TYPE and abort if multiple values are present
-unless (defined $Frm->hdr("SEQ_TYPE")) {
+# Check for a single SEQ_TYPE
+if (!defined $Frm->hdr("SEQ_TYPE")) {
   if ($Frm->hdr("NSUBSCAN")) {
+    # This is probably bad - the Frame contains data from different
+    # sequences but the subscan number is the same for all files
     orac_err "************************************************************************\n";
     orac_err "Frame contains data from differing sequences - something has gone wrong\n";
     orac_err "************************************************************************\n";
     return ORAC__TERM;
+  } else {
+    # We have multiple sequence-types because the pipeline has fallen
+    # behind
+    if (!defined $Frm->hdr("SHUTTER")) {
+      # If we have mixed shutter data, just pick out the open-shutter files
+      orac_print "Dealing with mixed shutter data - ";
+      my @nondarks = map { $Frm->file($_) } grep { $Frm->hdrval("SHUTTER",$_-1) > 0 } 1..$Frm->nfiles;
+      $Frm->files(@nondarks);
+      $Frm->readhdr;
+      # If the Frame now contains only fastflats, the DARKONLY flag
+      # must be set to prevent them being treated as science data
+      my $dark_only = (defined $Frm->hdr("SEQ_TYPE") &&
+		       $Frm->hdr("SEQ_TYPE") =~ /fastflat/i) ? 1 : 0;
+      $Frm->uhdr("DARKONLY", $dark_only);
+    }
   }
 }
 
@@ -86,7 +103,7 @@ if ( defined $Grp->uhdr("LAST_INDEX") ) {
   # TCS_INDEX is now less than the LAST_INDEX. Note that this will not
   # store a new value of LAST_INDEX if it is already 1, but if that's
   # the case then it won't matter.
-  if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX")) {
+  if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX") ) {
     $Grp->uhdr("LAST_INDEX",1);
     # Reset percentage and scan-pattern completion and new image flags
     # so we process data from a new observation
