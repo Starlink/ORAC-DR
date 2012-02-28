@@ -185,6 +185,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
     # might be missing (if that file was skipped in the QL pipeline,
     # say)
     my %amps = map { $_ => -1} (1 .. $Frm->hdr("NFOCSTEP"));
+    my %damps = %amps;
     for my $plane ($focsteplo..$focstephi) {
       # Retrieve filename to determine centroid
       my $focusfile = "$focuscube(,,$plane)";
@@ -205,29 +206,61 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
 	  $damp = $amps{$plane} / 10.0;
 	}
       }
-
       $amps{$plane} = $amp;
-      if ($amp > 0) {
-	if ($amp/$damp > 3) {
-	  push (@amps, $amp);
-	  push (@damps, $damp);
-	  push (@fitted, $plane-1);
-	} else {
-	  orac_warn "Amplitude of plane $plane is less than 3-sigma\n";
+      $damps{$plane} = $damp;
+    }
+
+    # Now check validity of fitted amplitudes - only include those
+    # amplitudes which exceed 3-sigma and are not from SMU positions
+    # beyond where the source was no longer detected
+    my $midplane = int(($Frm->hdr("NFOCSTEP") + 1)/2);
+    foreach my $plane (sort keys %amps) {
+      # Set a default flag to indicate that the previous amplitude was
+      # positive
+      my $prevpositive = 1;
+      if (defined $amps{$plane-1}) {
+	# If on the "lower" side of the midplane, check to see if this
+	# amplitude is negative. If so, and the previous amplitude was
+	# positive, then the previous amplitude should not be used.
+	if ($plane < $midplane) {
+	  if ($amps{$plane} < 0 && $amps{$plane-1} > 0) {
+	    $prevpositive = 0;
+	    $amps{$plane-1} = -$amps{$plane-1};
+	  }
+	} elsif ($plane > $midplane) {
+	  # If on the "upper" side of the midplane, check to see if
+	  # the previous amplitdue was negative - if so, then mark the
+	  # current ampltude as negative so it is not used.
+	  if ($amps{$plane-1} < 0) {
+	    $prevpositive = 0;
+	    $amps{$plane} = -$amps{$plane};
+	  }
 	}
-      } else {
+      }
+
+      my $amp = $amps{$plane};
+      my $damp = $damps{$plane};
+      my $amp_ok = ($amp/$damp >= 3 && $prevpositive) ? 1 : 0;
+      if ($amp_ok) {
+	push (@amps, $amp);
+	push (@damps, $damp);
+	push (@fitted, $plane-1);
+      } elsif (!$prevpositive) {
+	orac_warn "Ignoring plane $plane due to change in sign of amplitude\n";
+      } elsif ($amp/$damp < 3) {
+	orac_warn "Amplitude of plane $plane is less than 3-sigma\n";
+      } elsif ($amp < 0) {
 	orac_warn "Amplitude of plane $plane is negative\n";
       }
     }
 
+
     # Warn user if too many fits failed: need 3 points to define a quadratic
     my $npts = scalar(@amps);
-    # Midpoint plane - convert to an int in case there is an even number of SMU positions
-    my $midpt = int(0.5 * ($focstephi + $focsteplo));
     if ( $npts < 3 ) {
       orac_print "\n";
       orac_warn "Insufficient number of amplitudes ($npts) - unable to determine focus offsets\n";
-    } elsif ($amps{$midpt} < 0 && ($amps{$midpt-1} < 0 || $amps{$midpt+1} < 0)) {
+    } elsif ($amps{$midplane} < 0 && ($amps{$midplane-1} < 0 || $amps{$midplane+1} < 0)) {
       # Catch the case where there appears to be enough fits, but
       # they're unrealistic - in this case the central SMU position
       # and either of the positions either side have negative
