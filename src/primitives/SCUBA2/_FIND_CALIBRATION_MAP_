@@ -257,54 +257,18 @@ if ( $proceed ) {
 
     # Find the integrated intensity within the given aperture. Note
     # that the image should have a flat background in order to obtain
-    # an accurate result, though any DC offset will be removed in the
-    # calculation.
-    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 IMAGE=$in XYPOS=$posn RADIUS=$radius
-
-    # Beam conversion factor for BEAMEQUIV calibration
-    my $beamconv;
-    if ($mapfitpar && defined $Frm->uhdr("RECPAR_USEFWHM")) {
-      $fwhm = sqrt($mapfitpar->{MAJFWHM}->[0] * $mapfitpar->{MINFWHM}->[0]);
-      $beamconv = 1.133 * $fwhm * $fwhm;
-      orac_print "Using fitted FWHM = ".(sprintf "%.2f", $fwhm)." arcsec (beam area of $beamconv arcsec^2/beam)\n";
-    } else {
-      $beamconv = $Cal->beamarea(2.0*$radius);
-      $fwhm = sprintf("%.2f", sqrt($beamconv/1.133));
-      orac_print "Using empirical beam area of $beamconv arcsec^2/beam (FWHM=$fwhm arcsec)\n";
-    }
+    # an accurate result
+    _APERTURE_PHOTOMETRY_ IMAGE=$in RADIUS=$radius
 
     # Retrieve the results
     my %results = ( BEAM => $_FIND_MAP_PEAK_{PEAK},
-		    ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX},
-		    BEAMEQUIV => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} / $beamconv
+		    ARCSEC => $_APERTURE_PHOTOMETRY_{TOTALFLUX}
 		  );
     my %results_err = ( BEAM_ERR => $_FIND_MAP_PEAK_{PEAKERR},
-			ARCSEC_ERR => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUXERR},
-			BEAMEQUIV_ERR => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUXERR} / $beamconv
+			ARCSEC_ERR => $_APERTURE_PHOTOMETRY_{TOTALFLUXERR}
 		      );
 
     my %fcf;
-    my %printfcf = ( ARCSEC => 1, ARCSEC_AP => 1, BEAM => 1, BEAMEQUIV => 1,
-		     BEAMEQUIV_AP => 1, BEAMMATCH => 1 );
-    if ($Frm->uhdr("PICARD_RESULTS")) {
-      $printfcf{ARCSEC} = 0;
-      $printfcf{BEAMEQUIV} = 0;
-    }
-
-    # Temporary code to allow easy comparison of original calculations
-    # with autophotom
-    if ( $autophotom ) {
-      orac_print " *** Deriving AP FCFs using autophotom ***\n";
-      _APERTURE_PHOTOMETRY_ IMAGE=$in RADIUS=$radius
-      $results{ARCSEC_AP} = $_APERTURE_PHOTOMETRY_{TOTALFLUX};
-      $results{BEAMEQUIV_AP} = $_APERTURE_PHOTOMETRY_{TOTALFLUX} / $beamconv;
-      $results_err{ARCSEC_AP_ERR} = $_APERTURE_PHOTOMETRY_{TOTALFLUXERR};
-      $results_err{BEAMEQUIV_AP_ERR} = $_APERTURE_PHOTOMETRY_{TOTALFLUXERR} / $beamconv;
-      if ($Frm->uhdr("PICARD_RESULTS")) {
-	$printfcf{BEAMEQUIV_AP} = 0;
-      }
-    }
-
     # Now run the matched-filter on the calibrator and fit the peak position
     _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group VERBOSE=0
     $Frm->uhdr("PLOT_MF_FIT", 1);
@@ -355,8 +319,7 @@ if ( $proceed ) {
 	}
       }
 
-      orac_print "Determining calibration of type ".($type).":"
-	if ($printfcf{$type});
+      orac_print "Determining calibration of type ".($type).":";
       unless (defined $results{$type}) {
 	orac_print " - Failed!\n", "red";
 	orac_err "Calibration did not return a result\n";
@@ -375,8 +338,7 @@ if ( $proceed ) {
 	orac_err "Unable to determine a FCF of type $type for this observation\n";
 	next;
       } else {
-	orac_print "\n"
-	  if ($printfcf{$type});
+	orac_print "\n";
       }
 
       # Now get the peak/total flux for this filter
@@ -386,8 +348,7 @@ if ( $proceed ) {
       # If we have a flux, store the FCF in the calibration system
       if (defined $flux) {
 	my $printunits = ($type =~ /^ARCSEC/) ? $dataunits ." arcsec**2" : $dataunits;
-	orac_print "  Flux ($type) = $flux; Data = ". $results{$type}. " $printunits\n"
-	  if ($printfcf{$type});
+	orac_print "  Flux ($type) = $flux; Data = ". $results{$type}. " $printunits\n";
 
 	# Calculate the new gain
 	my $fcf = $flux / $results{$type};
@@ -399,8 +360,7 @@ if ( $proceed ) {
 	my $pdfcf = sprintf "%.4f", $dfcf;
 	if ( $store ) {
 	  # Announce the new gain
-	  orac_print("  Storing new gain for $filter: $pfcf +/- $pdfcf $units\n",'yellow')
-	    if ($printfcf{$type});
+	  orac_print("  Storing new gain for $filter: $pfcf +/- $pdfcf $units\n",'yellow');
 
 	  # Set the current gain - add to index file
 	  # This means that we have to create a hash with the
@@ -413,8 +373,7 @@ if ( $proceed ) {
 	  $Cal->gainsindex->add($Obj->file() ."_$type",
 				{ %{$Obj->hdr}, %{$Obj->uhdr}});
 	} else {
-	  orac_print ("  Derived FCF for $filter: $pfcf +/- $pdfcf $units\n", "yellow")
-	    if ($printfcf{$type});
+	  orac_print ("  Derived FCF for $filter: $pfcf +/- $pdfcf $units\n", "yellow");
 	}
 	$fcf{$type} = $fcf;
 	my $errtype = $type . "_ERR";
@@ -436,6 +395,22 @@ if ( $proceed ) {
       $Obj->isgood(0);
       orac_err "No FCFs could be determined for this observation: marking as bad\n";
     } else {
+      # Sanity check: the BEAM FCF should be related to the ARCSEC FCF
+      # using the empirical beam area: BEAM = ARCSEC * beamconv
+      if (defined $fcf{ARCSEC} && defined $fcf{BEAM}) {
+	my $beamconv = $Cal->beamarea(2.0*$radius);
+	my $beamfwhm = sprintf("%.2f", sqrt($beamconv/1.133));
+	my $altbeamconv = $fcf{BEAM} / $fcf{ARCSEC};
+	my $pcbeamconv = sprintf "%.1f", 100.0 * ($altbeamconv - $beamconv) / $beamconv;
+	my $msg = ($pcbeamconv > 0) ? "higher" : "lower";
+	$pcbeamconv = abs($pcbeamconv);
+	my $altfwhm = sprintf("%.2f", sqrt($altbeamconv/1.133));
+	orac_print "Using ARCSEC/BEAM FCF ratio to derive beam area:\n";
+	orac_print " derived   = ".(sprintf "%.2f", $altbeamconv)." arcsec^2/beam / FWHM = $altfwhm arcsec\n empirical = $beamconv arcsec^2/beam / FWHM = $beamfwhm arcsec\n";
+	orac_print " Derived beam area is $pcbeamconv % $msg\n\n";
+      } else {
+	orac_warn "Unable to estimate consistency between ARCSEC and BEAM FCFs\n";
+      }
       # Store results in primitive hash
       $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
     }
