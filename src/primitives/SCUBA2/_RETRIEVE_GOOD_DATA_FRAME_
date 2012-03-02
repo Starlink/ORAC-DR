@@ -1,0 +1,119 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_RETRIEVE_GOOD_DATA_FRAME_ - retrieve files with good flatfields
+
+=head1 SYNOPSIS
+
+_RETRIEVE_GOOD_DATA_FRAME_
+
+=head1 DESCRIPTION
+
+This primitive examines the flatfield solutions from the current Frame
+object and returns a list of data files for those subarrays which have
+good flatfield solutions.
+
+The files with good flatfield solutions are returned in the primitive
+hash as a list (C<FILES>) or indexed by subarray (C<FILES_SUB>). If
+there are no good flatfields, neither key is defined.
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=over 2
+
+=item B<FASTFLATS>
+
+Flag to denote whether to return the raw fastflat files along with the
+data. Default is 1 (yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES
+
+_RETRIEVE_FASTFLATS_
+
+=back
+
+=head1 OUTPUT DATA
+
+The primitive hash contains two entries if successful: C<FILES> is an
+array reference with the list of files and C<FILES_SUB> which contains
+a hash reference of the files indexed by subarray.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $incfastflats = get_prim_arg($_PRIM_ARGS_, "FASTFLATS", 1);
+
+# Flatfield solutions
+_RETRIEVE_FASTFLATS_ TYPE=SOL
+my %subarrays =%{$_RETRIEVE_FASTFLATS_{NBOLO_SUB}}
+  if (defined $_RETRIEVE_FASTFLATS_{NBOLO_SUB});
+my $nbolosum = $_RETRIEVE_FASTFLATS_{NBOLO_SUM};
+
+# Raw flatfield files
+my %fastflats;
+if ($incfastflats && $nbolosum > 0) {
+  _RETRIEVE_FASTFLATS_ TYPE=RAW
+  %fastflats =%{$_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}}
+    if (defined $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB});
+}
+
+# Data in current Frame
+my %allfiles = $Frm->get_files_by_subarray;
+
+# List of subarrays to examine flatfield results
+my @subarrays = sort keys %allfiles;
+
+my %goodfiles;
+foreach my $subarray (@subarrays) {
+  if ($subarrays{$subarray} > 0) {
+    my @goodfiles = @{$allfiles{$subarray}};
+    push(@goodfiles, $fastflats{$subarray}) if (%fastflats);
+    $goodfiles{$subarray} = \@goodfiles;
+  }
+}
+
+# Store the results or issue a warning
+if (%goodfiles) {
+  $_PRIM_ARGS_->{FILES_SUB} = \%goodfiles;
+  $_PRIM_ARGS_->{FILES} = [ map { @{$goodfiles{$_}} } sort keys %goodfiles ];
+} else {
+  orac_warn "All flatfields failed - unable to retrieve any good data\n";
+}
