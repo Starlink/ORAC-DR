@@ -43,7 +43,7 @@ MAKEMAP
 =item ORAC-DR PRIMITIVES
 
 _CHECK_IMAGE_FOR_TARGET_, _GET_MAKEMAP_ARGS_, _GET_MAKEMAP_CONFIG_,
-_RETRIEVE_FASTFLATS_
+_RETRIEVE_GOOD_DATA_FRAME_
 
 =back
 
@@ -109,55 +109,52 @@ if ($Frm->uhdr("DARKONLY")) {
 
 my $system = uc(get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING"));
 
-my (@infiles, @fastflats);
-# Use all files in current Frame, except for POINTING and FOCUS
-# observations where the instrument aperture is defined
+# Retrieve files from subarrays that have good flatfields before making a map
+_RETRIEVE_GOOD_DATA_FRAME_
+my $infiles = $_RETRIEVE_GOOD_DATA_FRAME_{FILES_SUB};
+# Retrieve the full list of files - override this list for POINTING
+# and FOCUS observations below
+my @infiles = @{$_RETRIEVE_GOOD_DATA_FRAME_{FILES}}
+  if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
+
+# For POINTING and FOCUS observations, where the instrument aperture
+# may be defined, select only those files needed to make a map if
+# possible.
 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i ||
     $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
 
-  my %allfiles = $Frm->get_files_by_subarray;
-  my @subarrays = sort keys %allfiles;
-
-  my $these_arrays;
+  my $nsubs = scalar(keys %{$infiles});
+  my $these_arrays = "all $nsubs good arrays";
   if (defined $Frm->hdr("INSTAP")) {
-    @subarrays = ($Frm->instap_subarray);
-    $these_arrays = "subarray $subarrays[0] only...";
-  } elsif (@subarrays >= 3 && !$Cal->isplanet($Frm->hdr("OBJECT"))) {
-    # Use only two arrays - which will B/D if all four are present,
-    # except for planets which need all the available data (especially
-    # for very short observations) to make good estimates of the
-    # common mode
-    @subarrays = ($subarrays[1], $subarrays[-1]);
-    $these_arrays = "subarrays ". (join(" and ", @subarrays))." only...";
-  } else {
-    # Set a default message
-    $these_arrays = "all arrays";
-  }
-  my $origsub = $Frm->uhdr("SUBARRAY");
-  foreach my $subarray (@subarrays) {
-    my $infiles = $allfiles{$subarray};
-    if ($infiles) {
-      push(@infiles, @{$infiles});
-      $Frm->uhdr("SUBARRAY", $subarray);
-      push(@fastflats, $Cal->fastflat);
+    my $instap_subarray = $Frm->instap_subarray;
+    if (defined $infiles->{$instap_subarray}) {
+      $these_arrays = "subarray $instap_subarray only...";
+      @infiles = @{$infiles->{$instap_subarray}};
+    } else {
+      # Otherwise the only option is to use *all* the remaining data
+      orac_warn "Flatfield failed for INSTAP array - using all available data\n";
+    }
+  } elsif ($nsubs > 2 && !$Cal->isplanet($Frm->hdr("OBJECT"))) {
+    # Use only two arrays if at least three are present, except for
+    # planets which need all the available data (especially for very
+    # short observations) to make good estimates of the common
+    # mode. Choose opposite subarrays for a (presumably) better map.
+    my $prefix = "s".($Frm->hdr("FILTER") =~ /850/ ? 8 : 4);
+    my @subarrays = map { $prefix.$_} qw/b d/;
+    if (!$infiles->{$subarrays[0]} || !$infiles->{$subarrays[-1]}) {
+      # OK one of the target subarrays has a bad flatfield, so pick the other two
+      @subarrays = map { $prefix.$_} qw/a c/;
+      if (!$infiles->{$subarrays[0]} || !$infiles->{$subarrays[-1]}) {
+	@subarrays = undef;
+	orac_warn "Unable to select two opposite subarrays - using all available data\n";
+      }
+    }
+    if (@subarrays == 2) {
+      $these_arrays = "subarrays ". (join(" and ", @subarrays))." only...";
+      @infiles = map { @{$infiles->{$_}} } @subarrays;
     }
   }
-  $Frm->uhdr("SUBARRAY", $origsub);
-  if (@infiles) {
-    orac_print "Selecting files from $these_arrays\n";
-  } else {
-    orac_warn "Unable to retrieve data for $these_arrays: using all data\n";
-    @infiles = $Frm->files;
-  }
-} else {
-  @infiles = $Frm->files;
-}
-if (@fastflats) {
-  push(@infiles, @fastflats);
-} else {
-  _RETRIEVE_FASTFLATS_
-  my $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS};
-  push(@infiles, @{$fastflats}) if ($fastflats);
+  orac_print "Selecting files from $these_arrays\n";
 }
 
 # Quit processing if there is no data to make a map
@@ -194,7 +191,7 @@ foreach my $arg (keys %newmakemapargs) {
 $args .= join(" ", map { "$_=$makemapargs{$_}" } keys %makemapargs);
 
 # Call makemap - really must have some sort of feedback to user
-orac_print "Calling makemap using iterate method\n";
+orac_print "Calling makemap using iterate method - ";
 
 # Newimage will be used to determine if a new image was created by
 # this primitive. Set an optimistic default.
@@ -205,7 +202,7 @@ my $fault_msg = "If this failure is not associated with a bad observation please
 
 my $nfiles = scalar(@infiles);
 # Now create output map
-orac_print "Making map from $nfiles input files\n";
+orac_print "making map from $nfiles input files\n";
 my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 
 # Check for SMF__NOMEM return status
