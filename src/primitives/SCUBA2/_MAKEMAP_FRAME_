@@ -164,19 +164,29 @@ if ( $method =~ /^iter/ ) {
 # How many files are we making a map with?
 my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
 
+# Include fastflats (which have been processed separately) in the list
+# of files?
+my $incfastflats = (($Frm->uhdr("SUMMIT") && !$Frm->uhdr("FLATFIELD")) ||
+		     $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") ? 1 : 0;
+
 my @infiles;
 my $suffix = "_fmos";
 my $obsnum = $Frm->hdr("OBSNUM");
 if ( $infiles eq "FRAME" ) {
   # Use all files in current Frame
-  @infiles = $Frm->files;
+  _RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats
+  @infiles = @{$_RETRIEVE_GOOD_DATA_FRAME_{FILES}}
+    if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
 } elsif ( $infiles eq "OBS" ) {
   # Create a sub-group for the current observation only
   my $subGrp = $Grp->subgrp(OBSNUM => $obsnum);
   foreach my $frmobj ( $subGrp->members ) {
     # Only add data from frames which do not contain images
-    push (@infiles, $frmobj->files)
-      if ($frmobj->isgood && !$frmobj->uhdr("NEWIMAGE"));
+    if ($frmobj->isgood && !$frmobj->uhdr("NEWIMAGE")) {
+      _RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats FRAME=$frmobj
+      push (@infiles, @{$_RETRIEVE_GOOD_DATA_FRAME_{FILES}})
+	if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
+    }
     # Don't need this frame any more so mark as bad
     $frmobj->isgood(0);
   }
@@ -187,7 +197,9 @@ if ( $infiles eq "FRAME" ) {
   foreach my $frmobj ( $subGrp->members ) {
     # `New' data are marked with isgood = 2
     if ($frmobj->isgood == 2) {
-      push (@infiles, $frmobj->files);
+      _RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats FRAME=$frmobj
+      push (@infiles, @{$_RETRIEVE_GOOD_DATA_FRAME_{FILES}})
+	if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
       # Don't need this frame any more so mark as bad
       $frmobj->isgood(0);
     }
@@ -195,7 +207,11 @@ if ( $infiles eq "FRAME" ) {
 } elsif ( $infiles eq "ALL" ) {
   # Use ALL data from all members of Group
   foreach my $frmobj ( $Grp->members ) {
-    push (@infiles, $frmobj->files) if ($frmobj->isgood);
+    if ($frmobj->isgood) {
+      _RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats FRAME=$frmobj
+      push (@infiles, @{$_RETRIEVE_GOOD_DATA_FRAME_{FILES}})
+	if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
+    }
   }
   $suffix = "_mos";
 }
@@ -204,15 +220,6 @@ if ( $infiles eq "FRAME" ) {
 my $object = $Frm->hdr('OBJECT');
 orac_term "No good data for $object from obs $obsnum with which to make a map\n"
   unless (@infiles);
-
-# Add fastflats for SUMMIT pipeline but only if data are not already
-# flatfielded, OR if this is a focus observation
-if (($Frm->uhdr("SUMMIT") && !$Frm->uhdr("FLATFIELD")) ||
-    $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") {
-  _RETRIEVE_FASTFLATS_
-  my $fastflats = $_RETRIEVE_FASTFLATS_{FASTFLATS};
-  push(@infiles, @{$fastflats}) if ($fastflats);
-}
 
 # Write list of filenames to a temp file
 my $inlist = write_file_list( @infiles );
