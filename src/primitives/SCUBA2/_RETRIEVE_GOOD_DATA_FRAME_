@@ -16,11 +16,13 @@ good flatfield solutions.
 
 The files with good flatfield solutions are returned in the primitive
 hash as a list (C<FILES>) or indexed by subarray (C<FILES_SUB>). If
-there are no good flatfields, neither key is defined.
+there are no good flatfields, neither key is defined. Note that the
+list of files in C<FILES> has the fastflats at the end of the list if
+requested to accommodate the summit pipeline.
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 2
 
@@ -28,6 +30,11 @@ The following argument is supported:
 
 Flag to denote whether to return the raw fastflat files along with the
 data. Default is 1 (yes).
+
+=item B<FRAME>
+
+The Frame object from which good files are retrieved. Default is
+C<$Frm>.
 
 =back
 
@@ -79,41 +86,66 @@ USA.
 
 =cut
 
+my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", $Frm);
+
 my $incfastflats = get_prim_arg($_PRIM_ARGS_, "FASTFLATS", 1);
 
-# Flatfield solutions
-_RETRIEVE_FASTFLATS_ TYPE=SOL
-my %subarrays =%{$_RETRIEVE_FASTFLATS_{NBOLO_SUB}}
-  if (defined $_RETRIEVE_FASTFLATS_{NBOLO_SUB});
-my $nbolosum = $_RETRIEVE_FASTFLATS_{NBOLO_SUM};
+# Localize $Frm here to enable flatfield retrieval
+{
+  my $Frm = $Frmobj;
 
-# Raw flatfield files
-my %fastflats;
-if ($incfastflats && $nbolosum > 0) {
-  _RETRIEVE_FASTFLATS_ TYPE=RAW
-  %fastflats =%{$_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}}
-    if (defined $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB});
-}
+  # Retrieve the list of datafiles in current Frame
+  my %allfiles = $Frm->get_files_by_subarray;
+  my (%goodfiles, @goodfiles);
+  if ($Frm->uhdr("FLATFIELD")) {
+    # If the data are flatfielded, then by definition they will be good
+    %goodfiles = %allfiles;
+    @goodfiles = $Frm->files;
+  } else {
+    # First step - retrieve the flatfield solutions to determine which
+    # subarrays have good solutions
+    _RETRIEVE_FASTFLATS_ TYPE=SOL
+    my %subarrays = %{$_RETRIEVE_FASTFLATS_{NBOLO_SUB}}
+      if (defined $_RETRIEVE_FASTFLATS_{NBOLO_SUB});
+    my $nbolosum = $_RETRIEVE_FASTFLATS_{NBOLO_SUM};
 
-# Data in current Frame
-my %allfiles = $Frm->get_files_by_subarray;
+    if (%subarrays) {
+      # Store data files with good flatfields
+      foreach my $subarray (sort keys %allfiles) {
+	$goodfiles{$subarray} = $allfiles{$subarray} if ($subarrays{$subarray} > 0);
+      }
+      @goodfiles = map { @{$goodfiles{$_}} } sort keys %goodfiles;
 
-# List of subarrays to examine flatfield results
-my @subarrays = sort keys %allfiles;
+      # Retrieve and store raw flatfield files if necessary. Note this
+      # must be done as a separate step to ensure the summit pipeline
+      # creates unique filenames for flatfielded data.
+      my %fastflats;
+      if ($incfastflats && $nbolosum > 0) {
+	_RETRIEVE_FASTFLATS_ TYPE=RAW
+	if (defined $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}) {
+	  %fastflats = %{$_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}};
+	  foreach my $subarray (sort keys %goodfiles) {
+	    my @files = @{$goodfiles{$subarray}};
+	    push(@files, $fastflats{$subarray});
+	    $goodfiles{$subarray} = \@files;
+	  }
+	  # Adding the fastflats to the end of the list is necessary
+	  # for the summit pipeline
+	  push(@goodfiles, @{$_RETRIEVE_FASTFLATS_{FASTFLATS}});
+	}
+      }
 
-my %goodfiles;
-foreach my $subarray (@subarrays) {
-  if ($subarrays{$subarray} > 0) {
-    my @goodfiles = @{$allfiles{$subarray}};
-    push(@goodfiles, $fastflats{$subarray}) if (%fastflats);
-    $goodfiles{$subarray} = \@goodfiles;
+      # Store the results or issue a warning
+      unless (%goodfiles) {
+	orac_warn "All flatfields failed - unable to retrieve any good data\n";
+      }
+    } else {
+      orac_warn "Unable to retrieve flatfield solutions - assuming all data are good\n";
+      %goodfiles = %allfiles;
+      @goodfiles = $Frm->files;;
+    }
   }
-}
-
-# Store the results or issue a warning
-if (%goodfiles) {
   $_PRIM_ARGS_->{FILES_SUB} = \%goodfiles;
-  $_PRIM_ARGS_->{FILES} = [ map { @{$goodfiles{$_}} } sort keys %goodfiles ];
-} else {
-  orac_warn "All flatfields failed - unable to retrieve any good data\n";
-}
+  $_PRIM_ARGS_->{FILES} = [ @goodfiles ];
+
+} # Temporary override of $Frm goes out of scope here
