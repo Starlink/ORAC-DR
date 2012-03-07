@@ -185,6 +185,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
     # might be missing (if that file was skipped in the QL pipeline,
     # say)
     my %amps = map { $_ => -1} (1 .. $Frm->hdr("NFOCSTEP"));
+    my %amp_ok = %amps;
     my %damps = %amps;
     for my $plane ($focsteplo..$focstephi) {
       # Retrieve filename to determine centroid
@@ -214,46 +215,58 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
     # amplitudes which exceed 3-sigma and are not from SMU positions
     # beyond where the source was no longer detected
     my $midplane = int(($Frm->hdr("NFOCSTEP") + 1)/2);
-    foreach my $plane (sort keys %amps) {
-      # Set a default flag to indicate that the previous amplitude was
-      # positive
-      my $prevpositive = 1;
+    my @planes = sort keys %amps;
+    foreach my $plane (@planes) {
+      # Amplitude looks OK if positive and 3-sigma or greater significance
+      $amp_ok{$plane} = 1 if ($amps{$plane} > 0 && $amps{$plane} / $damps{$plane} >= 3);
+      # However, need to check the previous amplitude
       if (defined $amps{$plane-1}) {
-	# If on the "lower" side of the midplane, check to see if this
-	# amplitude is negative. If so, and the previous amplitude was
-	# positive, then the previous amplitude should not be used.
-	if ($plane < $midplane) {
-	  if ($amps{$plane} < 0 && $amps{$plane-1} > 0) {
-	    $prevpositive = 0;
-	    $amps{$plane-1} = -$amps{$plane-1};
-	  }
-	} elsif ($plane > $midplane) {
-	  # If on the "upper" side of the midplane, check to see if
-	  # the previous amplitdue was negative - if so, then mark the
-	  # current ampltude as negative so it is not used.
-	  if ($amps{$plane-1} < 0) {
-	    $prevpositive = 0;
-	    $amps{$plane} = -$amps{$plane};
-	  }
-	}
-      }
+        # If on the "lower" side of the midplane, check to see if this
+        # amplitude is bad. If so, and the previous amplitude was
+        # good, then the previous amplitude should not be used.
+        if ($plane < $midplane) {
+          $amp_ok{$plane-1} = -1 if ($amp_ok{$plane} < 0 && $amp_ok{$plane-1} > 0);
+        } elsif ($plane > $midplane) {
+          # If on the "upper" side of the midplane, check to see if
+          # the previous amplitude was bad - if so, then mark the
+          # current amplitude as bad so it is not used. Also check to
+          # see if the current amplitude is greater than the previous
+          # (good) one - mark the current one as bad if so.
+          $amp_ok{$plane} = -1 if ($amp_ok{$plane-1} < 0 ||
+				   ($amps{$plane} > $amps{$plane-1}) && $amp_ok{$plane-1} == 1);
 
-      my $amp = $amps{$plane};
-      my $damp = $damps{$plane};
-      my $amp_ok = ($amp/$damp >= 3 && $prevpositive) ? 1 : 0;
-      if ($amp_ok) {
-	push (@amps, $amp);
-	push (@damps, $damp);
-	push (@fitted, $plane-1);
-      } elsif (!$prevpositive) {
-	orac_warn "Ignoring plane $plane due to change in sign of amplitude\n";
-      } elsif ($amp/$damp < 3) {
-	orac_warn "Amplitude of plane $plane is less than 3-sigma\n";
-      } elsif ($amp < 0) {
-	orac_warn "Amplitude of plane $plane is negative\n";
+	}
       }
     }
 
+    # Now filter the results based on the %amp_ok hash - use only the
+    # valid amplitudes for determining the best-fit SMU position
+    foreach my $plane (@planes) {
+      if ($amp_ok{$plane} == 1) {
+	push (@amps, $amps{$plane});
+	push (@damps, $damps{$plane});
+	push (@fitted, $plane-1);
+      }
+    }
+
+    # Print results to screen if desired
+    if ($verbose) {
+      my %colour = map { $_ => (($amp_ok{$_} == 1) ? "green" : "cyan") } @planes;
+      my $print_results = sub {
+	my $msg = shift;
+	orac_print $msg;
+	my %data = @_;
+	foreach my $plane (@planes) {
+	  orac_print " ".(sprintf "%9.2f", $data{$plane})."", "$colour{$plane}"
+	}
+	orac_print "\n";
+	return;
+      };
+      orac_print "Results (data to be used in fit shown in green):\n";
+      $print_results->("SMU posn (mm): ", map { $_ => $focposns[$_-1] } @planes);
+      $print_results->("Amp  (mJy/bm): ", %amps);
+      $print_results->("dAmp (mJy/bm): ", %damps);
+    }
 
     # Warn user if too many fits failed: need 3 points to define a quadratic
     my $npts = scalar(@amps);
