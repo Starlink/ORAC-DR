@@ -136,29 +136,39 @@ if ($seq_length < 1000 && $Frm->hdr("SEQ_TYPE") =~ /fastflat/i) {
 # Have to treat FOCUS observations a little differently because each
 # Frame corresponds to a separate SMU position.
 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
-  # However, the fast ramps always turn up in a mixed Frame, either
-  # with the initial dark (first ramp) or the final on-sky data (last
-  # ramp) because of the FOCPOSN keyword. Pick out the on-sky data so
-  # they can be stored again at the end of this primitive.
-  unless (defined $Frm->hdr("SEQ_TYPE")) {
+  # However, for offline instances of the pipeline, the fast ramps
+  # always turn up in a mixed Frame, either with the initial dark
+  # (first ramp) or the final on-sky data (last ramp) because of the
+  # FOCPOSN keyword. Pick out the on-sky data so they can be stored
+  # again at the end of this primitive.
+  my $sci_data = 0;
+  if (defined $Frm->hdr("SEQ_TYPE")) {
+    $sci_data = 1 if ($Frm->hdr("SEQ_TYPE") eq "focus");
+  } else {
     for my $i (1 .. $Frm->nfiles) {
       push(@nonflats, $Frm->file($i)) if ($Frm->hdrval("SEQ_TYPE",$i-1) eq "focus");
     }
+    $sci_data = 1 if (@nonflats);
   }
 
-  # Only do the following if the fastflat data are to be processed
+  # If the fastflat data are to be processed: retrieve the list of
+  # existing fastflat files if present or make a copy of the current
+  # fastflats and store the list of filenames (provided there are *no*
+  # science data).
   if ($processff) {
     # Retrieve existing files marked as fast ramps if appropriate
     if ($Grp->lastmember($Frm)) {
       @flats = @{$Grp->uhdr("FASTRAMPFLATS")}
 	if (defined $Grp->uhdr("FASTRAMPFLATS"));
     } else {
-      unless (@nonflats) {
-	# Otherwise copy the data so it persists, retrieve any fast ramps
-	# from the current Frame (storing their names in the Grp uhdr),
-	# and terminating the recipe immediately. This block should never
-	# be reached in the QL pipeline because the fastflats are placed
-	# in a new Group and thus the Frame is always the last member.
+      # Only store the fastflats if there are no science data files
+      unless ($sci_data) {
+	# Otherwise copy the data so it persists for the next pass
+	# through the recipe, retrieve any fast ramps from the current
+	# Frame (storing their names in the Grp uhdr), and terminate
+	# the recipe immediately. This block should never be reached
+	# in the QL pipeline because the fastflats are placed in a new
+	# Group and thus the Frame is always the last member.
 	_COPY_RAW_DATA_ SUFFIX=_rawflat
 	my @newflats = $Frm->get_fastramp_flats;
 	$Grp->uhdr("FASTRAMPFLATS", \@newflats);
@@ -174,7 +184,9 @@ push(@flats, @newflats) if @newflats;
 # Retrieve OBSEND from the hdr
 my $obsend_on_entry = $Frm->hdrval("OBSEND",-1);
 
-# Hash for fastflat files to be stored, indexed by subarray
+# Hash for fastflat files to be stored, indexed by subarray; list of
+# raw fastflats; list of flatfield solutions; batch-processing
+# (offline) flag.
 my (%store, @rawfastflats, @flatfiles, $batch);
 
 # Now process those files identified
@@ -202,11 +214,11 @@ if (@flats) {
   $Frm->uhdr("$pltype", 1) if ($pltype);
 
   # Calculate the number of files per subarray in the Frame: batch
-  # mode processing will have multiple files, QL only 1 - unless the
-  # obs was terminated immediately following the fastramp
-  # measurement...
+  # mode processing will have multiple files - unless the obs was
+  # terminated immediately following the fastramp measurement. The QL and
+  # SUMMIT pipelines will only have 1.
   my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
-  $batch = ($nfilespersub > 1) ? 1 : 0;
+  $batch = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) ? 0 : 1;
 
   # The QL pipeline will only have 1 file per subarray, as will
   # observations which failed in some way (so that the trailing
@@ -216,8 +228,9 @@ if (@flats) {
 
   # If the number of subarrays equals the number of fastramp files
   # then there are not enough fastramp files to compare so terminate
-  # the recipe
-  if ($batch && @flats == $Frm->numsubarrays) {
+  # the recipe - except in the case of offline Focus processing, where
+  # the fastflats are processed in two separate passes
+  if ($batch && @flats == $Frm->numsubarrays && $Frm->hdr("OBS_TYPE") !~ /focus/i) {
     orac_warn "Observation ".($Frm->uhdr("ORAC_OBSERVATION_NUMBER"))
       ." likely bad (only 1 fastflat file)\n";
     return ORAC__TERM;
@@ -227,10 +240,9 @@ if (@flats) {
   # fastramps per subarray - what if 1 subarray has only 1?
 
   # Copy the raw files so they persist during successive passes
-  # through the recipe - only done for the QL/SUMMIT pipelines as
-  # fastflat processing batch doesn't care about processing the
-  # science data
-  if (!$batch) {
+  # through the recipe - this applies to the QL/SUMMIT pipelines and
+  # to offline Focus processing
+  if (!$batch || $Frm->hdr("OBS_TYPE") =~ /focus/i) {
     _COPY_RAW_DATA_ SUFFIX=_rawflat
   }
 
