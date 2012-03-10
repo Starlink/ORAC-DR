@@ -44,6 +44,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    ( $in, my $interference ) = $Frm->inout( "_imask", $i );
    ( $in, my $imp ) = $Frm->inout( "_imp", $i );
    ( $in, my $noiseprof ) = $Frm->inout( "_noipro", $i );
+   ( $in, my $nb ) = $Frm->inout( "_nobias", $i );
 
    my $temp1file = new ORAC::TempFile( 0 );
    my $temp2file = new ORAC::TempFile( 0 );
@@ -55,6 +56,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp5file = $imp;
    my $temp6file = $interference;
    my $temp7file = new ORAC::TempFile( 0 );
+   my $temp8file = new ORAC::TempFile( 0 );
+   my $temp9file = new ORAC::TempFile( 0 );
+#   my $temp10file = new ORAC::TempFile( 0 );
+   my $temp10file = $nb;
 
 # We need the dimensions of the input file for later.
    _GET_DIMENSIONS_ FILE=$in
@@ -107,11 +112,23 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       orac_say( " Receptor $receptor." );
       my $pixel = $array->pixel( $receptor );
 
+# Remove level that creates gradients normal to the spectral axis.
+# Only needed until LAPLACE has option to work in one dimension.
+      $params = "in=$in out=$temp8file estimator=median";
+      $params .= " axis=spec trim=f wlim=0.0 variance=false";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+      $params = "in=$temp8file out=$temp9file axes=[0,2,3] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+      $params = "in1=$in in2=$temp9file out=$temp10file";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
 # Since this has lots of zero crossings an edge detector is one way to
 # identify this inference signal.  Note as currently coded LAPLACE
 # only operates on two-dimensional data.
       orac_say( "   Computing squared Laplacian of spectra." );
-      $params = "in=$in($spec_percent,$pixel,) out=$temp1file";
+      $params = "in=$temp10file($spec_percent,$pixel,) out=$temp1file";
       $Mon{'kappa_mon'}->obeyw( "laplace", "$params" );
 
 # Find the rms `edginess' i.e. a positive measure of the deviation from flatness.
