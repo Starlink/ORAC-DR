@@ -111,24 +111,25 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       orac_say( " Receptor $receptor." );
       my $pixel = $array->pixel( $receptor );
 
-# Remove level that creates gradients normal to the spectral axis.
-# Only needed until LAPLACE has option to work in one dimension.
-      $params = "in=$in out=$temp8file estimator=median";
-      $params .= " axis=spec trim=f wlim=0.0 variance=false";
-      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-
-      $params = "in=$temp8file out=$temp9file axes=[0,2,3] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
-      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
-
-      $params = "in1=$in in2=$temp9file out=$temp10file";
-      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
-
-# Since this has lots of zero crossings an edge detector is one way to
-# identify this inference signal.  Note as currently coded LAPLACE
-# only operates on two-dimensional data.
+# Perform a crude DoG filter along the spectral axis.
+#
+# Since the interference has lots of zero crossings an edge detector is
+# one way to identify this inference signal.  Note as currently coded
+# LAPLACE only operates on two-dimensional data and thus includes
+# variation along the time series axis into the signal, rejecting more
+# spectra than is necessary.
       orac_say( "   Computing squared Laplacian of spectra." );
-      $params = "in=$temp10file($spec_percent,$pixel,) out=$temp1file";
-      $Mon{'kappa_mon'}->obeyw( "laplace", "$params" );
+      $params = "in=$in($spec_percent,$pixel,) out=$temp8file stype=absolute";
+      $params .= " method=nearest abs=[-1,0,0]";
+      $Mon{'kappa_mon'}->obeyw( "slide", "$params" );
+
+      $params = "in=$in($spec_percent,$pixel,) out=$temp9file stype=absolute";
+      $params .= " method=nearest abs=[1,0,0]";
+      $Mon{'kappa_mon'}->obeyw( "slide", "$params" );
+
+      $params = "ia=$in($spec_percent,$pixel,) ib=$temp8file ic=$temp9file";
+      $params .= " exp=2*IA-IB-IC out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Find the rms `edginess' i.e. a positive measure of the deviation from flatness.
       $params = "ia=$temp1file out=$temp2file exp='sqrt(IA*IA/$nel)'";
