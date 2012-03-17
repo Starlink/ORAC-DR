@@ -138,7 +138,6 @@ my $proceed = ($Frm->hdr("SEQ_TYPE") =~ /point/i
 	       || $Frm->hdr("SEQ_TYPE") =~ /focus/i) ? 1 : 0;
 
 if ($proceed) {
-
   # Read JCMTSTATE from file
   use JSA::Headers qw/ read_jcmtstate /;
   my %jcmtstate = read_jcmtstate( $Frm->file );
@@ -158,7 +157,7 @@ if ($proceed) {
 	      ) ? 1 : 0;
 
   if ($allok) {
-    orac_print "Calculating RMS actual-demand azimuth difference: ";
+    orac_print "Calculating RMS actual-demand  azimuth  difference: ";
     # Calculate the differences
     my @delta_az = map { ($azactual[$_] - $azdemand[$_]) * cos($elactual[$_]) } 0 .. $#azactual;
     my @delta_el = map { $elactual[$_] - $eldemand[$_] } 0 .. $#azactual;
@@ -193,19 +192,47 @@ if ($proceed) {
     $elstat = Statistics::Descriptive::Full->new();
     $elstat->add_data(\@delta_el_sq);
 
-    my $azrms = sprintf "%.3f", DR2AS * sqrt($azstat->mean);
+    my $azrms = sprintf "%6.2f", DR2AS * sqrt($azstat->mean);
     my $colour = ($azrms < 5) ? "green" : ($azrms < 15 ? "cyan" : "red");
     orac_print " $azrms arcsec\n", "$colour";
-    my $elrms = sprintf "%.3f", DR2AS * sqrt($elstat->mean);
+    my $elrms = sprintf "%6.2f", DR2AS * sqrt($elstat->mean);
+    $colour = ($elrms < 5) ? "green" : ($elrms < 15 ? "cyan" : "red");
+    orac_print "Calculating RMS actual-demand elevation difference: ";
+    orac_print " $elrms arcsec\n", "$colour";
 
     # Write RMS in log file
     my $logtype = "posdiff";
-    my @values = ( $Frm->hdr("NSUBSCAN"), $az, $el, $dazmax, $dazmin, $delmax, $delmin,
-		   $azrms, $elrms );
-    my @names = ( "Subscan", "Az", "El", "Max d-Az", "Min d-Az",
+    my @values = ( $Frm->hdr("NSUBSCAN"), $Frm->hdr("SCAN_PAT"), $az, $el, $dazmax, $dazmin,
+		   $delmax, $delmin, $azrms, $elrms );
+    my @names = ( "Subscan", "Scan", "Az", "El", "Max d-Az", "Min d-Az",
 		  "Max d-El", "Min d-El", "RMS d-Az", "RMS d-El" );
     _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=0 PARLIST=BRIEF
 
+    # Now FPU temperature
+    if (defined $jcmtstate{"SC2_FPUTEMP"}) {
+      my $get_stats = sub {
+	my $sc2temp = shift;
+	my $tstat = Statistics::Descriptive::Full->new();
+	$tstat->add_data($jcmtstate{$sc2temp});
+	my %stats;
+	$stats{min} = sprintf "%.4f", $tstat->min;
+	$stats{max} = sprintf "%.4f", $tstat->max;
+	$stats{mean} = sprintf "%.4f", $tstat->mean;
+	return \%stats;
+      };
+      my $tstats = $get_stats->("SC2_FPUTEMP");
+      my ($fmax, $fmin, $fmean) = ($tstats->{min}, $tstats->{max}, $tstats->{mean});
+      $tstats = $get_stats->("SC2_MIXTEMP");
+      my ($mmax, $mmin, $mmean) = ($tstats->{min}, $tstats->{max}, $tstats->{mean});
+
+      # Write info in log file
+      my $logtype = "fputemp";
+      @values = ( $Frm->hdr("NSUBSCAN"), $Frm->hdr("SCAN_PAT"), $az, $el, $fmax, $fmin, $fmean,
+		  $mmax, $mmin, $mmean);
+      @names = ( "Subscan", "Scan", "Az", "El", "Max FPU", "Min FPU", "Mean FPU",
+		 "Max MIX", "Min MIX", "Mean MIX");
+      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=0 PARLIST=BRIEF
+    }
   } else {
     orac_err "Unable to calculate azimuth differences: inconsistent values reading from JCMTSTATE\n";
   }
