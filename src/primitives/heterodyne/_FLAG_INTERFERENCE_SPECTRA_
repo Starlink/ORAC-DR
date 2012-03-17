@@ -4,7 +4,7 @@ use JCMT::ACSIS::Array;
 # =================
 
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.5,3.0" );
-my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "3.0" );
+my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "5.0" );
 
 # Handle recipe parameter overrides.
 $edge_clip = ( defined( $Frm->uhdr( "RECPAR_EDGE_CLIP" ) ) ?
@@ -44,6 +44,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    ( $in, my $interference ) = $Frm->inout( "_imask", $i );
    ( $in, my $imp ) = $Frm->inout( "_imp", $i );
    ( $in, my $noiseprof ) = $Frm->inout( "_noipro", $i );
+   ( $in, my $corrnoise ) = $Frm->inout( "_cnoipr", $i );
    ( $in, my $nb ) = $Frm->inout( "_nobias", $i );
 
    my $temp1file = new ORAC::TempFile( 0 );
@@ -59,6 +60,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp8file = new ORAC::TempFile( 0 );
    my $temp9file = new ORAC::TempFile( 0 );
    my $temp10file = new ORAC::TempFile( 0 );
+   my $temp11file = new ORAC::TempFile( 0 );
+#   my $temp12file = new ORAC::TempFile( 0 );
+   my $temp12file = $corrnoise;
 
 # We need the dimensions of the input file for later.
    _GET_DIMENSIONS_ FILE=$in
@@ -111,7 +115,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       orac_say( " Receptor $receptor." );
       my $pixel = $array->pixel( $receptor );
 
-# Perform a crude DoG filter along the spectral axis.
+# Perform an approximate Difference of Gaussian filter along the spectral
+# axis.
 #
 # Since the interference has lots of zero crossings an edge detector is
 # one way to identify this inference signal.  Note as currently coded
@@ -132,6 +137,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Find the rms `edginess' i.e. a positive measure of the deviation from flatness.
+# The normalisation is arbitrary so just approximate with the full spectral
+# dimension.
       $params = "ia=$temp1file out=$temp2file exp='sqrt(IA*IA/$nel)'";
       $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
@@ -142,11 +149,27 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       $params .= " axis=spec trim=f wlim=0.0 variance=false";
       $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
+# There may be glitches or drift in the levels.  Correct for these
+# before thresholding. FIXSTEPS needs double-precision data.
+      orac_say( "   Correcting for glitches or drift in the edginess profile." );
+      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp3file$receptor type=_DOUBLE" );
+      $params = "in=$temp3file$receptor out=$temp11file";
+      $params .= " meanshift=no dcfitbox=50";
+      $Mon{'smurf_mon'}->obeyw( "fixsteps", "$params" );
+      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp11file type=_REAL" );
+
+# Need the median signal before continuum removal.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp11file order" );
+      my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+# Estimate and subtract the 'continuum' level.
+      $params = "in=$temp11file out=$temp12file$receptor box=51 sub accept";
+      $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
 # significant compared with the noise.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file$receptor clip=$edge_clip order" );
-      my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp12file$receptor clip=$edge_clip order" );
       ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
       ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
@@ -156,12 +179,11 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # time series for the detector.  In most cases there is no interference
 # noise, so protect against drift and signal variations in the timeseries
 # causing the dispersion; these should be small compared with the signal
-# being detected.  20% more than the median is arbitrary but looks
-# reasonable to separate the two cases.
+# being detected.
       if ( $numgood > 0 ) {
-         my $threshold = max( 1.2 * $median, $median + $thresh_clip * $sigma );
+         my $threshold = $thresh_clip * $sigma;
          orac_say( "   Turning off spectra with rms edginess above " . sprintf( "%.4f", $threshold ) );
-         $params = "in=$temp3file$receptor out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+         $params = "in=$temp12file$receptor out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
          $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Expand the thresholded image to the size of the current receptor's
