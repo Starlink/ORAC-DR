@@ -99,6 +99,7 @@ if ($Frm->uhdr("QA_REPORT_INFO")) {
   } elsif ($Frm->hdr("SHUTTER") == 0) {
     $type = "DARK";
   }
+  $opts{noisetype} = $type;
 
   # Check number of bolometers, median noise and effective NEP
   if ($verbose) {
@@ -108,58 +109,47 @@ if ($Frm->uhdr("QA_REPORT_INFO")) {
   # Temporary until we get per-subarray thresholds
   $opts{molecule} = $Frm->hdr("FILTER");
 
+  # Code ref to determine pass/fail and print results if
+  # required. Note this routine uses information in the options hash
+  # (%opts), the QA report info hash (%qa_report_info) and relies on
+  # the QA object ($qa) and verbose flag defined above.
+  my $report_pass_fail = sub {
+    # Inputs required are: QA key and whether the value must be
+    # greater or less than the criterion.
+    my $key = shift;
+    my $gtlt = shift;
+
+    # Specification key
+    my $spec_key = ($key eq "NOISE") ? $opts{noisetype}.$key : $key;
+    my $spec = $qa->get_data( key => $spec_key, %opts );
+    # Corresponding key in QA report
+    my $qa_key = ($key eq "NOISE") ? "MEDIAN" : $key;
+    my $value = $qa_report_info{$opts{subarray}}->{$qa_key};
+    my $passed = 0;
+    if ($gtlt eq "gt") {
+      $passed = 1 if (defined $value && $value > $spec);
+    } elsif ($gtlt eq "lt") {
+      $passed = 1 if (defined $value && $value < $spec);
+    }
+    my $text = ($passed) ? "passed" : "failed";
+    my $textcol = ($passed) ? "on_green" : "on_red";
+    # Print to screen if desired
+    if ($verbose) {
+      orac_print " $text ", "bold white $textcol";
+      orac_print "  ";
+    }
+    return $text;
+  };
+
+  # Loop over each subarray and determine if the current noise/NEP values are within spec
   foreach my $subarray (@subarrays) {
     orac_print " $subarray: " if ($verbose);
     $opts{subarray} = $subarray;
 
-    # Number of bolometers
-    my $NBOLO = $qa->get_data( key => 'NBOLO', %opts);
-    my $nbol = $qa_report_info{$subarray}->{NBOLO};
-    my ($pass, $text, $textcol);
-    if ($nbol > $NBOLO) {
-      $text = "passed";
-      $textcol = "on_green";
-    } else {
-      $text = "failed";
-      $textcol = "on_red";
-    }
-    if ($verbose) {
-      orac_print " $text ", "bold white $textcol";
-      orac_print "  ";
-    }
-
-    my $key = $type . "NOISE";
-    my $MEDIAN_NOISE = $qa->get_data( key => $key, %opts);
-    my $median = $qa_report_info{$subarray}->{MEDIAN};
-    if ($median < $MEDIAN_NOISE) {
-      $text = "passed";
-      $textcol = "on_green";
-    } else {
-      $text = "failed";
-      $textcol = "on_red";
-    }
-    $qa_report_info{$subarray}->{QA_NOISE} = $text;
-    if ($verbose) {
-      orac_print " $text ", "bold white $textcol";
-      orac_print "  ";
-    }
-
-    $key = $type . "EFFNEP";
-
-    my $EFFNEP = $qa->get_data( key => 'EFFNEP', %opts);
-    my $effnep = $qa_report_info{$subarray}->{EFFNEP};
-    if ($effnep < $EFFNEP) {
-      $text = "passed";
-      $textcol = "on_green";
-    } else {
-      $text = "failed";
-      $textcol = "on_red";
-    }
-    if ($verbose) {
-      orac_print " $text ", "bold white $textcol";
-      orac_print "  ";
-      orac_print "\n";
-    }
+    $qa_report_info{$subarray}->{QA_NBOLO}  = $report_pass_fail->("NBOLO", "gt");
+    $qa_report_info{$subarray}->{QA_NOISE}  = $report_pass_fail->("NOISE", "lt");
+    $qa_report_info{$subarray}->{QA_EFFNEP} = $report_pass_fail->("EFFNEP", "lt");
+    orac_print "\n" if ($verbose);
   }
   orac_print "\n";
   # Store the modified hash reference
