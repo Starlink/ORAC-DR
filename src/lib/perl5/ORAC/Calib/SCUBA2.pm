@@ -228,6 +228,7 @@ __PACKAGE__->CreateBasicAccessors( mask => {},
 				   dark => {},
 				   setupflat => {},
 				   noise => {},
+				   nep => {},
 );
 
 =head1 PUBLIC METHODS
@@ -432,13 +433,13 @@ sub beampar {
 
 }
 
-=item B<nep>
+=item B<nep_spec>
 
 Method to return the NEP spec for the current wavelength
 
 =cut
 
-sub nep {
+sub nep_spec {
 
   my $self = shift;
   my $nepkey = $self->subinst();
@@ -594,6 +595,28 @@ sub noise {
   # Do not warn about non-matching calibrations
   my $warn = 0;
   return $self->GenericIndexAccessor( "noise", -1, 1, 0, $warn, @_ );
+}
+
+=item B<nep>
+
+Return the name of the matching NEP file. This returns the name of the
+top-level container file - the user must then select the
+C<.more.smurf.nep> component within that file.
+
+  $nep = $Cal->nep;
+
+There is one noise file per subarray. Note that the user must set the
+subarray with the Frame class C<subarray()> method before a suitable
+entry can be found. This is due to the fact that it is not possible to
+search the Frame subheaders when evaluating the rules.
+
+=cut
+
+sub nep {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( "nep", -1, 1, 0, $warn, @_ );
 }
 
 =back
