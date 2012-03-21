@@ -24,6 +24,11 @@ The following arguments are supported:
 Flag to denote whether a log file should be written. Default is 1
 (yes).
 
+=item B<NEP>
+
+A flag to denote whether to analyze the NEP or the noise data. Default
+is 0 (noise).
+
 =item B<QA>
 
 Report quality assurance checks. Default is 1 (yes).
@@ -64,11 +69,11 @@ Entries are written to the:
 
 =item 1
 
-calibration system, C<index.noise>; and
+calibration system (C<index.noise> or C<index.nep>); and
 
 =item 2
 
-log file, C<log.bolonoise>.
+log file (C<log.bolonoise> or C<log.nep>).
 
 =back
 
@@ -78,7 +83,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 University of British Columbia. All Rights
+Copyright (C) 2011-2012 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -113,6 +118,9 @@ my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
 # Reset comp if we get something we don't recognize
 $comp = "data" unless ( $comp =~ /^err/ );
 
+# Analyze the noise or the NEP data? Default to noise.
+my $usenep = get_prim_arg($_PRIM_ARGS_, "NEP", 0);
+
 # Retrieve the hash (reference) with the number of bolometers used in
 # the NEP calculations and the effective NEPs
 my $nepgoodbol = $Frm->uhdr("NEPGOODBOL");
@@ -124,14 +132,15 @@ my $sumnumgood = 0;
 # Loop over each file in the current Frame
 for my $i ( 1 .. $Frm->nfiles ) {
   my $noisefile = $Frm->file($i);
+  $noisefile .= ".more.smurf.nep" if ($usenep);
   my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
   my $nbol = (defined $nepgoodbol) ? $nepgoodbol->{$subarray} : 0;
 
   if ($nbol > 0) {
     # Find statistics for reporting
     _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=1 COMP=$comp VERBOSE=0
-
     my %results = %{$_FIND_IMAGE_STATISTICS_{RESULTS}};
+
     $results{SUBARRAY} = $subarray;
 
     $sumnumgood += $results{NUMGOOD};
@@ -146,7 +155,7 @@ for my $i ( 1 .. $Frm->nfiles ) {
     } else {
       $results{EFFNEP} = "Inf";
       $results{WTNEP} = "Inf";
-      orac_warn "$noisefile has no good bolometers\n";
+      orac_warn $Frm->file($i) ." has no good bolometers\n";
     }
     # Store results for logging and/or QA
     $qa_report_info{$subarray} = \%results;
@@ -158,20 +167,22 @@ for my $i ( 1 .. $Frm->nfiles ) {
 # Display results if they exist
 if ($sumnumgood > 0) {
   # Print results to screen if desired
+  my $noise_text = ($usenep) ? "NEP" : "noise";
   if ($verbose) {
-    orac_print "\nResults for noise calculations:\n";
-    orac_print " Sub     NEP_w      NEP_eff    Nbol     Mean     Median     Mode\n--------------------------------------------------------------------\n", "green";
+    my $spc = ($usenep) ? "  " : "";
+    orac_print "\nResults for $noise_text calculations:\n";
+    orac_print " Sub     NEP_w      NEP_eff    Nbol     Mean   $spc  Median $spc    Mode\n------------------------------------------------------------------------\n", "green";
+    my $fmt = ($usenep) ? "%0.3e": "%7.1f";
     foreach my $subarray (sort keys %qa_report_info) {
       my %results = %{$qa_report_info{$subarray}};
       my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
 		    $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
-
       my $wnep = sprintf "%0.3e", $results{WTNEP};
       my $effnep = sprintf "%0.3e", $results{EFFNEP};
       my $nbol = sprintf "%4d", $results{NBOLO};
-      my $mean = sprintf "%7.1f", $results{MEAN};
-      my $median = sprintf "%7.1f", $results{MEDIAN};
-      my $mode = sprintf "%7.1f", $results{MODE};
+      my $mean = sprintf $fmt, $results{MEAN};
+      my $median = sprintf $fmt, $results{MEDIAN};
+      my $mode = sprintf $fmt, $results{MODE};
 
       orac_print " $subarray:  $wnep   $effnep   $nbol   $mean   $median   $mode\n", "green";
     }
@@ -184,30 +195,34 @@ if ($sumnumgood > 0) {
   my $qamsg = ($check_qa) ? 1 : 0;
   _QA_NOISE_ VERBOSE=$qamsg
 
-    # Add entries in the calibration system - this has to be done after
-    # the QA to get the noise pass/fail entries
-    my $origsub = $Frm->uhdr("SUBARRAY");
-  orac_print "Storing noise results in calibration system\n";
+  my @values = qw/ MEAN MEDIAN MODE NGOOD EFFNEP WTNEP SUBARRAY /;
+  push(@values, ($usenep ? "QA_EFFNEP" : "QA_NOISE"));
+  # Add entries in the calibration system - this has to be done after
+  # the QA to get the noise pass/fail entries
+  my $origsub = $Frm->uhdr("SUBARRAY");
+  my $index = ($usenep) ? "nepindex" : "noiseindex";
+  orac_print "Storing $noise_text results in calibration system\n";
   foreach my $i (1 .. $Frm->nfiles) {
     my $noisefile = $Frm->file($i);
     my $subarray = $Frm->hdrval("SUBARRAY",$i-1);
     my %results = %{ $qa_report_info{$subarray} };
     # Store results in the calibration system
-    foreach my $value ( qw/ MEAN MEDIAN MODE NGOOD EFFNEP SUBARRAY QA_NOISE /) {
+    foreach my $value ( @values ) {
       $Frm->uhdr("$value", $results{$value});
     }
-    $Cal->noiseindex->add($noisefile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
+    $Cal->$index->add($noisefile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
   }
 
   # Write results to a log file
   if ($uselog) {
-    my $logtype = "bolonoise";
-    orac_print "Writing results to log.bolonoise\n";
-    my @names = ("Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "Shutter");
+    my $logtype = ($usenep) ? "nep" : "bolonoise";
+    orac_print "Writing results to log.$logtype\n";
+    my $subscan = $Frm->hdrval("NSUBSCAN");
+    my @names = ("Subscan", "Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff", "NEP_wt", "Shutter");
     foreach my $subarray (sort keys %qa_report_info) {
       my %results = %{$qa_report_info{$subarray}};
-      my @values = ($subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
-		    $results{NUMGOOD}, $results{EFFNEP}, $Frm->hdr("SHUTTER"));
+      my @values = ($subscan, $subarray, $results{MEDIAN}, $results{MEAN}, $results{MODE},
+		    $results{NUMGOOD}, $results{EFFNEP}, $results{WTNEP}, $Frm->hdr("SHUTTER"));
       _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
     }
   }
