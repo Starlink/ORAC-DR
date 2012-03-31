@@ -70,7 +70,12 @@ sub collate_headers {
   # Get the generic headers from the base class and append RA/Dec/Freq bounds information
   my $header = $self->SUPER::collate_headers( $file );
   my $bounds_header = return_bounds_header( $file );
-  my $hdr = $self->readhdr( $file );
+
+  # readhdr() triggers a recalculation of uhdr() which we do not want to trigger
+  # when we are simply trying to read the basic header. So we create a new
+  # object.
+  my $newobj = $self->new();
+  my $hdr = $newobj->readhdr( $file );
 
   # Store the items so that we only append once for efficiency
   my @toappend;
