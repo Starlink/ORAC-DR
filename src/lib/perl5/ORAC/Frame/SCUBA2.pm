@@ -691,7 +691,8 @@ sub rewrite_outfile_subarray {
     my $obsmode = $self->hdr( "OBS_TYPE" );
     my $seqtype = (defined $self->hdr( "SEQ_TYPE" ))
       ? $self->hdr( "SEQ_TYPE" ) : $obsmode;
-    if ($obsmode =~ /focus/i || $seqtype =~ /fastflat/i) {
+    my $keep_subscan = shift;
+    if ($obsmode =~ /focus/i || $seqtype =~ /fastflat/i || $keep_subscan) {
       $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
     } else {
       $new =~ s/(_\d\d\d\d_)/_${filt}_/;
