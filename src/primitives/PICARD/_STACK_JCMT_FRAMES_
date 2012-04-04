@@ -1,0 +1,138 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_STACK_JCMT_FRAMES_ - create a 3-d stack of images from JCMT instruments
+
+=head1 SYNOPSIS
+
+_STACK_JCMT_IMAGES_
+
+=head1 DESCRIPTION
+
+This primitive sorts the input files using a combination of
+pre-defined and user-specified FITS headers and creates a 3-d cube for
+each set of criteria using those images. The third axis is time.
+
+By default, a stack will be created for each separate UT date. SCUBA-2
+data will also sorted by the shutter value.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 2
+
+=item SMURF
+
+STACKFRAMES
+
+=back
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 OUTPUT FILES
+
+A file with the suffix C<_stack> is created for each group of files
+that matches the given sorting criteria.
+
+=head1 NOTES
+
+If only a single file matches the sorting criteria then no stack is
+created.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Only stack the images once the final Frame is reached
+if ($Grp->lastmember($Frm)) {
+
+  # Define the FITS header keys for grouping files to stack
+  my @keys = qw/ UTDATE /;
+  if ($Frm->hdr("INSTRUME") =~ /scuba-2/i) {
+    # SCUBA2 frames must be sorted by shutter as well
+    push(@keys, "SHUTTER");
+  }
+  # Add any user-defined keys - note no checking is made that these are valid!
+  if (defined $Frm->uhdr("RECPAR_STACK_KEYS")) {
+    # Must check if we have an array reference
+    if (ref($Frm->uhdr("RECPAR_STACK_KEYS"))) {
+      push(@keys, @{$Frm->uhdr("RECPAR_STACK_KEYS")});
+    } else {
+      push(@keys, $Frm->uhdr("RECPAR_STACK_KEYS"));
+    }
+  }
+
+  # Sort the files by the stacking key
+  orac_print "Sorting files to stack:";
+  my %stacks;
+  foreach my $frm ($Grp->members) {
+    my $key = join("_", map { $frm->hdr("$_") } @keys);
+    my $file = $frm->file;
+    if ($stacks{$key}) {
+      my @files = @{ $stacks{$key} };
+      push(@files, $file);
+      $stacks{$key} = \@files;
+    } else {
+      $stacks{$key} = [$file];
+    }
+  }
+  orac_print " done\n";
+
+  # Stack each group of files - add the NDF extension to the filename if appropriate
+  my $suffix = ($Frm->uhdr("RECPAR_NDF_EXTEN")) ?
+    "_".$Frm->uhdr("RECPAR_NDF_EXTEN") ."_stack" : "_stack";
+  foreach my $stack ( sort keys %stacks ) {
+
+    # Store the files in a temporary Frame object
+    my $frm = $Frm->new();
+    $frm->files( @{$stacks{$stack}} );
+    my $stackfile = $frm->inout($suffix);
+    orac_print "Creating $stackfile from ".($frm->nfiles)." files\n";
+
+    # Add path to the given NDF extension if necessary
+    my @files = (defined $Frm->uhdr("RECPAR_NDF_EXTEN")) ?
+      map { $_ . ".more.smurf." .$Frm->uhdr("RECPAR_NDF_EXTEN") } $frm->files :
+	$frm->files;
+
+    # Only stack if there are multiple files
+    if (@files > 1) {
+      my $inlist = write_file_list(@files);
+      my $args = "in=^$inlist out=$stackfile sort sortby=MJD";
+      $Mon{smurf_mon}->obeyw("stackframes", "$args");
+    } else {
+      orac_warn "Stack for $stackfile has only 1 file - ignoring\n";
+    }
+  }
+} else {
+  orac_print "Waiting until last Frame before processing...\n";
+}
