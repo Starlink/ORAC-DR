@@ -109,10 +109,10 @@ my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
 my $thr = get_prim_arg( $_PRIM_ARGS_, "THRESH", 4 );
 $thr = 10 if ($thr > 10);
 
-# Check for the total numbe of good bolometers and the maximum value
+# Check for the total number of good bolometers and the maximum value
 # for plotting - these were calculated by _ANALYZE_NOISE_
 my $sumnumgood = $Frm->uhdr("NOISE_NUMGOOD");
-my $plotmax = $Frm->uhdr("NOISE_PLOTMAX");
+my $plotmax = $Frm->uhdr("NOISE_SPEC");
 my $display_ok = ($sumnumgood && $sumnumgood > 0) ? 1 : 0;
 if ($display_ok && $plotmax) {
   $plotmax *= $thr;
@@ -153,7 +153,7 @@ if ($display_ok) {
   } elsif ($Frm->uhdr("SUMMIT")) {
     $extra = "/ scan " .$Frm->hdr("NSUBSCAN"). " (SUMMIT)";
   }
-  my $title = "$wave noise: obs $obs $extra";
+  my $title = "NOISE $wave: obs $obs $extra";
   if ($Frm->uhdr("AVNOISE")) {
     $noimos = "_avnoimos";
     $title = "Average noise (".($Frm->uhdr("AVNOISE"))." files)";
@@ -161,8 +161,7 @@ if ($display_ok) {
 
   orac_print "\nDisplaying focal-plane mosaic for $title\n";
 
-  my $out = $Frm->rewrite_outfile_subarray(scalar($Frm->inout($noimos)));
-  my @out;
+  my $out = $Frm->rewrite_outfile_subarray(scalar($Frm->inout($noimos)), 1);
 
   my %refimage = ( refsub => $refsub, refimage => $ref );
   _MAKE_MOSAIC_FPLANE_ INFILES=\@files OUT=$out REFERENCE=\%refimage
@@ -180,15 +179,78 @@ if ($display_ok) {
   my $nthrgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
   $plotmax = sprintf "%g", $plotmax;
   my $threshpc = sprintf "%2.0f", 100.0 * $nthrgood / $sumnumgood;
-  orac_print "Histogram shows $nthrgood bolometers ($threshpc %) below $plotmax $units\n\n", "green";
+  orac_print "Histogram shows $nthrgood bolometers ($threshpc %) below $plotmax $units ($thr x noise spec)\n", "green";
 
   my $tmpFrm = $Frm->new();
   $tmpFrm->files($out);
   my %options = ( ZMIN => 0, ZMAX => $plotmax, WINDOW => 1,
 		  ZAUTOSCALE => 0, TITLE => $title );
+  $Display->display_data($tmpFrm, \%options, -1);
+
+  # Create the percentage difference noise image, but for the QL pipeline
+  # only. This requires a previous image for comparison - the pipeline
+  # will read its name from a flag file written on the previous pass
+  # through the recipe.
+  if ($Frm->uhdr("QUICKLOOK")) {
+    my $prev;
+    # Seeing as the percentage change monitoring extends over multiple
+    # observations, the naming convention for this flag file uses the
+    # shutter setting and the UT date only
+    my $prefix = "snoi_" . ($Frm->hdr("SHUTTER"))."_";
+    my $flagfile = File::Spec->catfile($ENV{ORAC_DATA_OUT},
+				       ".".$prefix.$Frm->hdrval('UTDATE').".ok");
+    if (-e $flagfile) {
+      my $files = read_file_list($flagfile);
+      $prev = $files->[0];
+    }
+    if ($prev) {
+      orac_print "Creating and displaying noise percentage change image...\n";
+      my $deltafile = $Frm->inout("_pcnoi");
+      my $exp = "PA*(IA-IB)/IB";
+      my $args = "exp=$exp IA=$out IB=$prev PA=100.0 out=$deltafile";
+      $Mon{kappa_mon}->obeyw("maths","$args");
+      $title = 'NOISE percentage change';
+      $args = "ndf=$deltafile title='$title'";
+      $Mon{ndfpack_mon}->obeyw("settitle","$args");
+      $tmpFrm->files($deltafile);
+      $plotmax = $thr * $Frm->uhdr("NEP_SPEC");
+      %options = ( ZMIN => -10, ZMAX => 10, WINDOW => 1,
+		   ZAUTOSCALE => 0, TITLE => $title );
+
+      $Display->display_data($tmpFrm, \%options, -1);
+    }
+    # Store current noise mosaic in a flag file to be picked up on the
+    # next pass through the recipe
+    my @out = ($out);
+    _WRITE_FLAG_FILE_ PREFIX=$prefix FILES=\@out OBSFLAG=0
+  }
+
+  # Finally create and display NEP mosaic
+  orac_print "Creating and displaying NEP mosaic\n\n";
+  my $nepout = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_nepmos")), 1);
+  @files = map { $_.".more.smurf.nep" } $Frm->files;
+  _MAKE_MOSAIC_FPLANE_ INFILES=\@files OUT=$nepout REFERENCE=\%refimage
+
+  $title = "NEP $wave: obs $obs $extra";
+  $args = "ndf=$nepout title='$title'";
+  $Mon{ndfpack_mon}->obeyw("settitle","$args");
+#  $tmpFrm = $Frm->new();
+  $tmpFrm->files($nepout);
+  $plotmax = $Frm->uhdr("NEP_SPEC");
+#$thr * $Frm->uhdr("NEP_SPEC");
+  %options = ( ZMIN => 0, ZMAX => $plotmax, WINDOW => 1,
+	       ZAUTOSCALE => 0, TITLE => $title );
 
   $Display->display_data($tmpFrm, \%options, -1);
-  $Frm->push_intermediates($out);
+
+  # Now copy the NEP image into the noise mosaic as an NDF extension
+  $args = "in=$nepout out=$out" . ".more.smurf.nep";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+  # Store the noise file in the Frame, and the nep image in the
+  # intermediates so it will be deleted later
+  $Frm->files($out);
+  $Frm->push_intermediates($nepout);
+
 } else {
-    orac_warn "Skipping display of focal-plane mosaic - no good bolometers\n";
+  orac_warn "Skipping display of focal-plane mosaic - no good bolometers\n";
 }
