@@ -926,9 +926,11 @@ sub orac_execute_recipe {
   # Clear stored primitive parameters
   ORAC::Recipe::PrimitiveParser->_clear_prim_params();
 
-  # Tell the Frame and Group what recipe this is
+  # Tell the Frame and Group what recipe this is (and lock the value)
   $Frm->uhdr( "ORAC_DR_RECIPE", $Recipe->name );
+  $Frm->uhdr( "ORAC_DR_RECIPE_LOCKED", 1 );
   $Grp->uhdr( "ORAC_DR_RECIPE", $Recipe->name );
+  $Grp->uhdr( "ORAC_DR_RECIPE_LOCKED", 1 );
 
   # Get the recipe parameters
   my $allpars = $Recipe->parameters;
