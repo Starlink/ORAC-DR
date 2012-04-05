@@ -1118,7 +1118,15 @@ sub uhdr {
       my %new = @_;
       for my $key (keys %new) {
         # print "Storing $new{$key} in key $key\n";
-        $self->{UHeader}->{$key} = $new{$key};
+        my $href = $self->{UHeader};
+
+        # Check to see if the item is locked
+        my $lock_key = $key . "_LOCKED";
+        if (exists $href->{$lock_key} && $href->{$lock_key}) {
+          # Key should not be updated
+        } else {
+          $href->{$key} = $new{$key};
+        }
       }
 
     }
