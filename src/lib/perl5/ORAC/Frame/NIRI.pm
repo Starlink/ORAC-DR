@@ -24,7 +24,7 @@ use ORAC::Constants;
 use ORAC::Print;
 use ORAC::General;
 use NDF;
-use Astro::SLA;
+use Astro::PAL;
 use Starlink::HDSPACK qw/copobj/;
 
 # Let the object know that it is derived from ORAC::Frame::GEMINI;

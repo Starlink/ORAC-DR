@@ -1,3 +1,5 @@
+# -*-cperl-*-
+
 =head1 NAME
 
 CALCULATE_NEFD_FRAME
@@ -134,18 +136,18 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 	    orac_print "NEFD for bolometer $bolometer (filter $filters[$i]): $nefd\n";
 
 
-            # Check whether the user has access to SLALIB.  This affects
+            # Check whether the user has access to PAL.  This affects
             # whether the chop pa (if defined in local coordinates) can
             # be transformed to the az-el coordinate system.  The chop pa
             # and its associated error will only be written into the log
-            # file if SLALIB is accessible.
+            # file if PAL is accessible.
 
-            my $sla_avail = 0;
-            eval "use Astro::SLA";
+            my $pal_avail = 0;
+            eval "use Astro::PAL";
             if ($@) {
-               orac_print "Slalib not available - NEFD log file will be incomplete\n";
+               orac_print "PAL not available - NEFD log file will be incomplete\n";
             } else {
-               $sla_avail = 1;
+               $pal_avail = 1;
             }
 
 	    # Now need to write the log file
@@ -155,7 +157,7 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 	    my $time = gmtime();
 
 
-	    if ($sla_avail == 0) {
+	    if ($pal_avail == 0) {
             $log->header("# NEFD log file - written on $time",
                          "\nUT                HST   Obs Source       Mode     T_int  Filter Thr El CSO    Tau   Seeing  FCF  NEFD",
 	     "#--------------------------------------------------------------------------------------------------------------",
@@ -202,10 +204,10 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 	    # Chop throw
 	    my $thr = sprintf "%4.0f", $Frm->hdr('CHOP_THR');
 
-	    # Chop pa in az-el coordinates if slalib is available.
+	    # Chop pa in az-el coordinates if PAL is available.
 	    my $chop_pa_azel;
 	    my $chop_pa_azel_err;
-	    if ($sla_avail == 1) {
+	    if ($pal_avail == 1) {
 	        ($chop_pa_azel, $chop_pa_azel_err) = &nefd_calc_chop_pa_azel($Frm);
 	    }
 	    $chop_pa_azel = sprintf '%4.0f', $chop_pa_azel;
@@ -268,7 +270,7 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 
 
 	    # Now write the entry
-            if ($sla_avail == 0) {
+            if ($pal_avail == 0) {
 	        $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $el $cso $tau $see   $gain $nefd");
             } else {
 	        $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $chop_pa_azel  $chop_pa_azel_err   $el $cso $tau $see   $gain $nefd");
@@ -357,8 +359,8 @@ sub nefd_calc_chop_pa_azel {
         my $ha_end = $lst_end - $ra_app;
 
         # Calculate parallactic angle in radians
-        my $para_start = Astro::SLA::slaPa($ha_start,$dec_app,$lat_obs);
-        my $para_end = Astro::SLA::slaPa($ha_end,$dec_app,$lat_obs);
+        my $para_start = Astro::PAL::palPa($ha_start,$dec_app,$lat_obs);
+        my $para_end = Astro::PAL::palPa($ha_end,$dec_app,$lat_obs);
 
         # Convert parallactic angle to degrees
         my $para_start_deg = rad2deg($para_start);
@@ -432,14 +434,14 @@ sub calc_apparent ($$) {
 	my ($raj, $decj) = ($long, $lat);
 	if ($coord_type eq 'RB') {
 	    # RB -> RJ
-	    Astro::SLA::slaFk45z( $raj, $decj, 1950.0, $raj, $decj);
+	    Astro::PAL::palFk45z( $raj, $decj, 1950.0, $raj, $decj);
 	} elsif ($coord_type eq 'GA') {
 	    # GA -> RJ
-	    Astro::SLA::slaGaleq( $raj, $decj, $raj, $decj);
+	    Astro::PAL::palGaleq( $raj, $decj, $raj, $decj);
 	}
 
 	# Now convert to apparent
-	Astro::SLA::slaMap( $raj, $decj, 0.0, 0.0, 0.0, 0.0, 2000.0, $mjd,
+	Astro::PAL::palMap( $raj, $decj, 0.0, 0.0, 0.0, 0.0, 2000.0, $mjd,
 		my $ra_app, my $dec_app);
 
 	return ($ra_app, $dec_app);
@@ -485,7 +487,7 @@ sub string2rad ($$) {
 
     # Convert the RA from the header to radians
     my $pos = 1;
-    Astro::SLA::slaDafin($ra, $pos, my $reslt, my $jf);
+    Astro::PAL::palDafin($ra, $pos, my $reslt, my $jf);
     $reslt *= 15.0 if $istime;
 
     return ( $jf == 0 ?  $reslt : undef);
@@ -510,20 +512,20 @@ sub calc_mjd ($$$) {
     my $pos = 1;
     my $uttime = $_[1];
     $uttime =~ s/:/ /g;
-    Astro::SLA::slaDafin($uttime, $pos, my $reslt, my $jf);
+    Astro::PAL::palDafin($uttime, $pos, my $reslt, my $jf);
     return undef if $jf != 0;
 
     # Convert the result to a time in radians
     $reslt *= 15.0;
 
     # Add the error (in seconds converted to radians)
-    $reslt += &Astro::SLA::DS2R * $_[2];
+    $reslt += &Astro::PAL::DS2R * $_[2];
 
     # And convert the result to fraction of day
-    my $frac = $reslt / &Astro::SLA::D2PI;
+    my $frac = $reslt / &Astro::PAL::D2PI;
 
     # Calculate the MJD from the date
-    Astro::SLA::slaCldj( $date[0], $date[1], $date[2], my $mjd, my $status);
+    Astro::PAL::palCldj( $date[0], $date[1], $date[2], my $mjd, my $status);
     return undef if $status != 0;
 
     # Add on the fraction
