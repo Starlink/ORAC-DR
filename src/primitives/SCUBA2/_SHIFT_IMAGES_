@@ -249,6 +249,10 @@ if ( $isoffset ) {
 # well
 my @comps = ("data", ".more.smurf.exp_time", ".more.smurf.weights");
 
+# Create a hash to store the fit results, indexed by file name - begin
+# with the reference position
+my %fitpeaks = ( refpos => { x0 => $refpos[0], y0 => $refpos[1], dx => 0, dy => 0 } );
+
 # Now shift images to reference position determined above
 my (@dx, @dy);
 foreach my $image ($Frmobj->files) {
@@ -265,6 +269,8 @@ foreach my $image ($Frmobj->files) {
   # Skip to next file if no position could be found; do not store
   # name of unshifted files
   unless (@$posn) {
+    $fitpeaks{$image} = { x0 => $refpos[0], y0 => $refpos[1],
+			  dx => 0, dy => 0 };
     orac_warn "Unable to find a peak for $image - will not shift WCS\n";
     next;
   } else {
@@ -287,6 +293,8 @@ foreach my $image ($Frmobj->files) {
 	.$posn->[0].",".$posn->[1]."$dz'";
       $Mon{kappa_mon}->obeyw("wcsslide","$args");
     }
+    $fitpeaks{$image} = { x0 => $posn->[0], y0 => $posn->[1],
+			  dx => $posn->[0], dy => $posn->[1] };
   } else {
     my $coords = new Astro::Coords( ra => $posn->[0], dec => $posn->[1],
 				    type => $cosys, units => $units );
@@ -305,6 +313,8 @@ foreach my $image ($Frmobj->files) {
       my $args = "stype=absolute abs=[$dxas,$dyas,$dz] ndf=$ndf";
       $Mon{kappa_mon}->obeyw("wcsslide","$args");
     }
+    $fitpeaks{$image} = { x0 => $posn->[0], y0 => $posn->[1],
+			  dx => (sprintf "%.3f", $dxas), dy => (sprintf "%.3f", $dyas) };
   }
 
   # Report the shifts for each image if requested
@@ -334,6 +344,18 @@ if (@shifted) {
     $Frm->uhdr("NSHIFT", scalar(@shifted));
     # Store the shifted files in the given Frame object
     $Frmobj->files(@shifted);
+  }
+  # Write a log file with the shifts if requested
+  if ($Frm->uhdr("RECPAR_LOGFILE")) {
+    my $logfile = "fitpos";
+    my @params = sort (keys %{$fitpeaks{refpos}});
+    my $params = ["File", @params];
+    foreach my $file (sort keys %fitpeaks) {
+      my $peak = $fitpeaks{$file};
+      my @values = ($file);
+      push(@values, map { $peak->{$_} } @params);
+      _ADD_LOG_ENTRY_ LOGFILE=$logfile PARAMS=$params ENTRIES=\@values PARLIST=NONE
+    }
   }
 } else {
   orac_warn "No images were shifted: check input images for source(s)\n";
