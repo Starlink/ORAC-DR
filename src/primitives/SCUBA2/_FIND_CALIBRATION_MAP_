@@ -238,9 +238,19 @@ if ( $proceed ) {
     $initpos = \@pos;
   }
 
-  # Find the peak signal in the image
+  # Begin by running the matched-filter on the calibrator - this will
+  # be used multiple times and it saves some time in the QL to do it
+  # once here
+  _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group VERBOSE=0 STORE=0
+  my $in_mf = $_APPLY_MATCHED_FILTER_{OUT};
+  # Store the _mf file on the intermediates array so it can be
+  # deleted later
+  $Obj->push_intermediates($in_mf);
+
+  # Set a flag to indicate that it is the input map which is being plotted
   $Frm->uhdr("PLOT_DATAFIT", 1);
-  _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1
+  # Find the peak signal in the image
+  _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1 MF=$in_mf
   my $mapfitpar = $_FIND_MAP_PEAK_{BEAM};
 
   # Retrieve the position - if successful, proceed with deriving an FCF
@@ -268,23 +278,17 @@ if ( $proceed ) {
 			ARCSEC_ERR => $_APERTURE_PHOTOMETRY_{TOTALFLUXERR}
 		      );
 
-    my %fcf;
-    # Now run the matched-filter on the calibrator and fit the peak position
-    _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group VERBOSE=0
-    $Frm->uhdr("PLOT_MF_FIT", 1);
-
     # Use a box of about 1.5 FWHM because the beamfit algorithm does not
     # know how to fit the negative ring.
     my $box = $Cal->fwhm() * 1.5 / $pixscale;
-    _FIND_MAP_PEAK_ IMAGE=$_APPLY_MATCHED_FILTER_{OUT} VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
+    # Set a flag to indicate that it is the matched-filtered map which is being plotted
+    $Frm->uhdr("PLOT_MF_FIT", 1);
+    _FIND_MAP_PEAK_ IMAGE=$in_mf MF=$in_mf VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
     my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
     my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
     if ($matched_peak) {
       $results{BEAMMATCH} = $matched_peak;
       $results_err{BEAMMATCH_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
-      # Store the _mf file on the intermediates array so it can be
-      # deleted later
-      $Obj->push_intermediates($_APPLY_MATCHED_FILTER_{OUT});
     } else {
       orac_err "Unable to determine a FCF of type BEAMMATCH for this observation\n";
     }
@@ -300,6 +304,7 @@ if ( $proceed ) {
     };
 
     my $bad_results = 0;
+    my %fcf;
     # Loop over the different type of results
     foreach my $type (sort keys %results) {
       my $errtype = $type . "_ERR";
@@ -388,8 +393,8 @@ if ( $proceed ) {
       } else {
 	orac_warn "Unable to calculate a flux for source $src\n";
       }
-
     }
+
     # Check if all the FCFs were bad in some way
     if ($bad_results >= scalar(keys %results)) {
       $Obj->isgood(0);
