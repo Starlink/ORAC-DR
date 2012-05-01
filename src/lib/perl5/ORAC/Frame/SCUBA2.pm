@@ -863,7 +863,7 @@ depending on calling context.
   my @makemap_args = $Frm->makemap_args;
 
 The supported arguments are (currently): alignsys, config, crota,
-maxmem, method, pixsize, reflat, reflon, spread, system.
+maxmem, method, pixsize, spread, system.
 
 =cut
 
