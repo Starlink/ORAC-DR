@@ -11,15 +11,14 @@ _PROCESS_FASTFLAT_
 =head1 DESCRIPTION
 
 Calculate and analyze a flatfield solution from fast-ramp flatfield
-data. The fast-ramp data are stored in a new Group (which temporarily
-overrides the global $Grp variable) and processed as a normal
-flatfield observation. The results are compared with the current
-(dedicated) flatfield solution for the first ramp, while the last ramp
-is then compared with the first.
+data. Fastflat data are separated out from non-fastflat data (if
+necessary) and processed. The processed and raw fastflat files are
+stored in calibration files so they can be retrieved in subsequent
+passes through the recipe.
 
-This primitive is essentially a self-contained version of the
-REDUCE_FLATFIELD recipe designed to deal with fast-ramp flatfield
-measurements.
+If the Frame contains a mix of science and fastflat data, the
+solutions are also stored in the uhdr for retrieval by the map-making
+primitive.
 
 =head1 ARGUMENTS
 
@@ -27,23 +26,11 @@ This primitive has the following argument:
 
 =over 2
 
-=item B<PROCESS_DATA>
-
-Flag to indicate that the fastflat data should be processed. Default
-is 1 (yes/true). If set to 0, then the raw fastflat files will be
-stored in the calibration system for later retrieval without any
-processing.
-
-=item B<STORERAW>
-
-A flag to force the raw fast flats to be stored in the Calibration
-system for later retrieval in the same recipe. Default is 0 (do not
-store).
-
 =item B<WRITEFLAG>
 
 A flag to denote whether a flagfile (also known as a C<.ok> file)
-should be written after processing. Default is 1 (true).
+should be written after processing. Default is 1 (true) for the QL and
+SUMMIT pipelines, 0 otherwise.
 
 =back
 
@@ -51,34 +38,32 @@ should be written after processing. Default is 1 (true).
 
 The following external tasks are used:
 
-=over 4
+=over 2
 
 =item ORAC-DR PRIMITIVES
 
 _ANALYZE_FLATFIELD, _CALCULATE_FLATFIELD_, _COPY_RAW_DATA_,
-_DELETE_TEMP_FILES_, _DISPLAY_FASTFLAT_
+_DELETE_TEMP_FILES_, _DISPLAY_FASTFLAT_, _RETRIEVE_FASTFLATS_
 
 =back
 
 =head1 NOTES
 
-Assumes that there are only two fastflat measurements during an
-observation, one near the beginning and one at the end.
+None.
 
 =head1 OUTPUT DATA
 
-If flatfield solutions were calculated, the primitive hash
-%_PROCESS_FASTFLAT_ contains an entry with the key C<FLATS> which is a
-reference to an array of the raw files containing fast-ramp data.
+The Frame uhdr entry C<PROCESS_FASTFLAT> is defined and equal to 1 if
+fastflat data were processed.
 
-The Group contains a new uhdr entry called C<FASTFLATSOL>, a hash
-reference with the fast-ramp flatfield solutions indexed by subarray.
+An additional entry, C<FLATS>, is defined and contains the raw
+fastflat filenames and the number of solutions indexed by subarray.
 
 =head1 OUTPUT FILES
 
-On completion of the observation, the results of the final fast-ramp
-are left on disk, stored in files with suffix C<_flat>, one for each
-subarray.
+The fastflat solutions and copies of the raw fastflat files left on
+disk, with suffices C<_flat> and C<_rawflat> respectively, one for
+each subarray.
 
 =head1 AUTHOR
 
@@ -86,7 +71,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010-2011 University of British Columbia.  All Rights
+Copyright (C) 2010-2012 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -106,216 +91,183 @@ USA.
 
 =cut
 
-# Force the raw fast flats to be stored for later retrieval - not
-# useful for most recipes
-my $storeraw = get_prim_arg($_PRIM_ARGS_, "STORERAW", 0);
-my $processff = get_prim_arg($_PRIM_ARGS_, "PROCESS_DATA", 1);
-
-# If the summit pipeline has fallen behind without processing any
-# fastflats from the current observation, just store them for
-# retrieval - don't bother processing
-if ($Frm->uhdr("SUMMIT")) {
-  if (!$Frm->hdr("SEQ_TYPE") && $Frm->hdr("OBS_TYPE") !~ /setup/i) {
-    $storeraw = 1;
-    $processff = 0;
-  }
-}
-
-my (@flats, @nonflats);
-
-# Check duration of observation - abort fastflat processing if less
-# than 1000 samples (5 sec) since a complete ramp usually takes about
-# 3.5 sec. Use hdrval method since occasionally the SEQEND entry
-# differs between subarrays, but so far only by 1 or 2 samples...
-my $seq_length = $Frm->hdrval("SEQEND",-1) - $Frm->hdrval("SEQSTART") + 1;
-if ($seq_length < 1000 && $Frm->hdr("SEQ_TYPE") =~ /fastflat/i) {
-  orac_err "Data stream too short to determine flatfield solution: contains only $seq_length samples\n";
-  return ORAC__TERM;
-}
-
-# Have to treat FOCUS observations a little differently because each
-# Frame corresponds to a separate SMU position.
-if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i) {
-  # However, for offline instances of the pipeline, the fast ramps
-  # always turn up in a mixed Frame, either with the initial dark
-  # (first ramp) or the final on-sky data (last ramp) because of the
-  # FOCPOSN keyword. Pick out the on-sky data so they can be stored
-  # again at the end of this primitive.
-  unless (defined $Frm->hdr("SEQ_TYPE")) {
-    for my $i (1 .. $Frm->nfiles) {
-      push(@nonflats, $Frm->file($i)) if ($Frm->hdrval("SEQ_TYPE",$i-1) eq "focus");
-    }
-  }
-}
-# Retrieve and store the fast ramp files
-my @newflats = $Frm->get_fastramp_flats;
-push(@flats, @newflats) if @newflats;
-
 # Retrieve OBSEND from the hdr
 my $obsend_on_entry = $Frm->hdrval("OBSEND",-1);
 
-# Hash for fastflat files to be stored, indexed by subarray; list of
-# raw fastflats; list of flatfield solutions; batch-processing
-# (offline) flag.
-my (%store, @rawfastflats, @flatfiles, $batch);
+# List of fastflats and non-fastflats
+my (@fastflats, @nonflats);
 
-# Now process those files identified
-if (@flats) {
+# List of fastflats indexed by subscan number
+my %fastflats;
 
+# List of flatfield solutions for each subscan - each entry is a hash
+# reference indexed by subarray
+my @flatinfo;
+
+# List of input (raw) fastflat files
+my @rawfastflats;
+
+# Flat to indicate that there are fastflat data to process
+my $ffdata;
+
+# Step 1 - if the Frame has mixed sequence data, filter out the
+# non-fastflat data for later use
+if (defined $Frm->hdr("SEQ_TYPE")) {
+  # This block is reached if the SEQ_TYPE is unique - this will always
+  # happen in the QL pipeline, and for offline focus processing.
+  # Processing should only continue for fastflats, otherwise finish
+  # immediately.
+  return ORAC__OK unless ($Frm->hdr("SEQ_TYPE") =~ /fastflat/i);
+  # Tell the pipeline that it has fastflat data to process
+  $ffdata = 1;
+  $fastflats{$Frm->hdr("NSUBSCAN")} = [$Frm->files];
+} else {
+  # In all other cases we have mixed-sequence data, so separate the
+  # fastflats from the other data
+  my $max_index = $Frm->nfiles - 1;
+  foreach my $i (0 .. $max_index) {
+    if ($Frm->hdrval("SEQ_TYPE", $i) =~ /fastflat/i) {
+      push(@fastflats, $Frm->file($i+1));
+      if ($fastflats{$Frm->hdrval("NSUBSCAN", $i)}) {
+	my @subscanfiles = @{ $fastflats{$Frm->hdrval("NSUBSCAN", $i)} };
+	push(@subscanfiles, $Frm->file($i+1));
+	$fastflats{$Frm->hdrval("NSUBSCAN", $i)} = \@subscanfiles;
+      } else {
+	$fastflats{$Frm->hdrval("NSUBSCAN", $i)} = [ $Frm->file($i+1) ];
+      }
+    } else {
+      push(@nonflats, $Frm->file($i+1));
+    }
+  }
+  $ffdata = (%fastflats) ? 1 : 0;
+}
+
+# Step 2: process fastflat data in the Frame
+if (%fastflats) {
   # Write a flag file?
   my $writeflag = get_prim_arg($_PRIM_ARGS_, "WRITEFLAG", 1);
 
-  if ($processff) {
   # Retrieve previous solutions if they exist - this must be done
-  # first as the method relies on fiddling the hdr of the global Frame
-  # object
+  # first as the method relies on checking the hdr of Frm
   _RETRIEVE_FASTFLATS_ TYPE=SOL
   my $previous = $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB};
 
-  # Create a temporary override of Frm to allow primitives to work.
   # Retrieve the name of a resistor config file if given, and the
   # QUICKLOOK/SUMMIT headers if appropriate and store in the new
-  # localized Frm.
+  # (localized) Frm
   my $resist = $Frm->uhdr("RECPAR_RESIST_CFG");
   my $pltype = ($Frm->uhdr("QUICKLOOK")) ? "QUICKLOOK" :
-    ($Frm->uhdr("SUMMIT") ? "SUMMIT" : 0);
-  my $Frm = $Frm->new(\@flats);
-  $Frm->uhdr("RECPAR_RESIST_CFG", $resist) if (defined $resist);
-  $Frm->uhdr("$pltype", 1) if ($pltype);
+    ($Frm->uhdr("SUMMIT") ? "SUMMIT" : "");
 
-  # Calculate the number of files per subarray in the Frame: batch
-  # mode processing will have multiple files - unless the obs was
-  # terminated immediately following the fastramp measurement. The QL and
-  # SUMMIT pipelines will only have 1.
-  my $nfilespersub = $Frm->nfiles / $Frm->numsubarrays;
-  $batch = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) ? 0 : 1;
+  my $batch = ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) ? 0 : 1;
+  # Don't bother writing a flag file if running offline
+  $writeflag = 0 if ($batch);
 
-  # The QL pipeline will only have 1 file per subarray, as will
-  # observations which failed in some way (so that the trailing
-  # fastramp was not carried out). How can the two cases be
-  # distinguished so QL/SUMMIT processing goes ahead while bad
-  # observations are omitted?
-
-  # If the number of subarrays equals the number of fastramp files
-  # then there are not enough fastramp files to compare so terminate
-  # the recipe - except in the case of offline Focus processing, where
-  # the fastflats are processed in two separate passes
-  if ($batch && @flats == $Frm->numsubarrays && $Frm->hdr("OBS_TYPE") !~ /focus/i) {
-    orac_warn "Observation ".($Frm->uhdr("ORAC_OBSERVATION_NUMBER"))
-      ." likely bad (only 1 fastflat file)\n";
-    return ORAC__TERM;
-  }
-
-  # Hmmm the processing also assumes that there are the same number of
-  # fastramps per subarray - what if 1 subarray has only 1?
-
-  # Copy the raw files so they persist during successive passes
-  # through the recipe - this applies to the QL/SUMMIT pipelines and
-  # to offline Focus processing
-  if (!$batch || $Frm->hdr("OBS_TYPE") =~ /focus/i) {
-    _COPY_RAW_DATA_ SUFFIX=_rawflat
-  }
-
-  my @Frms;
-  if ($batch) {
-    # Multiple files per subarray = batch mode
-    # so split Frm into Frms with all the same subscan number
-
-    # This method *assumes* that the files are ordered by subarray in
-    # the Frame: ie file1 = sub1_file1, file2 = sub1_file2 etc.
-    for my $i (1 .. $nfilespersub) {
-      my @files = map { $Frm->file($i + ($_ - 1)*$nfilespersub) } (1..$Frm->numsubarrays);
-
-      my $newFrm = $Frm->new( \@files );
-      push(@Frms, $newFrm);
+  # If there are no previous solutions, check to see if the current
+  # observation has multiple fastramps to enable a comparison
+  if ($batch && !$previous) {
+    if (@fastflats == $Frm->numsubarrays) {
+      orac_warn "Unable to locate a previous solution to perform comparisons\n";
     }
-  } else {
-    push(@Frms,$Frm);
   }
-  # Use the last Frame as the current Frm if there are multiple Frames
-  $Frm = $Frms[-1] if (@Frms > 1);
 
   # Retrieve current Group uhdr
   my $uhdr = $Grp->uhdr;
-  # Create a temporary override for Grp
-  my $Grp = $Grp->new("fastflat");
-  $Grp->allmembers($Frm);
-  $Grp->uhdr(%{$uhdr});
+  my %previous;
+  my @subscans = sort keys %fastflats;
+  my $prevscan;
+  my $flatGrp = $Grp->new("fastflats");
+  my @Frms;
+  # Loop over each subscan with fastflat data and calculate flatfield solution
+  foreach my $subscan (@subscans) {
+    orac_print "Calculating flatfields for subscan $subscan:\n" if (@subscans > 1);
+    # Create a temporary override of Frm to allow primitives to work.
+    my $Frm = $Frm->new($fastflats{$subscan});
+    $Frm->uhdr("RECPAR_RESIST_CFG", $resist) if (defined $resist);
+    $Frm->uhdr("$pltype", 1) if ($pltype ne "");
+    $Frm->uhdr("OBSEND",1);
+    $Frm->uhdr("PROCESS_FASTFLAT",1);
 
-  # Set a FASTFLAT header for subsequent primitives to use
-  $Grp->uhdr("FASTFLAT",1);
-  # Set the Frame uhdr obsend flag to force flatfield analysis
-  $Frm->uhdr("OBSEND",1);
-  # Set PROCESS_FASTFLAT to true because if we're here then we're, uh,
-  # processing fastflats
-  $Frm->uhdr("PROCESS_FASTFLAT", 1);
-  @rawfastflats = map { $_->files} @Frms;
-
-  if ( @Frms > 1 ) {
-    # Store a Grp flag that can be used downstream
-    $Grp->uhdr("BATCH_FLAT", 1);
-    # If batch, process the first fast-ramp file to create a
-    # `previous' file
-    { # Localize Grp here (again!) just to get the flatfield calculation -
-      # alternative is to patch _CALCULATE_FLATFIELD_ to take a group
-      # object
-      my $Grp = $Grp->new("fastflat_previous");
-      $Grp->allmembers($Frms[0]);
-      $Grp->uhdr(%{$uhdr});
-
-      # Calculate the flatfield solution
-      orac_print "\nCalculating the first flatfield solution...\n";
-      _CALCULATE_FLATFIELD_
-      # Store the results in the $previous hash reference
-      $previous = {map { $_->hdr("SUBARRAY") => $_->file } $Grp->members};
+    # Copy the raw data so it persists through successive passes
+    if (!$batch || $Frm->hdr("OBS_TYPE") =~ /focus/i) {
+      _COPY_RAW_DATA_ SUFFIX=_rawflat
     }
-    orac_print "\nCalculating the second flatfield solution...\n";
-  }
-  # Store the fastflats for retrieval by _ANALYZE_FLATFIELD_ below
-  $Grp->uhdr("FASTFLATS",$previous) if ($previous);
-  # Calculate the flatfield solution
-  _CALCULATE_FLATFIELD_
 
-  # Determine which files to keep on completion - always keep the
-  # flatfield solutions on disk
-  my $keep = "_flat";
-  if ( !$obsend_on_entry ) {
-    # First time processing fast-ramps so keep the raw data too
-    $keep .= ",_rawflat";
-  }
+    # Create a temporary override for Grp because the flatfield
+    # calculation stores Frames consisting of a single flatfield
+    # solution in Grp.
+    my $Grp = $Grp->new("fastflat");
+    $Grp->uhdr(%{$uhdr});
+    $Grp->allmembers($Frm);
 
-  if ($batch) {
-    # Hard wire some desired percentiles
-    _ANALYZE_FLATFIELD_ PERCENTILES=16,84 RESPRATIO=1 LOGPAR=ABS WRITEFLAG=$writeflag
-  } else {
-    # Analyze and display the results immediately in QL/summit mode
-    _ANALYZE_FLATFIELD_ OBSEND=0 WRITEFLAG=$writeflag
-  }
+    my $prevsol = ($prevscan) ? $previous{$prevscan} : $previous;
 
-  # Display results
-  _DISPLAY_FASTFLAT_
+    # Calculate the flatfield solution
+    _CALCULATE_FLATFIELD_ PREVIOUS=$prevsol
 
-  # Tidy up
-  _DELETE_TEMP_FILES_ KEEP=$keep
-  _DELETE_TEMP_FILES_GROUP_ KEEP=$keep
+    # Store the files as a hash reference indexed by subarray for use
+    # as the previous solution next time around
+    $previous{$subscan} = {map { $_->hdr("SUBARRAY") => $_->file } $Grp->members};
+    $Frm->readhdr;
+    push(@flatinfo, $Frm->uhdr("FLATS"));
 
-  # Store the flatfield solutions
-  @flatfiles = map { $_->file } $Grp->members;
-  # $Frm and $Grp go out of scope here, return to original
-  } else {
-    # Make a copy of the raw data before storing for focus
-    # observations as each SMU position is processed separately, so
-    # the data must persist for multiple passes through the recipe
-    if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") {
-      _COPY_RAW_DATA_ SUFFIX=_rawflat VERBOSE=0
+    push(@Frms,$Frm) if ($previous{$subscan});
+
+    # Set the "previous" subscan to the current value so the correct
+    # fastflat solution is retrieved next time round the loop over
+    # subscans
+    $prevscan = $subscan;
+
+    if ($batch) {
+      # Hard wire some desired percentiles
+      _ANALYZE_FLATFIELD_ PERCENTILES=16,84 RESPRATIO=1 LOGPAR=ABS WRITEFLAG=$writeflag
+    } else {
+      # Analyze and display the results immediately in QL/summit mode
+      _ANALYZE_FLATFIELD_ OBSEND=0 WRITEFLAG=$writeflag
     }
-    push(@rawfastflats, $Frm->get_fastramp_flats);
+
+    # Display results if running the QL or SUMMIT pipeline
+    unless ($batch) {
+      _DISPLAY_FASTFLAT_
+    }
+
+    # Determine which files to keep on completion - always keep the
+    # flatfield solutions on disk
+    my $keep = "_flat,_rawflat";
+    # Tidy up
+    _DELETE_TEMP_FILES_ KEEP=$keep
+    _DELETE_TEMP_FILES_GROUP_ KEEP=$keep
   }
+  # Retrieve all the raw fastflats to store
+  @rawfastflats = map { $_->files } @Frms;
 }
 
-# Store raw fastflats in Calibration system, but only if they will be
-# needed in successive recipe calls by the pipeline
-if (@rawfastflats && (!$Frm->uhdr("OBSEND") || $storeraw)) {
+# Step 3: store the flatfield info in the Frame uhdr for later
+# retrieval This will be necessary when the Frame contains a mixture
+# of fastflat and science data.
+if (@flatinfo) {
+  my %subarrays;
+  foreach my $flatinfo (@flatinfo) {
+    my %flats = %{$flatinfo};
+    foreach my $subarray (sort keys %flats) {
+      if (defined $subarrays{$subarray}) {
+	my $nbol = $subarrays{$subarray}->{nbol};
+	$nbol += $flats{$subarray}->{nbol};
+	$subarrays{$subarray}->{nbol} = $nbol;
+      } else {
+	if ($flats{$subarray}->{nbol} > 0) {
+	  $subarrays{$subarray}->{nbol} = $flats{$subarray}->{nbol};
+	} else {
+	  $subarrays{$subarray}->{nbol} = 0;
+	}
+      }
+    }
+  }
+  $Frm->uhdr("FLATS", \%subarrays);
+}
+
+# Step 4: Now store the raw fastflats in the calibration system
+if (@rawfastflats) {
   # Code ref to store the fastflats in the calibration system - takes
   # a Frame object as a single argument
   my $store_fastflats = sub {
@@ -331,7 +283,7 @@ if (@rawfastflats && (!$Frm->uhdr("OBSEND") || $storeraw)) {
       }
     }
   };
-  orac_print "Storing fastflat files...\n" if ($storeraw);
+  orac_print "Storing raw fastflat files...\n";
   # If multiple fastflats per observation, must store each group
   # separately to get the correct timestamp in the index file
   my $fastflatFrm = $Frm->new;
@@ -353,17 +305,4 @@ if (@rawfastflats && (!$Frm->uhdr("OBSEND") || $storeraw)) {
   # processed and that no further processing should take place
   $Frm->uhdr("PROCESS_FASTFLAT", 1);
   $Frm->isgood(-1);
-}
-
-# Store the _flat files in the global Frame - except for setup
-# observations
-if (@flatfiles && !$batch && $Frm->hdr("OBS_TYPE") !~ /setup/i) {
-  $Frm->files(@flatfiles);
-}
-
-# Store the non-fastramp files - this should only be populated for
-# offline Focus processing
-if (@nonflats) {
-  $Frm->files(@nonflats);
-  $Frm->readhdr;
 }
