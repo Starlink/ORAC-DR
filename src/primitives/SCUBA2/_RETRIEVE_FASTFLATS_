@@ -20,6 +20,11 @@ file be retrieved from the calibration system.
 The primitive checks that the relevant file exists in the current
 working directory and only returns the filename if it does.
 
+If the uhdr entry C<FLATS> is defined, then the data being processed
+contain fastflats. These cannot be retrieved from the calibration
+system during the same observation so a hash reference is stored in
+the uhdr which is retrieved here and returned in the primitive hash.
+
 =head1 ARGUMENTS
 
 This primitive supports the following arguments:
@@ -94,6 +99,23 @@ USA.
 
 =cut
 
+my (@fastflats, %fastflats, %nbol);
+my $nbolosum = 0;
+
+# If there are FLATS in the uhdr, then use them
+if ($Frm->uhdr("FLATS")) {
+  my %flatinfo = %{$Frm->uhdr("FLATS")};
+  # Store only those fastflats with good solutions
+  foreach my $subarray (sort keys %flatinfo) {
+    if ($flatinfo{$subarray}->{nbol} > 0) {
+      $fastflats{$subarray} = $flatinfo{$subarray}->{file};
+      push(@fastflats, $fastflats{$subarray});
+    }
+    $nbol{$subarray} = $flatinfo{$subarray}->{nbol};
+    $nbolosum += $nbol{$subarray};
+  }
+} else {
+
 # Flatfield type to return
 my $flat_type = lc(get_prim_arg($_PRIM_ARGS_, "TYPE", "raw"));
 
@@ -125,8 +147,6 @@ $Frm->uhdr("DATE-OBS", $utstart->strftime("%FT%T"));
 # Set the SHUTTER uhdr too
 $Frm->uhdr("SHUTTER",$Frm->hdr("SHUTTER"));
 
-my (@fastflats, %fastflats, %nbol);
-my $nbolosum = 0;
 # Cycle through the subarrays present and retrieve the relevant
 # fastflat
 my $origsub = $Frm->uhdr("SUBARRAY");
@@ -154,6 +174,8 @@ foreach my $subarray (@subarrays) {
 # Store original value for the subarray hdr
 $Frm->uhdr("SUBARRAY", $origsub);
 $Frm->uhdr("DATE-OBS", $origdate);
+
+}
 
 # Store results in primitive hash
 if (@fastflats) {
