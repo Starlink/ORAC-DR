@@ -53,8 +53,9 @@ _RETRIEVE_FASTFLATS_
 =head1 OUTPUT DATA
 
 The primitive hash contains two entries if successful: C<FILES> is an
-array reference with the list of files and C<FILES_SUB> which contains
-a hash reference of the files indexed by subarray.
+array reference with the list of files (including raw fastflats if
+necessary) and C<FILES_SUB> which contains a hash reference of the
+files indexed by subarray.
 
 =head1 OUTPUT FILES
 
@@ -86,8 +87,10 @@ USA.
 
 =cut
 
+# Input Frame object to retrieve files from
 my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", $Frm);
 
+# Default to including fastflats in the list of files returned
 my $incfastflats = get_prim_arg($_PRIM_ARGS_, "FASTFLATS", 1);
 
 # Localize $Frm here to enable flatfield retrieval
@@ -102,22 +105,16 @@ my $incfastflats = get_prim_arg($_PRIM_ARGS_, "FASTFLATS", 1);
     %goodfiles = %allfiles;
     @goodfiles = $Frm->files;
   } else {
-    # First step - retrieve the flatfield solutions to determine which
-    # subarrays have good solutions
     my %subarrays;
     my $nbolosum = 0;
+    # First step - retrieve the flatfield solutions to determine which
+    # subarrays have good solutions
+    _RETRIEVE_FASTFLATS_ TYPE=SOL
+    %subarrays = %{$_RETRIEVE_FASTFLATS_{NBOLO_SUB}}
+      if (defined $_RETRIEVE_FASTFLATS_{NBOLO_SUB});
+    $nbolosum = $_RETRIEVE_FASTFLATS_{NBOLO_SUM};
 
-    if ($Frm->uhdr("FLATS")) {
-      my %flatinfo = %{$Frm->uhdr("FLATS")};
-      %subarrays = map { $_ => $flatinfo{$_}->{nbol} } sort keys %flatinfo;
-      $nbolosum += $flatinfo{$_}->{nbol} foreach (keys %flatinfo);
-    } else {
-      _RETRIEVE_FASTFLATS_ TYPE=SOL
-      %subarrays = %{$_RETRIEVE_FASTFLATS_{NBOLO_SUB}}
-	if (defined $_RETRIEVE_FASTFLATS_{NBOLO_SUB});
-      $nbolosum = $_RETRIEVE_FASTFLATS_{NBOLO_SUM};
-    }
-
+    # Proceed if there are good solutions
     if (%subarrays) {
       # Store data files with good flatfields
       foreach my $subarray (sort keys %allfiles) {
@@ -130,23 +127,11 @@ my $incfastflats = get_prim_arg($_PRIM_ARGS_, "FASTFLATS", 1);
       # creates unique filenames for flatfielded data.
       my (%fastflats, @fastflats);
       if ($incfastflats && $nbolosum > 0) {
-	# If the Frame has already processed fastflats, check uhdr for info
-	if ($Frm->uhdr("FLATS")) {
-	  my %flatinfo = %{$Frm->uhdr("FLATS")};
-	  # Store only those fastflats with good solutions
-	  foreach my $subarray (sort keys %flatinfo) {
-	    if ($flatinfo{$subarray}->{nbol} > 0) {
-	      $fastflats{$subarray} = $flatinfo{$subarray}->{file};
-	      push(@fastflats, $fastflats{$subarray});
-	    }
-	  }
-	} else {
-	  # Oherwise retrieve from the calibration system
-	  _RETRIEVE_FASTFLATS_ TYPE=RAW
-	  if (defined $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}) {
-	    %fastflats = %{$_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}};
-	    @fastflats = @{$_RETRIEVE_FASTFLATS_{FASTFLATS}};
-	  }
+	# Retrieve from the calibration system
+	_RETRIEVE_FASTFLATS_ TYPE=RAW
+	if (defined $_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}) {
+	  %fastflats = %{$_RETRIEVE_FASTFLATS_{FASTFLATS_SUB}};
+	  @fastflats = @{$_RETRIEVE_FASTFLATS_{FASTFLATS}};
 	}
 	# Now select the data files for which good flatfield solutions exist
 	if (%fastflats) {
