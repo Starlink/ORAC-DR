@@ -114,67 +114,76 @@ if ($Frm->uhdr("FLATS")) {
     $nbol{$subarray} = $flatinfo{$subarray}->{nbol};
     $nbolosum += $nbol{$subarray};
   }
+} elsif (!defined $Frm->hdr("SEQ_TYPE")) {
+  orac_print "skipping b/c ff in frame\n";
 } else {
+  # Flatfield type to return
+  my $flat_type = lc(get_prim_arg($_PRIM_ARGS_, "TYPE", "raw"));
 
-# Flatfield type to return
-my $flat_type = lc(get_prim_arg($_PRIM_ARGS_, "TYPE", "raw"));
+  # Return results for those subarrays for which data exist in the
+  # current Frame or for all possible subarrays?
+  my @subarrays = $Frm->subarrays;
+  if (get_prim_arg($_PRIM_ARGS_, "ALLSUB", 0)) {
+    my $getsubs = sub {
+      my $filter = shift;
+      my $wave = ($filter =~ /850/) ? 8 : 4;
+      return map { "s$wave".$_ } qw/ a b c d /;
+    };
+    @subarrays = $getsubs->($Frm->hdr("FILTER"));
+  }
 
-# Return results for those subarrays for which data exist in the
-# current Frame or for all possible subarrays?
-my @subarrays = $Frm->subarrays;
-if (get_prim_arg($_PRIM_ARGS_, "ALLSUB", 0)) {
-  my $getsubs = sub {
-    my $filter = shift;
-    my $wave = ($filter =~ /850/) ? 8 : 4;
-    return map { "s$wave".$_ } qw/ a b c d /;
-  };
-  @subarrays = $getsubs->($Frm->hdr("FILTER"));
-}
+  # Name of calibration method call
+  my $method = "raw";
+  my %methods = ( raw => "fastflat",
+		  setup => "setupflat",
+		  sol => "flat"
+		);
+  $method = $methods{$flat_type} if (defined $methods{$flat_type});
 
-# Name of calibration method call
-my $method = "raw";
-my %methods = ( raw => "fastflat",
-		setup => "setupflat",
-		sol => "flat"
-	      );
-$method = $methods{$flat_type} if (defined $methods{$flat_type});
+  # Set a DATE-OBS header
+  my $origdate = $Frm->uhdr("DATE-OBS");
+  my $utstart = $Frm->uhdr("ORAC_UTSTART");
+  $Frm->uhdr("DATE-OBS", $utstart->strftime("%FT%T"));
 
-# Set a DATE-OBS header
-my $origdate = $Frm->uhdr("DATE-OBS");
-my $utstart = $Frm->uhdr("ORAC_UTSTART");
-$Frm->uhdr("DATE-OBS", $utstart->strftime("%FT%T"));
-
-# Set the SHUTTER uhdr too
-$Frm->uhdr("SHUTTER",$Frm->hdr("SHUTTER"));
-
-# Cycle through the subarrays present and retrieve the relevant
-# fastflat
-my $origsub = $Frm->uhdr("SUBARRAY");
-foreach my $subarray (@subarrays) {
-  $Frm->uhdr("SUBARRAY", $subarray);
-  my $fflat = $Cal->$method;
-  if ($fflat) {
-    # Only store if the file exists on disk - assumed to be the
-    # current working directory (ORAC_DATA_OUT)
-    my $fastflat = ($fflat =~ /.sdf$/) ? $fflat : $fflat . ".sdf";
-    if (-e $fastflat) {
-      push(@fastflats, $fflat);
-      $fastflats{$subarray} = $fflat;
-      # Store the number of good bolometers in flatfield solutions
-      if ($method eq "flat") {
-	my $indexentry = $Cal->flatindex->indexentry($fflat);
-	$nbol{$subarray} = $indexentry->{NGOOD};
-	$nbolosum += $indexentry->{NGOOD};
-      }
-    } else {
-      orac_err "Calibration returned $fastflat, but that file does not exist\n";
+  # Set the SHUTTER uhdr too - default to open shutter
+  my $shutter = 1;
+  if (defined $Frm->hdr("SEQ_TYPE")) {
+    $shutter = $Frm->hdr("SHUTTER");
+  } else {
+    # If we have mixed sequence data, the chances are that
+    if ($Frm->hdr("OBS_TYPE") =~ /noise/i) {
+      $shutter = ($Frm->hdr("OBJECT") =~ /dark/i) ? 0 : 1;
     }
   }
-}
-# Store original value for the subarray hdr
-$Frm->uhdr("SUBARRAY", $origsub);
-$Frm->uhdr("DATE-OBS", $origdate);
+  $Frm->uhdr("SHUTTER",$shutter);
 
+  # Cycle through the subarrays present and retrieve the relevant
+  # fastflat
+  my $origsub = $Frm->uhdr("SUBARRAY");
+  foreach my $subarray (@subarrays) {
+    $Frm->uhdr("SUBARRAY", $subarray);
+    my $fflat = $Cal->$method;
+    if ($fflat) {
+      # Only store if the file exists on disk - assumed to be the
+      # current working directory (ORAC_DATA_OUT)
+      my $fastflat = ($fflat =~ /.sdf$/) ? $fflat : $fflat . ".sdf";
+      if (-e $fastflat) {
+	push(@fastflats, $fflat);
+	$fastflats{$subarray} = $fflat;
+	# Store the number of good bolometers in flatfield solutions
+	if ($method eq "flat") {
+	  my $indexentry = $Cal->flatindex->indexentry($fflat);
+	  $nbol{$subarray} = $indexentry->{NGOOD};
+	  $nbolosum += $indexentry->{NGOOD};
+	}
+      } else {
+	orac_err "Calibration returned $fastflat, but that file does not exist\n";
+      }
+    }
+  }
+  # Store original value for the subarray hdr
+  $Frm->uhdr("SUBARRAY", $origsub);
+  $Frm->uhdr("DATE-OBS", $origdate);
 }
 
 # Store results in primitive hash
