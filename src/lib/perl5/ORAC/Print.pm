@@ -100,7 +100,33 @@ use constant NOT__COMPLETE => "Pipeline Completed";
 
 my $NOTIFY;
 my $DBUS;                       # The  Desktop::Notify object
+my $GNTP;                       # The  GNTP object
 BEGIN {
+  my $use_gntp = eval {
+    require Growl::GNTP;
+    my $icon = File::Spec->catfile( $ENV{ORAC_DIR},"images", "orac_logo.gif");
+    $GNTP = Growl::GNTP->new( AppName => APPNAME, AppIcon => $icon );
+    $GNTP->register( [
+                      {
+                       Name => NOT__INIT,
+                      },
+                      {
+                       Name => NOT__GENERAL,
+                      },
+                      {
+                       Name => NOT__STARTOBS,
+                      },
+                      {
+                       Name => NOT__ENDOBS,
+                      },
+                      {
+                       Name => NOT__COMPLETE,
+                      },
+                     ]
+                   );
+    $NOTIFY = "GNTP";
+    1;
+  };
   my $use_growl = eval {
     require Mac::Growl;
     Mac::Growl::RegisterNotifications( APPNAME,
@@ -1014,7 +1040,14 @@ sub notify {
 
   if (defined $NOTIFY) {
     my $icon = File::Spec->catfile( $ENV{ORAC_DIR},"images", "orac_logo.gif");
-    if ($NOTIFY eq 'GROWL') {
+    if ($NOTIFY eq 'GNTP' && defined $GNTP) {
+      $GNTP->notify(
+                    Event => $name,
+                    Title => $title,
+                    Message => $outtext,
+                    Icon => $icon,
+                   );
+    } elsif ($NOTIFY eq 'GROWL') {
       Mac::Growl::PostNotification( APPNAME, $name, $title, $outtext, 0, 0, $icon );
     } elsif ($NOTIFY eq 'DBUS' && defined $DBUS) {
       my $notification = $DBUS->create( summary => $title,
