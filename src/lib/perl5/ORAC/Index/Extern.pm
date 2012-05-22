@@ -82,22 +82,26 @@ sub indexref {
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
     $self->{IndexEntries} = $arg;
   }
+  else {
+    # At this point we should check the modification date.
+    # Note that if we then call slurpindex we have to make sure
+    # that we dont go into an infinite loop of re-reading
 
-  # At this point we should check the modification date.
-  # Note that if we then call slurpindex we have to make sure
-  # that we dont go into an infinite loop of re-reading
+    my $mtime = (stat $self->indexfile)[9];
+    $mtime = 0 unless defined $mtime; # -w fix
+    my $last = $self->last_read;
+    $last = 0 unless defined $last;
+    if ($mtime > $self->last_read) {
 
-  my $mtime = (stat $self->indexfile)[9];
-  $mtime = 0 unless defined $mtime; # -w fix
-  my $last = $self->last_read;
-  $last = 0 unless defined $last;
-  if ($mtime > $self->last_read) {
-
-    # Re-read the index file
-    # This is okay since we modify slurpindex so that it always
-    # updates the object with the current read-time
-    $self->slurpindex;
-
+      # Re-read the index file
+      # This is okay since we modify slurpindex so that it always
+      # updates the object with the current read-time
+      # However SUPER::slurpindex will call this method again
+      # to set the index hash reference.  Therefore we want this
+      # section in an 'else' block so that we don't attempt to re-read
+      # the index again if we have just been given one.
+      $self->slurpindex;
+    }
   }
 
   return $self->{IndexEntries};

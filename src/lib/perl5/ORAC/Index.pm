@@ -70,6 +70,8 @@ sub new {
                IndexRules => {},
                IndexRulesFile => undef,
                RulesOK => 0,
+               RulesCount => undef,
+               RulesKeys => [],
               };
 
   bless($index, $class);
@@ -189,6 +191,8 @@ sub rulesref {
     my $arg = shift;
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
     $self->{IndexRules} = $arg;
+    $self->{RulesCount} = scalar keys %$arg;
+    $self->{RulesKeys} = [sort keys %$arg];
   }
 
   return $self->{IndexRules};
@@ -637,10 +641,15 @@ that returns the information (in an array).
 
 Returns a hash reference if successful, undef if error.
 
+As an optimization (useful for ORAC::Index::Extern), an index hash can be
+supplied as the first argument.
+
 =cut
 
 sub indexentry {
   my $self = shift;
+
+  my $idxref = ref $_[0] ? shift : $self->indexref();
 
   croak('Usage: indexentry(name)') unless (scalar(@_) == 1);
 
@@ -648,7 +657,7 @@ sub indexentry {
   my $name = shift;
 
   # Check that it exists
-  unless (exists $ {$self->indexref}{$name}) {
+  unless (exists $idxref->{$name}) {
     orac_err "$name is unknown to oracdr and may not be used as calibration\n";
     orac_err "Make sure it is reduced by oracdr\n";
     return;
@@ -656,9 +665,7 @@ sub indexentry {
   ;
 
   # take local copy of the calibration data index entry
-  my @calibdata = @{$ {$self->indexref}{$name}};
-  # take local copy the rules
-  my %rules = %{$self->rulesref};
+  my @calibdata = @{$idxref->{$name}};
 
   # check that number of rules match index entries
   $self->_sanity_check($name, \@calibdata);
@@ -668,7 +675,7 @@ sub indexentry {
   my %entry = ();
 
   # Loop over the rules keys
-  foreach my $key (sort keys %rules) {
+  foreach my $key (@{$self->_rules_keys()}) {
     $entry{$key} = shift(@calibdata);
   }
 
@@ -1035,6 +1042,9 @@ string starting with 'g').
 Matching against the index entry's ID (i.e. the first column in an
 index) can be done by supplying the hash key ':ID'.
 
+Matching only records more recent than a given ORACTIME can be
+done by supplying the hash key ':SINCE'.
+
 =cut
 
 sub scanindex {
@@ -1057,9 +1067,36 @@ sub scanindex {
     delete $filter{':ID'};
   }
 
+  my $since = undef;
+  my $oractime = 0;
+  if (defined $filter{':SINCE'}) {
+    # Find out which field is ORACTIME to allow comparison prior to
+    # calling $self->indexentry because that method consumes a lot of time.
+    foreach (@{$self->_rules_keys()}) {
+      last if /^ORACTIME$/;
+      $oractime ++;
+    }
+
+    # Set the filter only if we found it.
+    if ($oractime < scalar $self->_num_rules()) {
+      $since = $filter{':SINCE'};
+    }
+    else {
+      orac_warn('ORAC::Index::scanindex can not apply :SINCE filter due to lack of ORACTIME field');
+    }
+
+    delete $filter{':SINCE'};
+  }
+
+  # Optimization for ORAC::Index::Extern: we don't want to call
+  # indexref or indexkeys or indexentry repeatedly because all of
+  # these will have the time-consuming side-effect of checking the
+  # file-status.  Therefore get a reference to the index hash once:
+  my $idxref = $self->indexref();
+
   # Loop over hash keys in index (random order)
   my @match;
- OUTER: for my $key ($self->indexkeys) {
+ OUTER: for my $key (keys %$idxref) {
 
     if ( defined( $id ) ) {
       if ( ref( $id ) ) {
@@ -1069,7 +1106,11 @@ sub scanindex {
       }
     }
 
-    my $entry = $self->indexentry($key);
+    if (defined $since) {
+      next OUTER unless $idxref->{$key}->[$oractime] > $since;
+    }
+
+    my $entry = $self->indexentry($idxref, $key);
 
     for my $f (keys %filter) {
       next OUTER unless $entry->{$f} eq $filter{$f};
@@ -1098,13 +1139,13 @@ sub _sanity_check {
   my $self = shift;
   my $name = shift;
   my $calibdata = shift;
-  my %rules = %{$self->rulesref};
+  my $rules = $self->_num_rules;
 
   # This should probably be a method???
-  unless (scalar @$calibdata == (scalar(keys %rules))) {
+  unless (scalar @$calibdata == $rules) {
     orac_err "Number of (non-filename) columns for entry '$name' in index file (".(scalar @$calibdata).
       ") does not match the number of keys in the rules file (".
-        scalar(keys %rules).")\n";
+        $rules.")\n";
     my $file = $self->indexfile;
     orac_err "Something has gone seriously wrong with the index file $file\n";
     croak "You will need to regenerate it.\n";
@@ -1112,6 +1153,28 @@ sub _sanity_check {
   ;
 
   return;
+}
+
+=item B<_num_rules>
+
+Returns the number of rules.
+
+=cut
+
+sub _num_rules {
+  my $self = shift;
+  return $self->{'RulesCount'};
+}
+
+=item B<_rules_keys>
+
+Returns reference to the sorted list of rule keys.
+
+=cut
+
+sub _rules_keys {
+  my $self = shift;
+  return $self->{'RulesKeys'};
 }
 
 
