@@ -125,7 +125,17 @@ sub recipe_name_from_params {
       $object =~ s/\s//g;
 
       if (exists $allpars{$key}->{$object}) {
+        # Shortcut the exact match
         $recname = $allpars{$key}->{$object};
+      } else {
+        # we have to go through item in the hash to
+        # see if it matches the pattern of our object
+        for my $cfgobj (keys %{$allpars{$key}}) {
+          if ( $object =~ /^$cfgobj$/ ) {
+            $recname = $allpars{$key}->{$cfgobj};
+            last;
+          }
+        }
       }
     }
   }
@@ -169,10 +179,22 @@ sub for_recipe {
   if (defined $object) {
     $object =~ s/\s//g;
     if (length($object)) {
-      my $key = $rec .":". uc($object);
-      if (exists $allpars{$key}) {
-        %RecPars = (%RecPars, %{$allpars{$key}});
+      my $usekey;
+      my $testkey = $rec .":". uc($object);
+      if (exists $allpars{$testkey}) {
+        # Shortcut exact match
+        $usekey = $testkey;
+      } else {
+        # Check for wildcards in object position
+        for my $cfgobj (keys %allpars) {
+          if ($testkey =~ /^$cfgobj$/) {
+            $usekey = $cfgobj;
+            last;
+          }
+        }
       }
+      %RecPars = (%RecPars, %{$allpars{$usekey}})
+        if defined $usekey;
     }
   }
 
@@ -395,6 +417,21 @@ name for a particular observation type
  [RECIPES_POINTING]
 
 where object names have spaces removed.
+
+In all cases where an OBJECT is specified above it can be replaced
+by a perl pattern:
+
+ [RECIPES_SCIENCE]
+ .*=REDUCE_FAINT_SOURCE
+
+here all objects of science observations would change to a new
+recipe.
+
+ [RECIPE_NAME:O.*]
+ param1 = value
+
+Here all objects starting with the letter "O" for that recipe
+will use the override of param1.
 
 =head1 AUTHORS
 
