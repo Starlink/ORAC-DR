@@ -92,39 +92,100 @@ if (!defined $Frm->hdr("SEQ_TYPE")) {
   }
 }
 
-# Store current TCS_INDEX - this will be VAL__BADI for dark data but
-# this shouldn't affect any of the decision making below.
-$Frm->uhdr("TCS_INDEX", $Frm->jcmtstate("TCS_INDEX", "end"));
+# Decide if this frame contains science data
+my @sequences = $Frm->hdrval("SEQ_TYPE");
+my $obstype = $Frm->hdr("OBS_TYPE");
+my $is_sci = grep { $_ eq $obstype } @sequences;
 
-# Check and set the LAST_INDEX flag
-if ( defined $Grp->uhdr("LAST_INDEX") ) {
-  # If it exists already check if a new observation has started and
-  # reset it to the current value. A new obs has started if the
-  # TCS_INDEX is now less than the LAST_INDEX. Note that this will not
-  # store a new value of LAST_INDEX if it is already 1, but if that's
-  # the case then it won't matter.
-  if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX") ) {
-    $Grp->uhdr("LAST_INDEX",1);
-    # Reset percentage and scan-pattern completion and new image flags
-    # so we process data from a new observation
-    $Grp->uhdr("OBSCOMP",0);
-    $Grp->uhdr("SCANCOMP",0);
-    $Grp->uhdr("NEWIMAGE",0);
-  } elsif ($Frm->uhdr("TCS_INDEX") > $Grp->uhdr("LAST_INDEX")) {
-    # If the TCS_INDEX has changed, unset OBSCOMP so that subsequent data won't be ignored
+# Record the sequence length of the most recent science frame
+my @seqstarts = $Frm->hdrval("SEQSTART");
+my @seqends = $Frm->hdrval("SEQEND");
 
-    # Unset the OBSCOMP flag except if we're near the end of a long
-    # observation - no point leaving a few flatfielded data files
-    # around
-    if ($Frm->hdrval("NSUBSCAN") > 60) {
-      $Grp->uhdr("OBSCOMP", 1);
-    } else {
-      $Grp->uhdr("OBSCOMP", 0);
-    }
+if ($is_sci) {
+  my $seqstart;
+  my $seqend;
+  if (@sequences == 1) {
+    my $seq = $sequences[0];
+    @sequences = map { $seq } scalar @seqstarts;
   }
-} else {
-  # No pre-existing value so set it to 1
-  $Grp->uhdr("LAST_INDEX", 1);
+
+  if (@sequences == @seqstarts) {
+    # same number - we want the highest start and ends
+    for my $i (0..$#sequences) {
+      next unless $sequences[$i] eq $obstype;
+      if (!defined $seqstart) {
+        $seqstart = $seqstarts[$i];
+        $seqend   = $seqends[$i];
+        next;
+      }
+
+      if ($seqstarts[$i] > $seqstart) {
+        $seqstart = $seqstarts[$i];
+        $seqend   = $seqends[$i]
+      }
+
+    }
+  } # else confusingly different sequence headers and seq_types
+
+  if (defined $seqstart && defined $seqend) {
+    my $seqlen = $seqend - $seqstart + 1;
+    $Frm->uhdr("SEQLEN_FRAME", $seqlen );
+  }
+
+}
+
+# Decide if we are looking at elapsed time or TCS index when
+# processing maps. A DAISY will only have a TCS_INDEX value of 1 and 2
+# and the 2 will be because of overrun.
+my $use_tcs_index = 1;
+if ($Frm->hdr("SAM_MODE") eq 'scan' &&
+    $Frm->hdr("SCAN_PAT") =~ /daisy|liss/i &&
+    $is_sci ) {
+  # Work out the duration and add it to the current total
+  my $duration = $Frm->duration_science();
+  my $sofar = $Grp->uhdr("TIME_SINCE_LAST_MAP");
+  $sofar += $duration;
+  $Grp->uhdr("TIME_SINCE_LAST_MAP", $sofar );
+
+  $use_tcs_index = 0;
+}
+$Grp->uhdr("USE_TCS_INDEX", $use_tcs_index );
+
+if ($use_tcs_index) {
+  # Store current TCS_INDEX - this will be VAL__BADI for dark data but
+  # this shouldn't affect any of the decision making below.
+  $Frm->uhdr("TCS_INDEX", $Frm->jcmtstate("TCS_INDEX", "end"));
+
+  # Check and set the LAST_INDEX flag
+  if ( defined $Grp->uhdr("LAST_INDEX") ) {
+    # If it exists already check if a new observation has started and
+    # reset it to the current value. A new obs has started if the
+    # TCS_INDEX is now less than the LAST_INDEX. Note that this will not
+    # store a new value of LAST_INDEX if it is already 1, but if that's
+    # the case then it won't matter.
+    if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX") ) {
+      $Grp->uhdr("LAST_INDEX",1);
+      # Reset percentage and scan-pattern completion and new image flags
+      # so we process data from a new observation
+      $Grp->uhdr("OBSCOMP",0);
+      $Grp->uhdr("SCANCOMP",0);
+      $Grp->uhdr("NEWIMAGE",0);
+    } elsif ($Frm->uhdr("TCS_INDEX") > $Grp->uhdr("LAST_INDEX")) {
+      # If the TCS_INDEX has changed, unset OBSCOMP so that subsequent data won't be ignored
+
+      # Unset the OBSCOMP flag except if we're near the end of a long
+      # observation - no point leaving a few flatfielded data files
+      # around
+      if ($Frm->hdrval("NSUBSCAN") > 60) {
+        $Grp->uhdr("OBSCOMP", 1);
+      } else {
+        $Grp->uhdr("OBSCOMP", 0);
+      }
+    }
+  } else {
+    # No pre-existing value so set it to 1
+    $Grp->uhdr("LAST_INDEX", 1);
+  }
 }
 
 # Reset all flags if the observation changes
@@ -133,6 +194,9 @@ if ( defined $Grp->uhdr("CURRENT_OBS") && $Grp->uhdr("CURRENT_OBS") != $Frm->hdr
   $Grp->uhdr("SCANCOMP",0);
   $Grp->uhdr("NEWIMAGE",0);
   $Grp->uhdr("LAST_INDEX",1);
+  $Grp->uhdr("USE_TCS_INDEX",0);
+  $Grp->uhdr("TIME_SINCE_LAST_MAP",0);
+  $Grp->uhdr("PREV_SEQLEN",undef);
 }
 $Grp->uhdr("CURRENT_OBS", $Frm->hdr("OBSNUM"));
 

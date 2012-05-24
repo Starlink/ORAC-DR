@@ -116,35 +116,72 @@ if ( $Frm->uhdr("DARKONLY") ) {
   if ( $method =~ /^it/ ) {
     # #### ITERATE ####
 
-    # Percentage-completion parameter - default to 0 to pick up every
-    # file as it is written to disk.
-    my $completion = get_prim_arg($_PRIM_ARGS_, "PERCENT_CMP", 0);
-
-    # Determine the new_index flag which indicates the scan pattern
-    # has been completed at least once since the last time this
-    # primitive was called.
     my $scancomp = 0;
     my $obscomp = 0;
-    if ( $Frm->uhdr("TCS_INDEX") > $Grp->uhdr("LAST_INDEX") ) {
-      $scancomp = 1;
-      # Ensure the NEWIMAGE flag is not set as we now have enough data
-      # to make a new map
-      $Frm->uhdr("NEWIMAGE",0);
-      $Grp->uhdr("SCANCOMP",$scancomp);
+    my $completion;
+    my $duration;
+
+    # Look at the sequence length but only do this if we are not
+    # using a TCS_INDEX. The problem being that we pretty much guarantee
+    # to be making a final map with the last couple of subscans in it.
+    if (!$Grp->uhdr("USE_TCS_INDEX") && defined $Frm->uhdr("SEQLEN_FRAME")) {
+      my $seqlen = $Frm->uhdr("SEQLEN_FRAME");
+      my $prev = $Grp->uhdr("PREV_SEQLEN");
+      if (defined $prev) {
+        if ($seqlen < $prev) {
+          orac_print "Detected short file of $seqlen steps. Assuming final file in sequence.\n",
+            "green";
+          $Frm->uhdr("OBSEND",1); # Effectively the end of the observation
+
+          # Indicate that we have seen the end
+          $obscomp = 1;
+        }
+      }
+      $Grp->uhdr("PREV_SEQLEN", $seqlen);
+    }
+
+    if ($Grp->uhdr("USE_TCS_INDEX")) {
+      # Percentage-completion parameter - default to 0 to pick up every
+      # file as it is written to disk.
+      $completion = get_prim_arg($_PRIM_ARGS_, "PERCENT_CMP", 0);
+
+      # Determine the new_index flag which indicates the scan pattern
+      # has been completed at least once since the last time this
+      # primitive was called.
+      if ( $Frm->uhdr("TCS_INDEX") > $Grp->uhdr("LAST_INDEX") ) {
+        $scancomp = 1;
+        # Ensure the NEWIMAGE flag is not set as we now have enough data
+        # to make a new map
+        $Frm->uhdr("NEWIMAGE",0);
+        $Grp->uhdr("SCANCOMP",$scancomp);
+      } else {
+        # Disable checking of percentage-completion parameter if a map
+        # has been made as a result of the scan pattern being completed
+        unless ($Grp->uhdr("SCANCOMP")) {
+          $scancomp = 0;
+          # Only take notice of the completion parameter for
+          # observations which consist of a single pass of the scan
+          # pattern. Use a special value of obscomp of -1 to indicate
+          # that the percentage completion criteria have been satisfied
+          # but the pipeline is waiting for one more file to see if the
+          # TCS_INDEX has changed.
+          if ($Frm->uhdr("PERCENT_CMP") > $completion && $completion > 75) {
+            $obscomp = ($Grp->uhdr("OBSCOMP") == -1) ? 1 : -1;
+          }
+        }
+      }
     } else {
-      # Disable checking of percentage-completion parameter if a map
-      # has been made as a result of the scan pattern being completed
-      unless ($Grp->uhdr("SCANCOMP")) {
-	$scancomp = 0;
-	# Only take notice of the completion parameter for
-	# observations which consist of a single pass of the scan
-	# pattern. Use a special value of obscomp of -1 to indicate
-	# that the percentage completion criteria have been satisfied
-	# but the pipeline is waiting for one more file to see if the
-	# TCS_INDEX has changed.
-	if ($Frm->uhdr("PERCENT_CMP") > $completion && $completion > 75) {
-	  $obscomp = ($Grp->uhdr("OBSCOMP") == -1) ? 1 : -1;
-	}
+      # Use duration. For a daisy every 3 files seems reasonable.
+      # Unless we have seen above that the observation looks like it is finishing
+      if ( $obscomp ||
+           (defined $Grp->uhdr("TIME_SINCE_LAST_MAP") &&
+            $Grp->uhdr("TIME_SINCE_LAST_MAP") > 85 ) ) {
+        # Can make a map
+        $scancomp = 1;
+        $duration = $Grp->uhdr("TIME_SINCE_LAST_MAP");
+        $Frm->uhdr("NEWIMAGE", 0 );
+        $Grp->uhdr("SCANCOMP", $scancomp );
+        $Grp->uhdr("TIME_SINCE_LAST_MAP",0);
       }
     }
     $Grp->uhdr("OBSCOMP",$obscomp);
@@ -155,13 +192,21 @@ if ( $Frm->uhdr("DARKONLY") ) {
 	my $infiles;
 	if ( $scancomp ) {
 	  # Pass in the new data to makemap
-	  orac_print "Scan pattern completed - making image\n", "green";
+          if (defined $duration) {
+            orac_print "Creating image - $duration sec since last image created\n", "green";
+          } else {
+            orac_print "Scan pattern completed - making image\n", "green";
+          }
 	  # Mark the current Frame as `new' so it will be processed
 	  $Frm->isgood(2);
 	  $infiles = "NEW";
 	} elsif ( $obscomp ) {
 	  # Pass all the current data to makemap
-	  orac_print "Observation greater than $completion % complete - making image\n", "green";
+          if (defined $completion) {
+            orac_print "Observation greater than $completion % complete - making image\n", "green";
+          } elsif (defined $duration) {
+            orac_print "Observation complete - making image\n", "green";
+          }
 	  $infiles = "OBS";
 	} else {
 	  # Pass all the current data to makemap
@@ -208,7 +253,7 @@ if ( $Frm->uhdr("DARKONLY") ) {
     } else {
       # If there is insufficient data to pass to makemap, do something
       # useful, such as flatfield the data
-      orac_print "No enough data yet to make an image - proceeding with flatfield\n";
+      orac_print "Not enough data yet to make an image - proceeding with flatfield\n";
 
       _FLATFIELD_
       # Set the NOCALIB flag so data won't be calibrated
