@@ -461,6 +461,64 @@ sub read_wcs {
   return (wantarray ? @wcs : $wcs[0] );
 }
 
+=item B<write_wcs>
+
+Write the frameset back into the NDF.
+
+  $Frm->write_wcs( $frameset );
+
+If a file name or filenames are provided the default behaviour is over-ridden and the frameset
+is only read for the provided files. The resultant framesets are returned without being
+stored in the object.
+
+  $wcs = $Frm->write_wcs( $file );
+
+In scalar context the first WCS object is returned.
+
+=cut
+
+sub write_wcs {
+  my $self = shift;
+  my $frameset = shift;
+
+  my @files;
+  if (@_) {
+    @files = @_;
+  } else {
+    @files = $self->files;
+  }
+  my $status = &NDF::SAI__OK;
+  err_begin($status);
+  ndf_begin();
+  my $i = 0;
+  for my $f ( @files ) {
+    $i++;
+#    print "File=$f\n";
+    ndf_open( &NDF::DAT__ROOT(), $f, 'UPDATE', 'OLD', my $ndf_id, my $place, $status );
+
+    if ($status != &NDF::SAI__OK) {
+      err_annul($status);
+      next;
+    }
+    ndfPtwcs( $frameset, $ndf_id, $status );
+    ndf_annul( $ndf_id, $status );
+
+  }
+  # extract error messages and annul error status
+  ndf_end($status);
+#  if( $status != &NDF::SAI__OK ) {
+#    my ( $oplen, @errs );
+#    do {
+#      err_load( my $param, my $parlen, my $opstr, $oplen, $status );
+#      push @errs, $opstr;
+#    } until ( $oplen == 1 );
+#    err_annul( $status );
+#    err_end( $status );
+#    orac_error "Error writing new WCS to NDF:\n" . join "\n", @errs;
+#  }
+  err_end( $status );
+}
+
 =item B<flush_messages>
 
 Flush any pending oracdr log messages to the history block of the associated
