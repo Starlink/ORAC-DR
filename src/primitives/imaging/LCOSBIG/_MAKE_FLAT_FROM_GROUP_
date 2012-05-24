@@ -1,0 +1,502 @@
+#+
+# Name:
+#    _MAKE_FLAT_FROM_GROUP_
+#
+# Purpose:
+#    Makes flats from the current group of frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes self flats from the current group, one for
+#    each distinct observation filter.  For eacg flat it uses a
+#    median to combine the frames pixel by pixel, and then divides the
+#    resultant image by its mean form the flat field.  The primitive
+#    files the resultant flat in its calibration index.
+#
+# Arguments:
+#    CLEAN = LOGICAL (Given)
+#       If true (1), the frames are cleaned using a box filter to remove
+#       any small blemishes.  Pixels deviating by more than 3 standard
+#       deviations from its 15x15 pixel neighbourhood are rejected.  This
+#       is done iteratively, three times.  If false (0), no cleaning is
+#       performed.  [1]
+#    FILTER = CHARACTER (Given)
+#       If supplied only make a flat for the named filter.  Otherwise
+#       create flats for each filter stored in the FILTER_LIST group
+#       user header.  This parameter is intended for use where the loop
+#       through a series of filters is performed by a calling primitive,
+#       such as one that masks objects.  []
+#    METHOD = CHARACTER (Given)
+#       The method used to combine frames to form the flat.  See
+#       parameter METHOD of CCDPACK/MAKEFLAT (SUN/139) for the options.
+#       The main two in practice will be "fastmed" or "broadened".  The
+#       former is an unweighted median but is unsuitable for a
+#       self-flat recipe, as it creates a biassed histogram in the
+#       flat-fielded frames, from those pixels divided by themselves.
+#       The "broadened" option averages the central few contributing
+#       pixels and thus avoids the artefact in the histogram, and
+#       therefore should be used for self-flat creation.  This option
+#       is more robust too.  ["broadened"]
+#
+# Notes:
+#    -  This primitive is suitable for infrared imaging instruments.
+#    -  Processing only occurs for object, sky, or calibration-lamp
+#    frames, and when the steering header MAKE_FLAT is true.
+#    -  The list of filters present in the group is listed in an array
+#    stored by reference in the group user header FILTER_LIST.  If this
+#    is undefined, only a single flat is made for filter stored in the
+#    current Frame's user header ORAC_FILTER.
+#    -  There is special behaviour for a combined polarimetry flat
+#    (see "Output Data").  The string "pol" in the filter name is used
+#    to indicate polarimetry data.
+#    -  The flat is displayed.
+#
+# Tasks:
+#    CCDPACK: MAKEFLAT; KAPPA: FITSMOD, NDFCOPY.
+#
+# Output Data:
+#    The flat field.  It is called is "flat_<filter>_<groupnumber>" for
+#    the first cycle, and "flat_<filter>_<groupnumber>_c<cyclenumber>"
+#    for subsequent cycles, where <groupnumber> is the frame number of
+#    the group, <filter> is the filter name, and <cyclenumber> is the
+#    cycle number derived from steering header CYCLE_NUMBER.
+#
+#    An exception is for polarimetric data, where the name becomes
+#    flat_<filter>_pol<waveplate_angle>_<groupnumber>.  The
+#    <waveplate_angle> is the integer part of the angle, e.g. 22, 67,
+#    from internal header ORAC_WAVEPLATE_ANGLE.  Subsequent cycles for
+#    polarimetry also have the "_c<cyclenumber>" suffix, but the cycle
+#    comes from steering header POL_CYCLE_NUMBER.  When steering header
+#    WAVEPLATE_FLAT is false (0), copies of the flat are made, one
+#    for each angle, using the above nomenclature.  Each has its
+#    waveplate angle set to its nominal angle.  This allows a single
+#    ORAC_WAVEPLATE_ANGLE rule entry irrespective of whether all
+#    waveplate angles were combined to make a flat or not.
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+use File::Copy;
+
+# Selection
+# =========
+#
+# This should only be performed on OBJECT, SKY or calibration LAMP
+# frames, when it's time make a flat.
+    my $obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE");
+    my $stuff = "N/A";
+    if ( defined $Frm->uhdr( "MAKE_FLAT" ) ) {
+    	$stuff = $Frm->uhdr( "MAKE_FLAT" );
+    }
+#    print "SVN DBG:$obstype $stuff\n";
+    if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+           $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
+           $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKYFLAT" ||
+           $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMBERT-FLAT" ) &&
+           $Frm->uhdr( "MAKE_FLAT" ) ) {
+
+# Record the current file, to be restored at the conclusion.
+# The current frame will normally be the last group member, but
+# this may not be the Frm needed if there are multiple filters
+# represented.
+       my $inputfile = $Frm->file;
+
+# Get the cycle number.  Supply a default for recipes not supporting
+# this yet.  Defined because the default is zero.
+       my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Arguments
+# =========
+
+# Determine whether or not to clean the data before combination.
+       my $clean = $_MAKE_FLAT_FROM_GROUP_{CLEAN};
+       $clean = defined( $clean ) ? $clean : 1;
+
+# Obtain the value for the combination method.
+       my $method = ( $_MAKE_FLAT_FROM_GROUP_{METHOD} || "broadened" );
+
+# Determine whether or not to clean the data before combination.
+       my $usefilter = $_MAKE_FLAT_FROM_GROUP_{FILTER};
+       my $onefilter = defined( $usefilter );
+
+#      print "Got here\n";
+# List of filters to process.
+# ===========================
+
+# Obtain the list of filters present within the group.  It defaults
+# the current frame's filter in case the list of filters is not
+# yet supported in private code, to give compatibility with former
+# standard behaviour.
+       my @filters = ( $Frm->uhdr( "ORAC_FILTER" ) );
+       if ( ! $onefilter ) {
+          if ( defined $Grp->uhdr( "FILTER_LIST" ) ) {
+             my $filterref = $Grp->uhdr( "FILTER_LIST" );
+             @filters = @$filterref;
+          }
+
+# Being invoked from another primitive, so only process a single flat.
+       } else {
+          @filters = ( $usefilter );
+       }
+
+# Make a flat for each filter within the group.
+       foreach my $filter ( @filters ) {
+          orac_print "Making flat for filter $filter\n"; # unless $#filters == 0;
+
+# Extract from the main group those frames belonging to this group.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                       ORAC_FILTER => $filter );
+
+# Make this the main group for this context.
+          {
+             my $Grp = $cycleGrp;
+
+# Form a list of input file names for MAKEFLAT from the other members
+# of the group.  This is not as obvious as it sounds since we are
+# trying to do this by looking at the current file values for each
+# Frame object in the loop.  First time around everything is fine.
+# Second time around we realise that the previous frames now have the
+# wrong names since they have been flat-fielded etc.  We now have to
+# construct the input names from the template.  The template is the
+# current frame name.
+# XXX. TAL 2011/11/03. template() currently breaks things by assigning
+# all Group members the same filename...
+#             $Grp->template( $Frm->file );
+
+# Set a new current file with the same filter.
+             my $Frm = $Grp->frame( 0 );
+
+# Make lists of files to process
+# ==============================
+
+# Form a list of input file names for CCDPACK tasks.  Set up the object
+# list assuming that everything in the Group members list contains the
+# file pointer to pre-flatfielded data.
+             my @objects = $Grp->membernames;
+             my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+             unlink( "objlist.inlist$$" );
+             open( my $fh_inlist, ">objlist.inlist$$" ) ||
+               orac_throw "Unable to open objlist.inlist$$ to create a list of frames to process.  Error: $!.\n";
+             print $fh_inlist join( "\n", @objects ), "\n";
+             close( $fh_inlist );
+
+# Generate the flat's name.
+# =========================
+
+# Remove []() or replace characters which would confuse HDS from the
+# filter name.
+             $filter =~ s/\./p/g;
+             $filter =~ tr/\(\)\[\]/d/;
+
+# Is this a polarimetric frame?
+             my $poldata = $Frm->uhdr( "ORAC_POLARIMETRY" );
+
+# See if this is polarimetry data requiring separate flats for each waveplate
+# angle, from the steering header.  May also need eventually to put in a filter
+# name.
+             my $waveplate_flat = $Frm->uhdr( "WAVEPLATE_FLAT" );
+             $waveplate_flat = defined( $waveplate_flat ) ? $waveplate_flat: 0;
+
+# Get the polarimetry cycle number.  Supply a default for recipes not
+# supporting this yet.  Can't use ( || ) syntax because 0 could be the
+# default, inherited from the ordinary cycle number.
+             if ( $poldata ) {
+                my $pol_cycleno = $Frm->uhdr( "POL_CYCLE_NUMBER" );
+                $cycleno = defined( $pol_cycleno ) ? $pol_cycleno : $cycleno;
+             }
+
+# Obtain the flat number.  This may have an _subgrp suffix.  Since we take care
+# of different cycles in the naming, we remove the ugly _subgrp strings.
+             my $flatno = $Grp->groupid;
+             $flatno =~ s/_subgrp//g;
+
+# Specify the file cycle suffix.
+             my $cyclesuffix = "";
+             if ( $cycleno > 0 ) {
+                $cyclesuffix = "_c" . $cycleno;
+             }
+
+# There is a different naming rule for polarimetry data.
+             my $out;
+             if ( $poldata ) {
+
+# Obtain the integer part of the waveplate angle for the current group.
+# No need to had pol in the name twice, so remove it from the filter name.
+                my $wplangle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+                my $int_wplangle = int( $wplangle + 0.1 );
+                $filter =~ s/\+pol//;
+
+# Generate the polarimetry flat's name.  Here the flats are grouped by
+# waveplate angle.
+                if ( $waveplate_flat ) {
+                   $out = "flat_${filter}_pol${int_wplangle}_$flatno$cyclesuffix";
+
+# Since all angles are combined just set the first to a nominal 0 degrees.
+# Copies for other angles are made later.  They rely on the pol0 being
+# present to change the name for each flat.
+                } else {
+                   $out = "flat_${filter}_pol0_$flatno$cyclesuffix";
+                }
+
+             } else {
+
+# Generate the flat's name.
+                $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
+             }
+
+# Make a normalised flat
+# ======================
+
+# Assign the other parameters.
+             my ( $param1, $param2 );
+             if ( $clean ) {
+                $param2 = "method=$method sigmas=2.0 reset accept";
+             } else {
+                $param2 = "clean=f method=$method sigmas=2.0 reset accept";
+             }
+
+# Assign the remaining parameters.  Note that output flat is hardwired.
+             $param1 = "in='^objlist.inlist$$' out=$out title=\'Flat field\'";
+
+# Median filter of the debiassed and dark-corrected object frames to
+# produce the flatfield.
+             $Mon{ "ccdpack_red" }->obeyw( "makeflat", "$param1 $param2" );
+             unlink( "objlist.inlist$$" );
+
+# Record and display the flat
+# ===========================
+
+# Set the current flat in the calibration object.
+             _FILE_FLAT_ NAME=$out
+
+# Report the status of the processing.
+             orac_print "Frames $objlist used for flat\n";
+
+
+# Need to match calibrations against the filter/cycle group's
+# representative frame.  These are currently set early in the
+# pipeline core and don't take account of subgrouping.
+             $Cal->thingone( $Frm->hdr );
+             $Cal->thingtwo( $Frm->uhdr );
+
+# Display the image.
+             _DISPLAY_FLAT_IMAGE_
+# If we have a final destination environment var. set, convert to fits and copy
+# files there.
+	    if ( defined $ENV{FINAL_DATA_OUT} ) {
+      	      $Frm->file( $out );
+	      _ADD_PIPELINE_VERSION_
+	      my $file = $Frm->file( $out );
+	      my $bias_used = $Cal->bias;
+	      my $dark_used = $Cal->dark;
+	      my $flat_used = 'N/A';
+	      my $shut_used = 'N/A';
+	      my $mask_used = $Cal->mask;
+# Check for too long length (67 is max allowed by SUBPAR)
+	      if ( length($mask_used) > 50 ) {
+      		my @bpm_values = split('oracdr/', $mask_used);
+		$mask_used = $bpm_values[1];
+	#	print "mask=$mask_used\n";
+	      }
+	      my $fringe_used = 'N/A'; #$Cal->fringe;
+	#      print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
+
+# Determine processing steps done
+	      my $ovscan_correct = 0;
+	      $ovscan_correct = $Frm->uhdr( "OVSCAN_CORRECT")
+      	      	      		   if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
+	      my $bias_removed = 0;
+	      $bias_removed = $Frm->uhdr( "BIAS_REMOVED")
+      	      	      		   if(defined $Frm->uhdr( "BIAS_REMOVED"));
+	      my $dark_removed = 1;
+	      $dark_removed = $Frm->uhdr( "DARK_REMOVED")
+      	      	      		   if(defined $Frm->uhdr( "DARK_REMOVED"));
+	      my $ovscan_removed = 1;
+	      $ovscan_removed = $Frm->uhdr( "OVSCAN_REMOVED")
+      	      	      		   if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
+	      my $flat_removed = -1;
+	      my $fringe_removed = -1;
+
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATOV VALUE=$ovscan_correct, COMMENT=Status|flag|for|overscan|correction
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATBI VALUE=$bias_removed, COMMENT=Status|flag|for|bias|frame|correction
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATDA VALUE=$dark_removed, COMMENT=Status|flag|for|dark|frame|correction
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATTR VALUE=$ovscan_removed, COMMENT=Status|flag|for|overscan|trimming
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFL VALUE=$flat_removed, COMMENT=Status|flag|for|flat|frame|correction
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFR VALUE=$fringe_removed, COMMENT=Status|flag|for|fringe|frame|correction
+
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDBIAS VALUE=$bias_used, COMMENT=Id.|of|bias|frame|used
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDDARK VALUE=$dark_used, COMMENT=Id.|of|dark|frame|used
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFLAT VALUE=$flat_used, COMMENT=Id.|of|flat|frame|used
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDSHUT VALUE=$shut_used, COMMENT=Id.|of|shutter|corr.|frame|used
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDMASK VALUE=$mask_used, COMMENT=Id.|of|mask|file|used
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFRNG VALUE=$fringe_used, COMMENT=Id.|of|fringe|frame|used
+# Set image quality flag (unassessed for now)
+	       my $img_status = -1;
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QIMGST VALUE=$img_status, COMMENT=Image|taking|status|(bitmask;-1=Unknown,0=OK)
+
+# Set public/private flag and release date
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBPRV VALUE='public' COMMENT=Public|or|private|data?
+
+	      my $pubdate =  $Frm->hdr( "ORACDATETIME");
+#      orac_print "$frmdate $pubdate\n";
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBDAT VALUE=$pubdate COMMENT=[UTC]|Date|the|frame|becomes|public
+
+	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='COMMISSIONING'
+
+# Set recipe used
+      	      my $recipe = $Frm->recipe;
+#      orac_print "Recipe=$recipe\n";
+      	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
+
+# Convert flat frame to FITS
+     	      _CONVERT_TO_FITS_
+      	      my $fitsflatframe = $_CONVERT_TO_FITS_{FILENAME};
+
+      	      move($fitsflatframe, $ENV{FINAL_DATA_OUT});
+	      orac_print "Moving ". $fitsflatframe . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+      	    }
+
+          }
+
+# Restore the original Frame file.
+          $Frm->file( $inputfile );
+
+          orac_print "\n";
+       }
+
+# Restore the calibration comparison headers.
+       $Cal->thingone( $Frm->hdr );
+       $Cal->thingtwo( $Frm->uhdr );
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_FLAT_FROM_GROUP_ -- Makes flats from the current group of frames.
+
+=head1 DESCRIPTION
+
+This primitive makes self flats from the current group, one for
+each distinct observation filter.  For eacg flat it uses a
+median to combine the frames pixel by pixel, and then divides the
+resultant image by its mean form the flat field.  The primitive
+files the resultant flat in its calibration index.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLEAN = LOGICAL (Given)
+
+If true (1), the frames are cleaned using a box filter to remove any
+small blemishes.  Pixels deviating by more than 3 standard deviations
+from its 15x15 pixel neighbourhood are rejected.  This is done
+iteratively, three times.  If false (0), no cleaning is performed. [1]
+
+=item FILTER = CHARACTER (Given)
+
+If supplied only make a flat for the named filter.  Otherwise
+create flats for each filter stored in the FILTER_LIST group
+user header.  This parameter is intended for use where the loop
+through a series of filters is performed by a calling primitive,
+such as one that masks objects.  []
+
+=item METHOD = CHARACTER (Given)
+
+The method used to combine frames to form the flat.  See
+parameter METHOD of CCDPACK/MAKEFLAT (SUN/139) for the options.
+The main two in practice will be "fastmed" or "broadened".  The
+former is an unweighted median but is unsuitable for a
+self-flat recipe, as it creates a biassed histogram in the
+flat-fielded frames, from those pixels divided by themselves.
+The "broadened" option averages the central few contributing
+pixels and thus avoids the artefact in the histogram, and
+therefore should be used for self-flat creation.  This option
+is more robust too.  ["broadened"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for infrared imaging instruments.
+
+=item *
+
+Processing only occurs for object, sky, or calibration-lamp
+frames, and when the steering header MAKE_FLAT is true.
+
+=item *
+
+The list of filters present in the group is listed in an array
+stored by reference in the group user header FILTER_LIST.  If this
+is undefined, only a single flat is made for filter stored in the
+current Frame's user header ORAC_FILTER.
+
+=item *
+
+There is special behaviour for a combined polarimetry flat
+(see L<"OUTPUT DATA">).  The string "pol" in the filter name is used
+to indicate polarimetry data.
+
+=item *
+
+The flat is displayed.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEFLAT; KAPPA: FITSMOD, NDFCOPY.
+
+=head1 OUTPUT DATA
+
+The flat field.  It is called is
+"flat_E<lt>filterE<gt>_E<lt>groupnumberE<gt>" for the first cycle, and
+"flat_E<lt>filterE<gt>_E<lt>groupnumberE<gt>_cE<lt>cyclenumberE<gt>"
+for subsequent cycles, where E<lt>groupnumberE<gt> is the frame number
+of the group, E<lt>filterE<gt> is the filter name, and
+E<lt>cyclenumberE<gt> is the cycle number derived from steering header
+CYCLE_NUMBER.
+
+An exception is for polarimetric data, where the name becomes
+flat_E<lt>filterE<gt>_polE<lt>waveplate_angleE<gt>_E<lt>groupnumberE<gt>.
+The E<lt>waveplate_angleE<gt> is the integer part of the angle, e.g.
+22, 67, from internal header ORAC_WAVEPLATE_ANGLE.  Subsequent cycles for
+polarimetry also have the "_cE<lt>cyclenumberE<gt>" suffix, but the
+cycle comes from steering header POL_CYCLE_NUMBER.  When steering
+header WAVEPLATE_FLAT is false (0), copies of the flat are made, one
+for each angle, using the above nomenclature.  Each has its waveplate
+angle set to its nominal angle.  This allows a single ORAC_WAVEPLATE_ANGLE
+rule entry irrespective of whether all waveplate angles were combined
+to make a flat or not.
+
+=head1 AUTHORS
+
+Tim Lister (tlister@lcogt.net)
+Malcolm J. Currie (mjc@star.rl.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

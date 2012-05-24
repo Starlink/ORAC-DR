@@ -1,0 +1,193 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_IMAGE_CATALOGUE__ - source extraction and photometry on all sources
+
+=head1 DESCRIPTION
+
+For the group file, find all the sources and calculate the flux
+of each detected source. Write the results to a catalogue file.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = BOOLEAN (Given)
+
+If true, use the current group file for source extraction. If false, use
+the current frame. [0]
+
+=item OUTPUT_FORMAT = STRING (Given)
+
+The catalogue output format. The name of the format comes from the
+appropriate C<Astro::Catalog> IO class. ['SExtractor']
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Currently uses SEXTRACTOR for source extraction and for photometry.
+
+=back
+
+=head1 REQUIRED PERL MODULES
+
+Starlink::Extractor, Astro::WaveBand, Astro::Catalog.
+
+=head1 AUTHOR
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+Tim Lister <tlister@lcogt.net>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+use File::Copy;
+use Data::Dumper;
+
+# Do only if it's time to create a catalogue.
+if( $Frm->uhdr("CREATE_CATALOGUE") ) {
+
+# Get the output format.
+  my $output_format = $_CREATE_IMAGE_CATALOGUE_{OUTPUT_FORMAT} || 'SExtractor';
+
+# Get the input NDF.
+  my $in;
+  my $group = $_CREATE_IMAGE_CATALOGUE_{GROUP};
+  if( defined( $_CREATE_IMAGE_CATALOGUE_{GROUP} ) &&
+      $_CREATE_IMAGE_CATALOGUE_{GROUP} == 0 ) {
+
+    orac_throw "Cannot handle more than one file per Frame object\n" if ( $Frm->nfiles > 1 );
+
+    ( $in, my $out ) = $Frm->inout( "_cat" );
+    $group = $_CREATE_IMAGE_CATALOGUE_{GROUP};
+  } else {
+    $in = $Grp->file;
+    $group = 1;
+  }
+
+# Delay loading so that ORAC-DR does not require these.
+  require Starlink::Extractor;
+  require Astro::WaveBand;
+
+# Obtain the detection sigma level.
+  my $detect = ( $_CREATE_IMAGE_CATALOGUE_{DETECT_SIGMA} || 1.5 );
+
+# Obtain the minimum number of pixels in the objects.
+  my $minpix = ( $_CREATE_IMAGE_CATALOGUE_{MINPIX} || 12 );
+
+# Obtain the filter.
+  my $filter = $Frm->uhdr("ORAC_FILTER");
+
+# Obtain pixelscale.
+  _GET_PLATE_SCALE_
+  my $platescale = ( $_GET_PLATE_SCALE_{PLATESCALE} || 0 );
+
+# Obtain gain.
+  _GET_GAIN_
+  my $gain = ( $_GET_GAIN_{GAIN} || 1.0 );
+
+# Obtain saturation level
+  _GET_SATURATION_LEVEL_
+  my $saturlevel = $_GET_SATURATION_LEVEL_{SATURATION};
+
+# Obtain FWHM
+  my $fwhm = 1.5;
+  if (defined $Cal->dqc ) {
+    my $dqc = $Cal->dqc;
+# Dereference row/hash reference of DQC params
+    $fwhm = $dqc->{'FWHM'};
+# If seeing is < 0 (-99), set a default
+    if ( $fwhm < 0 ) {
+      $fwhm = 1.5;
+    }
+  }
+
+# Report the processing status.
+  orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
+  orac_print "   at $detect times sky noise above sky.\n";
+
+# Assemble new frame-specific config file.
+  my $conf_file = $Cal->find_file("extractor_catalogue.sex");
+
+  my $extractor = new Starlink::Extractor( config => $conf_file );
+  $extractor->detect_thresh( $detect );
+  $extractor->analysis_thresh( $detect );
+  $extractor->verbose_type('QUIET');
+# Scale apertures of 1",3",5",7" by pixelscale to get aperture sizes in pixels,
+# then round to 2 d.p.
+  my %apertures = ( aper1 => 1.0/$platescale,
+      	      	    aper2 => 3.0/$platescale,
+		    aper3 => 5.0/$platescale,
+		    aper4 => 7.0/$platescale);
+  for my $aper_name ( keys %apertures ) {
+      my $rounded_value = sprintf '%.2f', $apertures{$aper_name};
+      # Replace the value with the rounded value...
+      $apertures{$aper_name} = $rounded_value;
+  }
+
+  $extractor->phot_apertures( @apertures{ qw( aper1 aper2 aper3 aper4 ) } );
+  $extractor->pixel_scale($platescale);
+  $extractor->satur_level($saturlevel);
+  $extractor->gain($gain);
+  $extractor->seeing_fwhm($fwhm);
+  $extractor->catalog_type('FITS_1.0');
+  $extractor->catalog_name('object_cat.cat');
+  my $params_file = File::Spec->catfile($ENV{'ORAC_DATA_CAL'}, 'extractor_catalogue.param');
+  $extractor->parameters_name($params_file);
+  $extractor->_write_config_temp_file;
+
+# Perform inventory on the field
+  $conf_file = $extractor->_config_file_name;
+  my $param1 = "image=$in config=$conf_file";
+
+# Derive an inventory of the images in $resfile.
+  my $extractor_status = $Mon{ "extractor" }->obeyw( "extract", "$param1" );
+
+# We can handle a failure here by making a null ARD file.  So we test a
+# local status rather than let ORAC go on to the next file.
+  if ( $extractor_status == ORAC__OK ) {
+    my $extracted_catalog = 'object_cat.cat';
+
+#  my $extracted_catalog = $extractor->extract( frame => $in,
+#                                       filter => new Astro::WaveBand( Filter => $filter ) );
+
+# Weed out objects that have a size less than $minpix pixels.
+#  my $filtered_catalog = new Astro::Catalog;
+#  while ( $extracted_catalog->sizeof > 0 ) {
+#    my $star = $extracted_catalog->popstar;
+#    next if ( $star->morphology->area < $minpix );
+#    $filtered_catalog->pushstar( $star );
+#  }
+
+#  orac_print $filtered_catalog->sizeof() . " objects detected in $in.\n";
+#  orac_print $extracted_catalog->sizeof() . " objects detected in $in.\n";
+
+# Dump the catalog to disk.
+# just rename the extracted_catalog as write_catalog() only supports 5 columns
+# and removes the other 35...
+#    _GET_CATALOGUE_NAME_ GROUP=$group
+#    my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
+    my $catalogue_name = $in;
+    $catalogue_name =~ s/00_bp_ff/90_cat.fits/;
+
+    my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+#  my $status = $filtered_catalog->write_catalog( file => $cat_file,
+#                                                 format => $output_format,
+#                                               );
+
+    rename( $extracted_catalog, $cat_file ) ||
+      orac_throw "Cannot rename  $extracted_catalog to $cat_file\n";
+    orac_print "Wrote catalogue to $cat_file.\n\n";
+  }
+# Remove temporary files.
+  $extractor->_delete_config_temp_file;
+  $extractor->_delete_param_temp_file;
+  $extractor->_delete_catalog_temp_file;
+}
