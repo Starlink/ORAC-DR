@@ -1,0 +1,149 @@
+#+
+# Name:
+#    _AVERAGE_BIASES_
+#
+# Purpose:
+#    Averages the current frame into the current bias.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive averages or copies the current frame into the
+#    current bias frame.  Copying occurs if the bias is new.  Both
+#    steps reported.
+#
+# Notes:
+#    -  Only applies to bias frames as specified by user header
+#    ORAC_OBSERVATION_TYPE.
+#    -  The bias frame is a copy of the supplied frame, if it is the
+#    first (and probably only) contributing frame.  Otherwise the
+#    new frame is averaged into the bias using (bias(n-1)+frame)/n,
+#    where n is the number of contributing frames.
+#    -  The number of contributing frames comes from a hash stored
+#    in user header BIAS_FRAMES with keys equal to the bias name
+#    given by primitive _GET_BIAS_NAME_.
+#
+# Output Data:
+#    Frame bias_<exposure_time>_<group_number>.
+#
+# Tasks:
+#    KAPPA: NDFCOPY.
+#    CCDPACK: MAKEBIAS
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on BIAS frames.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "BIAS" ) {
+
+# Form the bias name, from the group number. If it gets more complicated later
+# we can add a new primitive as was done for _GET_DARK_NAME_.
+#    _GET_BIAS_NAME_
+#    my $bias = $_GET_BIAS_NAME_{NAME};
+    my $groupname = $Frm->findgroup;
+    print "Groupname1=$groupname\n";
+    $groupname =~ s/BIAS//;
+    print "Groupname2=$groupname\n";
+    my $bias = "bias_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . $groupname;
+    print "biasname=$bias\n";
+
+# Obtain the lists of the biases.
+    my $listname = "BIAS_FRAMES";
+    my $biasref = $Grp->uhdr( $listname );
+    my %bias_list = %$biasref;
+    my @files = $Grp->membernames;
+# Only need to average if there is more than one frame.
+    my $count = $bias_list{ $bias };
+    if ( $count > 1 && $Grp->lastmember($Frm) ) {
+
+# Create a textfile containing the names of the files we'll be combining
+#      my $makebiasin = write_file_list( @files[1 .. $nfiles ] );
+
+      unlink( "makebias.inlist$$" );
+      open( INLIST, ">makebias.inlist$$" ) ||
+	orac_throw "Unable to open makebias.inlist$$ to create a list of frames to combine. Error: $!.\n";
+      print INLIST join( "\n", @files[0..$count] ), "\n";
+      close( INLIST );
+
+      my $param1 = "method=median zero=false";
+      my $param2 = "in='^makebias.inlist$$' out=$bias";
+      $Mon{ "ccdpack_red" }->obeyw( "makebias", "$param1 $param2" );
+
+# Report the processing status.
+      orac_print "Masterbias $bias created.\n";
+      _FILE_BIAS_ FILE=$bias
+# Remove temp. filelist
+      unlink( "makebias.inlist$$" );
+# Take a copy of the current frame using the prescribed name.
+    } else {
+      my $in = $Frm->file;
+      my $param = "in=$in out=$bias";
+      $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+      orac_print "Frame $in copied to $bias.\n";
+   }
+   orac_print "\n";
+}
+
+# Podule
+# ======
+
+=head1 NAME
+
+_AVERAGE_BIASES_ -- Averages the current frame into the current bias.
+
+=head1 DESCRIPTION
+
+This primitive averages or copies the current frame into the
+current bias frame.  Copying occurs if the bias is new.  Both
+steps reported.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Only applies to bias frames as specified by user header
+ORAC_OBSERVATION_TYPE.
+
+=item *
+
+The bias frame is a copy of the supplied frame, if it is the
+first (and probably only) contributing frae.  Otherwise the
+new frame is averaged into the bias using (bias(I<n>-1)+frame)/I<n>,
+where I<n> is the number of contributing frames.
+
+=item *
+
+The number of contributing frames comes from a hash stored
+in user header BIAS_FRAMES with keys equal to the bias name
+given by primitive L<_GET_BIAS_NAME_|_GET_BIAS_NAME_>.
+
+=head1 OUTPUT DATA
+
+Frame bias_E<lt>group_numberE<gt>.
+
+=head1 TASKS
+
+KAPPA: MATHS, NDFCOPY.
+
+=head1 AUTHORS
+
+TAL: Tim Lister (LCOGT)
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+

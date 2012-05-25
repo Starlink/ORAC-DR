@@ -1,0 +1,270 @@
+#+
+# Name:
+#    _SET_QC_FLAGS_
+#
+# Purpose:
+#    Evaluates quality control parameters and sets the relevant bitmask
+#    keywords in the data catalogue product.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Evaluates quality control parameters and sets the relevant bitmask
+#    keywords in the data catalogue product.
+#
+# Steering Headers:
+#
+# Arguments:
+#
+# Notes:
+#    -  This primitive is suitable for imaging cameras.
+#    -  Processing only occurs for object frames.
+#
+# Authors:
+#    RAS: Rachel Street (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2012-2012 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+    my $file = $Frm->file(1);
+    print "File=$file\n";
+
+# Set PSF parameter values from computed statistics
+    my $fwhm = -99.0;
+    my $elong = -99.0;
+    my $elongPA = -99.0;
+    if (defined $Cal->dqc ) {
+      my $dqc = $Cal->dqc;
+# Dereference row/hash reference of DQC params
+      $fwhm = $dqc->{'FWHM'};
+      $elong = $dqc->{'ELLIPTICITY'};
+      $elongPA = $dqc->{'ORIENT'};
+    }
+#      print "FWHM=$fwhm, Elong=$elong, ElongPA=$elongPA\n";
+# Add PSF quality params to file and header
+    $Frm->hdr( "L1FWHM", $fwhm);
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1FWHM VALUE=$fwhm, COMMENT=[arcsec]|Frame|FWHM|in|arcsec
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ELONG VALUE=$elong, COMMENT=Mean|image|elongation|(A/B)
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ELNGPA VALUE=$elongPA, COMMENT=[deg]|PA|of|mean|image|elongation
+
+# ADD DATA QUALITY FLAGS
+
+# Initialising qc flags.  -1/U indicates unknown/unassessed in all cases
+    my $img_status = -1;
+    my $cat_status = -1;
+    my $phot_status = -1;
+    my $obs_constraints = 'UNKNOWN';
+
+# Initialising thresholds used in testing qc parameters where appropriate:
+    # Threshold for "reasonable" FWHM in arcsec if image is in focus:
+    my $fwhm_thresh = 3.0;
+    # Threshold difference in temperature from the CCD's set-point in degrees:
+    my $ccd_tempdiff_thresh = 5.0;
+
+
+# OBSERVING CONSTRAINTS QUALITY CONTROL FLAG
+
+# Initialise components of the data quality determination:
+    my $data_moonphase = 'U';
+    my $data_moondist = 'U';
+    my $data_seeing = 'U';
+    my $data_transpar = 'U';
+    my $data_airmass = 'U';
+
+# Actual Moon phase (MOONFRAC) should be less than or equal to the requested Moon phase (BLKMNPH)
+# at the time of exposure.
+# Should we take account of MOONSTAT(up/down)?
+# MOONFRAC and BLKMNPH are decimal values between 0-1, or N/A:
+    _DATA_QC_TEST_ PARNAME=Moon|phase REQCONSTRAINTKEY=BLKMNPH MEASVALUEKEY=MOONFRAC TESTTYPE=LTE
+    $data_moonphase = $_DATA_QC_TEST_{QCPARAM} ;
+
+# Actual lunar distance (MOONDIST) should be greater than or equal to the requested Moon distance (BLKMNDST)
+# at the time of exposure.
+# Both parameters are decimal values in degrees, or N/A.
+    _DATA_QC_TEST_ PARNAME=Moon|distance REQCONSTRAINTKEY=BLKMNDST MEASVALUEKEY=MOONDIST TESTTYPE=GTE
+    $data_moondist = $_DATA_QC_TEST_{QCPARAM};
+
+# Actual estimated seeing should be less than or equal to the requested seeing constraint (BLKSEECO).
+# Estimates of the measured seeing in the frame are available from SEXSFWHM and SCHEDSEE.
+# Opting to use the SEXSFWHM value.
+# Both parameters are decimal floats in arcsec
+    _DATA_QC_TEST_ PARNAME=Seeing REQCONSTRAINTKEY=BLKSEECO MEASVALUEKEY=L1FWHM TESTTYPE=LTE
+    $data_seeing = $_DATA_QC_TEST_{QCPARAM} ;
+
+# Actual transparency (SCHEDTRN) should be less than or equal to the requested transparency at the time (BLKTRNCO).
+# SCHEDTRN is defined as a decimal value between 0-1, whereas BLKTRNCO is unclear at this stage.
+# Assuming both values will be decimals or N/A.
+    _DATA_QC_TEST_ PARNAME=Transparency  REQCONSTRAINTKEY=BLKTRNCO MEASVALUEKEY=SCHEDTRN TESTTYPE=LTE
+    $data_transpar = $_DATA_QC_TEST_{QCPARAM};
+
+# Actual airmass (AIRMASS) should be less than or equal to the requested airmass (BLKAIRCO).
+# Both parameters are decimal values with values greater than 1.0, or N/A
+    _DATA_QC_TEST_ PARNAME=Airmass  REQCONSTRAINTKEY=BLKAIRCO MEASVALUEKEY=AIRMASS TESTTYPE=LTE
+    $data_airmass = $_DATA_QC_TEST_{QCPARAM};
+
+# Concatenating the components of the data quality constraint to form the final QC parameter:
+    $obs_constraints = $data_moonphase . $data_moondist . $data_seeing . $data_transpar . $data_airmass;
+
+
+# IMAGE QUALITY CONTROL FLAG
+
+# Initialise components of the image quality determination:
+    my $img_cloud = 0;
+    my $img_enc = 0;
+    my $img_axis = 0;
+    my $img_focus = 0;
+    my $img_occult = 0;
+    my $img_readout = 0;
+    my $img_ccdnoise = 0;
+    my $img_deadccd = 0;
+
+# Test for poor weather conditions:
+# WMS_CLEAR = 0: Conditions clear
+# WMS_UNKNOWN = 2: Weather parameters are unpopulated or cloud cover can't be evaluated
+# WMS_CLOUDY = 4: Conditions cloudy
+
+    if (defined $Frm->hdr( "WMSCLOUD" )) {
+      my $wms_cloud = uc($Frm->hdr( "WMSCLOUD" ));
+      print "WMSCLOUD=$wms_cloud\n";
+      $img_cloud = 2;
+      if ( $wms_cloud ne 'UNKNOWN' and  $wms_cloud ne 'N/A' ) { # Must use 'ne' not '!=' for string comparisons
+# Has a defined value, should now make decisions on it... TBD
+        print "WMSCLOUD has reasonable value\n";
+	$img_cloud = 0;
+      }
+    }
+
+# Test enclosure status:
+# ENC_UNKNOWN = 8: Status of enclosure doors undefined.
+# ENC_DOME_OCCULT = 16: Dome closed, closing or otherwise not entirely open during exposure
+    if (defined $Frm->hdr( "ENC1STAT" ) and defined $Frm->hdr( "ENC2STAT" )) {
+      my $enc1_status = uc($Frm->hdr( "ENC1STAT" ));
+      my $enc2_status = uc($Frm->hdr( "ENC2STAT" ));
+      print "ENC{1,2}STAT=$enc1_status,$enc2_status\n";
+      if ( $enc1_status ne 'OPEN' or $enc2_status ne 'OPEN' ) {
+      	  print "Bad ENC status\n";
+          $img_enc = 16;
+      }
+    } else {
+      $img_enc = 8;
+    }
+
+# Test for axis status:
+# BAD_AXIS = 32: {AZ,ALT}STAT registers something other than 'OKAY'
+    if (defined $Frm->hdr( "AZSTAT" ) and defined $Frm->hdr( "ALTSTAT" )) {
+      my $az_stat = uc($Frm->hdr( "AZSTAT" ));
+      my $alt_stat = uc($Frm->hdr( "ALTSTAT" ));
+      print "AZ,ALT STAT= $az_stat, $alt_stat\n";
+      if ( $az_stat ne 'OKAY' or $alt_stat ne 'OKAY' ) {
+      	  print "Bad axis state\n";
+          $img_axis = 32;
+      }
+    }
+
+# Test for bad focus:
+# BAD_FOCUS = 64: if the user-requested focus offset FOCOBOFF doesn't match the focus demand parameter FOCDMD
+#     	      	  Both should be zero for in-focus frames
+#     	      	  Condition is also triggered if FOCDMD=FOCOBOFF=0.0 and the average FWHM measured for the frame exceeds a
+#     	      	  loose threshold:
+    if (defined $Frm->hdr( "FOCDMD" ) and defined $Frm->hdr( "FOCOBOFF" )) {
+      my $focdmd = $Frm->hdr( "FOCDMD" );
+      my $focoboff = $Frm->hdr( "FOCOBOFF" );
+      print "FOCDMD=$focdmd and FOCOBOFF=$focoboff\n";
+      if ( $focdmd != $focoboff ) {
+        $img_focus = 64;
+      	print "Requested focus != actual focus\n";
+      }
+      if ( $focdmd == 0.0 ) {
+      	print "Checking focus against measured FWHM\n";
+      	if (defined $fwhm != -99.0) {
+	  print "Comparing measured FWHM=$fwhm with threshold=$fwhm_thresh\n";
+          if ( $fwhm > $fwhm_thresh ) {
+              $img_focus = 64;
+	  }
+        } else {
+	  print "Cannot compare measured focus, L1FWHM undefined\n";
+        }
+      } else {
+      	print "Data deliberately defocused; no check against FWHM\n";
+      }
+
+    }
+
+
+# Tests for light beam through telescope being occulted by...
+# BEAM_SHUTTER_OCCULT = 128: Not implemented
+# BEAM_HARTMANN_OCCULT = 256: Hartmann screen in beam, status given by M1HRTMN parameter {DEPLOYED,STOWED,ERROR,UNKNOWN}
+# BEAM_DARKSLIDE_OCCULT = 512: Not implemented
+# BEAM_M1COVER_OCCULT = 1024: The primary mirror cover is occulting the beam
+    if (defined $Frm->hdr( "M1HRTMN" )) {
+    	my $beam_hrtmn = uc($Frm->hdr( "M1HRTMN" ));
+    	if ( $beam_hrtmn ne 'STOWED' ) {
+    	    my $img_occult = $img_occult + 256;
+    	}
+    }
+    if (defined $Frm->hdr( "M1COVER" )) {
+    	my $beam_cover = uc($Frm->hdr( "M1COVER" ));
+    	if ( $beam_cover ne 'OPEN' ) {
+    	    my $img_occult = $img_occult + 1024;
+    	}
+    }
+
+# Tests for sources of noisy CCD frames
+# INS_NOISY_CCD = 4096: Noisy CCD renders this data untrustworthy
+#     	Currently testing that the CCD's actual temperature (CCDATEMP) is within tolerance of the set-point
+#     	temperature (CCDSTEMP).
+    if  (defined $Frm->hdr( "CCDATEMP" ) and defined $Frm->hdr( "CCDSTEMP" )) {
+    	my $ccdatemp = $Frm->hdr( "CCDATEMP" );
+    	my $ccdstemp = $Frm->hdr( "CCDSTEMP" );
+    	if ( abs($ccdatemp - $ccdstemp) > $ccd_tempdiff_thresh) {
+    	    $img_ccdnoise = 4096;
+    	}
+    }
+
+# Calculate the final sum of all image quality parameters:
+    $img_status = $img_cloud + $img_enc + $img_axis + $img_focus + $img_occult + $img_readout + $img_ccdnoise + $img_deadccd;
+
+# PHOTOMETRY CATALOGUE FLAG
+
+# Initialising components of the catalogue flag:
+    my $wcsproblem = 0;
+    my $catextract = 0;
+    my $postproc = 0;
+
+# Test that a valid astrometric fit has been included:
+    if (defined $Frm->uhdr( "ASTROMETRY_ADDED")) {
+      $wcsproblem = 1 if ($Frm->uhdr( "ASTROMETRY_ADDED") != 1);
+    }
+
+# Test that a catalogue of objects has been extracted:
+    if (defined $Frm->hdr( "SEXNDET" )) {
+      $catextract = 2 if ($Frm->hdr( "SEXNDET" ) == 0);
+    }
+
+# No test is applied for the time correction code here; testing done in the timecorrect software itself.
+
+# Add the components of the flag:
+    $cat_status = $wcsproblem + $catextract + $postproc;
+
+
+# WRITE QUALITY CONTROL FLAGS:
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QOBCON VALUE=$obs_constraints, COMMENT=Observing|constraints|satisfied?
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QIMGST VALUE=$img_status, COMMENT=Image|taking|status|(bitmask;-1=Unknown,0=OK)
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QCATST VALUE=$cat_status, COMMENT=Catalog|prod.|status|(bitmask;-1=Unknown,0=OK)
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QPHTST VALUE=$phot_status, COMMENT=Photom.|calib.|status|(bitmask;-1=Unknown,0=OK)
+
+
+# Re-File the dqc params with the calibration system now we have the flags.
+    my %calhash = ( %{$Frm->hdr},
+    		    ELLIPTICITY => $elong,
+    		    FWHM => $fwhm,
+    		    ORIENT => $elongPA,
+		    QC_OBCON => $obs_constraints,
+		    QC_IMGST => $img_status,
+		    QC_CATST => $cat_status,
+		    QC_PHTST => $phot_status,
+    		  );
+    $Cal->dqcindex->add( $file, \%calhash );

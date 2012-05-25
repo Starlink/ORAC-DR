@@ -497,6 +497,30 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::PICARD";
 
+  } elsif ( $inst eq 'LCOSPECTRAL' ) {
+    $groupclass = "ORAC::Group::LCOSPECTRAL";
+    $frameclass = "ORAC::Frame::LCOSPECTRAL";
+    $calclass = "ORAC::Calib::LCOSPECTRAL";
+    $instclass = "ORAC::Inst::LCOSPECTRAL";
+
+  } elsif ( $inst eq 'LCOSBIG' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOSBIG";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
+
+  } elsif ( $inst eq 'LCOCC' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOCC";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
+
+  } elsif ( $inst eq 'LCOSBIG_0M4' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOSBIG_0M4";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
+
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -713,6 +737,30 @@ sub orac_determine_recipe_search_path {
 
   } elsif ($inst =~ /^PICARD/) {
     push( @path, File::Spec->catdir( $root, "PICARD" ) );
+
+  } elsif ($inst eq 'LCOSPECTRAL') {
+    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
+    push( @path, $imaging_root );
+
+  } elsif ($inst eq 'LCOSBIG') {
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
+  } elsif ($inst eq 'LCOCC') {
+    push( @path, File::Spec->catdir( $root, "LCOCC" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOCC" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
+  } elsif ($inst eq 'LCOSBIG_0M4') {
+    push( @path, File::Spec->catdir( $root, "LCOSBIG_0M4" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG_0M4" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -898,6 +946,39 @@ sub orac_determine_primitive_search_path {
   } elsif ($inst eq 'PICARD') {
     # Placeholder to allow PICARD to be recognized as a valid
     # instrument - setting the path is done in the block below
+    push( @path, File::Spec->catdir( $root, "PICARD" ) );
+    push( @path, $het_root );
+    push( @path, $jsa_root );
+    push( @path, $general_root );
+    # Setups for LCOSBIG and LCOSPECTRAL
+
+  } elsif ($inst eq 'LCOSPECTRAL') {
+    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOSBIG') {
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOCC') {
+    push( @path, File::Spec->catdir( $root, "LCOCC" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOCC" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOSBIG_0M4') {
+    push( @path, File::Spec->catdir( $root, "LCOSBIG_0M4" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG_0M4" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
@@ -1025,7 +1106,22 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'spex' ) );
     push( @path, $general_ir_root );
 
-  } else {
+  } elsif( $inst eq 'LCOSPECTRAL' ) {
+    push( @path, File::Spec->catdir( $root, 'lcospectral' ) );
+
+  } elsif( $inst eq 'LCOSBIG' ) {
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOCC' ) {
+    push( @path, File::Spec->catdir( $root, 'lcocc' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOSBIG_0M4' ) {
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+ } else {
 
     croak "Calibration directories: Unrecognised instrument: $inst\n";
   }
@@ -1149,6 +1245,11 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon /;
 
+  } elsif ($inst =~ /^LCO/) {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+      ccdpack_res /
+
   } else {
     croak "Do not know which engines are required for instrument $inst";
   }
@@ -1176,7 +1277,7 @@ sub orac_configure_for_instrument {
 
   # We always need to know the UT
   # Take local $oracut from %options{"ut"} in
-  # case someone has already et the UT date in the GUI
+  # case someone has already set the UT date in the GUI
   my $oracut = $options->{'ut'};
 
   # Default to no skip
@@ -1287,6 +1388,27 @@ sub orac_configure_for_instrument {
 
     # Instrument
     $ENV{"ORAC_INSTRUMENT"} = $instrument;
+
+  } elsif ( $instrument eq "LCOSPECTRAL" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOSPECTRAL";
+
+  } elsif ( $instrument eq "LCOSBIG" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOSBIG";
+
+  } elsif ( $instrument eq "LCOCC" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOCC";
+
+  } elsif ( $instrument eq "LCOSBIG_0M4" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOSBIG_0M4";
+
   } else {
     orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");
   }
@@ -1626,6 +1748,7 @@ Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>,
 Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>,
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Tim Lister E<lt>tlister@lcogt.netE<gt>
 
 =head1 COPYRIGHT
 

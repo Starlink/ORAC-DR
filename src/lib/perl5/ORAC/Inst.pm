@@ -173,6 +173,14 @@ sub wait_for_algorithm_engines {
 }
 
 
+=item B<sort_my_groups>
+
+=cut
+
+sub sort_my_groups {
+  return ();
+}
+
 =back
 
 =begin __PRIVATE_METHODS__

@@ -1,0 +1,82 @@
+=head1 NAME
+
+_BIAS_GROUP_ - Reduce a group of bias frames for array tests to determine a
+group bias.
+
+=head1 DESCRIPTION
+
+Reduces a group bias frames for array tests to determine a group bias. This
+primitive determines the mean and variance for the bias frames, converts
+the variance into a population variance estimate, and stores these in the
+data and variance arrays of a file called bias_gNNN, where NNN is the group
+number. The bias_gNNN file is also filed with the Cal system.
+
+This primitive is used with the UIST array test sequence. It must be called
+after _ARRAY_TESTS_STEER_ so that internal headers can be used.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Bring in Starlink::HDSPACK
+use Starlink::HDSPACK qw/ copy_hdsobj /;
+
+# Find out from the internal headers if we're supposed to be doing this.
+if ( $Grp->lastmember($Frm) ) {
+
+  orac_print "Creating group bias file.\n";
+
+  my $in = $Frm->file;
+  my $outfile = new ORAC::TempFile;
+  my $out = $outfile->file;
+
+  my @files = $Grp->membernames;
+  my $nfiles = $#files;
+  orac_print "No. of files in group=$nfiles\n";
+  # Determine the number of BIAS frames from the internal header that
+  # was set up in _ARRAY_TESTS_STEER_.
+  my $bias_frames = $nfiles; # $Frm->uhdr("ARRAY_TESTS_BIAS_FRAMES");
+
+  use Data::Dumper;
+  orac_print "membernames=@files\n";
+  my @members = @{$Grp->members};
+  my $member_size = @members;
+  print "member_size = $member_size\n";
+  print "nsubs = " . $members[0]->nsubs() . "\n";
+  print "nsubs = " . $members[0]->file(2) . "\n";
+  # Create a textfile containing the names of the files we'll be getting
+  # statistics for.
+  my $mstatsin = write_file_list( @files[1 .. $nfiles ] );
+
+  # Form the parameter string for KAPPA/MSTATS.
+  my $params = "in='^$mstatsin' out=$out single=false trim=false";
+  if( starversion_lt( "KAPPA", "V1.9-6" ) ) {
+    $params .= " smode=mean";
+  } else {
+    $params .= " estimator=mean";
+  }
+
+  $Mon{'kappa_mon'}->obeyw( "mstats", "$params");
+
+
+  # Form the output bias file.
+  my $bias = "bias_g" . $Frm->findgroup;
+  $Mon{"ndfpack_mon"}->obeyw("ndfcopy", "in=$out out=$bias");
+
+  # File the bias file with the calibration system.
+  $Cal->bias( $bias );
+  orac_print $bias . " filed as the current bias.\n";
+  $Cal->biasindex->add( $bias, $Frm->hdr );
+  orac_print $bias . " added to index file.\n\n";
+}
