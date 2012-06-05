@@ -19,12 +19,8 @@ use strict;
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
-use ORAC::Frame::NIRI;
-use ORAC::Constants;
 use ORAC::Print;
-use ORAC::General;
 use NDF;
-use Astro::PAL;
 use Starlink::HDSPACK qw/copobj/;
 
 # Let the object know that it is derived from ORAC::Frame::GEMINI;

@@ -30,8 +30,6 @@ use strict;
 use warnings;
 use vars qw/$VERSION/;
 use ORAC::Group::UKIRT;
-use ORAC::General;
-use Astro::PAL;
 
 # Set inheritance
 use base qw/ ORAC::Group::UKIRT /;
