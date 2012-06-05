@@ -887,10 +887,6 @@ Default is to use STDOUT.
 sub warhdl {
   my $self = shift;
 
-  if (!defined(@_)) {
-    return;
-  }
-
   # Read any args and redefine IO object
   $self->{WarHdl} = new IO::Tee(@_) if @_;
 
