@@ -114,11 +114,15 @@ if ($Frm->uhdr("FLATS")) {
     $nbol{$subarray} = $flatinfo{$subarray}->{nbol};
     $nbolosum += $nbol{$subarray};
   }
-} elsif (!defined $Frm->hdr("SEQ_TYPE")) {
-  orac_print "skipping b/c ff in frame\n";
-} else {
+} elsif (defined $Frm->hdr("SEQ_TYPE")) {
+  # Establish a default flatfield type - use the nearest setup flat if
+  # the Frame contains closed-shutter data but is not a dark noise
+  # observation, otherwise select a fastflat from earlier this observation
+  my $flat_def = (defined $Frm->hdr("SHUTTER") && $Frm->hdr("SHUTTER") == 0 &&
+		  defined $Frm->hdr("OBJECT") && $Frm->hdr("OBJECT") !~ /dark/i)
+    ? "setup" : "raw";
   # Flatfield type to return
-  my $flat_type = lc(get_prim_arg($_PRIM_ARGS_, "TYPE", "raw"));
+  my $flat_type = lc(get_prim_arg($_PRIM_ARGS_, "TYPE", $flat_def));
 
   # Return results for those subarrays for which data exist in the
   # current Frame or for all possible subarrays?
@@ -184,6 +188,10 @@ if ($Frm->uhdr("FLATS")) {
   # Store original value for the subarray hdr
   $Frm->uhdr("SUBARRAY", $origsub);
   $Frm->uhdr("DATE-OBS", $origdate);
+} else {
+  # Shouldn't get here in online pipelines
+  orac_err "Something went wrong - no FLATS and no SEQ_TYPE?\n"
+    if ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT"));
 }
 
 # Store results in primitive hash
