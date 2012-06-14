@@ -177,8 +177,10 @@ sub wait_for_algorithm_engines {
 
 =cut
 
+# Do nothing other than return the supplied groups.
 sub sort_my_groups {
-  return ();
+  my $self = shift;
+  return $_[0];
 }
 
 =back

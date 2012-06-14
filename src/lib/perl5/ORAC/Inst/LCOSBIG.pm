@@ -102,7 +102,7 @@ sub sort_my_groups {
   }
   print "Sorted groups\n";
   my @NewGroups = sort by_grouptype @$SortGroups;
-  return (@NewGroups);
+  return (\@NewGroups);
 }
 
 =back

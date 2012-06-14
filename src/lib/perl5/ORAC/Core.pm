@@ -1579,8 +1579,7 @@ sub orac_main_data_loop {
 
     # sort groups
     orac_print("Sorting Groups\n");
-    @Groups = $instclass->sort_my_groups(\@Groups);
-
+    @Groups = @{ $instclass->sort_my_groups(\@Groups) };
 
     # Now loop over groups and frames
     foreach my $Grp (@Groups) {
