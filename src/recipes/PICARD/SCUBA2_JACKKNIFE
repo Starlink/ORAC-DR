@@ -1,0 +1,157 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+SCUBA2_JACKKNIFE - calculate optimal map using jack-knife noise estimator
+
+=head1 DESCRIPTION
+
+This recipe uses a jack-knife method to remove residual low-spatial
+frequency noise and create an optimal match-filtered output map. The
+recipe proceeds as follows:
+
+=over 2
+
+=item *
+
+The input images are coadded to produce a total signal map.
+
+=item *
+
+The observations are divided into two groups which are coadded
+separately. These coadds are subtracted from one another to create the
+C<jack-knife> map.
+
+=item *
+
+The angular power spectrum of the jack-knife map (which should consist
+purely of noise) is calculated and used to remove residual low-spatial
+frequency noise from the signal map and the given (map-filtered)
+psf. This is the so-called C<whitening> step (because it produces a
+map which has a noise power spectrum that is white).
+
+=item *
+
+The whitened signal map is processed with a matched filter using the
+whitened psf image as the psf.
+
+=item *
+
+The jack-knife map is also whitened and processed with the matched
+filter. This map should consist purely of noise.
+
+=item *
+
+Signal-to-noise ratio maps are created for the filtered versions of
+the signal map and the jack-knife map.
+
+=back
+
+The outcome (the match-filtered whitened signal map) should be the
+optimal map with white noise properties. This is the map to be used
+for science goals.
+
+=head1 NOTES
+
+=over 2
+
+=item *
+
+Ideally there should be an even number of observations.
+
+=back
+
+=head1 DISPLAY
+
+None.
+
+=head1 AVAILABLE PARAMETERS
+
+The following recipe parameters can be set via the --recpars option:
+
+=over 2
+
+=item FAKEMAP_SCALE
+
+Amplitude of the fake source (in Jy) added to the timeseries to assess
+the map-making response to a point source.
+
+=item MAKEMAP_CONFIG
+
+Name of a config file for use with the SMURF makemap task. The file
+must exist in the current working directory, C<$MAKEMAP_CONFIG_DIR>,
+C<$ORAC_DATA_OUT>, C<$ORAC_DATA_CAL> or C<$STARLINK_DIR/share/smurf>.
+
+=item MAKEMAP_PIXSIZE
+
+Pixel size in arcsec for the output map. Default is wavelength
+dependent (4 arcsec at 850 um, 2 arcsec at 450 um).
+
+=item PSF_MATCHFILTER
+
+Name of a file to use as the map-filtered PSF.
+
+=item WHITEN_BOX
+
+Size of the region used to calculate the angular power spectrum for
+removing residual low-frequency noise in the data. Default is a square
+region bounded by the noise being less than twice the minimum value.
+
+=back
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Standard initialization for JCMT instruments
+_JCMT_SETUP_
+
+# Create the group coadd and the effective PSF
+_MAKE_MOSAIC_GROUP_CLS_
+
+# Create a jack-knife map to estimate the noise properties
+_CREATE_JACKKNIFE_MAP_
+
+# Apply whitening filter to coadd
+_WHITEN_IMAGE_ GROUP=1
+
+# Apply whitening filter to the effective PSF
+_WHITEN_IMAGE_ GROUP=1 IMAGE=PSF_IMAGE
+
+# Finally apply matched filter to the whitened coadd, using the
+# whitened PSF
+_APPLY_MATCHED_FILTER_ GROUP=1 PSF=PSF_IMAGE SMOOTH=0 STORE=1
+
+# Calculate and report the noise in the filtered map
+_CALC_IMAGE_NOISE_ GROUP=1 LOGFILE=0 METHOD=VAR
+
+# Create S/N image
+_CALC_SCUBA2_SNR_ GROUP=1 VERBOSE=1 USE_MF=1
+
+# Now repeat the above steps on the jack-knife map to check the noise
+_CHECK_JACKKNIFE_NOISE_
+
+# Tidy up
+_DELETE_TEMP_FILES_ KEEP=_wmos,_mf,_whiten ALSOGRP=1
