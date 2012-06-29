@@ -118,6 +118,11 @@ if ( $proceed ) {
   # Obtain input image - default to current file in given object
   my $in = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
 
+  # For Group processing, it may be that the desired input file is the
+  # matched-filtered output which is stored as the second file in the Group
+  my $use_mf = get_prim_arg($_PRIM_ARGS_, "USE_MF", 0);
+  $in = $Obj->file(2) if ($group && $use_mf);
+
   # Obtain output image - use object inout method if not specified
   my $out = get_prim_arg($_PRIM_ARGS_, "OUT", undef);
   $out = $Obj->inout("_snr") unless ($out);
@@ -126,20 +131,24 @@ if ( $proceed ) {
   $Mon{ndfpack_mon}->obeyw("ndftrace", "ndf=$in");
   my ($ORAC_STATUS, $hasvar) = $Mon{ndfpack_mon}->get("ndftrace", "variance");
 
+  my $results;
   if( $hasvar eq "TRUE" ) {
     # Use all data by setting minvar=0
     $Mon{kappa_mon}->obeyw("makesnr","in=$in out=$out minvar=0");
 
+    my $region = ($group && defined $Grp->uhdr("WHITEN_BOX")) ? $Grp->uhdr("WHITEN_BOX") : 0;
     # Report some basic statistics
-    _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
-    my %stats = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-    my $min = sprintf "%5.2f", $stats{MIN};
-    my $max = sprintf "%5.2f", $stats{MAX};
-    my $sigma = sprintf "%5.2f", $stats{SIGMA};
-    my $numgood = $stats{NUMGOOD};
+    _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0 REGION=$region
+    $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
 
-    orac_print "SNR image range $min to $max: sigma = $sigma from $numgood pixels\n"
-      if $verbose;
+    if ($verbose) {
+      my $min = sprintf "%5.2f", $results->{MIN};
+      my $max = sprintf "%5.2f", $results->{MAX};
+      my $sigma = sprintf "%5.2f", $results->{SIGMA};
+      my $numgood = $results->{NUMGOOD};
+      my $extra = ($region) ? " (whitened)" : "";
+      orac_print "SNR image range $min to $max: sigma = $sigma from $numgood pixels$extra\n";
+    }
 
     # We need to set the PRODUCT header properly in the output regardless
     # of whether we are storing it in the Object or not. If we are not
@@ -160,4 +169,5 @@ if ( $proceed ) {
   } else {
     orac_warn "No SNR created: input file, $in, has no variance component\n";
   }
+  $_CALC_SCUBA2_SNR_{RESULTS} = $results;
 }
