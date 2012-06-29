@@ -267,7 +267,7 @@ sub findgroup {
   my $self = shift;
 
   # Read extra information required for group disambiguation
-  my $restfreq;
+  my $restfreq = '';
   if( defined( $self->hdr( "RESTFREQ" ) ) ) {
     # We can not sprintf this because the version read from
     # the WCS is not sprintfed (but it should be). This could
@@ -281,7 +281,11 @@ sub findgroup {
   } else {
     # Read rest frequency from the WCS
     my $wcs = $self->read_wcs;
-    $restfreq = $wcs->GetC("RestFreq");
+    if ( defined $wcs->GetC("RestFreq") ) {
+       $restfreq = $wcs->GetC("RestFreq");
+    } elsif( defined $wcs->GetC("RstFrq") ) {
+       $restfreq = $wcs->GetC("RstFrq");
+    }
   }
 
   # This class handles ACSIS data and data converted with gsd2acsis
