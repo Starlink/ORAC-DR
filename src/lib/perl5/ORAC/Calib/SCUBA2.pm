@@ -347,6 +347,20 @@ sub fwhm {
   return $fwhm;
 }
 
+=item B<fwhm_eff>
+
+Returns the FWHM (in arcsec) of a Gaussian with the same area as the
+telescope beam (see the B<beamarea> method below).
+
+  $fwhm_eff = $Cal->fwhm_eff;
+
+=cut
+
+sub fwhm_eff {
+  my $self = shift;
+  return sqrt($self->beamarea/1.133);
+}
+
 =item B<beamarea>
 
 Returns the beam area in units of arcsec^2/beam. The nominal
@@ -355,7 +369,7 @@ of calibration data.
 
   $beamarea = $Cal->beamarea();
 
-The optional parameter is a an aperture diameter in arcsec:
+The optional parameter is an aperture diameter in arcsec:
 
   $beamarea = $Cal->beamarea( $diam );
 
