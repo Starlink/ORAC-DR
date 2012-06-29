@@ -77,7 +77,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia.  All Rights
+Copyright (C) 2010-2012 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -98,7 +98,7 @@ USA.
 =cut
 
 # Should I be verbose (default to no)
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Image combination method. Default to nearest neighbour
 my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
@@ -115,8 +115,20 @@ if ( $Grp->lastmember($Frm) ) {
     my $use_makemos = 1;
     my $mostask = ($use_makemos) ? "MAKEMOS" : "WCSMOSAIC";
 
+    # If using makemos, the images should be aligned to a common
+    # world coordinate system
+    if ($use_makemos) {
+      my $tmpfrm = $Frm->new;
+      $tmpfrm->files(@frmfiles);
+      _ALIGN_ARRAYS_ METHOD=nearest FRAME=$tmpfrm REFIMAGE=!
+      @frmfiles = $tmpfrm->files;
+      # Store in the Frame object to delete later
+      $Frm->push_intermediates(@frmfiles);
+    }
+
     orac_print "Mosaicking Group file with $mostask: "
-      .( ($nfiles == 1) ? "using $nfiles file" : "combining $nfiles files")."...\n";
+      .( ($nfiles == 1) ? "using $nfiles file" : "combining $nfiles files")."...\n"
+	if ($verbose);
 
     my $out = $Grp->inout("_mos");
 
@@ -139,7 +151,7 @@ if ( $Grp->lastmember($Frm) ) {
       my @bounds;
       # Check image is not too large
       my $bounds = "lbnd=! ubnd=!";
-      _CHECK_MAP_BOUNDS_ IN=$moslist TASK=WCSMOSAIC
+      _CHECK_MAP_BOUNDS_ IN=$moslist TASK=WCSMOSAIC VERBOSE=$verbose
       if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
 	my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
 	my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
@@ -169,12 +181,12 @@ if ( $Grp->lastmember($Frm) ) {
       $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title='$object'");
 
       my $newbounds = ( scalar(@bounds) == 4 ) ? \@bounds : undef;
-      _ADD_IMAGES_ INLIST=\@frmfiles OUT=$out COMPS=EXP_TIME,WEIGHTS BOUNDS=$newbounds
+      _ADD_IMAGES_ INLIST=\@frmfiles OUT=$out COMPS=EXP_TIME,WEIGHTS BOUNDS=$newbounds VERBOSE=0
     }
     $Grp->file($out);
     $Grp->readhdr;
     $Grp->uhdr("NEWIMAGE",1);
-    orac_print "Done - Group file $out created\n";
+    orac_print "Done - Group file $out created\n" if ($verbose);
   } else {
     # Error or warning?
     orac_warn "All Frames in Group marked as bad - no Group file created\n";
