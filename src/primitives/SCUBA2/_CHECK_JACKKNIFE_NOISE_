@@ -1,0 +1,104 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CHECK_JACKKNIFE_NOISE_ - calculate noise in whitened jack-knife image
+
+=head1 SYNOPSIS
+
+_CHECK_JACKKNIFE_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive performs a sanity check on the jack-knife image by
+applying the same whitening filter and processing with the matched
+filter as for the science data. A signal-to-noise map is created and
+the standard deviation in the values within the whitening box is
+calculated and reported. Ideally this should be exactly 1.
+
+=head1 ARGUMENTS
+
+The primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES
+
+_APPLY_MATCHED_FILTER, _CALC_SCUBA2_SNR_, _FIND_IMAGE_STATISTICS_,
+_WHITEN_IMAGE_
+
+=back
+
+=head1 NOTES
+
+None.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+if ($Grp->lastmember($Frm)) {
+  my $jkmap = $Grp->uhdr("JACKKNIFE_MAP");
+  my $jkbox = $Grp->uhdr("WHITEN_BOX");
+  my $uhdr = $Grp->uhdr;
+
+  orac_print "\nDetermining noise properties of jack-knife map...\n";
+
+  # Whiten the jack-knife map
+  my $jkwhite = $Grp->inout("_whitenjk");
+  _WHITEN_IMAGE_ WHITE=$jkwhite IMAGE=$jkmap GROUP=1
+
+  # Localize Grp to carry out the filtering step
+  {
+    my $Grp = $Grp->new;
+    $Grp->file($jkwhite);
+    $Grp->uhdr(%{$uhdr});
+    $Grp->frame(0, $Frm);
+
+    # Apply the matched filter to the whitened jack-knife using the whitened psf
+    _APPLY_MATCHED_FILTER_ GROUP=1 PSF=PSF_IMAGE SMOOTH=0 STORE=1
+    # Create S/N image
+    _CALC_SCUBA2_SNR_ GROUP=1 VERBOSE=0 USE_MF=1
+    my $stats = $_CALC_SCUBA2_SNR_{RESULTS};
+    # Report stats to user
+    if (defined $stats) {
+      orac_print "Jack-knife SNR image range ".(sprintf "%.2f", $stats->{MIN})." to ".
+	(sprintf "%.2f", $stats->{MAX}).": sigma = ".
+	(sprintf "%.2f", $stats->{SIGMA}).
+	  " from ".($stats->{NUMGOOD})." pixels (whitened).\n\n";
+    }
+  }
+}

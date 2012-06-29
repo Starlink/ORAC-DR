@@ -1,0 +1,172 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_MAP_PSF_ - Create
+
+=head1 SYNOPSIS
+
+ _CREATE_MAP_PSF_ PSF_IMAGE=$psf
+
+ _CREATE_MAP_PSF_ PSF_IMAGE=$psf PSF_BOX=120
+
+=head1 DESCRIPTION
+
+This primitive creates a map-filtered PSF with no bad pixels for use
+with a noise-whitening filter and thence a matched filter. A
+pre-defined central region is used as the basis of the psf image
+(default is 90 pixels across), with the image padded with zeros beyond
+that. The region should be large enough to encompass the negative ring
+around the peak, with some room to spare.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<PSF_BOX>
+
+Size of the central area, in pixels, to be used as the basis of the
+psf for the matched filter. Default is 90.
+
+=item B<PSF_IMAGE>
+
+Name of the template PSF image. No default.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+CDIV, NDFCOPY, NOMAGIC, SETVAR
+
+=item ORAC-DR PRIMITIVES
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+It is assumed that all of the input images are aligned to the same
+coordinate frame.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates a single output Group image with a suffix of C<_mos>.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# PSF map coadd
+my $psf_image = get_prim_arg($_PRIM_ARGS_, "PSF_IMAGE", undef);
+
+if ($psf_image) {
+
+  # Region of PSF to use - default to 90 pixels
+  my $psf_box = get_prim_arg($_PRIM_ARGS_, "PSF_BOX", 90);
+
+  if (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) {
+    my $npix_box = $psf_box*$psf_box;
+    _FIND_IMAGE_STATISTICS_ IMAGE=$psf_image VERBOSE=0
+    my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+    if ($results->{NUMGOOD} < $npix_box) {
+      orac_warn "Number of good pixels in PSF is less than requested\n";
+    }
+  }
+
+  my $tempfile1 = ORAC::TempFile->new();
+  my $tempfile2 = ORAC::TempFile->new();
+  my $tempfile3 = ORAC::TempFile->new();
+
+  # First, copy out the desired section
+  my $in = $psf_image ."(0~$psf_box,0~$psf_box,)";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$tempfile1");
+  # Then pad to original image size
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1 out=$tempfile2 like=$psf_image");
+  # Set bad values to zero
+  $Mon{kappa_mon}->obeyw("nomagic","in=$tempfile2 out=$tempfile1 repval=0");
+  # And set the variance of these pixels to the mean in the psf coadd
+  _FIND_IMAGE_STATISTICS_ IMAGE=$psf_image REGION=$psf_box VERBOSE=0 COMP=VAR
+  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  my $zero_var = $results->{MEAN};
+  $Mon{kappa_mon}->obeyw("nomagic","in=$tempfile2 out=$tempfile3 repval=$zero_var comp=var");
+  $Mon{ndfpack_mon}->obeyw("setvar","ndf=$tempfile1 from=$tempfile3 comp=var");
+
+  # Now divide by the input fakescale to get the map filtered
+  # normalized PSF. If the map has no effect on the input, then the
+  # PSF should have an amplitude of 1. In practice, the amplitude is
+  # reduced by the map-making process. However, if FAKEMAP_SCALE is
+  # not defined, we have to assume the input PSF is already normalized
+  # to the correct amplitude.
+  my $fakescale = (defined $Grp->uhdr("FAKEMAP_SCALE")) ? $Grp->uhdr("FAKEMAP_SCALE") : 1;
+  if (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
+     $fakescale = $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
+     # If the user has set a value of -1, the amplitude should be
+     # taken as the fakescale so the PSF amplitude ends up as unity below
+     if ($fakescale == -1) {
+       _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 REGION=20 VERBOSE=0
+       $fakescale = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+     }
+  }
+  $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 out=$psf_image scalar=$fakescale");
+
+  # Now analyze the PSF image and compare with the input value
+  my $extra = (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) ? "supplied" : "map-filtered";
+  orac_print "Amplitude of $extra psf = ", "green";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$psf_image REGION=20 VERBOSE=0
+  $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  my $peak = sprintf "%.3g", $results->{MAX};
+  if ($peak == 1) {
+    orac_print "$peak - FCF does not need to be scaled\n", "green";
+  } else {
+    my $pkpc = int(100/$results->{MAX});
+    orac_print "$peak - peak FCF should be scaled by $pkpc %\n", "green";
+  }
+  # Store the amplitude of the PSF
+  $Grp->uhdr("FCF_CORR_AMP", $results->{MAX});
+
+  # Finally store the map-filtered PSF image in the Group uhdr
+  $Grp->uhdr("PSF_IMAGE", $psf_image);
+
+} else {
+  orac_err "No input PSF image to use as a template\n";
+}

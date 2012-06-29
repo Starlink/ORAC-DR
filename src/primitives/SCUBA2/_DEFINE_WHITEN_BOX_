@@ -1,0 +1,140 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_DEFINE_WHITEN_BOX_ - Define a suitable region for calculating the white noise
+
+=head1 SYNOPSIS
+
+ _DEFINE_WHITEN_BOX_ IMAGE=$image
+
+ _DEFINE_WHITEN_BOX_ IMAGE=$image THRESH=2 ESTIMATOR=MIN
+
+=head1 DESCRIPTION
+
+This primitive uses a noise threshold in order to determine the size
+of a region to be used in calculating the white noise power spectrum.
+
+The given threshold is applied to the noise (error component in the
+supplied image) and the number of pixels is calculated. The whitening
+box is defined as a square with the same number of pixels; thus the
+square-root of the number of pixels is returned.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 2
+
+=item B<ESTIMATOR>
+
+Method for estimating the noise threshold. May be C<MIN>, C<MEAN> or
+C<MEDIAN>. Default is C<MIN> which will be used if an unsupported
+estimator is given.
+
+=item B<IMAGE>
+
+Image from which the box area is to be calculated. No default.
+
+=item B<THRESH>
+
+Multiplier for the noise value derived using the given
+B<ESTIMATOR>. Must be positive. The default is 2.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used by this primitive:
+
+=over 2
+
+=item KAPPA:
+
+THRESH
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 OUTPUT DATA
+
+On exit the primitive hash contains the new key C<BOX> with the size
+of the whitening box.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Input image - no default
+my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
+orac_termerr "Must provide an image to determine whitening region\n"
+  unless (defined $image);
+
+# Threshold multiplier - must be positive
+my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", 2);
+if ($thresh <= 0) {
+  orac_warn "Given threshold ($thresh) is too low - using default (2)\n";
+  $thresh = 2;
+}
+
+# Means of defining the threshold - check for supported values: MIN,
+# MEAN, MEDIAN. Fall back on default
+my $estimator = uc(get_prim_arg($_PRIM_ARGS_, "ESTIMATOR", "MIN"));
+if ($estimator ne "MIN" && $estimator ne "MEAN" && $estimator ne "MEDIAN") {
+  orac_warn "Unsupported estimator, $estimator: using default (MIN)\n";
+  $estimator = "MIN";
+}
+
+# Calculate statistics of noise
+_FIND_IMAGE_STATISTICS_ IMAGE=$image COMP=ERR VERBOSE=0
+my $base_value = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+my $ntotal = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMPIX};
+my $ngood_in = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+# Use this base value to determine the actual threshold in data units
+$thresh *= $base_value;
+
+# Threshold the data
+my $threshfile = ORAC::TempFile->new();
+my $args = "in=$image out=$threshfile comp=err thrlo=0 newlo=0 thrhi=$thresh newhi=bad";
+$Mon{kappa_mon}->obeyw("thresh","$args");
+
+# Calculate the number of good values
+_FIND_IMAGE_STATISTICS_ IMAGE=$threshfile VERBOSE=0 COMP=ERR
+my $ngood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+
+# Warn the user if nothing changed
+if ($ngood == $ngood_in) {
+  orac_warn "Supplied criteria will select the entire image - this may not be desireable\n";
+}
+
+# The box is then defined as a square with the same number of pixels
+$_DEFINE_WHITEN_BOX_{BOX} = int(sqrt($ngood));

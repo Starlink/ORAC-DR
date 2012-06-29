@@ -1,0 +1,203 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_WHITEN_IMAGE_ - apply a white-noise filter to a given image
+
+=head1 SYNOPSIS
+
+ _WHITEN_IMAGE_ IMAGE=$image
+
+ _WHITEN_IMAGE_ IMAGE=$image THRESH=2 ESTIMATOR=MIN
+
+=head1 DESCRIPTION
+
+This primitive applies a spatial filter in order to remove residual
+low-frequency noise. The filter is derived from a jack-knife map which
+must have been created earlier in the recipe (and stored in the Group
+uhdr C<JACKKNIFE_MAP>). The jack-knife map should be purely noise, so
+its spectrum should be white. The angular power spectrum of the input
+map is calculated and C<whitened> using the angular power spectrum of
+the jack-knife map. The calculation assumes azimuthal symmetry and is
+confined to a region specified by the B<BOX> parameter below.
+
+The user may provide a suitable box size to be used, otherwise one
+will be calculated using the noise properties of the input image. By
+default, the box will be defined as the square with the same number of
+pixels as the region in the input image with a noise less than twice
+the minimum value. The box size is written to the fits header of the
+output file.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 2
+
+=item B<BOX>
+
+Size of the region within which to calculate the angular power
+spectrum.
+
+=item B<ESTIMATOR>
+
+Method for estimating the noise threshold. May be C<MIN>, C<MEAN> or
+C<MEDIAN>. Default is C<MIN> which will be used if an unsupported
+estimator is given.
+
+=item B<GROUP>
+
+=item B<IMAGE>
+
+Image from which the box area is to be calculated. No default.
+
+=item B<THRESH>
+
+Multiplier for the noise value derived using the given
+B<ESTIMATOR>. Must be positive. The default is 2.
+
+=item B<WHITE>
+
+Name of output whitened image. Default has a suffix C<_whiten> unless
+B<IMAGE> is C<PSF_IMAGE>, in which case it is C<_whitepsf>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used by this primitive:
+
+=over 2
+
+=item SMURF:
+
+SC2FILTERMAP
+
+=item ORAC-DR PRIMITIVES:
+
+_DEFINE_WHITEN_BOX_
+
+=back
+
+=head1 OUTPUT DATA
+
+On exit the Group uhdr contains the new key C<WHITEN_BOX> with the
+size of the whitening box to ensure the same value is used in
+subsequent calls to this primitive.
+
+=head1 OUTPUT FILES
+
+The C<whitened> version of the input image with suffix C<_whiten> or
+C<_whitepsf>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Flag to use the current Group or Frame object
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Flag to indicate that processing should wait until the final Frame
+# object
+my $wait = ($group && !$Grp->lastmember($Frm)) ? 1 : 0;
+
+unless ($wait) {
+  my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
+
+  my $whiten = "image";
+  if (defined $image) {
+    if (uc($image) eq "PSF_IMAGE") {
+      $image = $Obj->uhdr("PSF_IMAGE");
+      $whiten = "psf";
+    }
+  } else {
+    $image = $Obj->file;
+    if ($group) {
+      undef $image unless ($Grp->file_exists);
+    }
+  }
+
+  # Error message if no input file
+  orac_err "No file to whiten\n" unless ($image);
+
+  # Retrieve the existing jack-knife image as a reference
+  my $refimage = $Grp->uhdr("JACKKNIFE_IMAGE");
+  orac_err "No whitening reference to apply - skipping this step\n" unless ($refimage);
+
+  # All's well - proceed
+  if ($image && $refimage) {
+    orac_print "Whitening $whiten using jack-knife map ";
+    # Name of output whitened file - fall back on default if none given
+    my $out = get_prim_arg($_PRIM_ARGS_, "WHITE", undef);
+    $out = $Obj->inout(($whiten eq "psf") ? "_whitepsf" : "_whiten")
+      unless (defined $out);
+
+    # The user can specify a region of the whitening reference image
+    # to use, rather than the whole image. Should probably check box
+    # doesn't exceed image size. A value of 0 will determine the box
+    # size automatically based on the noise.
+    my $box = get_prim_arg($_PRIM_ARGS_, "BOX", 0);
+    # Override with recipe parameter
+    $box = $Frm->uhdr("RECPAR_WHITEN_BOX") if (defined $Frm->uhdr("RECPAR_WHITEN_BOX"));
+    # But if a value already exists, use that
+    $box = $Grp->uhdr("WHITEN_BOX") if (defined $Grp->uhdr("WHITEN_BOX"));
+    # If none defined then apply a threshold to the noise to calculate
+    # the region to use
+    if ($box == 0) {
+      # Default threshold is 2x minimum noise
+      my $thresh = get_prim_arg($_PRIM_ARGS_,"THRESH",2);
+      $thresh = $Frm->uhdr("RECPAR_WHITEN_THRESH")
+	if (defined $Frm->uhdr("RECPAR_WHITEN_THRESH"));
+      my $estimator = get_prim_arg($_PRIM_ARGS_,"ESTIMATOR","MIN");
+      $estimator = $Frm->uhdr("RECPAR_WHITEN_ESTIMATOR")
+	if (defined $Frm->uhdr("RECPAR_WHITEN_ESTIMATOR"));
+      _DEFINE_WHITEN_BOX_ IMAGE=$image THRESH=$thresh ESTIMATOR=$estimator
+      $box = $_DEFINE_WHITEN_BOX_{BOX};
+      # Store in the Group uhdr to ensure the same value is used in
+      # subsequent calls of this primitive
+      $Grp->uhdr("WHITEN_BOX", $box);
+    }
+    orac_print "in central $box pixels...";
+    # Note - only specify *2* dimensions
+    my $ref = $refimage . "(0~$box,0~$box)";
+    $Mon{smurf_mon}->obeyw("sc2filtermap","in=$image out=$out whiten whiterefmap=$ref");
+
+    if ($whiten eq "psf") {
+      $Obj->uhdr("PSF_IMAGE", $out);
+    } else {
+      $Obj->file($out);
+    }
+    # Store the box size in the FITS header of the output file
+    my $fitshdr = new Astro::FITS::Header::NDF( File => $out );
+    my $newitem = new Astro::FITS::Header::Item( Keyword => "WHITEBOX",
+						 Value => $box,
+						 Comment => "Whitening region size (pixels)");
+    $fitshdr->insert(-1, $newitem);
+    $fitshdr->writehdr( File => $out );
+    orac_print " done\n";
+  }
+
+}

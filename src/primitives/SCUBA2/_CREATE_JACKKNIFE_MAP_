@@ -1,0 +1,264 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_JACKKNIFE_MAP_ - calculate a jack-knife map from two halves of the data
+
+=head1 SYNOPSIS
+
+ _CREATE_JACKKNIFE_MAP_
+
+ _CREATE_JACKKNIFE_MAP_ JACKKNIFE_METHOD=ALTERNATE JACKKNIFE_WEIGHT=NMAP
+
+=head1 DESCRIPTION
+
+This primitive creates a C<jack-knife> map by dividing the data into two
+independent sets and subtracting the respective coadds to form an
+image which should contain only noise.
+
+The default method is to take alternate observations and assign them
+to the two halves to the be coadded. The user may specify to divide
+the data simply in two, such that the jack-knife map is formed by
+subtracting the first half from the second.
+
+Each coadd of half the data is given equal weight when calculating the
+jack-knife map. However, if the number of observations is odd, then
+the user may opt to weight the coadds by the number of files that went
+into creating them.
+
+The name of the jack-knife map is not stored in the Group itself, but
+referenced by an entry in the Group uhdr.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<JACKKNIFE_METHOD>
+
+The manner in which the data are divided into two halves to create the
+maps used to calculate the jack-knife map. May be C<ALTERNATE> (use
+alternate observations) or C<HALF> (use the first half and second
+half). Value is overridden by the corresponding recipe parameter.
+
+=item B<JACKKNIFE_WEIGHT>
+
+Weighting scheme for combining the two maps to create the jack-knife
+map. Default is C<NONE> which weights them equally. May also be
+C<NMAPS> (only used if the number of observations going into each half
+of the data is odd) or C<VARIANCE> where the variances of the two maps
+are used. Value is overridden by the corresponding recipe parameter.
+
+=item B<METHOD>
+
+Image combination method for creating the two halves of the jack-knife
+map. May be any supported by C<wcsmosaic>. Default is C<nearest>.
+
+=item B<VERBOSE>
+
+Flag to indicate whether messages should be printed to the
+screen. Default is 1 (yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA
+
+ADD, CMULT, MATHS, NDFCOPY, SUB, WCSMOSAIC
+
+=back
+
+=head1 OUTPUT DATA
+
+The name of the jack-knife map is stored in the Group uhdr using the
+keyword C<JACKKNIFE_MAP>.
+
+=head1 OUTPUT FILES
+
+Creates single Group file with the suffix C<_jkmap>.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Should I be verbose (default to yes)
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Proceed if a group file has been created
+if ( $Grp->file_exists ) {
+
+  # Image combination method. Default to nearest neighbour.
+  my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
+
+  # Jack-knife image combination method - must be alternate or
+  # half. Minimum match supported.
+  my $jk_def = "alternate";
+  my $jkmethod = lc(substr(get_prim_arg($_PRIM_ARGS_,"JACKKNIFE_METHOD", $jk_def), 0, 1));
+  $jkmethod = $Frm->uhdr("RECPAR_JACKKNIFE_METHOD")
+    if (defined $Frm->uhdr("RECPAR_JACKKNIFE_METHOD"));
+  if ($jkmethod ne "a" && $jkmethod ne "h") {
+    orac_warn "Unknown jack-knife combination method: falling back on default\n";
+    $jkmethod = substr($jk_def,0,1);
+  }
+
+  # Jack-knife weighting scheme - must be nmaps or var. Minimum match supported.
+  my $jkwt_def = "none";
+  my $jkwt = lc(get_prim_arg($_PRIM_ARGS_, "JACKKNIFE_WEIGHT", $jkwt_def));
+  $jkwt = $Frm->uhdr("RECPAR_JACKKNIFE_WEIGHT")
+    if (defined $Frm->uhdr("RECPAR_JACKKNIFE_WEIGHT"));
+  if ($jkwt !~ /^n/ && $jkwt !~ /^v/) {
+    orac_warn "Unknown jack-knife weighting: falling back on default\n";
+    $jkwt = $jkwt_def;
+  }
+
+  # Check there are multiple Frames within the Group
+  if ($Grp->num > 0) {
+    orac_print "\nCreating jack-knife map from" if ($verbose);
+    # Arrays to store each half of the data
+    my (@map1, @map2);
+    # Sort files according to chosen method: alternate or half-and-half
+    if ($jkmethod eq "a") {
+      orac_print " alternate maps...\n" if ($verbose);
+      # Alternate maps
+      for my $i (0 .. $Grp->num) {
+	my $frm = $Grp->frame($i);
+	if ($i % 2 == 0) {
+	  push(@map1, $frm->file);
+	} else {
+	  push(@map2, $frm->file);
+	}
+      }
+    } else {
+      orac_print " each half of the data...\n" if ($verbose);
+      # Half and half
+      my $get_files = sub {
+	my ($first, $last) = @_;
+	my @frms = map { $Grp->frame($_)} $first .. $last;
+	return map { $_->file } @frms;
+      };
+      my $num = ($Grp->num % 2 == 0) ? $Grp->num / 2 : ($Grp->num + 1) / 2;
+      @map1 = $get_files->(0,$num-1);
+      @map2 = $get_files->($num,$Grp->num);
+    }
+
+    # Create coadds for each list of files. Note that in order for the
+    # jack-knife to work, the coadds must be on the same grid -
+    # therefore, create a suitable reference image for the mosaicking
+    # step based on the overall coadded map.
+    my $ref = $Grp->inout("_refimage");
+    my $args = "in=".($Grp->file)." out=$ref trim trimwcs";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+    # Delete provenance for speed if necessary
+#    $Mon{hdstools_mon}->obeyw("hdelete","$ref.more.provenance");
+
+    my @jkmaps;
+    foreach my $list (\@map1, \@map2) {
+      my $suffix = (@jkmaps) ? "_jk2" : "_jk1";
+      my $out = $Frm->inout($suffix);
+      my @files = @{$list};
+      if (@files == 1) {
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$files[0] out=$out like=$ref");
+      } else {
+	# Just use wcsmosaic for speed and simplicity - no need to be
+	# concerned with the exp_time and weights components
+	my $inlist = write_file_list(@files);
+	$Mon{kappa_mon}->obeyw("wcsmosaic","in=^$inlist out=$out method=nearest ref=$ref lbnd=! ubnd=! variance");
+      }
+      push(@jkmaps, $out);
+    }
+
+    # Now calculate the weights for each coadd. For nmaps weighting,
+    # the weights are numbers - for variance weighting, the weights
+    # are images.
+
+    # Calculate the jack-knife map
+    my $jkmap = $Grp->inout("_jkmap");
+
+    my $s1 = $jkmaps[0];
+    my $s2 = $jkmaps[1];
+
+    # NMAPS or NONE
+    if ($jkwt =~ /^n/) {
+      my $n1 = @map1;
+      my $n2 = @map2;
+      # If the number of files is not the same, weight the halves of
+      # the jack-knife by the number of files if requested. Otherwise
+      # assume equal weights.
+      if ($n1 != $n2 && $jkwt =~ /^nmaps/) {
+	orac_print "Calculating weights from number of files\n" if ($verbose);
+	# Weight by number of files in coadd
+	my $ws1 = ORAC::TempFile->new();
+	my $ws2 = ORAC::TempFile->new();
+	my $sumwt = $n1 + $n2;
+	my $wt = $n1 / $sumwt;
+	my $args = "in=$s1 out=$ws1 scalar=$wt";
+	$Mon{kappa_mon}->obeyw("cmult","$args");
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$ws1 out=$s1");
+	$wt = $n2 / $sumwt;
+	$args = "in=$s2 out=$ws2 scalar=$wt";
+	$Mon{kappa_mon}->obeyw("cmult","$args");
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$ws2 out=$s2");
+      }
+      # Subtract the two halves to create the jack-knife map
+      $Mon{kappa_mon}->obeyw("sub","in1=$s1 in2=$s2 out=$jkmap");
+    } else {
+      # VAR
+      orac_print "Calculating weights from input variances\n";
+      # Weight by variance
+      my $w1 = ORAC::TempFile->new();
+      my $w2 = ORAC::TempFile->new();
+      my $sumwt = ORAC::TempFile->new();
+
+      my $exp = "1/va";
+      $Mon{kappa_mon}->obeyw("maths","va=$s1 exp=$exp out=$w1");
+      $Mon{kappa_mon}->obeyw("maths","va=$s2 exp=$exp out=$w2");
+      $Mon{kappa_mon}->obeyw("add","in1=$w1 in2=$w2 out=$sumwt");
+
+      $exp = "(ia*ib-ic*id)/ie";
+      $Mon{kappa_mon}->obeyw("maths","ia=$w1 ib=$s1 ic=$w2 id=$s2 ie=$sumwt exp=$exp out=$jkmap");
+    }
+
+    # Store the halves of the jack-knife in the intermediates array
+    # for later deletion
+    $Frm->push_intermediates($s1, $s2);
+    # The reference image should be deleted later as well - this is a
+    # Grp file so store in that intermediates array
+    $Grp->push_intermediates($ref);
+
+    # Store for later retrieval
+    $Grp->uhdr("JACKKNIFE_IMAGE",$jkmap);
+  } else {
+    orac_warn "Unable to create jack-knife map from a single observation\n";
+  }
+}

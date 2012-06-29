@@ -1,0 +1,157 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MAKE_MOSAIC_GROUP_CLS_ - calculate a jack-knife map from two halves of the data
+
+=head1 SYNOPSIS
+
+ _MAKE_MOSAIC_GROUP_CLS_
+
+ _MAKE_MOSAIC_GROUP_CLS_ JACKKNIFE_METHOD=ALTERNATE JACKKNIFE_WEIGHT=NMAP
+
+=head1 DESCRIPTION
+
+This primitive creates the overall Group coadd and the corresponding
+map-filtered PSF coadd.
+
+If the user has provided a PSF, it is padded to be the same size as
+the signal image coadd.
+
+The output map-filtered psf image is created from the central 90x90
+pixels, padded with zeros.
+
+Nearest-neighbour binning is used.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<METHOD>
+
+Image combination method for creating the two halves of the jack-knife
+map. May be any supported by C<wcsmosaic>. Default is C<nearest>.
+
+=item B<VERBOSE>
+
+Flag to indicate whether messages should be printed to the
+screen. Default is 1 (yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA
+
+NDFCOPY
+
+=item ORAC-DR PRIMITIVES
+
+_CREATE_MAP_PSF_, _MAKE_MOSAIC_GROUP_BATCH_
+
+=back
+
+=head1 OUTPUT DATA
+
+The name of the jack-knife map is stored in the Group uhdr using the
+keyword C<JACKKNIFE_MAP>.
+
+=head1 OUTPUT FILES
+
+Creates single Group file with the suffix C<_jkmap>.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Only proceed if we've reached the last Frame in the Group
+if ($Grp->lastmember($Frm)) {
+  # Should I be verbose (default to yes)
+  my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+  # Name of the output coadds for the signal map and the map-filtered psf
+  my @out = ( scalar($Grp->inout("_wmos")), scalar($Grp->inout("_wpsf")) );
+
+  if ($verbose) {
+    my $extra = (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) ? "coadd" : "and psf coadds";
+    orac_print "Creating map $extra...\n";
+  }
+  # If invoked from PICARD, this uhdr entry will not be defined
+  $Frm->uhdr("MAKEMAP_CONFIG_TYPE", "BLANK_FIELD")
+    unless (defined $Frm->uhdr("MAKEMAP_CONFIG_TYPE"));
+  my $fuhdr = $Frm->uhdr;
+  # There is no need to create a psf coadd if the user has specified a
+  # psf
+  my $end = (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) ? 1 : 2;
+  for my $i (1 .. $end) {
+    # Retrieve the relevant files
+    my @files = map { $_->file($i) } grep { $_->isgood > 0 } $Grp->members;
+
+    # Create a local Grp & Frm to do the mosaicking
+    my $Grp = $Grp->new();
+    my $Frm = $Frm->new();
+    $Frm->files(@files);
+    $Frm->readhdr;
+    $Frm->uhdr(%{$fuhdr});
+    $Grp->allmembers(($Frm));
+    $Grp->file("temp".$i);
+    _MAKE_MOSAIC_GROUP_BATCH_ VERBOSE=0 METHOD=nearest
+    if ($Grp->file_exists) {
+      # Make a copy of the group file using the pre-determined name
+      my $in = $Grp->file;
+      my $out = $out[$i-1];
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+      # Delete the group file as it's no longer needed
+      $Grp->erase;
+    }
+    _DELETE_TEMP_FILES_GROUP_ KEEP=none ALSOGRP=0 VERBOSE=0
+  }
+
+  # Store the output coadd in the Group
+  $Grp->file($out[0]);
+  # Set a uhdr entry for calibrating the data
+  $Grp->uhdr("ORAC_FILTER", $Frm->uhdr("ORAC_FILTER"));
+
+  # Now if the user has given a PSF image, we need to make sure it has
+  # the same dimensions as the map
+  if ($end == 1) {
+    my $inpsf = $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
+    my $args = "in=$inpsf out=".($out[1])." like=".($out[0]);
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+  }
+  # Trim the (coadded) PSF image and pad with zeros to remove
+  # low-signal-to-noise pixels - the result will be stored in the Grp
+  # uhdr as PSF_IMAGE and picked up by later primitives
+  _CREATE_MAP_PSF_ PSF_IMAGE=$out[1] PSF_BOX=90
+}
