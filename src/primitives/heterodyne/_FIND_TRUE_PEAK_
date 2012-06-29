@@ -1,0 +1,125 @@
+=head1 NAME
+
+_FIND_TRUE_PEAK - Determines the location of a representative peak pixel.
+
+=head1 DESCRIPTION
+
+This primitive is identifies the pixel co-ordinates of a
+representative peak pixel.  It avoids the pitfall of simply finding
+the maximum, since this statistic may be due to some noise spike or
+artefact.  The primitive may not find what would have been the
+astronomical peak-valued element, but it it will likely find a
+neighbour.
+
+It uses a median smooth to filter single-pixel artefacts, and permits
+a peripheral border to be selected and excluded higher noise pixels
+near the edge to be excluded.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BOX = INTEGER (Given)
+
+The size of the neighbourhood box used to filter artefacts.  This 
+argument can be overridden by the RECPAR_PEAK_BOX uhdr via the
+recipe parameter system.  [3]
+
+=item FILE = STRING (Given)
+
+The name of the file whose peak pixel is to be located.  If FILE is
+not defined, this primitive will throw an error.
+
+=item PEAK = ARRAY REFERENCE (Returned)
+
+A reference to an array of the pixel co-ordinates of the peak.
+
+=item TRIM_PERCENT = REAL (Given)
+
+The percentage of the data to be excluded from the search for the peak.
+For instance, a value of 10 would ignore a 5% border on each side of
+the dupplied file.  It is constrained between 0 and 50.  This argument 
+can be overridden by the RECPAR_PEAK_TRIM_PERCENT uhdr via the recipe
+parameter system.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+KAPPA: BLOCK, STATS.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie  E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef, 1 );
+my $box = get_prim_arg( $_PRIM_ARGS_, "BOX", 3 );
+my $trim = get_prim_arg( $_PRIM_ARGS_, "TRIM_PERCENT", 0 );
+
+# Handle recipe parameters.
+$box = ( defined( $Frm->uhdr( "RECPAR_PEAK_BOX" ) ) ?
+         $Frm->uhdr( "RECPAR_PEAK_BOX" )            :
+         $box );
+
+$trim = ( defined( $Frm->uhdr( "RECPAR_PEAK_TRIM_PERCENT" ) ) ?
+          $Frm->uhdr( "RECPAR_PEAK_TRIM_PERCENT" )            :
+          $trim );
+$trim = max( 0, min( 50, $trim ) );
+my $percent = 100 - $trim;
+
+# Define the section to analyse.  For zero percent no section is
+# required.
+my $section = "";
+if ( $trim > 0 ) {
+
+# Obtain the number of dimensions and hence form the section.
+   _GET_DIMENSIONS_ FILE=$file
+   my $dims = $_GET_DIMENSIONS_{DIMS};
+   my $ndim = scalar( @$dims ); 
+   $section = "(";
+   for ( my $i = 1; $i < $ndim; $i++ ) {
+      $section .= "~" . $percent . "%,";
+   }
+   $section .= "~" . $percent . "%)"; 
+}
+
+# Obtain a name for temporary file.
+my $tempfile = new ORAC::TempFile( 0 );
+
+# Median block filter.
+my $params = "in=$file" . $section . " out=$tempfile box=$box estimator=median";
+$Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+# Now find the position of the maximum value.
+$Mon{'kappa_mon'}->obeyw( "stats", "$tempfile" );
+my ( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
+
+# Ensure that there was a valid result.  Check for the number of non-bad
+# values rather than checking for bad value in pixel co-ordinates.
+( $ORAC_STATUS, my $ngood ) = $Mon{kappa_mon}->get( "stats", "numgood" );
+if ( $ngood > 0 )  {
+
+# Return result.
+   $_FIND_TRUE_PEAK_{PEAK} = \@maxpos;
+} else {
+   orac_warn( "Unable to calculate position of strongest pixel.\n" );
+}
+
