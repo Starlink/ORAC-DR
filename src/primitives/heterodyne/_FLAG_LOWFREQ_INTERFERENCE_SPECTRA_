@@ -1,0 +1,425 @@
+=head1 NAME
+
+_FLAG_LOWFREQ_INTERFERENCE_SPECTRA_
+
+=head1 DESCRIPTION
+
+This primitive identifies and masks spectra affected by high-frequency
+noise.
+
+It achieves this through the following steps:
+  -  Copies the current time-series cube to form a mask cube.
+  -  Thresholds the cube to +/-20 to exclude strong spikes.
+  -  Masks a central region where the astronomical line may be present
+     (see LINEWIDTH argument), and trims the outer 15% where noise is
+     always present.
+  -  Determines the background level, effectively smoothing to remove
+     structure smaller than a nominated scale (see SCALELENGTH argument).
+  -  Fits linear baselines to the smoothed spectra and calculates the rms
+  -  residuals.
+  -  Analyses the spectral-time-series image for each good receptor in
+     turn.
+     o  Derives an rms non-linearity array to provide a rectified signal.
+     o  Averages the signal along the spectral axis to form a non-linearity
+        profile through the time series.
+     o  Corrects for drifts or steps in the profile.
+     o  Rejects spectra whose mean edginess exceeds the median level plus
+        a nominated number of clipped standard deviations (see Arguments
+        EDGE_CLIP and THRESH_CLIP).
+     o  Pastes bad values in the mask cube at the location of any rejected
+        spectrum.
+   -  Applies the mask to the input cube.
+
+It has the advantage of retaining good data for receptors that are only
+occasionally bad, rather than rejecting all spectra for a receptor
+as _MASK_BAD_BASELINE_* primitives do.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EDGE_CLIP = STRING (Given)
+
+The standard deviation to clip iteratively the summed-edginess
+profile in order to measure the mean and standard deviation of the
+profile unaffected by bad spectra.  A comma-separated list
+will perform iterative sigma clipping of outliers, but standard
+deviations in the list should not decrease.  This argument
+can be overridden by the RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP
+uhdr via the recipe parameter system.  ["2.0,2.0,2.5,3.0"]
+
+=item LINEWIDTH = REAL (Given)
+
+The extent of the source spectral line measured in km/s.  This
+argument can be overridden by the RECPAR_BASELINE_LINEARITY_LINEWIDTH
+uhdr via the recipe parameter system.  [25.0]
+
+=item SCALELENGTH = INTEGER (Given)
+
+The smoothing scale length in pixels.  Features narrower than this are
+filtered out during the background-level determination.  It should be
+should be odd (if an even value is supplied, the next higher odd value
+will be used) and sufficiently large to remove the noise while not
+removing the low-frequency patterns in the spectra. The minimum
+allowed is 51.  This argument can be overridden by the
+RECPAR_BASELINE_LINEARITY_SCALELENGTH uhdr via the recipe parameter
+system.  [101]
+
+=item THRESH_CLIP = REAL (Given)
+
+The number of standard deviations at which to threshold the noise
+profile above the median level.  This argument can be overridden by
+the RECPAR_LOWFREQ_INTERFERENCE_THRESH_CLIP uhdr via the recipe
+parameter system.  [4.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS observations.
+
+=item *
+
+This primitive is suitable for spectral-line observations.
+
+=item *
+
+This primitive will not run if the LOWFREQ_INTERFERENCE uhdr in the current
+Frame object is defined and false.
+
+=item *
+
+The 85% trimming of the spectra is the same trim applied in the
+QA primitives.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+A cleaned version of the supplied time-series cube in which the noisy
+spectra are set to bad.  It has the suffix _lfimasked (for Low
+Frequency Interference).
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDBACK;
+KAPPA: CHPIX, COPYBAD, COLLAPSE, MANIC, MATHS, MFITTREND, NDFCOPY, PASTE, SETTYPE,
+       STATS, THRESH;
+SMURF: FIXSTEPS.
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2011-2012 Science & Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+use JCMT::ACSIS::Array;
+
+# Inquire whether or not  non-linear baseline filtering is required.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" ) ) ?
+            $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" )              :
+            1 );
+if ( ! $apply ) { goto RETURN }
+
+# Handle arguments.
+# =================
+
+my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
+my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
+my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", 25.0 );
+my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
+
+# Handle recipe parameter overrides.
+
+# Generate a comma-separated list if this has been turned into a stringified
+# ARRAY reference.
+$central_mask = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" ) ) ?
+                $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" )         :
+                $central_mask );
+
+$smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" ) ) ?
+                $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" )       :
+                $smooth_scale );
+
+$edge_clip = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP" ) ) ?
+             $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP" )              :
+             $edge_clip );
+if ( ref( $edge_clip ) eq 'ARRAY' ) { $edge_clip = join( ",", @{ $edge_clip } ) }
+
+$thresh_clip = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_THRESH_CLIP" ) ) ?
+             $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_THRESH_CLIP" )                :
+             $thresh_clip );
+
+# Convert list of standard-deviation clip levels to an array.
+my @clips = split( ',', $edge_clip );
+
+# Constrain parameters to allowed values.
+# ---------------------------------------
+
+$central_mask = max( 1.0, min( 100.0, $central_mask ) );
+$smooth_scale = max( 51, $smooth_scale );
+
+# Sigma clipping levels should not decrease. Do not set the initial
+# threshold too low lest we exclude acceptable but slightly deviant
+# spectra in an otherwise good set.
+my @clip_sigma = ();
+my $last = 2.0;
+foreach ( @clips ) {
+   push @clip_sigma, max( $last, $_ );
+}
+
+$edge_clip = "[" . join( ",", @clip_sigma ) . "]";
+
+# Specify output and temporary filenames.
+# =======================================
+my $params;
+my $osuffix = "_lfimasked";
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Set/get filenames.
+   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+   orac_say( "Determine spectra exhibiting transient low-frequency interference in $in." );
+   ( $in, my $nlprof ) = $Frm->inout( "nlpr", $i );
+
+   my $cubemask = new ORAC::TempFile( 0 );
+   my $temp1file = new ORAC::TempFile( 0 );
+   my $temp2file = new ORAC::TempFile( 0 );
+   my $temp3file = new ORAC::TempFile( 0 );
+   my $temp4file = new ORAC::TempFile( 0 );
+   my $temp5file = new ORAC::TempFile( 0 );
+   my $temp6file = new ORAC::TempFile( 0 );
+   my $temp7file = new ORAC::TempFile( 0 );
+#   my $temp8file = new ORAC::TempFile( 0 );
+   my $temp8file = $nlprof;
+   my $temp9file = new ORAC::TempFile( 0 );
+   my $temp10file = new ORAC::TempFile( 0 );
+   my $temp11file = new ORAC::TempFile( 0 );
+
+# We need the dimensions of the input file for later.
+   _GET_DIMENSIONS_ FILE=$in
+   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+   my $nel = $ubnd->[0] - $lbnd->[0] + 1;
+
+# Form arrays of bad detectors.
+# =============================
+
+# Retrieve the list of bad detectors from the calibration system ONLY
+# ignoring the ones set locally.  The reading of INDEXORMASTER is
+# done to setup the survey (survey_br).
+   $Cal->bad_receptors( "MASTER" );
+   my @baddets = $Cal->bad_receptors_list;
+   orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+# Still need to invoke the bad_receptors_list method although the
+# resulting array is not used.
+   $Cal->bad_receptors( "INDEXORMASTER" );
+   my @tmpdets = $Cal->bad_receptors_list;
+   orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
+
+# Create a mask NDF.
+# ==================
+#
+# As we shall be filling every receptor plane with a mask of any noisy
+# spectra, it is adequate to merely copy the input NDF.
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$cubemask" );
+
+# Find the interference.
+# ======================
+
+# The data thus appear noisy because of a typically 50-pixel frequency
+# sinusoid in the baseline.
+   my $spec_percent = "~85%";
+   if ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
+        $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) { $spec_percent = "" }
+
+# Apply threshold to exclude spikes in the spectra.
+   orac_say( "  Thresholding the spectra at +/- 20 to exclude spikes." );
+   $params = "in=$in($spec_percent,,) out=$temp1file thrlo=-20 newlo=bad thrhi=20 newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Mask out the central region to exclude narrow astronomical line, but
+# even that has wings.  Allow for variable spectral range by using a
+# velocity range.
+   orac_say( "  Masking the central $central_mask km/s to exclude the astronomical line." );
+   my $chpix_section = "~$central_mask,,";
+   my $params = "in=$temp1file out=$temp2file section='$chpix_section' newval=bad";
+   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+# Find the trends in the background.  This step prevents the rms from a
+# baseline fit being swamped by the noise.  The aim is to find whether
+# the linear fit is a good match to global shape of the baseline.  This aims to
+# identify ripples or turned-up ends of the spectra.
+   orac_say( "  Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
+   my $boxparam = "[$smooth_scale,1,1]";
+   $params = "in=$temp2file out=$temp3file box=$boxparam sub=false accept";
+   $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# Subtract linear baselines from smoothed spectrum for each detector.
+   orac_say( "  Fit linear baselines and subtract these from the trends." );
+   $params = "in=$temp3file out=$temp4file modifyin=false subtract auto";
+   $params .= " order=1 axis=spec method=single";
+   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+# Get average rms deviations for each receptor not in the bad_receptors list.
+# ---------------------------------------------------------------------------
+   my $array = new JCMT::ACSIS::Array( File => $in );
+
+# Form set of receptors that are not bad in the master list.
+   my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+   @receptors = sort @receptors;
+
+   foreach my $receptor ( @receptors ) {
+      orac_say( "  Receptor $receptor." );
+      my $pixel = $array->pixel( $receptor );
+
+# Form clean non-linearity profile.
+# ---------------------------------
+#
+# Find the rms `edginess' i.e. a positive measure of the deviation from flatness.
+# The normalisation is arbitrary so just approximate with the full spectral
+# dimension.
+      $params = "ia=$temp4file(,$pixel,) out=$temp5file exp='sqrt(IA*IA/$nel)'";
+      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Collapse the spectral axis using a clipped mean to form average
+# edginess for each spectrum for the current detector.
+      orac_say( "    Collapsing spectra to form average edge detection per spectrum." );
+      $params = "in=$temp5file out=$temp6file estimator=mean";
+      $params .= " axis=spec trim=f wlim=0.0 variance=false";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# There may be glitches or drift in the levels.  Correct for these
+# before thresholding. FIXSTEPS needs double-precision data.
+      orac_say( "    Correcting for glitches or drift in the edginess profile." );
+      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp6file type=_DOUBLE" );
+      $params = "in=$temp6file out=$temp7file";
+      $params .= " meanshift=no dcfitbox=50";
+      $Mon{'smurf_mon'}->obeyw( "fixsteps", "$params" );
+      my ( $ORAC_STATUS, $rejected ) = $Mon{'smurf_mon'}->get( "fixsteps", "nrejected" );
+
+# Check that FIXSTEPS has not rejected the receptor.  This seems to
+# happen extremely rarely when there are no genuine steps and too few
+# points in the profile.  In this case we can pass the original profile
+# directly to FINDBACK.
+      if ( $rejected > 0 ) {
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp6file out=$temp7file" );
+      }
+
+# Reset the data type.
+      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp7file type=_REAL" );
+
+# Need the median signal before continuum removal.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file order" );
+      ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+# Estimate and subtract the 'continuum' level.
+      $params = "in=$temp7file out=$temp8file$receptor box=51 sub accept";
+      $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# Identify anomalous spectra.
+# ---------------------------
+
+# Estimate the normal level, and standard deviation excluding anomalous spectra.
+# This assumes that most of the spectra are good and the drift is not
+# significant compared with the noise.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file$receptor clip=$edge_clip order" );
+      ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+      ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Threshold spectra whose mean rms edginess exceeds an outlier limit.
+# The median will give a reliable normal signal on which there are
+# spikes or broader mountains caused by the oscillating noise in the
+# time series for the detector.  In most cases there is no interference
+# noise, so protect against drift and signal variations in the timeseries
+# causing the dispersion; these should be small compared with the signal
+# being detected.
+      if ( $numgood > 0 ) {
+         my $threshold = $thresh_clip * $sigma;
+         orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.4f", $threshold ) );
+         $params = "in=$temp8file$receptor out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+         $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+         ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
+         ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
+         my $total = $eject + $kept;
+         if ( $eject == 1 ) {
+            orac_say( "      One spectrum removed out of $total." );
+         } elsif ( $eject > 0 ) {
+            orac_say( "      $eject spectra removed out of $total." );
+         } else {
+            orac_say( "      No spectra removed out of $total." );
+         }
+
+# Add plane for receptor into mask cube.
+# ======================================
+
+# Expand the thresholded image to the size of the current receptor's
+# plane in the initial cube.
+         orac_say( "   Expand the masked profile." );
+         $params = "in=$temp9file out=$temp10file axes=[0,2,3] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Paste the data to the mask file.
+         orac_say( "   Paste the masked data into the cube mask." );
+         my $params = "in=$cubemask p1=$temp10file out=$temp11file confine=false transp=false";
+         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp11file out=$cubemask" );
+      }
+   }
+
+# At this point $cubemask should have all the original receptors
+# checked for wobbly spectra and have bad values for those spectra.
+# Copy the bad spectra to the output image.
+   orac_say( "  Apply the mask of noisy spectra to the input time series to form $out." );
+   $params = "in=$in ref=$cubemask out=$out";
+   $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+
+# Update the Frm object.
+   $Frm->file( $i, $out );
+
+# Display if necessary.
+   $Display->display_data( $Frm ) if defined $Display;
+
+}
+
+# Tidy-up output.
+orac_print "\n";
+
+RETURN:
