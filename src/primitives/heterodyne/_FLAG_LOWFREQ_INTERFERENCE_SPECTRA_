@@ -23,7 +23,7 @@ It achieves this through the following steps:
      o  Averages the signal along the spectral axis to form a non-linearity
         profile through the time series.
      o  Corrects for drifts or steps in the profile.
-     o  Rejects spectra whose mean non-linearity exceeds the median level
+     o  Rejects spectra whose mean non-linearity exceeds the mean level
         a nominated number of clipped standard deviations (see Arguments
         EDGE_CLIP and THRESH_CLIP).
      o  Pastes bad values in the mask cube at the location of any rejected
@@ -68,7 +68,7 @@ system.  [101]
 =item THRESH_CLIP = REAL (Given)
 
 The number of standard deviations at which to threshold the noise
-profile above the median level.  This argument can be overridden by
+profile above the mean level.  This argument can be overridden by
 the RECPAR_LOWFREQ_INTERFERENCE_THRESH_CLIP uhdr via the recipe
 parameter system.  [4.0]
 
@@ -326,57 +326,49 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Collapse the spectral axis using a clipped mean to form average
-      $params = "in=$temp5file out=$temp6file estimator=mean";
 # non-linearity for each spectrum for the current detector.
       orac_say( "    Collapsing spectra to form average non-linearity per spectrum." );
+      $params = "in=$temp5file out=$temp8file estimator=mean";
       $params .= " axis=spec trim=f wlim=0.0 variance=false";
       $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-# There may be glitches or drift in the levels.  Correct for these
-# before thresholding. FIXSTEPS needs double-precision data.
-      orac_say( "    Correcting for glitches or drift in the edginess profile." );
-      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp6file type=_DOUBLE" );
-      $params = "in=$temp6file out=$temp7file";
-      $params .= " meanshift=no dcfitbox=50";
-      $Mon{'smurf_mon'}->obeyw( "fixsteps", "$params" );
-      my ( $ORAC_STATUS, $rejected ) = $Mon{'smurf_mon'}->get( "fixsteps", "nrejected" );
-
-# Check that FIXSTEPS has not rejected the receptor.  This seems to
-# happen extremely rarely when there are no genuine steps and too few
-# points in the profile.  In this case we can pass the original profile
-# directly to FINDBACK.
-      if ( $rejected > 0 ) {
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp6file out=$temp7file" );
-      }
-
-# Reset the data type.
-      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp7file type=_REAL" );
-
-# Estimate and subtract the 'continuum' level.
-      $params = "in=$temp7file out=$temp8file$receptor box=51 sub accept";
-      $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # Identify anomalous spectra.
 # ---------------------------
 
+# First greatly reduce the effect of noise.
+      $params = "in=$temp8file out=$temp7file box=25 sub=false accept";
+      $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
-# significant compared with the noise.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file$receptor clip=$edge_clip order" );
-      ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+# significant compared with the non-linearity.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file clip=$edge_clip order" );
+      my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
       ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# The distribution is skew to higher values.  We would like the mode
+# and width of the normal curve around that.  The mode is approximated by
+# the heavily clipped mean.  Now obtain the two-sigma level below
+# the mode without clipping.
+      $params = "ndf=$temp7file percentiles=2.23 order";
+      $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+      ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+      my $sigma = 0.5 * ( $mean - $perval );
 
 # Threshold spectra whose mean rms non-linearity exceeds an outlier limit.
 # The median will give a reliable normal signal on which there are
 # spikes or broader mountains caused by the oscillating noise in the
-# time series for the detector.  In most cases there is no interference
+# time series for the detector.  On the other hand the mean does give
+# a lower and better estimate in the presence of several blocks of
+# non-lineaer spectra.  In most cases there is no interference
 # noise, so protect against drift and signal variations in the timeseries
 # causing the dispersion; these should be small compared with the signal
 # being detected.
       if ( $numgood > 0 ) {
-         my $threshold = $thresh_clip * $sigma;
-         orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.4f", $threshold ) );
-         $params = "in=$temp8file$receptor out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+         my $threshold = $mean + $thresh_clip * $sigma;
+         orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
+         $params = "in=$temp7file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
          $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
          ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
          ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
