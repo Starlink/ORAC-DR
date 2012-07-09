@@ -56,6 +56,15 @@ uhdr via the recipe parameter system.  [25.0]
 Whether or not to mask bad detectors.  Masking is needed if a
 subsequent bad-baseline removal technique is employed.  [1]
 
+=item MINRMS = REAL (Given)
+
+The minimum rms deviation from linearity for a receptor to be flagged
+as bad.  It avoids rejection of good receptors where one or two are
+slighlty more uneven than most or just have some transient baseline
+issues.  This argument sets an absolute limit, not just rejection
+based upon an intercomparison.  Values between 0.05 and 0.2 are normal.
+Most good receptors will be in 0.02 to 0.05 range.  [0.1]
+
 =item SCALELENGTH = INTEGER (Given)
 
 The smoothing scale length in pixels.  Features narrower than this are
@@ -158,6 +167,7 @@ my $linear_clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "2.0,2.3,3.0" );
 my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 1 );
 my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", 25.0 );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
+my $min_rms = get_prim_arg( $_PRIM_ARGS_, "MINRMS", 0.1 );
 
 # Handle recipe parameter overrides.
 
@@ -175,6 +185,10 @@ $central_mask = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" ) )
 $smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" ) ) ?
                 $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" )       :
                 $smooth_scale );
+
+$min_rms = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS" ) ) ?
+             $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS" )       :
+             $min_rms );
 
 # Convert list of standard-deviation clip levels to an array.
 my @clips = split( ',', $linear_clip );
@@ -199,6 +213,7 @@ my $last = 2.0;
 foreach ( @clips ) {
    push @clip_sigma, max( $last, $_ );
 }
+
 
 # Specify output and temporary filenames.
 # =======================================
@@ -360,8 +375,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       }
 
 # Flag those detectors whose rms deviation from the linear trend exceeds
-# median plus the current sigma-clipping level.
-      my $threshold = $median + $clip_sigma[$i] * $sigma;
+# median plus the current sigma-clipping level.  This may cut too much
+# if all the baselines are excellent, but one is a little worse yet
+# otherwise fine.  Thus impose an absolute cutoff.
+      my $threshold = max( $min_rms, $median + $clip_sigma[$i] * $sigma );
       orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
       orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations." );
 
