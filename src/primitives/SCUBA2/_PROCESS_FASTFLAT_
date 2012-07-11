@@ -245,6 +245,7 @@ if (%fastflats) {
 # Step 3: store the flatfield info in the Frame uhdr for later
 # retrieval This will be necessary when the Frame contains a mixture
 # of fastflat and science data.
+my %qa_report_info;
 if (@flatinfo) {
   my %subarrays;
   foreach my $flatinfo (@flatinfo) {
@@ -261,11 +262,18 @@ if (@flatinfo) {
 	  $subarrays{$subarray}->{nbol} = 0;
 	}
       }
+      $qa_report_info{$subarray}->{NBOLO} = $subarrays{$subarray}->{nbol};
       $subarrays{$subarray}->{file} = $flats{$subarray}->{file};
     }
   }
   $Frm->uhdr("FLATS", \%subarrays);
 }
+
+# Perform QA analysis on the flatfield results (noise entries will
+# contain "failed" but that will be overridden by subsequent
+# noise calculations if necessary)
+$Frm->uhdr("QA_REPORT_INFO", \%qa_report_info);
+_QA_NOISE_ VERBOSE=0
 
 # Step 4: Now store the raw fastflats in the calibration system
 if (@rawfastflats) {
@@ -275,9 +283,15 @@ if (@rawfastflats) {
     my $Frmobj = shift;
     return unless ($Frmobj);
     my %rawfiles = $Frmobj->get_files_by_subarray;
+
     foreach my $subarray (sort keys %rawfiles) {
       $Frmobj->files( @{$rawfiles{$subarray}} );
       $Frmobj->hdr("SUBARRAY" => $subarray);
+      my %results = %{ $qa_report_info{$subarray} };
+      # Store results in the calibration system
+      $Frmobj->uhdr("NBOLO", $results{NBOLO});
+      $Frmobj->uhdr("QA_NBOLO", $results{QA_NBOLO});
+
       foreach my $i (1 .. $Frmobj->nfiles) {
 	$Cal->fastflatindex->add( $Frmobj->file($i), {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
 	$Cal->setupflatindex->add( $Frmobj->file($i), {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} ) if ($Frmobj->hdr("OBS_TYPE") =~ /setup/i);
