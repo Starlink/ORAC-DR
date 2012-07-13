@@ -869,7 +869,7 @@ maxmem, method, pixsize, spread, system.
 
 sub makemap_args {
   my $self = shift;
-  my @makemap_args = qw/ config crota maxmem params pixsize spread system /;
+  my @makemap_args = qw/ config crota maxmem params pixsize ref spread system /;
   return (wantarray) ? @makemap_args : \@makemap_args;
 }
 
