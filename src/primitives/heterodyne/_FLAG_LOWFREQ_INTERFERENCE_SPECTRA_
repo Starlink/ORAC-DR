@@ -48,11 +48,15 @@ deviations in the list should not decrease.  This argument
 can be overridden by the RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP
 uhdr via the recipe parameter system.  ["2.0,2.0,2.5,3.0"]
 
-=item LINEWIDTH = REAL (Given)
+=item LINEWIDTH = STRING (Given)
 
-The extent of the source spectral line measured in km/s.  This
-argument can be overridden by the RECPAR_BASELINE_LINEARITY_LINEWIDTH
-uhdr via the recipe parameter system.  [25.0]
+The extent of the source spectral line measured in km/s.  This may be
+given as either a velocity range, the bounds being separated by a
+colon; or as a single value being the width about zero.  For instance
+"-20:50" would excise the region -20 to +50 km/s, and "30" would
+exclude the -15 to +15 km/s range.  This argument can be overridden by
+the RECPAR_BASELINE_LINEARITY_LINEWIDTH uhdr via the recipe parameter
+system.  ["25.0"]
 
 =item SCALELENGTH = INTEGER (Given)
 
@@ -162,7 +166,7 @@ if ( ! $apply ) { goto RETURN }
 
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
-my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", 25.0 );
+my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "25.0" );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 
 # Handle recipe parameter overrides.
@@ -194,10 +198,18 @@ my @clips = split( ',', $edge_clip );
 
 # Ensure that a round number like the default of 25.0 km/s is not turned
 # into integer 25, which would exclude 25 pixels not 25.0 km/s.  Since
-# integer values are mostly likely, three decimal places in more than
-# sufficient.
-$central_mask = max( 1.0, min( 100.0, $central_mask ) );
-$central_mask = sprintf( "%.3f", $central_mask );
+# integer values are mostly likely, one decimal place is sufficient.
+my @cbounds = split( /:/, $central_mask );
+my @central_bounds;
+foreach ( @cbounds ) {
+  push @central_bounds, sprintf( "%.2f", $_ );
+}
+
+# A single value means use this width symmetric about zero.
+if ( scalar( @central_bounds ) == 1 ) {
+   $central_bounds[1] = 0.5 * $central_bounds[0];
+   $central_bounds[0] = - $central_bounds[1];
+}
 
 $smooth_scale = max( 51, $smooth_scale );
 
@@ -282,8 +294,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Mask out the central region to exclude narrow astronomical line, but
 # even that has wings.  Allow for variable spectral range by using a
 # velocity range.
-   orac_say( "  Masking the central $central_mask km/s to exclude the astronomical line." );
-   my $chpix_section = "~$central_mask,,";
+   orac_say( "  Masking the velocity range $central_bounds[0] to $central_bounds[1] km/s to exclude astronomical lines." );
+   my $chpix_section = "$central_bounds[0]:$central_bounds[1],,";
    my $params = "in=$temp1file out=$temp2file section='$chpix_section' newval=bad";
    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
