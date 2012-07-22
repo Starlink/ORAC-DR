@@ -49,10 +49,6 @@ This primitive is suitable for baselined time-series ACSIS cubes.
 The cube is collapsed along the time and frequency axes using the
 'sum' estimator.
 
-=item
-
-The output files are logged as group intermediates.
-
 =back
 
 =head1 OUTPUT DATA
@@ -61,13 +57,13 @@ The output files are logged as group intermediates.
 
 =item *
 
-The flat-fielded time-series cube with suffix _ff
+The flat-fielded time-series cube with suffix _ff.
 
 =back
 
 =head1 TASKS
 
-KAPPA: CDIV, COLLAPSE, DIV, MANIC, STATS.
+KAPPA: BLOCK, CDIV, COLLAPSE, DIV, MANIC, NDFTRACE, SETUNITS, STATS, THRESH.
 
 =head1 REQUIRED PERL MODULES
 
@@ -76,6 +72,7 @@ JCMT::ACSIS::Array.
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
@@ -88,25 +85,26 @@ my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
 
 my $isok = eval { require JCMT::ACSIS::Array; 1; };
-if( ! $isok ) {
+if ( ! $isok ) {
   orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
   orac_warn "Cannot remove flat-field.\n";
 } else {
 
   my @Objs;
-  if( $group == 0 ) {
+  if ( $group == 0 ) {
     push @Objs, $Frm;
-  } elsif( $group == 1 ) {
+  } elsif ( $group == 1 ) {
     push @Objs, $Grp;
-  } elsif( $group == 2 ) {
+  } elsif ( $group == 2 ) {
     @Objs = $Grp->members;
   }
 
   # Only do this if we're not doing a Group, or if we are doing a
   # Group and this Frame is the last member of the Group.
-  if( $group != 1 ||
-      ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
+  if ( $group != 1 ||
+       ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
+    orac_say "Detector gain correction";
     foreach my $Obj ( @Objs ) {
 
       foreach my $i ( 1 .. $Obj->nfiles ) {
@@ -116,6 +114,8 @@ if( ! $isok ) {
         my $temp2file = new ORAC::TempFile( 0 );
         my $temp3file = new ORAC::TempFile( 0 );
         my $temp4file = new ORAC::TempFile( 0 );
+        my $temp5file = new ORAC::TempFile( 0 );
+        my $temp6file = new ORAC::TempFile( 0 );
 
         my ( $in, $out ) = $Obj->inout( "_ff", $i );
 
@@ -131,33 +131,64 @@ if( ! $isok ) {
         _GET_DIMENSIONS_ FILE=$in
         my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
         my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
+        my $flbound = $_GET_DIMENSIONS_{FLBOUND};
+        my $fubound = $_GET_DIMENSIONS_{FUBOUND};
 
-        # Collapse along the time axis.
-        my $params = "in=$in out=$temp1file estimator=sum wlim=0.0 axis=3";
+        # Collapse along the time axis.  Use a clipped mean to exclude
+        # single spectra with strongly negative values.
+        my $params = "in=$in out=$temp1file estimator=cmean wlim=0.0 axis=3";
         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-        # Collapse along the velocity axis.
-        $params = "in=$temp1file out=$temp2file estimator=sum wlim=0.0 axis=1";
+        # Reduce the noise by smoothing and exclusion of the very noisy peripheries.
+        $params = "in=$temp1file(~85%,,) out=$temp2file box=[25,1] estimator=mean";
+        $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+        # Calculate clipped statistics on the array.
+        $params = "ndf=$temp2file clip=[2,2.0,2.5,3.0]";
+	$Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+        ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+        ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+        ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+        ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+        ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+
+        # Threshold to select the astronomical signal.  It is possible
+        # to use more sophisticated clump finding... but it is unclear
+        # whether this is justified given we assume that all receptors
+        # are receiving the same flux, which we know is incorrect.
+        my $clip = 3.0;
+        my $thresh = $mean + $clip * $sigma;
+        $params = "in=$temp2file out=$temp3file thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
+        $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+	$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file" );
+        ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+        ( $ORAC_STATUS, $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+        ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+        # Collapse along the velocity axis giving the mean emission.
+        $params = "in=$temp3file out=$temp4file estimator=mean wlim=0.0 axis=1";
         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
         # Normalize to the value in the reference receptor.
-        my $array = new JCMT::ACSIS::Array( File => $temp2file );
+        my $array = new JCMT::ACSIS::Array( File => $temp4file );
         my $pixel = $array->pixel( $ref );
-        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp2file($pixel)" );
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+        ( $ORAC_STATUS, my $nval ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file($pixel)" );
         ( $ORAC_STATUS, my $refvalue ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-        $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp2file out=$temp3file scalar=$refvalue" );
+        $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp4file out=$temp5file scalar=$refvalue" );
 
-        # Grow this back into a cube.
-        $params = "in=$temp3file out=$temp4file axes=[0,1,0] lbound=[";
+        # Grow this vector of receptor ratios into a cube.
+        $params = "in=$temp5file out=$temp6file axes=[0,1,0] lbound=[";
         $params .= join( ',', $lbound->[0], $lbound->[2] );
         $params .= "] ubound=[";
         $params .= join( ',', $ubound->[0], $ubound->[2] );
         $params .= "]";
         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-        # Divide this flat-field cube into the input cube, creating
-        # the output.
-        $params = "in1=$in in2=$temp4file out=$out";
+        # Divide this ratio cube into the input cube, creating the
+        # flat-fielded output.
+        $params = "in1=$in in2=$temp6file out=$out";
         $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
         # Set the units back to what they were.
@@ -169,6 +200,20 @@ if( ! $isok ) {
         # Request that the output file be removed upon completion of
         # group processing.
         $Grp->push_intermediates( $out );
+
+        # Report the receptor ratios.  It does seem a little clunky to
+        # have to call STATS for every element.  LOOK only outputs a
+        # single value to a parameter.
+        my %flat_ratio;
+        for ( my $i = 1; $i <= $nval; $i++ ) {
+           my $receptor = $array->receptor( $i );
+           $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file($i)" );
+           ( $ORAC_STATUS, my $ratio ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+           $flat_ratio{$receptor} = $ratio;
+        }
+         
+        my $type = "Flat field normalisation";
+        _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
 
         orac_say "$in to $out:";
         orac_say " Removed flat-field.";
