@@ -1,0 +1,199 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_SASSY_STATS_ - calculate statistics of SCUBA-2 SASSy images
+
+=head1 SYNOPSIS
+
+ _CALC_SASSY_STATS_
+
+ _CALC_SASSY_STATS_ GROUP=1
+
+ _CALC_SASSY_STATS_ GROUP=1 REGION=90 LOGFILE=0
+
+=head1 DESCRIPTION
+
+Calculate the noise, exposure time (per pixel) and NEFD properties of
+a given image. The results are written to the log file if desired.
+
+=head1 ARGUMENTS
+
+This primitive has the following arguments:
+
+=over 2
+
+=item B<GROUP>
+
+A flag tro indicate whether or not to use files in the Group
+object. Default is 0 (use the current Frame).
+
+=item B<LOGFILE>
+
+A flag to indicate whether or not to write a log file. Default is 1
+(yes).
+
+=item B<REGION>
+
+Size of the region in which to calculate the statistics in
+pixels. Default is 0 which will use the map size given in the FITS
+header or recipe parameters.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA:
+
+MATHS, NDFCOPY
+
+=item ORAC-DR PRIMITIVES:
+
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_
+
+=back
+
+=head1 OUTPUT FILES
+
+A log file called C<log.sassy> is created if one does not already
+exist. If this file does exist, then a new entry is added to it.
+
+=head1 NOTES
+
+Repeated calls on the same file will result in multiple entries in the
+log file.
+
+Several quantities are not defined for the Group coadd (and its
+matched-filtered version). The number of bolometers and therefore
+effective NEFD is 0, while the UT observation date and observaion
+number are printed as C<--->.
+
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Group or Frame file?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Only proceed for Group processing if the file exists; always proceed
+# for Frame objects
+my $proceed = 1;
+if ($group) {
+  $proceed = ($Grp->file_exists) ? 1 : 0;
+}
+
+if ($proceed) {
+  # Size of region to use for analysis - default to map size in FITS
+  # header
+  my $region = get_prim_arg($_PRIM_ARGS_, "REGION", 0);
+
+  # Write log file
+  my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
+  $uselog = $Frm->uhdr("RECPAR_LOGFILE")
+    if (defined $Frm->uhdr("RECPAR_LOGFILE"));
+
+  # Loop over each file in object - Frame objects will only have one
+  # file; Group objects will probably have two files (a group coadd
+  # and a matched-filtered version)
+  foreach my $infile ($Obj->files) {
+    orac_print "Analyzing $infile\n";
+
+    # If the region is not defined, then use the given map size
+    unless ($region) {
+      _GET_PIXEL_SCALE_ IMAGE=$infile VERBOSE=0
+      my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
+      my ($x, $y);
+      if (defined $Frm->uhdr("RECPAR_MAP_WIDTH") &&
+	  defined $Frm->uhdr("RECPAR_MAP_HEIGHT")) {
+	$x = $Frm->uhdr("RECPAR_MAP_WIDTH") / $pixscale;
+	$y = $Frm->uhdr("RECPAR_MAP_HEIGHT") / $pixscale;
+      } else {
+	$x = $Frm->hdr("MAP_WDTH") / $pixscale;
+	$y = $Frm->hdr("MAP_HGHT") / $pixscale;
+      }
+      $region = int(sqrt($x*$x + $y*$y));
+    }
+
+    # Get min/mean/median noise
+    _FIND_IMAGE_STATISTICS_ IMAGE=$infile COMP=ERR REGION=$region VERBOSE=0
+    my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+    my $mean = $results->{MEAN};
+    my $median = $results->{MEDIAN};
+    my $min = $results->{MIN};
+
+    # Median exposure time in image
+    my $exptimedata = $infile . ".more.smurf.exp_time";
+    _FIND_IMAGE_STATISTICS_ IMAGE=$exptimedata REGION=$region VERBOSE=0
+    $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+    my $exp_time = $results->{MEDIAN};
+
+    # Median NEFD
+    my $nefdfile = ORAC::TempFile->new();
+    my $nefdimage = $nefdfile->file;
+    my $texp = ORAC::TempFile->new();
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$exptimedata out=$texp trim trimwcs");
+    my $var = ORAC::TempFile->new();
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$infile comp=var out=$var trim trimwcs");
+    my $exp = "SQRT(IA*IB)";
+    my $args = "exp=$exp IA=$var IB=$texp out=$nefdimage";
+    $Mon{kappa_mon}->obeyw("maths","$args");
+    _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage REGION=$region VERBOSE=0
+      $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+    my $nefd = $results->{MEDIAN};
+    my $nbol_nefd = (defined $Obj->hdr("NBOLOEFF")) ? $Obj->hdr("NBOLOEFF") : 0;
+    my $effnefd = ($nbol_nefd) ? $nefd / sqrt($nbol_nefd) : 0;
+
+    # Store results for this file
+    my %stats = ( file => $infile,
+		  median => $median,
+		  mean => $mean,
+		  min => $min,
+		  exp_time => $exp_time,
+		  nefd => $nefd,
+		  effnefd => $effnefd,
+		  nbol => $nbol_nefd
+		);
+
+    if ( $uselog ) {
+      my @params = ("file", "date", "obsnum", "median", "mean", "min",
+		    "exp_time", "nefd", "effnefd", "nbol");
+      use Data::Dumper;
+      print Dumper(\%stats);
+      my $date = ($group) ? "---" : $Obj->hdr("UTDATE");
+      my $obsnum = ($group) ? "---" : $Obj->hdr("OBSNUM");
+      $stats{date} = $date;
+      $stats{obsnum} = $obsnum;
+      my @entries = map { $stats{$_} } @params;
+
+      _ADD_LOG_ENTRY_ LOGFILE=sassy ENTRIES=\@entries PARAMS=\@params PARLIST=NONE
+    }
+  }
+}
