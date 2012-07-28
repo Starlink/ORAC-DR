@@ -14,14 +14,14 @@
 \newcommand{\stardocinitials}  {SUN}
 \newcommand{\stardocsource}    {sun\stardocnumber}
 \newcommand{\stardoccopyright}
-{Copyright \copyright\ 2010 University of British Columbia and the Science \& Technology Facilities Council}
+{Copyright \copyright\ 2012 University of British Columbia and the Science \& Technology Facilities Council}
 
 % Variable part - replace [xxx] as appropriate.
 \newcommand{\stardocnumber}    {264.0}
 \newcommand{\stardocauthors}   {Andrew G. Gibb \& Tim Jenness}
-\newcommand{\stardocdate}      {20 December 2010}
+\newcommand{\stardocdate}      {27 July 2012}
 \newcommand{\stardoctitle}     {ORAC-DR --- SCUBA-2 Pipeline Data Reduction}
-\newcommand{\stardocversion}   {Version 1.0.0}
+\newcommand{\stardocversion}   {Version 1.1.0}
 \newcommand{\stardocmanual}    {User's Guide}
 \newcommand{\stardocabstract}  {
 
@@ -47,6 +47,8 @@
 %  History:
 %     2010-10-26 (AGG):
 %        Initial version
+%     2012-07-25 (AGG):
+%        Updates for Kapuahi
 %     {Add further history here}
 %
 % -
@@ -761,25 +763,21 @@ designed to run in real time at the JCMT. Most users will only need to
 run the third form, known as the science pipeline.
 
 \begin{itemize}
-\item The quick-look (QL) pipeline is designed to process data and
-  create images as quickly as possible, taking whatever short cuts are
-  necessary to produce an image before the next data file is written
-  to disk.
+\item The quick-look (QL) pipeline is primarily designed to perform
+  quality-assurance analysis of the incoming data for real-time
+  assessment of the instrument performance. It is also responsible for
+  processing pointing and focus data.
 
 \item The summit pipeline runs in parallel with the QL pipeline
-  (though on a different machine) and takes a more conservative
-  approach. Processing is delayed until sufficient data exist to
-  produce a higher quality image. In practice this happens when either
-  a certain fraction of the observation is complete (the default is
-  90\%), or the scan pattern has been completed once, whichever occurs
-  first.
+  (though on a different machine) and is the primary image-processing
+  pipeline. Processing is delayed until sufficient data exist to
+  produce a higher quality image. In practice this happens after a
+  certain time has elapsed since an image was last made.
 
 \item The science pipeline has access to all the data observed for a
   given project and adopts a best-possible reduction approach. Images
   are made for each complete observation which are combined to create
-  the final image. (Note, however, that data from different nights
-  will be processed separately and must be combined after the pipeline
-  has finished.)
+  the final image.
 \end{itemize}
 
 \subsection{Requirements for running the SCUBA-2 pipeline}
@@ -808,6 +806,7 @@ The pipeline uses the following Starlink applications:
 \item \KAPPA
 \item \FLUXES
 \item \CCDPACK
+\item \CUPID
 \end{itemize}
 
 \subsection{Important environment variables}
@@ -816,27 +815,29 @@ The pipeline uses a number of environment variables to determine where
 data should be read from and written to. Some are set automatically
 when the pipeline is initialized, but they can be overridden manually
 and, with the \verb+-honour+ flag may be left unchanged between
-successive runs of the pipeline.
+successive runs of the pipeline. The variables that must be defined in
+order for the pipelne to run are denoted as `Mandatory' in the list
+below.
 
 \begin{itemize}
 
-\item \verb+ORAC_DATA_ROOT+: root location for data. At the JCMT,
-  this is \verb+/jcmtdata/raw/scuba2+. If not defined, the current
-  directory is assumed.
+\item \verb+STARLINK_DIR+: location of the user's Starlink
+  installation. [Mandatory]
 
 \item \verb+ORAC_DATA_IN+: the location where data are read from. If
   running with \verb+-loop flag+, this is the location of the flag
-  files, rather than the data files.
+  files, rather than the data files. [Mandatory]
 
 \item \verb+ORAC_DATA_OUT+: location where pipeline data products are
   written. Also used as a location for user-specified configuration
-  files for \task{makemap}.
+  files for \task{makemap}. [Mandatory]
+
+\item \verb+ORAC_DATA_ROOT+: root location for data. At the JCMT,
+  this is \verb+/jcmtdata/raw/scuba2+. If not defined, the current
+  directory is assumed. [Optional]
 
 \item \verb+MAKEMAP_CONFIG_DIR+: a user-specified location for
-  \task{makemap} configuration files.
-
-\item \verb+STARLINK_DIR+: location of the user's Starlink
-  installation.
+  \task{makemap} configuration files. [Optional]
 
 \end{itemize}
 
@@ -895,7 +896,8 @@ The QL and summit pipeline must be run under \verb+tcsh+.
 \subsection{Running the QL pipeline}
 
 The QL pipeline is started with the following commands (substitute 850
-for 450 for the short wave pipeline):
+for 450 for the short wave pipeline in this and the summit pipeline
+examples):
 \begin{myquote}
 \begin{verbatim}
 % oracdr_scuba2_850_ql
@@ -904,7 +906,11 @@ for 450 for the short wave pipeline):
 \end{myquote}
 The QL pipeline is fed data via DRAMA parameters and must be told the
 names of the tasks to expect data from, as described
-above. QL-specific recipes will be used if present.
+above. QL-specific recipes will be used if present. A stripchart
+program, which plots a number of quantities derived by the QL pipeline
+as a function of time, is made available once the QL pipeline has been
+initialized. Type \verb+xstripchart+ to run. (Note that the stripchart
+is a separate task and is not part of the pipeline itself.)
 
 \subsection{Running the summit pipeline}
 
@@ -945,20 +951,24 @@ to the output directory.
 If the data for your project have been downloaded from CADC and placed
 in a single directory, the easiest procedure is to create a text file
 containing the name of each of these raw files. That file should
-contain either the full path to each file or relative to
-\verb+ORAC_DATA_IN+. The data can be processed with the commands:
+contain either the full path to each file or relative to the current
+directory (or the directory defined by \verb+ORAC_DATA_IN+). The data
+can be processed with the commands:
 \begin{myquote}
 \begin{verbatim}
-% oracdr_scuba2_XXX YYYYMMDD
+% oracdr_scuba2_XXX -cwd
 % oracdr -loop file -files <list_of_files>
 \end{verbatim}
 \end{myquote}
-where \verb+XXX+ is the wavelength (450 or 850) and \verb+YYYYMMDD+ is
-the UT observation date in that form (e.g.\ 20100301). If the date is
-omitted, the current date is assumed. The initialization command only
-needs to be run once per UT date, and may be given the \verb+-honour+
-flag to use existing definitions of the relevant environment
-variables.
+where \verb+XXX+ is the wavelength (450 or 850). An optional UT
+observation date in the form \verb+YYYYMMDD+ may be given (e.g.\
+20100301). If the date is omitted, the current date is assumed -
+however, the file naming convention uses the date the data were
+taken. The initialization command only needs to be run once per UT
+date, and may be given the \verb+-honour+ flag to use existing
+definitions of the relevant environment variables. Alternatively, the
+\verb+-cwd+ flag may be given to force the pipeline to use the current
+working directory for all input and output.
 
 Note that there is no need to uncompress the data files prior to
 running the pipeline: \oracdr\ can accept files compressed with
@@ -994,8 +1004,8 @@ viewer or web browser.
 
 If no calibration observations are available, the pipeline will apply
 standard flux conversion factors (FCFs) to calibrate the images in
-mJy\,beam$^{-1}$. Currently these are 500000 mJy\,beam$^{-1}$ at
-850\,$\mu$m and 400000 at 450\,$\mu$m.
+mJy\,beam$^{-1}$. Currently these are 531000 mJy\,beam$^{-1}$ at
+850\,$\mu$m and 491000 at 450\,$\mu$m.
 
 \subsection{Customizing the map-making}
 
@@ -1026,22 +1036,31 @@ variables \verb+MAKEMAP_CONFIG_DIR+, \verb+ORAC_DATA_OUT+, or
 \verb+ORAC_DATA_CAL+ or in \verb+$STARLINK_DIR/share/smurf+. Each
 directory is searched in turn and the first match is used.
 
+Note that if running a recipe other than REDUCE\_SCAN (such as one of
+the dedicated JLS recipes) that recipe name should be placed in square
+brackets instead.
 
-\subsection{Running the science pipeline at JAC}
+\subsection{Running the science pipeline at JAC/JCMT}
 
 The raw data are stored at JAC in the same way as at the summit. (It
 is also possible to do this yourself at your home institution but in
 general will not be worth the effort: use the example above instead.)
-However, you should define \verb+ORAC_DATA_OUT+ to be a suitable
-location where you have write access.
+The machine \verb+sc2dr5+ is available at the summit for general user
+data processing.
 
-\oracdr\ should be run with the \texttt{-loop flag} option to indicate
-that the pipeline should examine the contents of flag files (which end
-in \verb+.ok+). The flag files contain the path to the files to be
-processed, and have a fixed naming convention so the pipeline can
-recognize them. Use the \texttt{-list} option to specify the
-observation numbers to be processed (otherwise the pipeline will begin
-at observation 1).
+If processing data from a single night, then \oracdr\ can be run with
+the \texttt{-loop flag} option to indicate that the pipeline should
+examine the contents of flag files (which end in \verb+.ok+). The flag
+files contain the path to the files to be processed, and have a fixed
+naming convention so the pipeline can recognize them. Use the
+\texttt{-list} option to specify the observation numbers to be
+processed (otherwise the pipeline will begin at observation 1). The
+command \verb+scuba2_index+ will produce a summary of the available
+data.
+
+If processing data from multiple nights, create a text file with the
+names of the relevant data files, as for running at your home
+institution above, and follow the same procedure.
 
 \subsection{Processing examples\label{sse:examples}}
 
@@ -1072,48 +1091,100 @@ To process the files from a list of observations (e.g. 21, 22, 28, 29 and
 Note the use of a colon to specify a contiguous range of observation
 numbers.
 
+Two additional options are useful when running on a remote machine or
+when an X display is not available:
+\begin{trivlist}
+\item Include the flag \verb+-log sf+ to print the pipeline output to
+  a terminal rather than opening a separate window;
+\item Include the flag \verb+-nodisplay+ to disable the display of
+  pipeline images.
+\end{trivlist}
 
-\section{\xlabel{details}Detailed description of the SCUBA-2 pipeline\label{se:details}}
+\section{\xlabel{overview}Overview of the SCUBA-2 pipeline\label{se:overview}}
 
 \subsection{Quicklook (QL) pipeline}
 
-Each new file on disk is processed in turn using the iterative map
-maker with a configuration file optimized for short observations. If
-the source is a known calibrator, then an FCF is derived. The data are
-calibrated in mJy\,beam$^{-1}$ using default FCFs. This image is
-displayed using \GAIA, showing in window 1, and then combined with the
-current coadd image. The noise is determined for the coadd image and
-stored in a log file. The coadd image is displayed in another
-\GAIA\ window (2), and its error component (noise) in another (3). Any
+The QL pipeline uses a task called \verb+qlgather+ to monitor the
+DRAMA processes and write out a flag file with the names of the files
+to process. The pipeline reads that flag file and processes each of
+the named files. \verb+qlgather+ collates data with the same subscan
+number. If new data are detected before all the expected files for
+the current subscan are in place, the new data take precedence and
+processing of the current subscan may be skipped.
+
+Fastramp flatfields taken as part of each observation are processed
+and stored in the calibration system. The responsivity image for all
+four subarrays (along with the previous and percentage-change images)
+are displayed in a Kapview window.
+
+Pointing and focus data are processed using the iterative map maker
+with a configuration file optimized for short
+observations. Corresponding fastramp flatfields are obtained from the
+calibration system. For pointing observations an FCF is derived if the
+source is a known calibrator. The image is displayed using \GAIA,
+showing in window 1, and then combined with the current coadd image
+(if one exists). The coadd image is displayed in another \GAIA\ window
+(2), and its error component (noise) in another (3). For focus
+observations, the data for each SMU position is processed separately
+and combined into a three-dimensional data cube. The name of the
+pointing coadd or focus cube is written to a flag file
+(\verb+.sYYYYMMDD_MMMMM.ok+, where \verb+MMMMM+ is the current
+observation number) for further analysis by the telescope
+POINTING\_FOCUS task. The pipeline makes its own estimates of the
+pointing and focus solution, which are written to log files. Any
 temporary files created during this processing are deleted, keeping
-only files with a suffix \verb+_reduced+.
+only files with a suffix \verb+_reduced+ or \verb+_foc+ for pointing
+and focus respectively.
+
+Science data are processed as noise observations. The noise between 2
+and 10 Hz is calculated along with the noise equivalent power (NEP)
+and the effective NEP (NEP/$\sqrt(N_{\rm bol})$). These values undergo
+quality assurance checks to ascertain whether or not the instrument is
+still operating within specified limits. The focal-plane noise
+distribution is displayed in a Kapview window.
+
+Data from other observing modes are processed as per their own recipes.
 
 \subsection{Summit pipeline}
 
-As each file is picked up by the pipeline, it checks to see if the
-scan pattern has been completed at least once since the beginning of
-the observation (or since the last image was made) or if the
-percentage completion parameter exceeds 90\%. If either of these
-criteria are met, a new image is created using all the data which has
-not previously been processed. If not, the raw data are flatfielded.
+The summit pipeline is the main image-making pipeline running at the
+telescope. It will use all available data for processing (unlike the
+QL which will skip data to deal with the latest files), and as such
+may fall behind for several subscans. However, the processing is
+structured such that the processing for a given observation should be
+complete before a new observation begins.
 
-Thereafter, the summit pipeline follows the same procedure as the QL
-until the final step with one important exception. The images for a
-given source continue to be coadded. If a new image was not created
-during the latest pass through the recipe then all flatfielded data
-files needed to create a map are left on disk (suffix
-\verb+_ff+). However, these files will be deleted once a new image is
-made.
+Pointing and focus observations (along with setups, noise and skydips)
+are processed in a similar manner to the QL, though no data are
+skipped.
+
+The pipeline checks for the presence of flag files which are updated
+with the names of new data as it they are written to disk. As each
+file is picked up by the pipeline, it checks to see how much time has
+elapsed since the last map was made. If the time exceeds a threshold
+(typically about one-and-a-half to two minutes), then a new map is
+made using all of the data taken since the previous map. If not, the
+raw data are flatfielded and left on disk (suffix \verb+_ff+). These
+files will be deleted once a new image is made.
+
+The new image is combined with the existing coadd (if
+appropriate). Note that the the summit pipeline coadds images for a
+given source across multiple observations so fainter features will be
+revealed as the integration time increases. If a new image was not
+created during the latest pass through the recipe then all flatfielded
+data files needed to create a map are left on disk
 
 \subsection{Science pipeline}
 
 The science pipeline examines all the data files given to it and works
-out which files are related and should be processed together. Each
-observation is still processed separately to produce an image, which
-is calibrated in mJy\,beam$^{-1}$. All the images for a given source
-are combined into a single coadd using variance weighting. If the
-source is a known calibrator then the images are checked for offsets
-and, if necessary, shifted to align with the standard position.
+out which files are related and should be processed together
+(``batch'' mode). Each observation is still processed separately to
+produce an image, which is calibrated in mJy\,beam$^{-1}$ (unless
+otherwise specified by the recipe). All the images for a given source
+are combined into a single coadd using inverse-variance weighting. If
+the source is a known calibrator then the images are checked for
+offsets and, if necessary, shifted to align with the standard
+position.
 
 At the end of processing, all temporary files are deleted: the only
 data files left on disk will have the suffix \verb+_reduced+.
@@ -1124,10 +1195,54 @@ type. These are bright or faint compact (such as planets, T-Tauri
 stars or extragalactic blank fields respectively) and extended (such
 as Galactic star-forming regions). Examples of these steps include
 applying a matched-filter to enhance point-source detectability or
-running a clunp-finding algorithm.
+running a clump-finding algorithm.
 
-Furthermore it is anticipated that the JCMT Legacy Surveys will have
-optimized processing recipes.
+\section{\xlabel{jlsrecipes}Processing JCMT Legacy Survey data\label{se:jlsrec}}
+
+Currently, two of the JCMT Legacy Surveys have recipes optimized for
+the goals of the surveys. Support for the others will be added in as
+timely manner as possible in response to survey input. \picard\ recipes
+also exist which replicate the steps performed on the processed data.
+
+\subsection{Cosmology Legacy Survey (CLS)}
+
+The CLS recipe employs a ``jack-knife'' approach using independent
+halves of the data in order to estimate and remove residual noise on
+large spatial scales.
+
+\begin{itemize}
+\item Maps are made with a modified blank-field config file and
+  coadded into a single map.
+\item An artificial gaussian source is inserted into the data and the
+  maps are remade (and coadded to make a PSF map).
+\item The signal-only maps are divided into two groups that are
+  coadded separately and subtracted to form a jack-knife map.
+\item The central portion of the jack-knife map is used to estimate
+  the spatial power spectrum which is applied to the signal coadd to
+  remove residual low-spatial frequency noise (``whitening'').
+\item A matched filter is applied to highlight compact sources using a
+  whitened version of the PSF map as the input PSF. A signal-to-noise
+  ratio image is also calculated.
+\end{itemize}
+
+Currently, this recipe works best on single scanned fields (i.e.\ not
+a mosaic of multiple fields).
+
+\subsection{SCUBA-2 ``All-Sky'' Survey (SASSy)}
+
+Processing of SASSy data is focussed on detecting compact sources with
+the aim of following up previously-unknown or interesting-looking
+detections with more sensitive observations to probe the detailed
+structure.
+
+\begin{itemize}
+\item Maps are made with a slightly-modified blank-field config file
+  and coadded.
+\item A matched filter is applied to highlight compact sources (using
+  the default gaussian PSF).
+\item A peak-detection task is run to identify 5-$\sigma$ peaks, which
+  are written to a catalogue file.
+\end{itemize}
 
 \section{\xlabel{nonscience}Processing non-science data\label{se:nonsci}}
 
@@ -1158,26 +1273,28 @@ present in the raw data files). This information is also written to a
 log file called \verb+log.flatfield+.
 
 The new solution is also shown and compared with the previous one
-graphically. Figure \ref{fig:flatfield} is an example of the display
-for one subarray (s8d). The results for each subarray are displayed in
-a separate window. The responsivities for the new and existing
-solutions are shown as images side-by-side on the same scale. In
-addition a percentage-change image is shown below (scaled between
-$\pm10$\,\%), as well as histograms of the new and existing
+graphically. Figure \ref{fig:flatfield} is an example of the
+display. The results for each subarray are combined into a focal-plane
+mosaic and shown alongside the mosaic for the current
+solution. Histograms of the responsivities for the proposed and
+current solutions are shown as images side-by-side on the same
+scale. In addition a percentage-change image is shown below (scaled
+between $\pm10$\,\%), as well as histograms of the new and existing
 responsities (again on the same scale).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{sun264_flatfield.eps}
-\caption{Example display from a FLATFIELD observation. The top left
-  panel is the responsivity map for this observation (containing the
-  proposed new solution), the top right panel shows the current
-  responsivity solution (i.e\ currently in use) for comparison. The
-  bottom left panels are responsivity histograms for this observation
-  and the current solution (PROPOSED and CURRENT respectively). The
-  bottom right panel shows the percentage change in the responsivities
-  between this observation and the current solution in use, scaled
-  between $\pm10$\,\%.\label{fig:flatfield}}
+\caption{Example display from a FLATFIELD observation or FASTFLAT
+  sequence. The top left panel is the responsivity map for this
+  observation (containing the proposed new solution), the top right
+  panel shows the current responsivity solution (i.e\ currently in
+  use) for comparison. The bottom left panels are responsivity
+  histograms for this observation and the current solution (PROPOSED
+  and CURRENT respectively). The bottom right panel shows the
+  percentage change in the responsivities between this observation and
+  the current solution in use, scaled between
+  $\pm10$\,\%.\label{fig:flatfield}}
 \end{figure}
 
 Once complete, the pipeline writes a flag file in
@@ -1190,15 +1307,17 @@ identify the new flatfields to use in subsequent observations.
 
 \subsubsection{Fast-ramps}
 
-The fast-ramp flatfields taken as part of on-sky observing are
-included with the science data and processed as part of map-making,
-but may be processed separately using the \task{REDUCE\_FASTFLAT}
-recipe to assess how much the responsivities change during an
-observation. The results are calculated and displayed as above, but in
-this case the second fast-ramp flatfield is compared with the first,
-and not with the internal flatfield solution.
+The fast-ramp flatfields (FASTFLAT) taken as part of on-sky observing
+are included with the science data and processed as part of
+map-making, but may be processed separately using the
+\task{REDUCE\_FASTFLAT} recipe to assess how much the responsivities
+change during an observation. The results are calculated and displayed
+as above, but in this case the second fast-ramp flatfield is compared
+with the first, and not with the internal flatfield solution.
 
-Fast-ramp flatfields are also processed separately in the QL pipeline.
+Fast-ramp flatfields are also processed separately in the QL and
+summit pipelines and picked up as necessary for map-making or noise
+calculations.
 
 \subsection{NOISE}
 
@@ -1219,23 +1338,24 @@ number of bolometers, is written to the screen. These results are also
 written to a log file called \verb+log.bolonoise+. The NEFD results
 are written to a log file called \verb+log.nefd+.
 
-The QL and summit pipelines process each file as it is written to
-disk. Otherwise all of the data are passed to \task{calcnoise}.
+Focal-plane mosaics of the noise, the percentage change in the noise
+since the last measurement and the NEP are displayed in a Kapview
+window along with a histogram of the noise values (see
+Fig.~\ref{fig:noise}).
 
-The power spectra for each subarray are displayed in a single Kapview
-window; the noise results for each subarray are displayed in separate
-Kapview windows (see Figure \ref{fig:noise}).
+The QL and summit pipelines process each file as it is written to
+disk. Otherwise all of the data (for a given subarray) are passed to
+\task{calcnoise}.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{sun264_noise.eps}
-\caption{Example display from a NOISE observation. The left-hand panel
-  displays the noise for the current subarray (s8d). Bolometers which
-  were flagged as bad are shown in grey. The colour scale is clipped
-  at a value of four times the median noise (white pixels). The
-  right-hand panel shows a histogram of noise values. The $x$-axis is
-  truncated at the same limit as the upper limit to the colour scale
-  in the left panel.\label{fig:noise}}
+\caption{Example display from a NOISE observation. The top-left panel
+  displays the noise for the current data, while the top-right panel
+  shows the percentage change since the previous noise
+  measurement. The bottom-left panel shows a histogram of noise
+  values, while the bottom-right shows the NEP for the current
+  data.\label{fig:noise}}
 \end{figure}
 
 \subsection{POINTING}
@@ -1318,6 +1438,17 @@ all other sources.
 
 The same recipe is used for all forms of the pipeline. The output cube
 has the suffix \verb+_foc+.
+
+\subsection{SETUP}
+
+A SETUP observation consists of a fast-ramp flatfield (FASTFLAT)
+measurement followed by a NOISE, both taken with the shutter
+closed. The recipe processes each separately as described for the
+respective observation types above. The results of processing each
+type of data are displayed in separate Kapview windows. The pipeline
+writes a flag file at the end of the observation with the names of the
+files containing the names of the flatfield solutions and noise
+calculations for the telescope software to read.
 
 \subsection{SKYDIP}
 
@@ -1611,6 +1742,7 @@ As with the mosaicking recipe, this recipe knows about and takes care
 of applying the same shift to the \verb+EXP_TIME+ and \verb+WEIGHTS+
 components, so the combined results are accurate.
 
+
 \newpage
 \appendix
 \section{\xlabel{ap_list}Alphabetical list of SCUBA-2 recipes\label{ap:list}}
@@ -1625,6 +1757,8 @@ components, so the combined results are accurate.
   Process NEP measurements made in engineering mode}
 \menuitem{ENG\_NEP\_QL}{
   QL processing NEP measurements made in engineering mode}
+\menuitem{REDUCE\_CLS}{
+  Process data taken as part of the Cosmology Legacy Survey}
 \menuitem{REDUCE\_DARK}{
   Process dark frames}
 \menuitem{REDUCE\_DREAMSTARE}{
@@ -1637,10 +1771,16 @@ components, so the combined results are accurate.
   Process flatfield measurements}
 \menuitem{REDUCE\_FOCUS}{
   Recipe for deriving focus information}
+\menuitem{REDUCE\_FOCUS\_QL}{
+  process focus observations in the quick-look pipeline}
+\menuitem{REDUCE\_FOCUS\_SUMMIT}{
+  derive focus information in the summit pipeline}
 \menuitem{REDUCE\_FTS\_SCAN}{
   Recipe for processing FTS-2 SCAN data}
 \menuitem{REDUCE\_NOISE}{
   Process NOISE observations}
+\menuitem{REDUCE\_NOISE\_PHOTON}{
+  determine photon noise contribution to total noise}
 \menuitem{REDUCE\_NOISE\_QL}{
   QL processing NOISE observations}
 \menuitem{REDUCE\_NOISE\_SUMMIT}{
@@ -1649,6 +1789,10 @@ components, so the combined results are accurate.
   Process POINTING observations}
 \menuitem{REDUCE\_POINTING\_QL}{
   QL processing of pointing observations}
+\menuitem{REDUCE\_POINTING\_SUMMIT}{
+  Summit processing of pointing observations}
+\menuitem{REDUCE\_SASSY}{
+  Process data for the SASSy project}
 \menuitem{REDUCE\_SCAN}{
   Process SCAN-mode data}
 \menuitem{REDUCE\_SCAN\_EXTENDED\_SOURCES}{
@@ -1661,8 +1805,18 @@ components, so the combined results are accurate.
   QL process SCAN data}
 \menuitem{REDUCE\_SCAN\_SUMMIT}{
   Summit recipe for processing SCAN data}
+\menuitem{REDUCE\_SETUP}{
+  process data from a setup observation}
+\menuitem{REDUCE\_SETUP\_QL}{
+  process data from a setup observation in the QL pipeline}
+\menuitem{REDUCE\_SETUP\_SUMMIT}{
+  process data from a setup observation in the summit pipeline}
 \menuitem{REDUCE\_SKYDIP}{
   Process SKYDIP observations}
+\menuitem{REDUCE\_SKYDIP\_QL}{
+  Process SKYDIP observations with the quick-look pipeline}
+\menuitem{REDUCE\_SKYDIP\_SUMMIT}{
+  Process SKYDIP observations with the summit pipeline}
 \begin{htmlonly}
 \end{description}
 \end{htmlonly}
@@ -1681,6 +1835,10 @@ follows.
 }
 
 \begin{description}
+\classitem{REDUCE\_CLS}
+Process data taken as part of the Cosmology Legacy Survey
+\classitem{REDUCE\_SASSY}
+Process data for the SASSy project
 \classitem{REDUCE\_SCAN}
 Process SCAN-mode data
 \classitem{REDUCE\_SCAN\_EXTENDED\_SOURCES}
@@ -1727,6 +1885,8 @@ Recipe for processing FTS-2 SCAN data
 Process POINTING observations
 \classitem{REDUCE\_POINTING\_QL}
 QL processing of pointing observations
+\classitem{REDUCE\_POINTING\_SUMMIT}
+Summit processing of pointing observations
 \end{description}
 
 {\large
@@ -1737,6 +1897,10 @@ QL processing of pointing observations
 \begin{description}
 \classitem{REDUCE\_FOCUS}
 Recipe for deriving focus information
+\classitem{REDUCE\_FOCUS\_QL}
+process focus observations in the quick-look pipeline
+\classitem{REDUCE\_FOCUS\_SUMMIT}
+derive focus information in the summit pipeline
 \end{description}
 
 {\large
@@ -1749,6 +1913,8 @@ Recipe for deriving focus information
 Process NEP measurements made in engineering mode
 \classitem{REDUCE\_NOISE}
 Process NOISE observations
+\classitem{REDUCE\_NOISE\_PHOTON}
+determine photon noise contribution to total noise
 \classitem{REDUCE\_NOISE\_QL}
 QL processing NOISE observations
 \classitem{REDUCE\_SKYDIP}
@@ -1767,6 +1933,19 @@ Process fast-ramp flatfield data
 Process flatfield measurements
 \end{description}
 
+{\large
+\begin{center}
+{\bf Setup observations}
+\end{center}
+}
+\begin{description}
+\classitem{REDUCE\_SETUP}
+process data from a setup observation
+\classitem{REDUCE\_SETUP\_QL}
+process data from a setup observation in the QL pipeline
+\classitem{REDUCE\_SETUP\_SUMMIT}
+process data from a setup observation in the summit pipeline
+\end{description}
 
 {\large
 \begin{center}
@@ -1776,12 +1955,16 @@ Process flatfield measurements
 \begin{description}
 \classitem{REDUCE\_DREAMSTARE\_QL}
 QL processing DREAM/STARE images
+\classitem{REDUCE\_FOCUS\_QL}
+process focus observations in the quick-look pipeline
 \classitem{REDUCE\_NOISE\_QL}
 QL processing NOISE observations
 \classitem{REDUCE\_POINTING\_QL}
 QL processing of pointing observations
 \classitem{REDUCE\_SCAN\_QL}
 QL process SCAN data
+\classitem{REDUCE\_SETUP\_QL}
+process data from a setup observation in the QL pipeline
 \end{description}
 
 {\large
@@ -1790,8 +1973,16 @@ QL process SCAN data
 \end{center}
 }
 \begin{description}
+\classitem{REDUCE\_FOCUS\_SUMMIT}
+derive focus information in the summit pipeline
+\classitem{REDUCE\_POINTING\_SUMMIT}
+Summit processing of pointing observations
 \classitem{REDUCE\_SCAN\_SUMMIT}
 Summit recipe for processing SCAN data
+\classitem{REDUCE\_SETUP\_SUMMIT}
+process data from a setup observation in the summit pipeline
+\classitem{REDUCE\_SKYDIP\_SUMMIT}
+Process SKYDIP observations with the summit pipeline
 \end{description}
 
 {\large
@@ -1894,9 +2085,38 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
+   ENG\_NEP\_QL
+}{
+   QL processing NEP measurements made in engineering mode
+}{
+   \sstdescription{
+      This recipe calculates the effective noise-equivalent power (NEP)
+      for each subarray for a range of pixel heater and bias values. The
+      results are written as an image with heater values along the
+      x-axis and bias values along the y-axis.
+   }
+   \sstnotes{
+      \sstitemlist{
+
+         \sstitem
+         Bias ramp data are ignored.
+
+         \sstitem
+         This recipe is not up to date and should not be used at this
+         stage.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      Each image is displayed in a single KAPVIEW window.
+   }
+}
+\newpage
+\sstroutine{
    ENG\_NEP
 }{
-   Process NEP measurements make in engineering mode
+   Process NEP measurements made in engineering mode
 }{
    \sstdescription{
       This recipe processes NOISE observations taken at various settings
@@ -1906,20 +2126,12 @@ The following pages describe the SCUBA-2 recipes in detail.
       into a 4-d hypercube of the NEP as a function of bolometer
       position, heater and detector bias value.
 
-      In addition the effective and RMS NEPs are calculated for each
-      subarray and heater/bias setting. The results are written as an
-      image with heater values along the x-axis and bias values along
-      the y-axis.
-
-      The RMS NEP is calculated for a varying number of bolometers (the
-      N best-performing, where N varies between the values defined
-      below) and is used to compute the array mapping speed,
-      N/(NEP\_RMS)$*$$*$2.
+      In addition the effective and weighted NEPs are calculated for
+      each subarray and heater/bias setting.
 
       Details are written to log files: the noise properties are written
-      to log.bolonoise as for regular noise observations, while the
-      mapping speeds are written to log.mapspeed\_SUB where SUB is the
-      subarray label (s4a, s4b etc, one log file per subarray).
+      to log.bolonoise as for regular noise observations, while the NEPs
+      are written to log.effnep and log.wtnep.
    }
    \sstnotes{
       \sstitemlist{
@@ -1937,24 +2149,6 @@ The following pages describe the SCUBA-2 recipes in detail.
       \sstsubsection{
          The following parameters can be set via the -recpars option:
       }{
-      }
-      \sstsubsection{
-         MAPSPEED\_NBOLEN
-      }{
-         Maximum number of bolometers to use in mapping speed
-         calculation. Default is 1000.
-      }
-      \sstsubsection{
-         MAPSPEED\_NBOLST
-      }{
-         Minimum number of bolometers to use in mapping speed
-         calculation. Defaults is 300.
-      }
-      \sstsubsection{
-         MAPSPEED\_STEP
-      }{
-         Interval in the number of bolometers to use in mapping speed
-         calculation. Default is 100.
       }
       \sstsubsection{
          NEP\_MAX
@@ -1984,31 +2178,118 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
-   ENG\_NEP\_QL
+   REDUCE\_CLS
 }{
-   QL processing NEP measurements make in engineering mode
+   Process data taken as part of the Cosmology Legacy Survey
 }{
    \sstdescription{
-      This recipe calculates the effective noise-equivalent power (NEP)
-      for each subarray for a range of pixel heater and bias values. The
-      results are written as an image with heater values along the
-      x-axis and bias values along the y-axis.
+      This recipe uses a jack-knife method to remove residual
+      low-spatial frequency noise and create an optimal match-filtered
+      output map. The recipe proceeds as follows:
+
+      \sstitemlist{
+
+         \sstitem
+         Each observation is processed twice using the specified
+         parameters, the second time with an artificial point source added
+         to the timeseries, to create a signal map and a map-filtered psf
+         image.
+
+         \sstitem
+         These images are coadded (like with like) to produce a total
+         signal map and a total map-filtered psf image. The amplitude of
+         the source in the map-filtered PSF image is compared with the
+         input value to assess the effect the map-making process has on a
+         point source. This ratio is used to scale the FCF later when
+         calibrating the data.
+
+         \sstitem
+         The observations are divided into two groups which are coadded
+         separately. These coadds are subtracted from one another to create
+         the jack-knife map.
+
+         \sstitem
+         The angular power spectrum of the jack-knife map (which should
+         consist purely of noise) is calculated and used to remove residual
+         low-spatial frequency noise from the signal map and the
+         map-filtered psf. This is the so-called whitening step (because it
+         produces a map which has a noise power spectrum that is white).
+
+         \sstitem
+         The data are calibrated in mJy/beam using a corrected FCF.
+
+         \sstitem
+         The whitened signal map is processed with a matched filter
+         using the whitened psf image as the psf.
+
+         \sstitem
+         The jack-knife map is also whitened and processed with the
+         matched filter. This map should consist purely of noise.
+
+         \sstitem
+         Signal-to-noise ratio maps are created for the filtered
+         versions of the signal map and the jack-knife map.
+
+      }
+      The outcome (the match-filtered whitened signal map) should be the
+      optimal map with white noise properties. This is the map to be
+      used for science goals.
+
+      This recipe generates a large number of output files. There will
+      be two for each observation, a total signal coadd, a map-filtered
+      psf coadd, a jackknife map
    }
    \sstnotes{
       \sstitemlist{
 
          \sstitem
-         Bias ramp data are ignored.
-
-         \sstitem
-         This recipe is not up to date and should not be used at this
-         stage.
+         Ideally there should be an even number of observations.
+      }
+   }
+   \sstdiylist{
+      Available Parameters
+   }{
+      \sstsubsection{
+         The following recipe parameters can be set via the --recpars
+      }{
+      }
+      \sstsubsection{
+         option:
+      }{
+      }
+      \sstsubsection{
+         FAKEMAP\_SCALE
+      }{
+         Amplitude of the fake source (in Jy) added to the timeseries to
+         assess the map-making response to a point source.
+      }
+      \sstsubsection{
+         MAKEMAP\_CONFIG
+      }{
+         Name of a config file for use with the SMURF makemap task. The
+         file must exist in the current working directory,
+         \$MAKEMAP\_CONFIG\_DIR, \$ORAC\_DATA\_OUT, \$ORAC\_DATA\_CAL or
+         \$STARLINK\_DIR/share/smurf.
+      }
+      \sstsubsection{
+         MAKEMAP\_PIXSIZE
+      }{
+         Pixel size in arcsec for the output map. Default is wavelength
+         dependent (4 arcsec at 850 um, 2 arcsec at 450 um).
+      }
+      \sstsubsection{
+         WHITEN\_BOX
+      }{
+         Size of the region used to calculate the angular power spectrum
+         for removing residual low-frequency noise in the data. Default
+         is a square region bounded by the noise being less than twice
+         the minimum value.
       }
    }
    \sstdiytopic{
       Display
    }{
-      Each image is displayed in a single KAPVIEW window.
+      None.
    }
 }
 \newpage
@@ -2041,42 +2322,6 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
-   REDUCE\_DREAMSTARE
-}{
-   Process DREAM/STARE images
-}{
-   \sstdescription{
-      Input data from the individual subarrays are combined to produce a
-      single mosaic for each time step. Sky removal and extinction
-      correction take place on these images before they are combined
-      into a single Frame image.
-
-      The Frame image is calibrated and displayed, before being combined
-      with the Group image in a running average. The noise properties of
-      the new Group image are calculated and logged, and the image
-      searched for sources.
-   }
-   \sstnotes{
-      \sstitemlist{
-
-         \sstitem
-         This primitive can not handle time series data.
-
-         \sstitem
-         The current noise level is stored in log.noise, the positions
-         and fluxes of any sources are stored in log.flux.
-      }
-   }
-   \sstdiytopic{
-      Display
-   }{
-      The Frame image is displayed in Gaia window 1.
-      The Group image is displayed in Gaia window 2; its variance is
-      displayed in window 3.
-   }
-}
-\newpage
-\sstroutine{
    REDUCE\_DREAMSTARE\_QL
 }{
    QL processing DREAM/STARE images
@@ -2105,6 +2350,42 @@ The following pages describe the SCUBA-2 recipes in detail.
          by the NMOS parameter for \_MAKE\_MOSAIC\_GROUP\_DESPIKE\_. Smaller
          numbers will result in more frequent updates of the Group image at
          the expense of de-spiking and good variance estimation.
+
+         \sstitem
+         The current noise level is stored in log.noise, the positions
+         and fluxes of any sources are stored in log.flux.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The Frame image is displayed in Gaia window 1.
+      The Group image is displayed in Gaia window 2; its variance is
+      displayed in window 3.
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_DREAMSTARE
+}{
+   Process DREAM/STARE images
+}{
+   \sstdescription{
+      Input data from the individual subarrays are combined to produce a
+      single mosaic for each time step. Sky removal and extinction
+      correction take place on these images before they are combined
+      into a single Frame image.
+
+      The Frame image is calibrated and displayed, before being combined
+      with the Group image in a running average. The noise properties of
+      the new Group image are calculated and logged, and the image
+      searched for sources.
+   }
+   \sstnotes{
+      \sstitemlist{
+
+         \sstitem
+         This primitive can not handle time series data.
 
          \sstitem
          The current noise level is stored in log.noise, the positions
@@ -2224,6 +2505,58 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
+   REDUCE\_FOCUS\_QL
+}{
+   process focus observations in the quick-look pipeline
+}{
+   \sstdescription{
+      This recipe combines images from a FOCUS observation, removes sky
+      emission and corrects for extinction. When enough data exist -
+      defined as the existence of a minimum number of images for the
+      last of the expected focus positions - the images for each focus
+      position are combined and a data cube is created with SMU offset
+      in mm as the third axis.
+
+      Once the cube has been created, a flag file is written to indicate
+      to the telescope POINTING\_FOCUS task that processing is complete.
+      The recipe also makes its own estimate of the best-fit focus
+      position by fitting a parabola to the fitted peak flux densities
+      at each SMU position. The solution is written to a log file,
+      log.focus.
+
+      This primitive is largely the same as REDUCE\_FOCUS with minor
+      modifications to handle data as they are taken.
+   }
+   \sstnotes{
+      \sstitemlist{
+
+         \sstitem
+         The best-fit focus position is written to log.focus.
+
+         \sstitem
+         The minimum number of images referred to above is defined as
+         the mean number of images obtained for each of the preceding focus
+         positions. The recipe may fail to produce a cube if the pipeline
+         does not receive enough data, even once the observation has ended.
+         This is because the OBSEND flag in the FITS header will only be
+         true for the final frame and thus the QL/summit pipelines may not
+         see it.
+
+         \sstitem
+         No data are displayed until the cube of focus images has been
+         created.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The Frame image is not displayed.
+      The Group data are displayed in a Kapview window with the image at
+      each focus pisition displayed in a separate panel.
+   }
+}
+\newpage
+\sstroutine{
    REDUCE\_FOCUS
 }{
    Recipe for deriving focus information
@@ -2273,6 +2606,61 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
+   REDUCE\_FOCUS\_SUMMIT
+}{
+   derive focus information in the summit pipeline
+}{
+   \sstdescription{
+      This recipe combines images from a FOCUS observation, removes sky
+      emission and corrects for extinction. When enough data exist -
+      defined as the existence of a minimum number of images for the
+      last of the expected focus positions - the images for each focus
+      position are combined and a data cube is created with SMU offset
+      in mm as the third axis.
+
+      Once the cube has been created, a flag file is written to indicate
+      to the telescope POINTING\_FOCUS task that processing is complete.
+      The recipe also makes its own estimate of the best-fit focus
+      position by fitting a parabola to the fitted peak flux densities
+      at each SMU position. The solution is written to a log file,
+      log.focus.
+
+      This primitive is largely the same as REDUCE\_FOCUS with minor
+      modifications to handle data as they are taken.
+   }
+   \sstnotes{
+      \sstitemlist{
+
+         \sstitem
+         The best-fit focus position is written to log.focus.
+
+         \sstitem
+         The minimum number of images referred to above is defined as
+         the mean number of images obtained for each of the preceding focus
+         positions. The recipe may fail to produce a cube if the pipeline
+         does not receive enough data, even once the observation has ended.
+         This is because the OBSEND flag in the FITS header will only be
+         true for the final frame and thus the QL/summit pipelines may not
+         see it.
+
+         \sstitem
+         No data are displayed until the cube of focus images has been
+         created.
+
+         \sstitem
+         See also REDUCE\_FOCUS.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The Frame image is not displayed.
+      The Group data are displayed in a Kapview window with the image at
+      each focus pisition displayed in a separate panel.
+   }
+}
+\newpage
+\sstroutine{
    REDUCE\_FTS\_SCAN
 }{
    Recipe for processing FTS-2 SCAN data
@@ -2292,22 +2680,12 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
-   REDUCE\_NOISE
+   REDUCE\_NOISE\_PHOTON
 }{
    Process NOISE observations
 }{
    \sstdescription{
-      The recipe calculates the average power spectrum for each array,
-      displaying each in a separate window, before calculating the white
-      noise properties (and noise equivalent power). The noise
-      properties are written to a log file, log.bolonoise. The array
-      mapping speed is calculated and written to a log file called
-      log.mapspeed\_SUBARRAY.
-
-      The data are used to create a bad-bolometer mask using the best 80
-      per cent of bolometers.
-
-      The results are displayed in a Kapview window.
+      The recipe ...
    }
    \sstnotes{
       \sstitemlist{
@@ -2335,19 +2713,103 @@ The following pages describe the SCUBA-2 recipes in detail.
       }{
       }
       \sstsubsection{
-         BESTBOL\_PERCENT
+         NOISE\_CFG
       }{
-         The number of bolometers expressed as a percentage which should
-         be used to create a bad-bolometer mask.
+         Name of an alternative config file used by calcnoise.
+      }
+      \sstsubsection{
+         RESIST\_CFG
+      }{
+         Name of an alternative list of resistor values used when
+         calculating the flatfield. File must be in ORAC\_DATA\_OUT.
+      }
+      \sstsubsection{
+         SKYSAMPLES
+      }{
+         Number of samples to use when calculating the noise properties
+         of on-sky data. Default is to use the same number as in the
+         initial DARK.
       }
    }
    \sstdiytopic{
       Display
    }{
-      One Kapview window is used to display the average power spectra
-      for each subarray.
-      The noise map and histogram are shown in a separate Kapview
-      window, one window per subarray.
+      None.
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_NOISE\_PHOTON
+}{
+   Process NOISE observations
+}{
+   \sstdescription{
+      This recipe derives the photon noise contribution by subtracting
+      in quadrature noise measurements made with the shutter open and
+      closed. The initial dark in the observation is used to estimate
+      the dark noise, and the same number of samples in the first on-sky
+      data are used to calculate the sky noise. The photon
+      noise-equivalent-power (NEP) is then given by
+
+        NEP\_ph = sqrt( NEP\_sky$*$$*$2 - NEP\_dark$*$$*$2 )The image for each
+      subarray is derived separately.
+
+      The results are written to a log file called log.photnoise
+   }
+   \sstnotes{
+      This recipe only works with raw time-series data and is designed
+      to be used in an offline mode.
+   }
+   \sstdiylist{
+      Available Parameters
+   }{
+      \sstsubsection{
+         The following parameters can be set via the --recpars option:
+      }{
+      }
+      \sstsubsection{
+         FLATSNR
+      }{
+         Signal-to-noise ratio to use in the flatfield calculation.
+      }
+      \sstsubsection{
+         NEP\_CLIP
+      }{
+         A comma-separated pair of numbers to indicate the low and high
+         clipping levels for the NEP. If only one is given, it is
+         assigned to the nepcliplow parameter.
+      }
+      \sstsubsection{
+         NOI\_CLIP
+      }{
+         A comma-separated pair of numbers to indicate the low and high
+         clipping levels for the noise. If only one is given, it is
+         assigned to the noicliplow parameter.
+      }
+      \sstsubsection{
+         NOISE\_CFG
+      }{
+         Name of an alternative config file used by calcnoise. File must
+         be in ORAC\_DATA\_OUT.
+      }
+      \sstsubsection{
+         RESIST\_CFG
+      }{
+         Name of an alternative list of resistor values used when
+         calculating the flatfield. File must be in ORAC\_DATA\_OUT.
+      }
+      \sstsubsection{
+         NOISE\_SAMPLES
+      }{
+         Number of samples to use when calculating the noise properties
+         of on-sky data. Default is to use the same number as in the
+         initial DARK.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      None.
    }
 }
 \newpage
@@ -2359,14 +2821,37 @@ The following pages describe the SCUBA-2 recipes in detail.
    \sstdescription{
       Basic processing recipe suitable for NOISE observations in the
       quick-look pipeline. Each subarray is handled separately. The
-      average bolometer power spectrum is calculated and displayed, as
-      is the noise and NEP properties. The NEP values are used to create
-      a bad bolometer mask. At the end of the observation, the average
-      noise properties are determined by averaging the noise and NEP
-      data and analyzing those images.
+      noise and NEP properties are calculated and displayed.
 
       The outcome of this recipe is a noise image and bad-bolometer mask
       for each subarray which is stored in the calibration system.
+   }
+   \sstnotes{
+      This recipe only works with raw time-series data.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The focal-plane noise map and corresponding histogram are
+      displayed in a Kapview window along with the focal-plane NEP map
+      and the percentage-change in the noise.
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_NOISE
+}{
+   Process NOISE observations
+}{
+   \sstdescription{
+      The recipe calculates the average power spectrum for each array,
+      displaying each in a separate window, before calculating the white
+      noise properties (and noise equivalent power). The noise
+      properties are written to a log file, log.bolonoise. The array
+      mapping speed is calculated and written to a log file called
+      log.mapspeed\_SUBARRAY.
+
+      The results are displayed in a Kapview window.
    }
    \sstnotes{
       \sstitemlist{
@@ -2375,17 +2860,32 @@ The following pages describe the SCUBA-2 recipes in detail.
          This recipe only works with raw time-series data.
 
          \sstitem
-         Bad-bolometer mask file names are stored in index.mask.
+         Noise properties are written to log.bolonoise, and mapping
+         speeds are written to log.mapspeed\_SUB where SUB is the subarray.
+      }
+   }
+   \sstdiylist{
+      Available Parameters
+   }{
+      \sstsubsection{
+         The following parameters can be set via the --recpars option:
+      }{
+      }
+      \sstsubsection{
+         RESIST\_CFG
+      }{
+         Name of an alternative list of resistor values used when
+         calculating the flatfield. File must be in ORAC\_DATA\_OUT.
       }
    }
    \sstdiytopic{
       Display
    }{
-      The average bolometer power spectrum is displayed in a Kapview
-      window.
-      The noise map and corresponding histogram are displayed in a
-      different Kapview window (each subarray is displayed in different
-      window).
+      One Kapview window is used to display the average power spectra
+      for each subarray.
+      The focal-plane noise map and histogram are shown in a separate
+      Kapview window, along with maps of the NEP and the
+      percentage-change in the noise.
    }
 }
 \newpage
@@ -2444,6 +2944,61 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
+   REDUCE\_POINTING\_QL
+}{
+   QL processing of pointing observations
+}{
+   \sstdescription{
+      This recipe creates an image from a POINTING observation with the
+      data obtained in Quick-Look mode.
+
+      For DREAM/STARE, the images from the individual subarrays are
+      combined, sky emission removed (assuming a simple DC offset) and
+      corrected for extinction. SCAN-mode data are passed to the
+      iterative map-maker. Fast-ramp flatfield files are processed and
+      stored so the iterative map-maker can use them.
+
+      The image is calibrated and a flag flag file written to allow the
+      POINTING\_FOCUS task at the summit to derive pointing offsets. The
+      image is cropped to 60 arcsec on a side and any residual
+      background is removed.
+
+      For additional record keeping, a matched-filter is applied and the
+      source position is fitted to derive offsets in Azimuth and
+      Elevation from the nominal (0,0) position. These offsets are
+      written to a log file. Note, however, that these may not be
+      identical to those derived by the telescope POINTING\_FOCUS task.
+      The recipe also determines the beam size and the flux conversion
+      factor (FCF), which are also written to their respective log
+      files.
+   }
+   \sstnotes{
+      \sstitemlist{
+
+         \sstitem
+         The pointing offsets, beam size and FCF are written to the log
+         files log.pointing, log.beam and log.fcf.
+
+         \sstitem
+         Fast-ramp flatfield data are processed and results written to
+         the log file log.flatfield.
+
+         \sstitem
+         The pointing offsets can be calculated from the centroid
+         position or from a fit to the source: see the METHOD parameter for
+         \_FIND\_POINTING\_OFFSETS\_. The default is to determine the centroid.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The Frame image is not displayed.
+      The Group image is displayed in Gaia window 2; its variance is
+      displayed in window 3.
+   }
+}
+\newpage
+\sstroutine{
    REDUCE\_POINTING
 }{
    Process POINTING observations
@@ -2492,91 +3047,28 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
-   REDUCE\_SCAN
+   REDUCE\_POINTING\_SUMMIT
 }{
-   Process SCAN-mode data
-}{
-   \sstdescription{
-      This is the default recipe for processing SCAN data. Raw data are
-      passed to the map maker which are processed to produce a Frame
-      image, which is calibrated and displayed. A new Group image is
-      created and displayed after all the individual observations have
-      been processed. The noise properties of the new Group image are
-      calculated and written to a log file, log.noise.
-
-      Flux conversion factors are derived if the source is a calibrator.
-   }
-   \sstnotes{
-      \sstitemlist{
-
-         \sstitem
-         The noise level in the Group coadd is stored in log.noise.
-
-         \sstitem
-         For large amounts of data this recipe will spend a long time
-         not updating the ORAC-DR output. Check to see that makemap is
-         still processing by running top or ps.
-
-         \sstitem
-         Alternative configuration parameters for the iterative
-         map-maker may be specified using the recipe parameters outlined
-         below.
-      }
-   }
-   \sstdiylist{
-      Available Parameters
-   }{
-      \sstsubsection{
-         The following recipe parameters can be set via the --recpars
-      }{
-      }
-      \sstsubsection{
-         option:
-      }{
-      }
-      \sstsubsection{
-         MAKEMAP\_CONFIG
-      }{
-         Name of a config file for use with the SMURF makemap task. The
-         file must exist in the current working directory,
-         \$MAKEMAP\_CONFIG\_DIR or \$ORAC\_DATA\_OUT.
-      }
-   }
-   \sstdiytopic{
-      Display
-   }{
-      The Frame image is displayed in Gaia window 1.
-      The Group image is displayed in Gaia window 2; its variance is
-      displayed in window 3.
-   }
-}
-\newpage
-\sstroutine{
-   REDUCE\_POINTING\_QL
-}{
-   Recipe for deriving pointing information with Quick Look
+   Process POINTING observations in the summit pipeline
 }{
    \sstdescription{
-      This recipe creates an image from a DREAM/STARE POINTING
-      observation with the data obtained in Quick-Look mode.
-
-      The images from the individual subarrays are combined, sky
-      emission removed (assuming a simple DC offset) and corrected for
-      extinction. The image is calibrated and a flag flag file written
-      to allow the POINTING\_FOCUS task at the summit to derive pointing
-      offsets.
-
-      The image is cropped to 60 arcsec on a side and any residual
-      background is removed.
-
-      For additional record keeping, a matched-filter is applied and the
-      source position is fitted to derive offsets in Azimuth and
-      Elevation from the nominal (0,0) position. These offsets are
-      written to a log file. Note, however, that these may not be
-      identical to those derived by the telescope POINTING\_FOCUS task.
+      This recipe combines images from a POINTING observation, removes
+      sky emission and corrects for extinction before calculating the
+      offsets in Azimuth and Elevation from the nominal (0,0) position.
       The recipe also determines the beam size and the flux conversion
-      factor (FCF), which are also written to their respective log
-      files.
+      factor (FCF) and writes them to log files.
+
+      The image is processed with a matched filter before estimating the
+      pointing offsets, but this output is not retained on disk. The
+      reduced product remains the Group coadd.
+
+      For additional record keeping, the source position is fitted and
+      offsets in Azimuth and Elevation from the nominal (0,0) position
+      are derived and logged. Note, however, that these may not be
+      identical to those derived by the telescope POINTING\_FOCUS task.
+
+      This recipe is largely the same as REDUCE\_POINTING with minor
+      modifications specific to handle data as they are taken.
    }
    \sstnotes{
       \sstitemlist{
@@ -2584,6 +3076,11 @@ The following pages describe the SCUBA-2 recipes in detail.
          \sstitem
          The pointing offsets, beam size and FCF are written to the log
          files log.pointing, log.beam and log.fcf.
+
+         \sstitem
+         This recipe deals with both the 2-D DA-processed images and the
+         time series data. Primitives which are meant for 2-D images are
+         no-ops for time-series data.
 
          \sstitem
          The pointing offsets can be calculated from the centroid
@@ -2601,25 +3098,33 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
-   REDUCE\_SCAN
+   REDUCE\_SASSY
 }{
-   Process SCAN-mode data
+   Process data for the SASSy project
 }{
    \sstdescription{
-      This is the default recipe for processing SCAN data. Raw data are
-      passed to the map maker which are processed to produce a Frame
-      image, which is calibrated and displayed. A new Group image is
-      created and displayed after all the individual observations have
-      been processed. The noise properties of the new Group image are
-      calculated and written to a log file, log.noise.
+      This is the recipe for processing data taken for the SCUBA-2
+      All-Sky Survey (SASSy). The aim of SASSy is to map as much of the
+      sky at 850 um as possible, beginning with two strips: one along
+      the Galactic Plane, one perpendicular to the Plane, and passing
+      through the North Ecliptic Pole.
 
-      Flux conversion factors are derived if the source is a calibrator.
+      Raw data are passed to the map maker which are processed to
+      produce a Frame image, which is then calibrated and displayed. A
+      new Group image is created and displayed. The noise properties of
+      the new Group image are calculated and written to a log file,
+      log.noise.
+
+      The Group coadd has a matched-filter applied (with the aim of
+      highlighting point sources) and is passed to a source-finding
+      algorithm to pick out sources at or above the 5-sigma level. A
+      catalogue is written to disk.
    }
    \sstnotes{
       \sstitemlist{
 
          \sstitem
-         The noise level in the Group coadd is stored in log.noise.
+         The current noise level is stored in log.noise.
 
          \sstitem
          For large amounts of data this recipe will spend a long time
@@ -2630,17 +3135,16 @@ The following pages describe the SCUBA-2 recipes in detail.
          Alternative configuration parameters for the iterative
          map-maker may be specified using the recipe parameters outlined
          below.
+
+         \sstitem
+         The output map is calibrated in units of mJy/beam.
       }
    }
    \sstdiylist{
       Available Parameters
    }{
       \sstsubsection{
-         The following recipe parameters can be set via the --recpars
-      }{
-      }
-      \sstsubsection{
-         option:
+         The following parameters can be set via the --recpars option:
       }{
       }
       \sstsubsection{
@@ -2795,6 +3299,10 @@ The following pages describe the SCUBA-2 recipes in detail.
       on the sky relative to its nominal centre position to avoid
       overlap with sources in the SCUBA-2 data, and may be regridded to
       match the pixel size of the output map.
+
+      Alternatively, the recipe can optionally create a Gaussian of a
+      given FWHM and unit amplitude, though only at the map centre (in
+      pixel coordinates).
    }
    \sstnotes{
       \sstitemlist{
@@ -2816,6 +3324,12 @@ The following pages describe the SCUBA-2 recipes in detail.
       \sstsubsection{
          The following parameters can be set via the --recpars option:
       }{
+      }
+      \sstsubsection{
+         FAKEMAP\_FWHM
+      }{
+         FWHM in arcsec of Gaussian to use as input map. Only used if
+         FAKEMAP\_MAP is unspecified.
       }
       \sstsubsection{
          FAKEMAP\_MAP
@@ -2867,18 +3381,73 @@ The following pages describe the SCUBA-2 recipes in detail.
    QL process SCAN data
 }{
    \sstdescription{
-      This recipe processes SCAN data from the quick-look pipeline. Raw
-      data are passed to a simple rebinning map maker to produce a Frame
-      image, which is then calibrated and displayed. The Frame image is
-      coadded to the existing Group image, and the new Group image is
-      displayed. The noise properties of the new Group image are
-      calculated and written to a log file, log.noise.
+      This recipe processes SCAN data from the quick-look pipeline. The
+      emphasis is on monitoring the noise performance of the instrument
+      and each file is treated as a noise observation.
+   }
+   \sstnotes{
+      The bolometer noise properties are stored in log.bolonoise and
+      index.noise.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The noise images for each subarray are displayed as a focal-plane
+      mosaic along with a histogram of the noise values.
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_SCAN
+}{
+   Process SCAN-mode data
+}{
+   \sstdescription{
+      This is the default recipe for processing SCAN data. Raw data are
+      passed to the map maker which are processed to produce a Frame
+      image, which is calibrated and displayed. FCFs are derived if the
+      source is a calibrator. A new Group image is created and displayed
+      after all the individual observations have been processed. The
+      noise properties of the new Group image are calculated and written
+      to a log file, log.noise.
+
+      Flux conversion factors are derived if the source is a calibrator.
    }
    \sstnotes{
       \sstitemlist{
 
          \sstitem
-         The current noise level is stored in log.noise.
+         The noise level in the Group coadd is stored in log.noise.
+
+         \sstitem
+         For large amounts of data this recipe will spend a long time
+         not updating the ORAC-DR output. Check to see that makemap is
+         still processing by running top or ps.
+
+         \sstitem
+         Alternative configuration parameters for the iterative
+         map-maker may be specified using the recipe parameters outlined
+         below.
+      }
+   }
+   \sstdiylist{
+      Available Parameters
+   }{
+      \sstsubsection{
+         The following recipe parameters can be set via the --recpars
+      }{
+      }
+      \sstsubsection{
+         option:
+      }{
+      }
+      \sstsubsection{
+         MAKEMAP\_CONFIG
+      }{
+         Name of a config file for use with the SMURF makemap task. The
+         file must exist in the current working directory,
+         \$MAKEMAP\_CONFIG\_DIR, \$ORAC\_DATA\_OUT, \$ORAC\_DATA\_CAL or
+         \$STARLINK\_DIR/share/smurf.
       }
    }
    \sstdiytopic{
@@ -2939,6 +3508,96 @@ The following pages describe the SCUBA-2 recipes in detail.
 }
 \newpage
 \sstroutine{
+   REDUCE\_SETUP\_QL
+}{
+   process data from a setup observation
+}{
+   \sstdescription{
+      A setup observation consists of a fastramp flatfield followed by a
+      dark noise. This recipe is designed to process these data and will
+      write a flag file for the TCS to identify when to analyze the
+      flatfield and noise properties.
+   }
+   \sstnotes{
+      This is the QL-specific version of the REDUCE\_SETUP recipe.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The flatfield solution and noise results are displayed in separate
+      Kapview windows
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_SETUP
+}{
+   process data from a setup observation
+}{
+   \sstdescription{
+      A setup observation consists of a fastramp flatfield followed by a
+      dark noise. This recipe is designed to process these data and will
+      write a flag file for the TCS to identify when to analyze the
+      flatfield and noise properties.
+   }
+   \sstnotes{
+      None.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The flatfield solution and noise results are displayed in separate
+      Kapview windows
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_SETUP\_SUMMIT
+}{
+   process data from a setup observation
+}{
+   \sstdescription{
+      A setup observation consists of a fastramp flatfield followed by a
+      dark noise. This recipe is designed to process these data and will
+      write a flag file for the TCS to identify when to analyze the
+      flatfield and noise properties.
+   }
+   \sstnotes{
+      This is the QL-specific version of the REDUCE\_SETUP recipe.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      The flatfield solution and noise results are displayed in separate
+      Kapview windows
+   }
+}
+\newpage
+\sstroutine{
+   REDUCE\_SKYDIP\_QL
+}{
+   Process SKYDIP observations with the quick-look pipeline
+}{
+   \sstdescription{
+      Quick-look pipeline recipe for processing skydip observations.
+
+      A skydip is a series of open-shutter noise measurements at
+      different elevations (airmasses). This recipe processes each noise
+      measurement and writes the results to log files. See REDUCE\_NOISE
+      for further details.
+   }
+   \sstnotes{
+      Since no specific skydip primitives exist, this recipe fills the
+      time by calculating the noise.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      Displays the current noise image(s).
+   }
+}
+\newpage
+\sstroutine{
    REDUCE\_SKYDIP
 }{
    Process SKYDIP observations
@@ -2965,7 +3624,30 @@ The following pages describe the SCUBA-2 recipes in detail.
       Displays the current noise image(s).
    }
 }
+\newpage
+\sstroutine{
+   REDUCE\_SKYDIP\_SUMMIT
+}{
+   Process SKYDIP observations with the summit pipeline
+}{
+   \sstdescription{
+      SUMMIT-pipeline recipe for processing skydip observations.
 
+      A skydip is a series of open-shutter noise measurements at
+      different elevations (airmasses). This recipe processes each noise
+      measurement and writes the results to log files. See REDUCE\_NOISE
+      for further details.
+   }
+   \sstnotes{
+      Since no specific skydip primitives exist, this recipe fills the
+      time by calculating the noise.
+   }
+   \sstdiytopic{
+      Display
+   }{
+      Displays the current noise image(s).
+   }
+}
 
 \end{document}
 
