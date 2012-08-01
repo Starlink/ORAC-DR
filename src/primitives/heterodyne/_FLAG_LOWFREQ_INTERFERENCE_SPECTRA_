@@ -117,8 +117,8 @@ Frequency Interference).
 =head1 TASKS
 
 CUPID: FINDBACK;
-KAPPA: CHPIX, COPYBAD, COLLAPSE, MANIC, MATHS, MFITTREND, NDFCOPY, PASTE, SETTYPE,
-       STATS, THRESH;
+KAPPA: CHAIN, CHPIX, COPYBAD, COLLAPSE, MANIC, MATHS, MFITTREND, NDFCOPY,
+       PASTE, RESHAPE, SETTYPE, STATS, THRESH;
 SMURF: FIXSTEPS.
 
 =head1 REQUIRED PERL MODULES
@@ -225,18 +225,50 @@ foreach ( @clips ) {
 
 $edge_clip = "[" . join( ",", @clip_sigma ) . "]";
 
-# Specify output and temporary filenames.
+# Form arrays of bad then good detectors.
 # =======================================
+
+# The master index is far too underpopulated and can lead to picking an
+# entry that is months before or after the date of the observation being
+# processed.  Valid receptors can then be rejected and bad ones included.
+# Enter a null (H14) entry in $ORAC_DATA_CAL/index.bad_receptors if
+# a night has no bad receptors.  Another possibility is make this
+# selection a recipe parameter, so could select by "INDEX" and rely on
+# the current data.  
+$Cal->bad_receptors( "MASTER" );
+my @baddets = $Cal->bad_receptors_list;
+orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+# Still need to invoke the bad_receptors_list method although the
+# resulting array is not used.
+$Cal->bad_receptors( "INDEXORMASTER" );
+my @tmpdets = $Cal->bad_receptors_list;
+orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
+
+my $refname = $Frm->file( 1 );
+my $array = new JCMT::ACSIS::Array( File => $refname );
+
+# Form set of receptors that are not bad in the index list.
+my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+@receptors = sort @receptors;
+my $no_receptor = scalar( @receptors );
+
+# Specify output and temporary filenames, and their bounds.
+# =========================================================
 my $params;
 my $osuffix = "_lfimasked";
+
+my $linearity_profiles = new ORAC::TempFile( 0 );
+
+my $no_times = 0;
+my @time_bounds;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
 # Set/get filenames.
-   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+   my $in = $Frm->file( $i );
    orac_say( "Determine spectra exhibiting transient low-frequency interference in $in." );
 
-   my $cubemask = new ORAC::TempFile( 0 );
    my $temp1file = new ORAC::TempFile( 0 );
    my $temp2file = new ORAC::TempFile( 0 );
    my $temp3file = new ORAC::TempFile( 0 );
@@ -244,39 +276,14 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp5file = new ORAC::TempFile( 0 );
    my $temp6file = new ORAC::TempFile( 0 );
    my $temp7file = new ORAC::TempFile( 0 );
-   my $temp8file = new ORAC::TempFile( 0 );
-   my $temp9file = new ORAC::TempFile( 0 );
-   my $temp10file = new ORAC::TempFile( 0 );
-   my $temp11file = new ORAC::TempFile( 0 );
 
 # We need the dimensions of the input file for later.
    _GET_DIMENSIONS_ FILE=$in
    my $lbnd = $_GET_DIMENSIONS_{LBOUND};
    my $ubnd = $_GET_DIMENSIONS_{UBOUND};
    my $nel = $ubnd->[0] - $lbnd->[0] + 1;
-
-# Form arrays of bad detectors.
-# =============================
-
-# Retrieve the list of bad detectors from the calibration system ONLY
-# ignoring the ones set locally.  The reading of INDEXORMASTER is
-# done to setup the survey (survey_br).
-   $Cal->bad_receptors( "MASTER" );
-   my @baddets = $Cal->bad_receptors_list;
-   orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
-
-# Still need to invoke the bad_receptors_list method although the
-# resulting array is not used.
-   $Cal->bad_receptors( "INDEXORMASTER" );
-   my @tmpdets = $Cal->bad_receptors_list;
-   orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
-
-# Create a mask NDF.
-# ==================
-#
-# As we shall be filling every receptor plane with a mask of any noisy
-# spectra, it is adequate to merely copy the input NDF.
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$cubemask" );
+   push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
+   $no_times += $ubnd->[2] - $lbnd->[2] + 1;
 
 # Find the interference.
 # ======================
@@ -297,7 +304,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # velocity range.
    orac_say( "  Masking the velocity range $central_bounds[0] to $central_bounds[1] km/s to exclude astronomical lines." );
    my $chpix_section = "$central_bounds[0]:$central_bounds[1],,";
-   my $params = "in=$temp1file out=$temp2file section='$chpix_section' newval=bad";
+   $params = "in=$temp1file out=$temp2file section='$chpix_section' newval=bad";
    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
 # Find the trends in the background.  This step prevents the rms from a
@@ -315,99 +322,181 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    $params .= " order=1 axis=spec method=single";
    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
-# Get average rms deviations for each receptor not in the bad_receptors list.
-# ---------------------------------------------------------------------------
-   my $array = new JCMT::ACSIS::Array( File => $in );
-
-# Form set of receptors that are not bad in the master list.
-   my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
-   @receptors = sort @receptors;
-
-   foreach my $receptor ( @receptors ) {
-      orac_say( "  Receptor $receptor." );
-      my $pixel = $array->pixel( $receptor );
-
 # Form clean non-linearity profile.
 # ---------------------------------
 #
 # Find the rms residuals from a linear baseline i.e. a positive measure of the
 # deviation from flatness.  The normalisation is arbitrary so just approximate with
 # the full spectral dimension.
-      $params = "ia=$temp4file(,$pixel,) out=$temp5file exp='sqrt(IA*IA/$nel)'";
-      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+   $params = "ia=$temp4file out=$temp5file exp='sqrt(IA*IA/$nel)'";
+   $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Collapse the spectral axis using a clipped mean to form average
-# non-linearity for each spectrum for the current detector.
-      orac_say( "    Collapsing spectra to form average non-linearity per spectrum." );
-      $params = "in=$temp5file out=$temp8file estimator=mean";
-      $params .= " axis=spec trim=f wlim=0.0 variance=false";
-      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+# non-linearity for each spectrum and each current detector.
+   orac_say( "    Collapsing spectra to form average non-linearity per spectrum." );
+   $params = "in=$temp5file out=$temp6file estimator=mean";
+   $params .= " axis=spec trim=f wlim=0.0 variance=false";
+   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
+# Concatenate the profiles.
+# -------------------------
+
+# Form a profile for each receptor throughout a whole observation.  The
+# whole gives a better handle on the normal non-linearity level.
+   if ( $i == 1 ) {
+      $params = "in=$temp6file out=$linearity_profiles"; 
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+   } else {
+      $params = "in=$linearity_profiles c1=$temp6file out=$temp7file"; 
+      $Mon{'ndfpack_mon'}->obeyw( "chain", "$params" );
+
+      $params = "in=$temp7file out=$linearity_profiles"; 
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   }
+}
+
+# Mould the vectorised array of the linearity profiles to be two
+# dimensional with receptor and time axes.  We assume that the
+# number of good receptors is the same for all sub-files of the
+# observation.
+my $linearity_pr2d = new ORAC::TempFile( 0 );
+$params = "in=$linearity_profiles out=$linearity_pr2d ";
+$params .= "shape=[$no_receptor,$no_times]";
+$Mon{'ndfpack_mon'}->obeyw( "reshape", "$params" );
+
+# Get average rms deviations for each receptor not in the bad_receptors list.
+# ---------------------------------------------------------------------------
+my $linearity_mask = new ORAC::TempFile( 0 );
+my $linearity_2d = new ORAC::TempFile( 0 );
+
+foreach my $receptor ( @receptors ) {
+   orac_say( "  Receptor $receptor." );
+   my $pixel = $array->pixel( $receptor );
+
+   my $temp8file = new ORAC::TempFile( 0 );
+   my $temp9file = new ORAC::TempFile( 0 );
+   my $temp10file = new ORAC::TempFile( 0 );
 
 # Identify anomalous spectra.
 # ---------------------------
 
 # First greatly reduce the effect of noise.
-      $params = "in=$temp8file out=$temp7file box=25 sub=false accept";
-      $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+   $params = "in=$linearity_pr2d($pixel,) out=$temp8file box=25 sub=false accept";
+   $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
 # significant compared with the non-linearity.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file clip=$edge_clip order" );
-      my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-      ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file clip=$edge_clip order" );
+   my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+   ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
 # The distribution is skew to higher values.  We would like the mode
 # and width of the normal curve around that.  The mode is approximated by
 # the heavily clipped mean.  Now obtain the two-sigma level below
 # the mode without clipping.
-      $params = "ndf=$temp7file percentiles=2.23 order";
-      $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-      ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
-      my $sigma = 0.5 * ( $mean - $perval );
+   $params = "ndf=$temp8file percentiles=2.23 order";
+   $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+   ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+   my $sigma = 0.5 * ( $mean - $perval );
 
 # Threshold spectra whose mean rms non-linearity exceeds an outlier limit.
 # The median will give a reliable normal signal on which there are
 # spikes or broader mountains caused by the oscillating noise in the
 # time series for the detector.  On the other hand the mean does give
 # a lower and better estimate in the presence of several blocks of
-# non-lineaer spectra.  In most cases there is no interference
+# non-linear spectra.  In most cases there is no interference
 # noise, so protect against drift and signal variations in the timeseries
 # causing the dispersion; these should be small compared with the signal
 # being detected.
-      if ( $numgood > 0 ) {
-         my $threshold = $mean + $thresh_clip * $sigma;
-         orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
-         $params = "in=$temp7file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
-         $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-         ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
-         ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
-         my $total = $eject + $kept;
-         if ( $eject == 1 ) {
-            orac_say( "      One spectrum removed out of $total." );
-         } elsif ( $eject > 0 ) {
-            orac_say( "      $eject spectra removed out of $total." );
-         } else {
-            orac_say( "      No spectra removed out of $total." );
-         }
+   if ( $numgood > 0 ) {
+      my $threshold = $mean + $thresh_clip * $sigma;
+      orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
+      $params = "in=$temp8file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
+      ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
+      my $total = $eject + $kept;
+      if ( $eject == 1 ) {
+         orac_say( "      One spectrum removed out of $total." );
+      } elsif ( $eject > 0 ) {
+         orac_say( "      $eject spectra removed out of $total." );
+      } else {
+         orac_say( "      No spectra removed out of $total." );
+      }
+
+   } else {
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$temp9file" );
+   }
+
+# Form file containing the masks for each receptor.
+# =================================================
+
+# Initially concatenate the profiles.
+   if ( $receptor eq $receptors[0] ) {
+      $params = "in=$temp9file out=$linearity_mask"; 
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+   } else {
+      $params = "in=$linearity_mask c1=$temp9file out=$temp10file"; 
+      $Mon{'ndfpack_mon'}->obeyw( "chain", "$params" );
+
+      $params = "in=$temp10file out=$linearity_mask"; 
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   }    
+}
+
+# At this point we should have a vectorised array of the masked
+# profiles.  To make it easier to follow reshape this to be two
+# dimensional with receptor and time axes.  We assume that the
+# number of good receptors is the same for all sub-files of the
+# observation.
+$params = "in=$linearity_mask out=$linearity_2d ";
+$params .= "shape=[$no_receptor,$no_times]";
+$Mon{'ndfpack_mon'}->obeyw( "reshape", "$params" );
+
+# Loop over the subfiles again to apply the flagging.
+# ===================================================
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+
+   _GET_DIMENSIONS_ FILE=$in
+   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+   my $temp11file = new ORAC::TempFile( 0 );
+   my $temp12file = new ORAC::TempFile( 0 );
+
+# Create a mask NDF.
+# ------------------
+#
+# As we shall be filling every receptor plane with a mask of any noisy
+# spectra, it is adequate to merely copy the input NDF.
+   my $cubemask = new ORAC::TempFile( 0 );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$cubemask" );
 
 # Add plane for receptor into mask cube.
-# ======================================
+# --------------------------------------
+
+# Pick out the section of the profile MASK applicable to the current
+# input time-series file.
+   my $t_lbnd = $time_bounds[2 * $i - 2];
+   my $t_ubnd = $time_bounds[2 * $i - 1];
 
 # Expand the thresholded image to the size of the current receptor's
 # plane in the initial cube.
-         orac_say( "   Expand the masked profile." );
-         $params = "in=$temp9file out=$temp10file axes=[0,2,3] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
-         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+   orac_say( "   Expand the masked profile." );
+   $params = "in=$linearity_2d(,$t_lbnd:$t_ubnd) out=$temp11file ";
+   $params .= "axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Paste the data to the mask file.
-         orac_say( "   Paste the masked data into the cube mask." );
-         my $params = "in=$cubemask p1=$temp10file out=$temp11file confine=false transp=false";
-         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp11file out=$cubemask" );
-      }
-   }
+   orac_say( "   Paste the masked data into the cube mask." );
+   my $params = "in=$cubemask p1=$temp11file out=$temp12file confine=false transp=false";
+   $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp12file out=$cubemask" );
 
 # At this point $cubemask should have all the original receptors
 # checked for wobbly spectra and have bad values for those spectra.

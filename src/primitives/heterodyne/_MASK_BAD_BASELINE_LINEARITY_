@@ -121,7 +121,7 @@ BaseLine Linearity).
 =head1 TASKS
 
 CUPID: FINDBACK;
-KAPPA: CHPIX, COLLAPSE, MATHS, MFITTREND, STATS, THRESH.
+KAPPA: CDIV, CHPIX, CMULT, COLLAPSE, MATHS, MFITTREND, NDFCOPY, STATS, THRESH.
 
 =head1 REQUIRED PERL MODULES
 
@@ -227,7 +227,6 @@ foreach ( @clips ) {
    push @clip_sigma, max( $last, $_ );
 }
 
-
 # Specify output and temporary filenames.
 # =======================================
 my $params;
@@ -237,9 +236,20 @@ my @bad_receptors;
 my $osuffix = "_bllmasked";
 my ( $first_file_in, $first_file_out)  = $Frm->inout( $osuffix, 1 );
 
+# Form the time-collapsed profile.
+# ================================
+
+# The profile for the whole observation, not just chunks is needed.
+# otherwise some transient bad baselines in a chunk, especially in
+# the last can look relatively worse, and hence the whole receptor
+# is incorrectly removed.  Instead those should be left for
+# _FLAG_LOWFREQ_INTERFERENCE_SPECTRA_ to filter.
+my $sum_over_time = new ORAC::TempFile( 0 );
+my $mean_over_time = new ORAC::TempFile( 0 );
+my $no_times = 0;
+
 foreach my $i ( 1 .. $Frm->nfiles ) {
-   my @bad_receptors_local;
-   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+   my $in = $Frm->file( $i );
 
 # Set/get filenames.
    orac_say( "Perform bad-baseline detection comparing trend with linear fit for $in." );
@@ -247,28 +257,11 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp1file = new ORAC::TempFile( 0 );
    my $temp2file = new ORAC::TempFile( 0 );
    my $temp3file = new ORAC::TempFile( 0 );
-   my $temp4file = new ORAC::TempFile( 0 );
-   my $temp5file = new ORAC::TempFile( 0 );
-   my $temp6file = new ORAC::TempFile( 0 );
 
-# Form arrays of bad detectors.
-# =============================
-
-# Retrieve the list of bad detectors from the calibration system ONLY
-# ignoring the ones set locally.  The reading of INDEXORMASTER is
-# done to setup the survey (survey_br).
-   $Cal->bad_receptors( "MASTER" );
-   my @baddets = $Cal->bad_receptors_list;
-   orac_say( " Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
-
-# Still need to invoke the bad_receptors_list method although the
-# resulting array is not used.
-   $Cal->bad_receptors( "INDEXORMASTER" );
-   my @tmpdets = $Cal->bad_receptors_list;
-   orac_say( " Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
-
-# Form mean squared residuals from linear baseline.
-# =================================================
+   _GET_DIMENSIONS_ FILE=$in
+   my $dims = $_GET_DIMENSIONS_{DIMS};
+   my $norm = $dims->[2];
+   $no_times += $norm;
 
 # Collapse time axis using a clipped mean to form average spectrum for
 # each detector.  Although would like to use variance weighting, the
@@ -278,9 +271,61 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    $params .= " axis=time trim wlim=0.0 variance=false";
    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
+# Form weighted sum of the profiles.
+   $Mon{'kappa_mon'}->obeyw( "cmult", "in=$temp1file scalar=$norm out=$temp2file" );
+
+   if ( $i == 1 ) {
+      $params = "in=$temp2file out=$sum_over_time";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+   } else {
+      $params = "in1=$sum_over_time in2=$temp2file out=$temp3file";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+      $params = "in=$temp3file out=$sum_over_time";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   }
+}
+
+# Now we have the weighted mean spectra by receptor.
+$Mon{'kappa_mon'}->obeyw( "cdiv", "in=$sum_over_time scalar=$no_times out=$mean_over_time" );
+
+# Form arrays of bad detectors.
+# =============================
+
+# The master index is far too underpopulated and can lead to picking an
+# entry that is months before or after the date of the observation being
+# processed.  Valid receptors can then be rejected and bad ones included.
+# Enter a null (H14) entry in $ORAC_DATA_CAL/index.bad_receptors if
+# a night has no bad receptors.  Another possibility is make this
+# selection a recipe parameter, so could select by "INDEX" and rely on
+# the current data.
+$Cal->bad_receptors( "MASTER" );
+my @baddets = $Cal->bad_receptors_list;
+orac_say( " Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+# Still need to invoke the bad_receptors_list method although the
+# resulting array is not used.
+$Cal->bad_receptors( "INDEXORMASTER" );
+my @tmpdets = $Cal->bad_receptors_list;
+orac_say( " Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
+
+# Form mean squared residuals from linear baseline.
+# =================================================
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+   my @bad_receptors_local;
+   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+
+   my $temp4file = new ORAC::TempFile( 0 );
+   my $temp5file = new ORAC::TempFile( 0 );
+   my $temp6file = new ORAC::TempFile( 0 );
+   my $temp7file = new ORAC::TempFile( 0 );
+   my $temp8file = new ORAC::TempFile( 0 );
+
 # Apply threshold to exclude spikes in the spectra.
    orac_say( " Thresholding the spectra at +/- 20 to exclude spikes." );
-   $params = "in=$temp1file out=$temp2file thrlo=-20 newlo=bad thrhi=20 newhi=bad";
+   $params = "in=$mean_over_time out=$temp4file thrlo=-20 newlo=bad thrhi=20 newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Mask out the central region to exclude narrow astronomical line, but
@@ -288,7 +333,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # velocity range.
    orac_say( "  Masking the velocity range $central_bounds[0] to $central_bounds[1] km/s to exclude astronomical lines." );
    my $chpix_section = "$central_bounds[0]:$central_bounds[1],,";
-   my $params = "in=$temp2file out=$temp3file section='$chpix_section' newval=bad";
+   my $params = "in=$temp4file out=$temp5file section='$chpix_section' newval=bad";
    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
 # Find the trends in the background.  This step prevents the rms from a
@@ -297,12 +342,12 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # identify ripples or turned-up ends of the spectra.
    orac_say( " Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
    my $boxparam = "[$smooth_scale,1]";
-   $params = "in=$temp3file out=$temp4file box=$boxparam sub=false accept";
+   $params = "in=$temp5file out=$temp6file box=$boxparam sub=false accept";
    $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # Subtract linear baselines from smoothed spectrum for each detector.
    orac_say( " Fit linear baselines and subtract these from the trends." );
-   $params = "in=$temp4file out=$temp5file modifyin=false subtract auto";
+   $params = "in=$temp6file out=$temp7file modifyin=false subtract auto";
    $params .= " order=1 axis=spec method=single";
    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
@@ -312,7 +357,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my %receptor_stats;
    my %receptor_rms;
    my $array_stats = new Statistics::Descriptive::Sparse;
-   my $array = new JCMT::ACSIS::Array( File => $temp5file );
+   my $array = new JCMT::ACSIS::Array( File => $temp7file );
 
 # Form set of receptors that are not bad in the master list.
    my %keep;
@@ -322,16 +367,16 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
    foreach my $receptor ( @receptors ) {
       my $pixel = $array->pixel( $receptor );
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file(,$pixel)" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file(,$pixel)" );
       my ( $ORAC_STATUS, $nel ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
 # Calculate rms from the linear fit for the current receptor.  Exclude
 # the ends of each spectrum where the noise increases dramatically,
 # and could swamping the signal being measured.
       if ( $nel > 0 ) {
-         $params = "ia=$temp5file(,$pixel) out=$temp6file exp='IA*IA/$nel'";
+         $params = "ia=$temp7file(,$pixel) out=$temp8file exp='IA*IA/$nel'";
          $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file(~85%,)" );
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file(~85%,)" );
          ( $ORAC_STATUS, my $ms ) = $Mon{'kappa_mon'}->get( "stats", "total" );
          my $rms = sqrt( $ms );
 
@@ -353,8 +398,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       }
    }
 
-   my $type = "RMS from linear baseline";
-   _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=$type
+   if ( $i == 1 ) {
+      my $type = "RMS from linear baseline";
+      _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=$type
+   }
 
 # Identify receptors with outlying deviations from linearity.
 # ===========================================================
