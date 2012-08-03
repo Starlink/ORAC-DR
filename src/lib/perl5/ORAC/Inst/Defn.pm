@@ -137,7 +137,7 @@ my %MonolithDefns = (
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{KAPPA_DIR}."/kappa_mon" : "" ),
-           SILENT => $silent->( "stats", "histat" ),
+           SILENT => $silent->( "stats", "histat", "histogram" ),
           },
          surf_mon => {
            MESSYS => 'AMS',
@@ -512,7 +512,7 @@ sub orac_determine_inst_classes {
   } elsif ( $inst eq 'LCOCC' ) {
     $groupclass = "ORAC::Group::LCOSBIG";
     $frameclass = "ORAC::Frame::LCOCC";
-    $calclass = "ORAC::Calib::LCOSBIG";
+    $calclass = "ORAC::Calib::LCOCC";
     $instclass = "ORAC::Inst::LCOSBIG";
 
   } elsif ( $inst eq 'LCOSBIG_0M4' ) {
