@@ -23,34 +23,42 @@
 #
 # Authors:
 #    RAS: Rachel Street (LCOGT)
+#    TAL: Tim Lister (LCOGT)
 #
 # Copyright:
 #    Copyright (C) 2012-2012 Las Cumbres Observatory Global Telescope Inc.
 #    All Rights Reserved.
 #
 #-
+    my $localDEBUG = 0;
     my $file = $Frm->file(1);
     print "File=$file\n";
 
 # Set PSF parameter values from computed statistics
     my $fwhm = -99.0;
-    my $elong = -99.0;
-    my $elongPA = -99.0;
+    my $ellip = -99.0;
+    my $ellipPA = -99.0;
     if (defined $Cal->dqc ) {
       my $dqc = $Cal->dqc;
 # Dereference row/hash reference of DQC params
       $fwhm = $dqc->{'FWHM'};
-      $elong = $dqc->{'ELLIPTICITY'};
-      $elongPA = $dqc->{'ORIENT'};
+      $ellip = $dqc->{'ELLIPTICITY'};
+      $ellipPA = $dqc->{'ORIENT'};
     }
-#      print "FWHM=$fwhm, Elong=$elong, ElongPA=$elongPA\n";
+#      print "FWHM=$fwhm, Elong=$ellip, ElongPA=$ellipPA\n";
 # Add PSF quality params to file and header
     $Frm->hdr( "L1FWHM", $fwhm);
     _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1FWHM VALUE=$fwhm, COMMENT=[arcsec]|Frame|FWHM|in|arcsec
-    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ELONG VALUE=$elong, COMMENT=Mean|image|elongation|(A/B)
-    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ELNGPA VALUE=$elongPA, COMMENT=[deg]|PA|of|mean|image|elongation
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ELLIP VALUE=$ellip, COMMENT=Mean|image|ellipticity|(1-B/A)
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ELLIPA VALUE=$ellipPA, COMMENT=[deg]|PA|of|mean|image|ellipticity
 
 # ADD DATA QUALITY FLAGS
+
+    my $qcver = '_SET_QC_FLAGS_-$Revision: 5939 $';
+    $qcver =~ s/\$Revision: /r/;
+    $qcver =~ s/ \$//;
+#    print "QC Version=$qcver\n";
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QCVER VALUE=$qcver, COMMENT=Version|of|QC|module
 
 # Initialising qc flags.  -1/U indicates unknown/unassessed in all cases
     my $img_status = -1;
@@ -62,9 +70,12 @@
     # Threshold for "reasonable" FWHM in arcsec if image is in focus:
     my $fwhm_thresh = 3.0;
     # Threshold difference in temperature from the CCD's set-point in degrees:
-    my $ccd_tempdiff_thresh = 5.0;
+    my $ccd_tempdiff_thresh = 2.0;
+    # Threshold for a "reasonable" sky background pixel value in ADU.  Sufficiently loose to be
+    # independent of filter:
+    my $bkgd_threshold = 5000.0;
 
-
+#################################################
 # OBSERVING CONSTRAINTS QUALITY CONTROL FLAG
 
 # Initialise components of the data quality determination:
@@ -92,7 +103,7 @@
 # Opting to use the SEXSFWHM value.
 # Both parameters are decimal floats in arcsec
     _DATA_QC_TEST_ PARNAME=Seeing REQCONSTRAINTKEY=BLKSEECO MEASVALUEKEY=L1FWHM TESTTYPE=LTE
-    $data_seeing = $_DATA_QC_TEST_{QCPARAM} ;
+    $data_seeing = $_DATA_QC_TEST_{QCPARAM};
 
 # Actual transparency (SCHEDTRN) should be less than or equal to the requested transparency at the time (BLKTRNCO).
 # SCHEDTRN is defined as a decimal value between 0-1, whereas BLKTRNCO is unclear at this stage.
@@ -109,6 +120,7 @@
     $obs_constraints = $data_moonphase . $data_moondist . $data_seeing . $data_transpar . $data_airmass;
 
 
+#################################################
 # IMAGE QUALITY CONTROL FLAG
 
 # Initialise components of the image quality determination:
@@ -128,11 +140,11 @@
 
     if (defined $Frm->hdr( "WMSCLOUD" )) {
       my $wms_cloud = uc($Frm->hdr( "WMSCLOUD" ));
-      print "WMSCLOUD=$wms_cloud\n";
+      print "WMSCLOUD=$wms_cloud\n" if $localDEBUG;
       $img_cloud = 2;
       if ( $wms_cloud ne 'UNKNOWN' and  $wms_cloud ne 'N/A' ) { # Must use 'ne' not '!=' for string comparisons
 # Has a defined value, should now make decisions on it... TBD
-        print "WMSCLOUD has reasonable value\n";
+        print "WMSCLOUD has reasonable value\n" if $localDEBUG;
 	$img_cloud = 0;
       }
     }
@@ -143,7 +155,7 @@
     if (defined $Frm->hdr( "ENC1STAT" ) and defined $Frm->hdr( "ENC2STAT" )) {
       my $enc1_status = uc($Frm->hdr( "ENC1STAT" ));
       my $enc2_status = uc($Frm->hdr( "ENC2STAT" ));
-      print "ENC{1,2}STAT=$enc1_status,$enc2_status\n";
+      print "ENC{1,2}STAT=$enc1_status,$enc2_status\n" if $localDEBUG;
       if ( $enc1_status ne 'OPEN' or $enc2_status ne 'OPEN' ) {
       	  print "Bad ENC status\n";
           $img_enc = 16;
@@ -157,7 +169,7 @@
     if (defined $Frm->hdr( "AZSTAT" ) and defined $Frm->hdr( "ALTSTAT" )) {
       my $az_stat = uc($Frm->hdr( "AZSTAT" ));
       my $alt_stat = uc($Frm->hdr( "ALTSTAT" ));
-      print "AZ,ALT STAT= $az_stat, $alt_stat\n";
+      print "AZ,ALT STAT= $az_stat, $alt_stat\n" if $localDEBUG;
       if ( $az_stat ne 'OKAY' or $alt_stat ne 'OKAY' ) {
       	  print "Bad axis state\n";
           $img_axis = 32;
@@ -172,15 +184,15 @@
     if (defined $Frm->hdr( "FOCDMD" ) and defined $Frm->hdr( "FOCOBOFF" )) {
       my $focdmd = $Frm->hdr( "FOCDMD" );
       my $focoboff = $Frm->hdr( "FOCOBOFF" );
-      print "FOCDMD=$focdmd and FOCOBOFF=$focoboff\n";
+      print "FOCDMD=$focdmd and FOCOBOFF=$focoboff\n" if $localDEBUG;
       if ( $focdmd != $focoboff ) {
         $img_focus = 64;
       	print "Requested focus != actual focus\n";
       }
       if ( $focdmd == 0.0 ) {
-      	print "Checking focus against measured FWHM\n";
+      	print "Checking focus against measured FWHM\n" if $localDEBUG;
       	if (defined $fwhm != -99.0) {
-	  print "Comparing measured FWHM=$fwhm with threshold=$fwhm_thresh\n";
+	  print "Comparing measured FWHM=$fwhm with threshold=$fwhm_thresh\n" if $localDEBUG;
           if ( $fwhm > $fwhm_thresh ) {
               $img_focus = 64;
 	  }
@@ -190,7 +202,6 @@
       } else {
       	print "Data deliberately defocused; no check against FWHM\n";
       }
-
     }
 
 
@@ -212,6 +223,22 @@
     	}
     }
 
+# Test for bad readout
+# 
+    _IMG_QC_READOUT_TEST_
+    $img_readout = $_IMG_QC_READOUT_TEST_{READOUT};
+    my $q1mean = $_IMG_QC_READOUT_TEST_{Q1MEAN};
+    my $q1sigma = $_IMG_QC_READOUT_TEST_{Q1SIGMA};
+    my $q2mean = $_IMG_QC_READOUT_TEST_{Q2MEAN};
+    my $q2sigma = $_IMG_QC_READOUT_TEST_{Q2SIGMA};
+    my $q3mean = $_IMG_QC_READOUT_TEST_{Q3MEAN};
+    my $q3sigma = $_IMG_QC_READOUT_TEST_{Q3SIGMA};
+    my $q4mean = $_IMG_QC_READOUT_TEST_{Q4MEAN};
+    my $q4sigma = $_IMG_QC_READOUT_TEST_{Q4SIGMA};
+    my $imagemean = $_IMG_QC_READOUT_TEST_{MEAN};
+    my $imagesigma = $_IMG_QC_READOUT_TEST_{SIGMA};
+
+
 # Tests for sources of noisy CCD frames
 # INS_NOISY_CCD = 4096: Noisy CCD renders this data untrustworthy
 #     	Currently testing that the CCD's actual temperature (CCDATEMP) is within tolerance of the set-point
@@ -227,6 +254,7 @@
 # Calculate the final sum of all image quality parameters:
     $img_status = $img_cloud + $img_enc + $img_axis + $img_focus + $img_occult + $img_readout + $img_ccdnoise + $img_deadccd;
 
+#################################################
 # PHOTOMETRY CATALOGUE FLAG
 
 # Initialising components of the catalogue flag:
@@ -244,12 +272,58 @@
       $catextract = 2 if ($Frm->hdr( "SEXNDET" ) == 0);
     }
 
-# No test is applied for the time correction code here; testing done in the timecorrect software itself.
+# No test is applied for the time correction code here; testing done in the
+# timecorrect software itself.
 
 # Add the components of the flag:
     $cat_status = $wcsproblem + $catextract + $postproc;
 
 
+#################################################
+# PHOTOMETRY STATUS FLAG
+
+# Initialising photometric calibration flags:
+    my $bkgd_structure = 0;
+    my $bkgd_gradient = 0;
+    my $bkgd_high = 0;
+    my $extinct_medium = 0;
+    my $extinct_large = 0;
+    my $deltazp_medium = 0;
+    my $deltazp_large = 0;
+    my $extinct_nominal = 0;
+    my $zp_nominal = 0;
+    my $photcalib_failed = 0;
+    my $fwhm_toosmall = 0;
+    my $fwhm_tolarge = 0;
+
+# Check the overall image mean, assuming this is dominated by the background.
+    if ( $imagemean > $bkgd_threshold) {
+      	$bkgd_high = 4;
+    }
+
+# Check that the mean of all four quadrants are consistent with each other
+    if ( abs($q1mean - $q2mean) > ($q1sigma*3.0) ) {
+      $bkgd_structure = 2;
+      print "Q1 mean differs from Q2 mean\n";
+    }
+    if ( abs($q2mean - $q3mean) > ($q2sigma*3.0) ) {
+      $bkgd_structure = 2;
+      print "Q2 mean differs from Q3 mean\n";
+    }
+    if ( abs($q3mean - $q4mean) > ($q3sigma*3.0) ) {
+      $bkgd_structure = 2;
+      print "Q3 mean differs from Q4 mean\n";
+    }
+
+# Add components of the overall flag:
+    $phot_status = $bkgd_structure + $bkgd_gradient + $bkgd_high +
+      	      	    $extinct_medium + $extinct_large + $deltazp_medium + $deltazp_large + $extinct_nominal +
+		    $zp_nominal + $photcalib_failed + $fwhm_toosmall + $fwhm_tolarge;
+    print "$phot_status = $bkgd_structure + $bkgd_gradient + $bkgd_high + " .
+      	  "$extinct_medium + $extinct_large + $deltazp_medium + $deltazp_large + $extinct_nominal + " .
+    	  "$zp_nominal + $photcalib_failed + $fwhm_toosmall + $fwhm_tolarge\n";
+
+#################################################
 # WRITE QUALITY CONTROL FLAGS:
     _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QOBCON VALUE=$obs_constraints, COMMENT=Observing|constraints|satisfied?
     _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QIMGST VALUE=$img_status, COMMENT=Image|taking|status|(bitmask;-1=Unknown,0=OK)
@@ -259,9 +333,9 @@
 
 # Re-File the dqc params with the calibration system now we have the flags.
     my %calhash = ( %{$Frm->hdr},
-    		    ELLIPTICITY => $elong,
+    		    ELLIPTICITY => $ellip,
     		    FWHM => $fwhm,
-    		    ORIENT => $elongPA,
+    		    ORIENT => $ellipPA,
 		    QC_OBCON => $obs_constraints,
 		    QC_IMGST => $img_status,
 		    QC_CATST => $cat_status,
