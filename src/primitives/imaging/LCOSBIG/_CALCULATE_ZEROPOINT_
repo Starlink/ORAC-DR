@@ -91,12 +91,17 @@ if( $group ) {
   $Obj = $Frm;
 }
 
+# See if a limiting magnitude was passed
+my $cat_limmag = $_CALCULATE_ZEROPOINT_{CATLIMITMAG};
+$cat_limmag = defined( $cat_limmag ) ? $cat_limmag : 25.0;
+print "Using $cat_limmag as the limiting magnitude\n" if $localDEBUG;
+
 # Set up a bunch of variables for later use.
 my ( $axialratio, $ext_ellipticity, $fwhm, $k_fwhm, $k_fwhm_zen, $orient );
 my ( $zeropoint_variance, $limiting_magnitude, $extcor, $sky_value, $sky_value_variance );
 my ( $sky_brightness, @zps, $zeropoint, $zeropoint_src, $transparency, $this_m1 );
 my %calhash;
-my $num_objs = -99;
+my $num_objs = 0;
 
 # Obtain the airmass from the FITS headers. Find the approximate
 # mean airmass from the start and end values. This should be
@@ -126,12 +131,16 @@ if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
     my $filter = $Frm->uhdr("ORAC_FILTER");
     my $sloanfilter = 0;
     if ( $filter =~ /[ugriz]p$/i ) {
-      print "Sloan filter detected\n";
+      print "Sloan filter detected\n" if $localDEBUG;
       chop($filter);
       $filter = 'P' . $filter;
       $sloanfilter = 1;
-    } elsif ( $filter =~ /w$/  or $filter =~ /solar$/i) {
-      print "PS w or solar filter detected\n";
+    } elsif ( $filter =~ /zs$/i ) {
+      print "PS/Sloan zs filter detected\n" if $localDEBUG;
+      $filter = 'Pz';
+      $sloanfilter = 1;
+    } elsif ( $filter =~ /w$/ or $filter =~ /solar$/i or $filter =~ /clear$/i or $filter =~ /air$/i ) {
+      print "PS w, clear, air or solar filter detected\n" if $localDEBUG;
       $filter = 'SO';
       $sloanfilter = 1;
     }
@@ -142,9 +151,9 @@ if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
       	      	      	      	      	      File => $cat_file,
 					      ReadOpt => { Filter => $waveband } );
     my $origin = $image_catalogue->origin();
-    print "Srcs Origin=$origin\n";
+    print "Srcs Origin=$origin\n" if $localDEBUG;
     my $num = $image_catalogue->sizeof();
-    print "Num src objects=$num\n";
+    print "Num src objects=$num\n" if $localDEBUG;
 
     # And get the standard star catalogue
 
@@ -184,7 +193,7 @@ if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
       $findassm_params = $findassm_params . " -F " . $filter . 'RIs';
     }
     $findassm_params = $findassm_params . " -l LandoltFit,SnFit,StetsonFit,SDSSPTFit,SDSSSouthFit,Tycho2Fit,ApassCat";
-    $findassm_params = $findassm_params . " -L -Vb 25.000 -Vf -5.000";
+    $findassm_params = $findassm_params . " -L -Vb " . $cat_limmag . " -Vf -5.000";
     my $stdscatfile = 'systemed_assm.cat';
     $findassm_params = $findassm_params . " > " . $stdscatfile;
     print "#lma:f $findassm_params\n" if $localDEBUG;
@@ -195,9 +204,9 @@ if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
     # Read AJP's ASSM catalog
     my $stds_catalogue = new Astro::Catalog( Format => 'ASSM', File => $stdscatfile );
     $origin = $stds_catalogue->origin();
-    print "Stds Origin=$origin\n";
+    print "Stds Origin=$origin\n" if $localDEBUG;
     $num = $stds_catalogue->sizeof();
-    print "Num std objects=$num\n";
+    print "Num std objects=$num\n" if $localDEBUG;
 
     # Cross matching radius
     my $radius = 3.0 * DAS2R;
@@ -488,7 +497,7 @@ if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
         	     "blue" );
 	 orac_print( "  Extinction coefficient of $p_ext was used.\n", "blue" );
 	 orac_print( "  Instrumental zero-point of $p_m1zp was used.\n", "blue" );
-	 $zeropoint_src = '_CALCULATE_ZEROPOINT_-$Revision: 5757 $';
+	 $zeropoint_src = '_CALCULATE_ZEROPOINT_-$Revision: 5938 $';
 	 $zeropoint_src =~ s/\$Revision: /r/;
 	 $zeropoint_src =~ s/ \$//;
     } else {
@@ -506,6 +515,7 @@ if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
     }  # end num_objs > 0
 } else { # bad astrometry
     orac_warn "Astrometric fit was bad so unable to determine image zeropoint statistics.\n";
+    $num_objs = -99;
     $extcor = -99.0;
     $limiting_magnitude = -99.0;
     $sky_value = -99.0;

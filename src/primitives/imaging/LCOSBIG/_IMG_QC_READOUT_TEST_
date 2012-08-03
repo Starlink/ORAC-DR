@@ -1,0 +1,142 @@
+#+
+# Name:
+#    _IMG_QC_READOUT_TEST_
+#
+# Purpose:
+#    To test the readout of the frame data for common symptoms of readout errors.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#
+# Steering Headers:
+#
+# Arguments:
+#
+# Notes:
+#    -  This primitive is suitable for imaging cameras.
+#    -  Processing only occurs for object frames.
+#
+# Authors:
+#    RAS: Rachel Street (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2012-2012 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+
+# Initialise returned parameter and range values to be used in frame statistics:
+    my $localDEBUG = 1;
+    my $img_readout = 0;
+
+# Extract size of the frame from the frame header, and the saturation pixel value:
+    my $xmin = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+    my $xmax = $Frm->uhdr( "ORAC_X_UPPER_BOUND" );
+    my $ymin = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+    my $ymax = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" );
+    _GET_SATURATION_LEVEL_
+    my $satvalue = $_GET_SATURATION_LEVEL_{SATURATION};
+#    print "READOUT_TEST: Frame size received $xmin - $xmax by $ymin - $ymax\n" if $localDEBUG;
+#    print "READOUT_TEST: Saturation at $satvalue\n" if $localDEBUG;
+
+# Common symptoms of readout failure:
+# Many rows or columns of the frame set to a single value, which is normally the saturation value.
+# Test this by calculating the mean and standard deviation of the frame quadrants and comparing them
+# with the saturation value.
+    # Box 1:
+    my $xb1 = $xmin;
+    my $xb2 = $xmax / 2.0;
+    my $yb1 = $ymin;
+    my $yb2 = $ymax / 2.0;
+    _IMBOX_STATS_ XMIN=$xb1 XMAX=$xb2 YMIN=$yb1 YMAX=$yb2
+    my $b1mean = $_IMBOX_STATS_{MEAN};
+    my $b1sigma = $_IMBOX_STATS_{SIGMA};
+    print "Box 1 ($xb1:$xb2,$yb1:$yb2) mean=$b1mean, sigma=$b1sigma\n";
+
+    # Box 2:
+    $xb1 = $xmin;
+    $xb2 = $xmax / 2.0;
+    $yb1 = $ymax / 2.0;
+    $yb2 = $ymax;
+    _IMBOX_STATS_ XMIN=$xb1 XMAX=$xb2 YMIN=$yb1 YMAX=$yb2
+    my $b2mean = $_IMBOX_STATS_{MEAN};
+    my $b2sigma = $_IMBOX_STATS_{SIGMA};
+    print "Box 2 ($xb1:$xb2,$yb1:$yb2) mean=$b2mean, sigma=$b2sigma\n";
+
+    # Box 3:
+    $xb1 = $xmax / 2.0;
+    $xb2 = $xmax;
+    $yb1 = $ymin;
+    $yb2 = $ymax / 2.0;
+    _IMBOX_STATS_ XMIN=$xb1 XMAX=$xb2 YMIN=$yb1 YMAX=$yb2
+    my $b3mean = $_IMBOX_STATS_{MEAN};
+    my $b3sigma = $_IMBOX_STATS_{SIGMA};
+    print "Box 3 ($xb1:$xb2,$yb1:$yb2) mean=$b3mean, sigma=$b3sigma\n";
+
+    # Box 4:
+    $xb1 = $xmax / 2.0;
+    $xb2 = $xmax;
+    $yb1 = $ymax / 2.0;
+    $yb2 = $ymax;
+    _IMBOX_STATS_ XMIN=$xb1 XMAX=$xb2 YMIN=$yb1 YMAX=$yb2
+    my $b4mean = $_IMBOX_STATS_{MEAN};
+    my $b4sigma = $_IMBOX_STATS_{SIGMA};
+    print "Box 4 ($xb1:$xb2,$yb1:$yb2) mean=$b4mean, sigma=$b4sigma\n";
+
+    # Check that none of the background values are consistent with
+    # saturation:
+    if ( abs($b1mean - $satvalue) < ($b1sigma) ) {
+      $img_readout = 2048;
+      print "B1 close to saturation\n";
+    }
+    if ( abs($b2mean - $satvalue) < ($b2sigma) ) {
+      $img_readout = 2048;
+      print "B2 close to saturation\n";
+    }
+    if ( abs($b3mean - $satvalue) < ($b3sigma) ) {
+      $img_readout = 2048;
+      print "B3 close to saturation\n";
+    }
+    if ( abs($b4mean - $satvalue) < ($b4sigma) ) {
+      $img_readout = 2048;
+      print "B4 close to saturation\n";
+    }
+
+# Layout of boxes within the frame:
+#   ----|----
+#   | 2 | 4 |
+#   ---------
+#   | 1 | 3 |
+#   ---------
+#
+# Check readout problems by seeing if boxes 2 & 4 are greater than boxes 1 & 3
+# Also test if mean in boxes 2 & 4 is greater than saturation level/2
+#
+    if ( ($b2mean - $b1mean) > (3.0*$b1sigma) && ($b4mean - $b3mean) > (3.0*$b3sigma) 
+      	 && $b2mean > $satvalue/2.0 && $b4mean > $satvalue/2.0 ) {
+    	$img_readout = 2048;
+	print "Top-half of image much greater than lower-half: readout problem\n"
+    }
+
+# Also return statistics on the whole frame while we're at it:
+    _IMBOX_STATS_ XMIN=$xmin XMAX=$xmax YMIN=$ymin YMAX=$ymax
+    my $imagemean = $_IMBOX_STATS_{MEAN};
+    my $imagesigma = $_IMBOX_STATS_{SIGMA};
+    print "Image mean=$imagemean, sigma=$imagesigma\n";
+
+# Return the determined QC parameter plus some derived statistics which will be useful later:
+    $_IMG_QC_READOUT_TEST_{READOUT} = $img_readout;
+    $_IMG_QC_READOUT_TEST_{Q1MEAN} = $b1mean;
+    $_IMG_QC_READOUT_TEST_{Q1SIGMA} = $b1sigma;
+    $_IMG_QC_READOUT_TEST_{Q2MEAN} = $b2mean;
+    $_IMG_QC_READOUT_TEST_{Q2SIGMA} = $b2sigma;
+    $_IMG_QC_READOUT_TEST_{Q3MEAN} = $b3mean;
+    $_IMG_QC_READOUT_TEST_{Q3SIGMA} = $b3sigma;
+    $_IMG_QC_READOUT_TEST_{Q4MEAN} = $b4mean;
+    $_IMG_QC_READOUT_TEST_{Q4SIGMA} = $b4sigma;
+    $_IMG_QC_READOUT_TEST_{MEAN} = $imagemean;
+    $_IMG_QC_READOUT_TEST_{SIGMA} = $imagesigma;
+
+
