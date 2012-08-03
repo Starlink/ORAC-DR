@@ -1,14 +1,14 @@
-package ORAC::Calib::LCOSBIG;
+package ORAC::Calib::LCOCC;
 
 =head1 NAME
 
-ORAC::Calib::LCOSBIG;
+ORAC::Calib::LCOCC;
 
 =head1 SYNOPSIS
 
-  use ORAC::Calib::LCOSBIG;
+  use ORAC::Calib::LCOCC;
 
-  $Cal = new ORAC::Calib::LCOSBIG;
+  $Cal = new ORAC::Calib::LCOCC;
 
   $dark = $Cal->dark;
   $Cal->dark("darkname");
@@ -19,7 +19,7 @@ ORAC::Calib::LCOSBIG;
 
 =head1 DESCRIPTION
 
-This module contains methods for specifying LCOSBIG-specific calibration
+This module contains methods for specifying LCOCC-specific calibration
 objects. It provides a class derived from ORAC::Calib.  All the
 methods available to ORAC::Calib objects are available to
 ORAC::Calib::UKIRT objects.
@@ -152,7 +152,7 @@ Return (or set) the name of the current flat.
 
   $flat = $Cal->flat;
 
-This method is subclassed for LCOSBIG so that the warning messages when
+This method is subclassed for LCOCC so that the warning messages when
 going through the list of possible flats are suppressed (5th argument = 0).
 Also we don't croak (3rd argument = 1) if we fail to find a flat so we can
 call the following code to set a default unity flat.
@@ -166,9 +166,9 @@ sub flat {
   unless ( defined $flat ) {
     # $uhdrref is a reference to the Frame uhdr hash
     my $uhdrref = $self->thingtwo;
-    my $defflatname = "flat_kb76_20120606_FAKEFLAT_bin2x2.sdf";
-    if ($uhdrref->{'ORAC_XBINNING'} == 1 && $uhdrref->{'ORAC_YBINNING'} == 1 ) {
-      $defflatname = "flat_kb76_20120606_FAKEFLAT_bin1x1.sdf";
+    my $defflatname = "fakeflat.sdf";
+    if ($uhdrref->{'ORAC_XBINNING'} == 2 && $uhdrref->{'ORAC_YBINNING'} == 2 ) {
+      my $defflatname = "fakeflat_bin2x2.sdf";
     }
     my $defflat = $self->find_file($defflatname);
     if( defined( $defflat ) ) {
@@ -191,7 +191,7 @@ every effort is made to guarantee that the mask is suitable for use.
   $Cal->mask( $newmask );
 
 If no suitable mask can be found from the index file (or the currently
-set mask is not suitable), the LCOSBIG C<$ORAC_DATA_CAL/bpm-kb76> is returned by
+set mask is not suitable), the LCOCC C<$ORAC_DATA_CAL/bpm_kb22> is returned by
 default (so long as the file does exist).  Note that a test for
 suitability can not be performed since there is no corresponding index
 entry for this default mask.
@@ -202,7 +202,7 @@ sub mask {
   my $self = shift;
   my $mask = $self->GenericIndexAccessor( "mask", 0, 0, 0, 0, @_ );
   unless ( defined $mask ) {
-    my $defmask = $self->find_file("bpm-kb76.sdf");
+    my $defmask = $self->find_file("bpm_kb22.sdf");
     if( defined( $defmask ) ) {
       $defmask =~ s/\.sdf$//;
       return $defmask;
@@ -219,7 +219,7 @@ sub mask {
 
 =head1 REVISION
 
-$Id: LCOSBIG.pm 5942 2012-08-03 00:14:48Z tlister $
+$Id: LCOCC.pm 5833 2012-06-17 04:19:19Z tlister $
 
 =head1 AUTHORS
 
