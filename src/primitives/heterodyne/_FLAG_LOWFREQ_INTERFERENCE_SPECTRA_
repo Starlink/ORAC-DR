@@ -117,8 +117,8 @@ Frequency Interference).
 =head1 TASKS
 
 CUPID: FINDBACK;
-KAPPA: CHAIN, CHPIX, COPYBAD, COLLAPSE, MANIC, MATHS, MFITTREND, NDFCOPY,
-       PASTE, RESHAPE, SETTYPE, STATS, THRESH;
+KAPPA: CHPIX, COPYBAD, COLLAPSE, MANIC, MATHS, MFITTREND, NDFCOPY,
+       PASTE, SETORIGIN, SETTYPE, STATS, THRESH;
 SMURF: FIXSTEPS.
 
 =head1 REQUIRED PERL MODULES
@@ -234,7 +234,7 @@ $edge_clip = "[" . join( ",", @clip_sigma ) . "]";
 # Enter a null (H14) entry in $ORAC_DATA_CAL/index.bad_receptors if
 # a night has no bad receptors.  Another possibility is make this
 # selection a recipe parameter, so could select by "INDEX" and rely on
-# the current data.  
+# the current data.
 $Cal->bad_receptors( "MASTER" );
 my @baddets = $Cal->bad_receptors_list;
 orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
@@ -335,7 +335,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # non-linearity for each spectrum and each current detector.
    orac_say( "    Collapsing spectra to form average non-linearity per spectrum." );
    $params = "in=$temp5file out=$temp6file estimator=mean";
-   $params .= " axis=spec trim=f wlim=0.0 variance=false";
+   $params .= " axis=spec trim wlim=0.0 variance=false";
    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Concatenate the profiles.
@@ -344,31 +344,27 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Form a profile for each receptor throughout a whole observation.  The
 # whole gives a better handle on the normal non-linearity level.
    if ( $i == 1 ) {
-      $params = "in=$temp6file out=$linearity_profiles"; 
+      $params = "in=$temp6file out=$linearity_profiles";
       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
    } else {
-      $params = "in=$linearity_profiles c1=$temp6file out=$temp7file"; 
-      $Mon{'ndfpack_mon'}->obeyw( "chain", "$params" );
 
-      $params = "in=$temp7file out=$linearity_profiles"; 
+# Shift the origin on the time during concatenation.
+      my $time_origin = $time_bounds[-2] - 1;
+      $params = "shift=[0,$time_origin] ";
+      $params .= "in=$linearity_profiles p1=$temp6file out=$temp7file";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+# Ready for the next slice to concatenate.  Another, but brave, way
+# is to to make the input and output the same on PASTE.
+      $params = "in=$temp7file out=$linearity_profiles";
       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
    }
 }
 
-# Mould the vectorised array of the linearity profiles to be two
-# dimensional with receptor and time axes.  We assume that the
-# number of good receptors is the same for all sub-files of the
-# observation.
-my $linearity_pr2d = new ORAC::TempFile( 0 );
-$params = "in=$linearity_profiles out=$linearity_pr2d ";
-$params .= "shape=[$no_receptor,$no_times]";
-$Mon{'ndfpack_mon'}->obeyw( "reshape", "$params" );
-
 # Get average rms deviations for each receptor not in the bad_receptors list.
 # ---------------------------------------------------------------------------
 my $linearity_mask = new ORAC::TempFile( 0 );
-my $linearity_2d = new ORAC::TempFile( 0 );
 
 foreach my $receptor ( @receptors ) {
    orac_say( "  Receptor $receptor." );
@@ -382,7 +378,7 @@ foreach my $receptor ( @receptors ) {
 # ---------------------------
 
 # First greatly reduce the effect of noise.
-   $params = "in=$linearity_pr2d($pixel,) out=$temp8file box=25 sub=false accept";
+   $params = "in=$linearity_profiles($pixel,) out=$temp8file box=25 sub=false accept";
    $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
@@ -433,28 +429,19 @@ foreach my $receptor ( @receptors ) {
 # Form file containing the masks for each receptor.
 # =================================================
 
-# Initially concatenate the profiles.
+# Copy the profiles initially then concatenate them.
    if ( $receptor eq $receptors[0] ) {
-      $params = "in=$temp9file out=$linearity_mask"; 
+      $params = "in=$temp9file out=$linearity_mask";
       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
    } else {
-      $params = "in=$linearity_mask c1=$temp9file out=$temp10file"; 
-      $Mon{'ndfpack_mon'}->obeyw( "chain", "$params" );
+      $params = "in=$linearity_mask p1=$temp9file out=$temp10file";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
-      $params = "in=$temp10file out=$linearity_mask"; 
+      $params = "in=$temp10file out=$linearity_mask";
       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-   }    
+   }
 }
-
-# At this point we should have a vectorised array of the masked
-# profiles.  To make it easier to follow reshape this to be two
-# dimensional with receptor and time axes.  We assume that the
-# number of good receptors is the same for all sub-files of the
-# observation.
-$params = "in=$linearity_mask out=$linearity_2d ";
-$params .= "shape=[$no_receptor,$no_times]";
-$Mon{'ndfpack_mon'}->obeyw( "reshape", "$params" );
 
 # Loop over the subfiles again to apply the flagging.
 # ===================================================
@@ -488,13 +475,17 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Expand the thresholded image to the size of the current receptor's
 # plane in the initial cube.
    orac_say( "   Expand the masked profile." );
-   $params = "in=$linearity_2d(,$t_lbnd:$t_ubnd) out=$temp11file ";
+   $params = "in=$linearity_mask(,$t_lbnd:$t_ubnd) out=$temp11file ";
    $params .= "axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
    $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
+# Restore the origin on the time axis.
+   $params = "ndf=$temp11file like=$cubemask";
+   $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$params" );
+
 # Paste the data to the mask file.
    orac_say( "   Paste the masked data into the cube mask." );
-   my $params = "in=$cubemask p1=$temp11file out=$temp12file confine=false transp=false";
+   $params = "in=$cubemask p1=$temp11file out=$temp12file confine=false transp=false";
    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp12file out=$cubemask" );
 
