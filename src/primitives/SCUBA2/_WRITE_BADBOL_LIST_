@@ -1,0 +1,151 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_WRITE_BADBOL_LIST_ - write a text file with a list of bad bolometers
+
+=head1 SYNOPSIS
+
+ _WRITE_BADBOL_LIST_
+
+ _WRITE_BADBOL_LIST_ OBSFLAG=1
+
+=head1 DESCRIPTION
+
+Write an ORAC-DR flag file containing a list of bad bolometers. The
+naming convention for the flag file consists of a prefix, C<s>, the UT
+date and (optionally) the current observation number, ending with a
+C<.badbol> extension. The flag file is a hidden file and thus the name
+begins with a dot C<.>.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<FRAME>
+
+Frame object from which to obtain files. Default is the current Frame
+($Frm).
+
+=item B<OBSFLAG>
+
+Indicate whether or not the flag file name should contain the current
+observation number. Default is 0 (no).
+
+=back
+
+=head1 NOTES
+
+A file is only written by the QL pipeline.
+
+Data from multiple subarrays are written to a single file.
+
+=head1 OUTPUT FILES
+
+Creates a text file with a list of bad bolometers called
+C<.sYYYYMMDD_MMMMM.badbol> or C<.sYYYYMMDD.badbol> if OBSFLAG is
+false.
+
+=head1 FLAG FILE FORMAT
+
+The flag file contains the following columns:
+
+=over 2
+
+=item Subarray
+
+The current subarray
+
+=item Row/Column
+
+The row and column are written as a colon-separated pari of integers
+in parentheses, i.e. (R:C)
+
+=item Noise/Flatfield flag
+
+Will contain either C<N> or C<F> depending on whether the bad
+bolometer list was derived from flatfield or noise data.
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", $Frm);
+
+return ORAC__OK unless ($Frmobj->uhdr("QUICKLOOK"));
+
+# The bad-bolometer list can be derived from noise or flatfield data
+my $badbol_typ = ($Frmobj->uhdr("NOISE")) ? "N" : "F";
+
+# Is this flag file unique to this observation?
+my $obsflag = get_prim_arg($_PRIM_ARGS_, "OBSFLAG", 0);
+
+# Define a flag file name
+my $suffix = "badbol";
+_GET_FLAG_FILE_NAME_ SUFFIX=$suffix OBSFLAG=$obsflag
+my $flagfilename = $_GET_FLAG_FILE_NAME_{NAME};
+
+# Get a file handle for the flag file
+my $flagfile = new IO::File("> $flagfilename");
+if ( defined $flagfile ) {
+  my %files = $Frmobj->get_files_by_subarray;
+  foreach my $subarray (sort keys %files) {
+    my $data = $files{$subarray}->[0];
+    $data .=  ".more.smurf.resp_new" if ($badbol_typ eq "F");
+    my $listfile = "ascout.$$";
+    my $args = "in=$data out=$listfile bad=-1 width=false";
+    $Mon{figaro4}->obeyw("ascout","$args");
+
+    # Read the ASCII output file
+    my $ascout = new IO::File("< $listfile");
+    if ($ascout) {
+      while (<$ascout>) {
+	# Skip comment lines beginning with a space and a ! (" !").
+	next if (/^\s!/);
+	chomp;
+	# Don't forget the leading space
+	my ($sp, $x, $y, $val, $err) = split(/\s+/,$_);
+	# Pick out the bad bolometers
+	if ($val == -1) {
+	  # Convert the pixel coordinates into pixel values
+	  $x += 0.5;
+	  $y += 0.5;
+	  # Write info to flag file
+	  print $flagfile "$subarray (".$y.":".$x.") $badbol_typ\n";
+	}
+      }
+    } else {
+      orac_err "Unable to open output file written by ascout\n";
+    }
+    unlink($listfile);
+  }
+  orac_print "Bad bolometer list written to $flagfilename\n";
+} else {
+  orac_err "Unable to open a new flag file for bad bolometer list\n";
+}
