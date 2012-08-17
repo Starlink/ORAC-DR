@@ -19,8 +19,8 @@ source finder.
 Source finding is performed using CUPID:findclumps and may use any of
 the supported methods. The best way to control source detection is by
 providing a tuned config file with all the necessary parameters. This
-is specified using the recipe parameter C<FINDCLUMPS_CONFIG>. The
-results are written to a CUPID catalogue file (a FITS binary table).
+is specified using the recipe parameter C<FINDCLUMPS_CFG>. The results
+are written to a CUPID catalogue file (a FITS binary table).
 
 This primitive is designed to work on a single image and will fail if
 the current Frame object contains more than one file.
@@ -95,7 +95,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 University of British Columbia. All Rights
+Copyright (C) 2011-2012 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -138,16 +138,22 @@ $proceed = 0 if ($group && !$Grp->file_exists);
 
 if ($proceed) {
   my $use_mf = 0;
-  if ($group) {
-    # Option to use the matched-filtered Group map
+  if ($group && ($Grp->nfiles > 1)) {
+    # Option to use the matched-filtered Group map if one exists
     $use_mf = get_prim_arg($_PRIM_ARGS_, "USE_MF", 0);
   }
 
-  # Calculate S/N map - append "_snr" suffix
   my $currentfile = ($group && $Grp->file_exists) ? ($use_mf ? $Grp->file(2) : $Grp->file) : $Frm->file;
+
   my $snrmap = $currentfile . "_snr";
-  _CALC_SCUBA2_SNR_ OUT=$snrmap STORE=0 VERBOSE=0 USE_MF=$use_mf GROUP=$group
-  $Grp->push_intermediates($snrmap);
+  unless ($Frm->uhdr("RECPAR_USESNR")) {
+    # Calculate S/N map - append "_snr" suffix
+    orac_print "Calculating S/N image... " if ($verbose);
+    _CALC_SCUBA2_SNR_ IN=$currentfile OUT=$snrmap STORE=0 VERBOSE=0
+    $Grp->push_intermediates($snrmap);
+  } else {
+    $snrmap = $currentfile;
+  }
 
   # Run CUPID
   _FIND_SOURCES_ IMAGE=$snrmap WRITE_CATALOGUE=1 METHOD=$method MINPIX=$minpix DETECT_SIGMA=$detect
