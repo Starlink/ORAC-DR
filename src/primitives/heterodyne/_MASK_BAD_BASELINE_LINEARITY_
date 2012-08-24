@@ -310,165 +310,161 @@ $Cal->bad_receptors( "INDEXORMASTER" );
 my @tmpdets = $Cal->bad_receptors_list;
 orac_say( " Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
 
-# Form mean squared residuals from linear baseline.
-# =================================================
+# Form residuals from linear baseline.
+# =====================================
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
-   my @bad_receptors_local;
-   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+my @bad_receptors_local;
 
-   my $temp4file = new ORAC::TempFile( 0 );
-   my $temp5file = new ORAC::TempFile( 0 );
-   my $temp6file = new ORAC::TempFile( 0 );
-   my $temp7file = new ORAC::TempFile( 0 );
-   my $temp8file = new ORAC::TempFile( 0 );
+my $temp4file = new ORAC::TempFile( 0 );
+my $temp5file = new ORAC::TempFile( 0 );
+my $temp6file = new ORAC::TempFile( 0 );
+my $temp7file = new ORAC::TempFile( 0 );
+my $temp8file = new ORAC::TempFile( 0 );
 
 # Apply threshold to exclude spikes in the spectra.
-   orac_say( " Thresholding the spectra at +/- 20 to exclude spikes." );
-   $params = "in=$mean_over_time out=$temp4file thrlo=-20 newlo=bad thrhi=20 newhi=bad";
-   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+orac_say( " Thresholding the spectra at +/- 20 to exclude spikes." );
+$params = "in=$mean_over_time out=$temp4file thrlo=-20 newlo=bad thrhi=20 newhi=bad";
+$Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Mask out the central region to exclude narrow astronomical line, but
 # even that has wings.  Allow for variable spectral range by using a
 # velocity range.
-   orac_say( "  Masking the velocity range $central_bounds[0] to $central_bounds[1] km/s to exclude astronomical lines." );
-   my $chpix_section = "$central_bounds[0]:$central_bounds[1],,";
-   my $params = "in=$temp4file out=$temp5file section='$chpix_section' newval=bad";
-   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+orac_say( "  Masking the velocity range $central_bounds[0] to $central_bounds[1] km/s to exclude astronomical lines." );
+my $chpix_section = "$central_bounds[0]:$central_bounds[1],,";
+$params = "in=$temp4file out=$temp5file section='$chpix_section' newval=bad";
+$Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-# Find the trends in the background.  This step prevents the rms from a
-# baseline fit being swamped by the noise.  The aim is to find whether
-# the linear fit is a good match to global shape of the baseline.  This aims to
-# identify ripples or turned-up ends of the spectra.
-   orac_say( " Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
-   my $boxparam = "[$smooth_scale,1]";
-   $params = "in=$temp5file out=$temp6file box=$boxparam sub=false accept";
-   $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+# Find the trends in the background of each receptor.  This step prevents the
+# rms from a baseline fit being swamped by the noise.  The goal is to find
+# whether the linear fit is a good match to global shape of the baseline.  This
+# aims to identify ripples or turned-up ends of the spectra.
+orac_say( " Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
+my $boxparam = "[$smooth_scale,1]";
+$params = "in=$temp5file out=$temp6file box=$boxparam sub=false accept";
+$Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # Subtract linear baselines from smoothed spectrum for each detector.
-   orac_say( " Fit linear baselines and subtract these from the trends." );
-   $params = "in=$temp6file out=$temp7file modifyin=false subtract auto";
-   $params .= " order=1 axis=spec method=single";
-   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+orac_say( " Fit linear baselines and subtract these from the trends." );
+$params = "in=$temp6file out=$temp7file modifyin=false subtract auto";
+$params .= " order=1 axis=spec method=single";
+$Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
 # Get average rms deviations for each receptor not in the bad_receptors list.
 # ===========================================================================
 
-   my %receptor_stats;
-   my %receptor_rms;
-   my $array_stats = new Statistics::Descriptive::Sparse;
-   my $array = new JCMT::ACSIS::Array( File => $temp7file );
+my %receptor_stats;
+my %receptor_rms;
+my $array_stats = new Statistics::Descriptive::Sparse;
+my $array = new JCMT::ACSIS::Array( File => $temp7file );
 
 # Form set of receptors that are not bad in the master list.
-   my %keep;
-   @keep{ $array->receptors } = ( );
-   delete @keep{ @baddets };
-   my @receptors = keys %keep;
+my %keep;
+@keep{ $array->receptors } = ( );
+delete @keep{ @baddets };
+my @receptors = keys %keep;
 
-   foreach my $receptor ( @receptors ) {
-      my $pixel = $array->pixel( $receptor );
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file(,$pixel)" );
-      my ( $ORAC_STATUS, $nel ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+foreach my $receptor ( @receptors ) {
+   my $pixel = $array->pixel( $receptor );
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file(,$pixel)" );
+   my ( $ORAC_STATUS, $nel ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
 # Calculate rms from the linear fit for the current receptor.  Exclude
 # the ends of each spectrum where the noise increases dramatically,
 # and could swamping the signal being measured.
-      if ( $nel > 0 ) {
-         $params = "ia=$temp7file(,$pixel) out=$temp8file exp='IA*IA/$nel'";
-         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file(~85%,)" );
-         ( $ORAC_STATUS, my $ms ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-         my $rms = sqrt( $ms );
+   if ( $nel > 0 ) {
+      $params = "ia=$temp7file(,$pixel) out=$temp8file exp='IA*IA/$nel'";
+      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file(~85%,)" );
+      ( $ORAC_STATUS, my $ms ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+      my $rms = sqrt( $ms );
 
-         if ( ! defined( $receptor_stats{$receptor} ) ) {
-            $receptor_stats{$receptor} = new Statistics::Descriptive::Sparse;
-         }
+      if ( ! defined( $receptor_stats{$receptor} ) ) {
+         $receptor_stats{$receptor} = new Statistics::Descriptive::Sparse;
+      }
 
-         if ( $rms > 0 ) {
-            $receptor_stats{$receptor}->add_data( $rms );
-         }
+      if ( $rms > 0 ) {
+         $receptor_stats{$receptor}->add_data( $rms );
       }
    }
+}
 
-   foreach my $receptor ( keys %receptor_stats ) {
-      if ( $receptor_stats{$receptor}->count != 0 ) {
-         $receptor_rms{$receptor} = $receptor_stats{$receptor}->mean();
-      } else {
-         $receptor_rms{$receptor} = 'bad';
-      }
+foreach my $receptor ( keys %receptor_stats ) {
+   if ( $receptor_stats{$receptor}->count != 0 ) {
+      $receptor_rms{$receptor} = $receptor_stats{$receptor}->mean();
+   } else {
+      $receptor_rms{$receptor} = 'bad';
    }
+}
 
-   if ( $i == 1 ) {
-      my $type = "RMS from linear baseline";
-      _PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=$type
-   }
+my $type = "RMS from linear baseline";
+_PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=$type
 
 # Identify receptors with outlying deviations from linearity.
 # ===========================================================
 
 # Measure the median and standard deviation of the residuals from the
 # linear trend across the detectors.
-   my @values;
-   my $sigma;
-   my $median;
-   my $loop = 1;
-   my $i = 0;
+my @values;
+my $sigma;
+my $median;
+my $loop = 1;
+my $i = 0;
 
-   while ( $i <= $#clip_sigma && $loop ) {
-      my $stat = Statistics::Descriptive::Full->new();
+while ( $i <= $#clip_sigma && $loop ) {
+   my $stat = Statistics::Descriptive::Full->new();
 
 # Assume no rejection.
-      $loop = 0;
+   $loop = 0;
 
 # Extract the rms values from the hash.
-      while ( my ($k,$v) = each %receptor_rms ) {
-         if ( $v ne "bad" ) { push @values, $v }
-      }
+   while ( my ($k,$v) = each %receptor_rms ) {
+      if ( $v ne "bad" ) { push @values, $v }
+   }
 
 # Remove the flagged values before adding the values to the statistics
 # object.
-      $stat->add_data( @values );
+   $stat->add_data( @values );
 
-      if ( $stat->count != 0 ) {
-         $sigma = $stat->standard_deviation();
-         $median = $stat->median();
-      }
+   if ( $stat->count != 0 ) {
+      $sigma = $stat->standard_deviation();
+      $median = $stat->median();
+   }
 
 # Flag those detectors whose rms deviation from the linear trend exceeds
 # median plus the current sigma-clipping level.  This may cut too much
 # if all the baselines are excellent, but one is a little worse yet
 # otherwise fine.  Thus impose an absolute cutoff.
-      my $threshold = max( $min_rms, $median + $clip_sigma[$i] * $sigma );
-      orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
-      orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations." );
+   my $threshold = max( $min_rms, $median + $clip_sigma[$i] * $sigma );
+   orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
+   orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations." );
 
 # This would be cleaner if there were a remove_data method in
 # Statistics::Descriptive::Full.
-      while ( my ($k,$v) = each %receptor_rms ) {
-         if ( $v ne 'bad' ) {
-            if ( $v > $threshold ) {
-               push @bad_receptors_local, $k;
-               $receptor_rms{$k} = 'bad';
+   while ( my ($k,$v) = each %receptor_rms ) {
+      if ( $v ne 'bad' ) {
+         if ( $v > $threshold ) {
+            push @bad_receptors_local, $k;
+            $receptor_rms{$k} = 'bad';
 
 # Continue iteratively clipping as a detector has been flagged for
 # removal.
-               $loop = 1;
-            }
+            $loop = 1;
          }
       }
-      $i++;
-      undef $stat;
-      undef @values;
    }
+   $i++;
+   undef $stat;
+   undef @values;
+}
 
-   @bad_receptors_local = sort( @bad_receptors_local );
-   orac_say( " List of bad receptor for file $in: " .
-             join( ",", @bad_receptors_local ) );
-   orac_print "\n";
+my $in = $Frm->file( 1 );
+@bad_receptors_local = sort( @bad_receptors_local );
+orac_say( " List of bad receptor for file $in: " .
+          join( ",", @bad_receptors_local ) );
+orac_print "\n";
 
 # Add the bad receptors for this frame to the master list.
-   foreach my $receptor ( @bad_receptors_local ) { push ( @bad_receptors, $receptor ) }
-}
+foreach my $receptor ( @bad_receptors_local ) { push ( @bad_receptors, $receptor ) }
 
 # Make sure each bad detector is mentioned only once.
 my %seen = ();
