@@ -108,6 +108,10 @@ recipe parameter system. [undef]
 Whether or not to tag the resulting cube(s) as 'reduced'. See the
 _TAG_AS_REDUCED_PRODUCT_ primtive. [0]
 
+=item TILE = LOGICAL (Given)
+
+Whether or not to break the spectral cubes into tiles.  [1]
+
 =back
 
 =head1 NOTES
@@ -195,6 +199,7 @@ my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512000000 );
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
 my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNKSIZE", 5120 );
 my $override = get_prim_arg( $_PRIM_ARGS_, "OVERRIDE", 1 );
+my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", 1 );
 
 # Override various parameters via the recipe parameter system.
 if( $override ) {
@@ -216,6 +221,9 @@ if( $override ) {
   $system_arg = ( defined( $Frm->uhdr( "RECPAR_SYSTEM" ) ) ?
                   $Frm->uhdr( "RECPAR_SYSTEM" )            :
                   $system_arg );
+  $tile = ( defined( $Frm->uhdr( "RECPAR_TILE" ) ) ?
+            $Frm->uhdr( "RECPAR_TILE" )            :
+            $tile );
 }
 $chunksize = max( 100, $chunksize );
 
@@ -388,8 +396,10 @@ if( $Grp->lastallmembers( $Frm ) ) {
       # each chunk to be combined, disable the ability to adjust the
       # tile dimensions arbitrarily.  This is achieved by setting the
       # dimension negative.
-      _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder MAXSIZE=$maxsize BYTES_PER_PIXEL=$bytes_per_pixel
-      $tiledims = -1 * $_GET_TILE_DIMENSIONS_{TILEDIMS};
+      if ( $tile ) {
+         _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder MAXSIZE=$maxsize BYTES_PER_PIXEL=$bytes_per_pixel
+         $tiledims = -1 * $_GET_TILE_DIMENSIONS_{TILEDIMS};
+      }
 
       # Get the parameter string to send to makecube.
       _GET_SPREAD_PARAMS_ METHOD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize
@@ -401,8 +411,11 @@ if( $Grp->lastallmembers( $Frm ) ) {
       } else {
          $params  = "pixsize=$pixsize crota=$crota spread=$spread params=$sp_params usedetpos=$usedetpos";
       }
-      $params .= " tiledims=$tiledims system=$system autogrid=yes tileborder=$tileborder trim=n trimtiles";
-
+      if ( $tile ) {
+         $params .= " tiledims=$tiledims system=$system autogrid tileborder=$tileborder trim=n trimtiles";
+      } else {
+         $params .= " tiledims=! system=$system autogrid trim=n";
+      }
     }
 
     # Always use badmask=and.
@@ -491,7 +504,7 @@ if( $Grp->lastallmembers( $Frm ) ) {
     } else {
 
       my $fileref = \@infiles;
-      _CHUNK_AND_MOSAIC_CUBE_ FILES=$fileref TILEDIMS=$tiledims CHUNKSIZE=$chunksize NUM_CHUNK=$num_chunk MEAN_CHUNKSIZE=$mean_chunksize TOTALSIZE=$totalsize TOTALTILE=$totaltile MAKECUBE_PARAMS=$params
+      _CHUNK_AND_MOSAIC_CUBE_ FILES=$fileref CHUNKSIZE=$chunksize NUM_CHUNK=$num_chunk MEAN_CHUNKSIZE=$mean_chunksize TOTALSIZE=$totalsize TOTALTILE=$totaltile MAKECUBE_PARAMS=$params TILE=$tile
     }
     undef $inlist;
 

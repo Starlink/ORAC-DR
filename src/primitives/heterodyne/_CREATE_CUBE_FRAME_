@@ -102,6 +102,10 @@ Override the default "cube" product designation.
 Whether or not to tag the resulting cube(s) as 'reduced'. See the
 _TAG_AS_REDUCED_PRODUCT_ primitive. [0]
 
+=item TILE = LOGICAL (Given)
+
+Whether or not to break the spectral cubes into tiles.  [1]
+
 =item TILEBORDER = INTEGER (Given)
 
 The size of the border to be added to tiles. This is used when
@@ -190,6 +194,7 @@ my $param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
 my $param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
 my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
+my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", 1 );
 my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
 
 my $detectors = ( defined( $_PRIM_ARGS_->{DETECTORS} ) ?
@@ -217,6 +222,9 @@ if( $override ) {
   $system_arg = ( defined( $Frm->uhdr( "RECPAR_SYSTEM" ) ) ?
                   $Frm->uhdr( "RECPAR_SYSTEM" )            :
                   $system_arg );
+  $tile = ( defined( $Frm->uhdr( "RECPAR_TILE" ) ) ?
+            $Frm->uhdr( "RECPAR_TILE" )            :
+            $tile );
 }
 
 my @files;
@@ -339,10 +347,12 @@ if ( $Frm->uhdr( "SPARSE" ) || $autogrid eq 'yes' && $type ne "raster" ) {
 
 # Get the tiling dimensions, but only if we're not doing a pointing
 # or focus.
-if( lc( $type ) ne 'pointing' && lc( $type ) ne 'focus' ) {
+if( ( lc( $type ) ne 'pointing' && lc( $type ) ne 'focus' ) && $tile ) {
   _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder MAXSIZE=$maxsize BYTES_PER_PIXE=$bytes_per_pixel
   my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
   $params .= " tiledims=$tiledims tileborder=$tileborder trimtiles=yes";
+} else {
+  $params .= " tiledims=!";
 }
 
 if ($Frm->uhdr("ISHYBRID")) {
@@ -363,6 +373,7 @@ my $ORAC_STATUS = ( create_hdsobj( "$tmptsys", 'NDF' ) ? ORAC__OK : ORAC__ERROR 
 $ORAC_STATUS = ( copy_hdsobj( "$files[0].MORE.ACSIS.TSYS", "$tmptsys.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys" );
 ( $ORAC_STATUS, my $tsysmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
 if( $tsysmean < 0 && $tsysmean != VAL__BADD ) {
   orac_warn "Mean Tsys negative ($tsysmean). Using spread of input pixels for variance creation.\n";
   $params .= " genvar=spread inweight=false";
