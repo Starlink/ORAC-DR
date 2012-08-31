@@ -1483,6 +1483,69 @@ sub fullfname {
   return $_[0];
 }
 
+=item B<force_product_update>
+
+Update the product() value and force the file to receive the
+update with a sync headers.
+
+  $Obj->force_product_update( "snr", @filenames );
+
+The supplied file names will become the associated with the
+files() method.
+
+If no files are supplied or if files are supplied and the
+object has no files associated with it, sync_headers() will be called
+to force the header updates.
+
+=cut
+
+sub force_product_update {
+  my $self = shift;
+  my $product = shift;
+  my @files = @_;
+
+  my $prevsync = $self->allow_header_sync;
+  $self->allow_header_sync(1);
+  $self->product( $product );
+
+  # Storing them may not be enough to sync if the
+  # object does not currently have any files associated with
+  # it. If the object is originally empty we need to bypass
+  # the raw checking code. Default to trappingthis.
+  my $dosync = 1;
+  my $clear_raw = 0;
+
+  if (@files) {
+    my $notraw;
+    if ($self->nfiles > 0) {
+      # if we have files already the sync will happen
+      # because the object will not think it is raw data
+      # so we do not need an explicit sync
+      $dosync = 0;
+    } else {
+      # These files are not to be treated as raw for syncing purposes
+      $clear_raw = 1;
+    }
+    $self->files( @files );
+
+    # Clear raw that was automatically filled
+    $self->raw( undef ) if $clear_raw;
+
+  }
+
+  if ($dosync) {
+    # Force a sync on what we have
+    print "PRODUCT is ". $self->product . "\n";
+    $self->sync_headers;
+  }
+
+  # Put the raw files back if needed
+  $self->raw( @files ) if $clear_raw;
+
+  $self->allow_header_sync( $prevsync );
+  return;
+}
+
 =back
 
 =begin __PRIVATE__
