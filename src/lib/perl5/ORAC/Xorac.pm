@@ -1248,7 +1248,7 @@ sub xorac_select_filelist {
   closedir DIR;
 
   # if we already have selected files remove them from the left hand box
-  if ( defined @$obs ) {
+  if ( @$obs ) {
     for ( my $i = 0; $i < scalar(@contents); $i++ ) {
       for ( my $j = 0; $j < scalar(@$obs); $j++ ) {
         if ( $contents[$i] eq $$obs[$j] ) {
