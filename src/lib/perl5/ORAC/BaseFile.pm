@@ -1535,7 +1535,6 @@ sub force_product_update {
 
   if ($dosync) {
     # Force a sync on what we have
-    print "PRODUCT is ". $self->product . "\n";
     $self->sync_headers;
   }
 
