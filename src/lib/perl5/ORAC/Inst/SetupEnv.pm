@@ -179,7 +179,7 @@ sub orac_calc_instrument_settings {
                            'WFCAM'  => "ukirtdata",
                            'LCOSBIG' => "/mfs-sba/engineering/elp/",
                            'LCOCC' => "/mfs-sba/engineering/elp/",
-                           'LCOSBIG_0M4' => "/mnt/images/daydirs",
+                           'LCOSBIG_0M4' => "/mfs-sba/engineering/bpl/",
                         );
 
   # Default drN directories for ACSIS and SCUBA-2.
@@ -511,8 +511,8 @@ sub orac_calc_instrument_settings {
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                        'LCOSBIG_0M4' => { code => sub { $ukirt_con->( "lcosbig_0m4", "tlister\@lcogt.net", "XXX" ) },
-                                  ORAC_DATA_IN => File::Spec->catfile( $dataroot, "kb89", $options{ut}, "raw" ),
-                                  ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "kb89", $options{ut}, "oracproc" ),
+                                  ORAC_DATA_IN => File::Spec->catfile( $dataroot, "kb80", $options{ut}, "raw" ),
+                                  ORAC_DATA_OUT => File::Spec->catfile( "/mnt/images/daydirs/", "kb80", $options{ut}, "oracproc" ),
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                    );
