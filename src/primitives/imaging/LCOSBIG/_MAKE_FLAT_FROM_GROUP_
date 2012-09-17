@@ -94,7 +94,7 @@ use File::Copy;
     my $obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE");
     my $stuff = "N/A";
     if ( defined $Frm->uhdr( "MAKE_FLAT" ) ) {
-    	$stuff = $Frm->uhdr( "MAKE_FLAT" );
+        $stuff = $Frm->uhdr( "MAKE_FLAT" );
     }
 #    print "SVN DBG:$obstype $stuff\n";
     if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
@@ -255,6 +255,15 @@ use File::Copy;
 
 # Generate the flat's name.
                 $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
+# Check if the flat file already exists
+                while ( -r $out . '.sdf' ) {
+                  $cycleno++;
+                  if ( $cycleno > 0 ) {
+                    $cyclesuffix = "_c" . $cycleno;
+                  }
+                  $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
+                }
+                print "Using $out as flatname\n";
              }
 
 # Make a normalised flat
@@ -296,78 +305,105 @@ use File::Copy;
              _DISPLAY_FLAT_IMAGE_
 # If we have a final destination environment var. set, convert to fits and copy
 # files there.
-	    if ( defined $ENV{FINAL_DATA_OUT} ) {
-      	      $Frm->file( $out );
-	      _ADD_PIPELINE_VERSION_
-	      my $file = $Frm->file( $out );
-	      my $bias_used = $Cal->bias;
-	      my $dark_used = $Cal->dark;
-	      my $flat_used = 'N/A';
-	      my $shut_used = 'N/A';
-	      my $mask_used = $Cal->mask;
+            if ( defined $ENV{FINAL_DATA_OUT} ) {
+              $Frm->file( $out );
+              _ADD_PIPELINE_VERSION_
+              my $file = $Frm->file( $out );
+              my $bias_used = $Cal->bias;
+#              print "bias1=$bias_used\n";
 # Check for too long length (67 is max allowed by SUBPAR)
-	      if ( length($mask_used) > 50 ) {
-      		my @bpm_values = split('oracdr/', $mask_used);
-		$mask_used = $bpm_values[1];
-	#	print "mask=$mask_used\n";
-	      }
-	      my $fringe_used = 'N/A'; #$Cal->fringe;
-	#      print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
+              if ( length($bias_used) > 50 ) {
+                my @bias_values = split('oracdr/', $bias_used);
+# No 'oracdr/' found in filename, must be local not from cal/. Resplit on '/'.
+                if ( $#bias_values == 0 ) {
+                  @bias_values = split('/', $bias_used);
+                  $bias_used = $bias_values[-1];
+                } else {
+                  $bias_used = $bias_values[1];
+                }
+#                print "bias2=$bias_used\n";
+              }
+
+              my $dark_used = $Cal->dark;
+#              print "dark1=$dark_used\n";
+# Check for too long length (67 is max allowed by SUBPAR)
+              if ( length($dark_used) > 50 ) {
+                my @dark_values = split('oracdr/', $dark_used);
+# No 'oracdr/' found in filename, must be local not from cal/. Resplit on '/'.
+                if ( $#dark_values == 0 ) {
+                  @dark_values = split('/', $dark_used);
+                  $dark_used = $dark_values[-1];
+                } else {
+                  $dark_used = $dark_values[1];
+                }
+#                print "dark2=$dark_used\n";
+              }
+              my $flat_used = 'N/A';
+              my $shut_used = 'N/A';
+              my $mask_used = $Cal->mask;
+# Check for too long length (67 is max allowed by SUBPAR)
+              if ( length($mask_used) > 50 ) {
+                my @bpm_values = split('oracdr/', $mask_used);
+                $mask_used = $bpm_values[1];
+        #       print "mask=$mask_used\n";
+              }
+              my $fringe_used = 'N/A'; #$Cal->fringe;
+        #      print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
 
 # Determine processing steps done
-	      my $ovscan_correct = 0;
-	      $ovscan_correct = $Frm->uhdr( "OVSCAN_CORRECT")
-      	      	      		   if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
-	      my $bias_removed = 0;
-	      $bias_removed = $Frm->uhdr( "BIAS_REMOVED")
-      	      	      		   if(defined $Frm->uhdr( "BIAS_REMOVED"));
-	      my $dark_removed = 1;
-	      $dark_removed = $Frm->uhdr( "DARK_REMOVED")
-      	      	      		   if(defined $Frm->uhdr( "DARK_REMOVED"));
-	      my $ovscan_removed = 1;
-	      $ovscan_removed = $Frm->uhdr( "OVSCAN_REMOVED")
-      	      	      		   if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
-	      my $flat_removed = -1;
-	      my $fringe_removed = -1;
+              my $ovscan_correct = 0;
+              $ovscan_correct = $Frm->uhdr( "OVSCAN_CORRECT")
+                                   if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
+              my $bias_removed = 0;
+              $bias_removed = $Frm->uhdr( "BIAS_REMOVED")
+                                   if(defined $Frm->uhdr( "BIAS_REMOVED"));
+              my $dark_removed = 1;
+              $dark_removed = $Frm->uhdr( "DARK_REMOVED")
+                                   if(defined $Frm->uhdr( "DARK_REMOVED"));
+              my $ovscan_removed = 1;
+              $ovscan_removed = $Frm->uhdr( "OVSCAN_REMOVED")
+                                   if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
+              my $flat_removed = -1;
+              my $fringe_removed = -1;
 
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATOV VALUE=$ovscan_correct, COMMENT=Status|flag|for|overscan|correction
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATBI VALUE=$bias_removed, COMMENT=Status|flag|for|bias|frame|correction
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATDA VALUE=$dark_removed, COMMENT=Status|flag|for|dark|frame|correction
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATTR VALUE=$ovscan_removed, COMMENT=Status|flag|for|overscan|trimming
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFL VALUE=$flat_removed, COMMENT=Status|flag|for|flat|frame|correction
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFR VALUE=$fringe_removed, COMMENT=Status|flag|for|fringe|frame|correction
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATOV VALUE=$ovscan_correct, COMMENT=Status|flag|for|overscan|correction
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATBI VALUE=$bias_removed, COMMENT=Status|flag|for|bias|frame|correction
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATDA VALUE=$dark_removed, COMMENT=Status|flag|for|dark|frame|correction
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATTR VALUE=$ovscan_removed, COMMENT=Status|flag|for|overscan|trimming
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFL VALUE=$flat_removed, COMMENT=Status|flag|for|flat|frame|correction
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFR VALUE=$fringe_removed, COMMENT=Status|flag|for|fringe|frame|correction
 
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDBIAS VALUE=$bias_used, COMMENT=Id.|of|bias|frame|used
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDDARK VALUE=$dark_used, COMMENT=Id.|of|dark|frame|used
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFLAT VALUE=$flat_used, COMMENT=Id.|of|flat|frame|used
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDSHUT VALUE=$shut_used, COMMENT=Id.|of|shutter|corr.|frame|used
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDMASK VALUE=$mask_used, COMMENT=Id.|of|mask|file|used
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFRNG VALUE=$fringe_used, COMMENT=Id.|of|fringe|frame|used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDBIAS VALUE=$bias_used, COMMENT=Id.|of|bias|frame|used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDDARK VALUE=$dark_used, COMMENT=Id.|of|dark|frame|used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFLAT VALUE=$flat_used, COMMENT=Id.|of|flat|frame|used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDSHUT VALUE=$shut_used, COMMENT=Id.|of|shutter|corr.|frame|used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDMASK VALUE=$mask_used, COMMENT=Id.|of|mask|file|used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFRNG VALUE=$fringe_used, COMMENT=Id.|of|fringe|frame|used
 # Set image quality flag (unassessed for now)
-	       my $img_status = -1;
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QIMGST VALUE=$img_status, COMMENT=Image|taking|status|(bitmask;-1=Unknown,0=OK)
+               my $img_status = -1;
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QIMGST VALUE=$img_status, COMMENT=Image|taking|status|(bitmask;-1=Unknown,0=OK)
 
 # Set public/private flag and release date
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBPRV VALUE='public' COMMENT=Public|or|private|data?
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBPRV VALUE='public' COMMENT=Public|or|private|data?
 
-	      my $pubdate =  $Frm->hdr( "ORACDATETIME");
+              my $pubdate =  $Frm->hdr( "ORACDATETIME");
 #      orac_print "$frmdate $pubdate\n";
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBDAT VALUE=$pubdate COMMENT=[UTC]|Date|the|frame|becomes|public
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBDAT VALUE=$pubdate COMMENT=[UTC]|Date|the|frame|becomes|public
 
-	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='OPERATIONAL'
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='OPERATIONAL'
 
 # Set recipe used
-      	      my $recipe = $Frm->recipe;
+              my $recipe = $Frm->recipe;
 #      orac_print "Recipe=$recipe\n";
-      	      _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
+              _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
 
 # Convert flat frame to FITS
-     	      _CONVERT_TO_FITS_
-      	      my $fitsflatframe = $_CONVERT_TO_FITS_{FILENAME};
+              _CONVERT_TO_FITS_
+              my $fitsflatframe = $_CONVERT_TO_FITS_{FILENAME};
 
-      	      move($fitsflatframe, $ENV{FINAL_DATA_OUT});
-	      orac_print "Moving ". $fitsflatframe . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
-      	    }
+              move($fitsflatframe, $ENV{FINAL_DATA_OUT});
+              orac_print "Moving ". $fitsflatframe . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+            }
 
           }
 

@@ -518,7 +518,7 @@ sub orac_determine_inst_classes {
   } elsif ( $inst eq 'LCOSBIG_0M4' ) {
     $groupclass = "ORAC::Group::LCOSBIG";
     $frameclass = "ORAC::Frame::LCOSBIG_0M4";
-    $calclass = "ORAC::Calib::LCOSBIG";
+    $calclass = "ORAC::Calib::LCOSBIG_0M4";
     $instclass = "ORAC::Inst::LCOSBIG";
 
   } else {
