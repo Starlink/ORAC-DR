@@ -74,7 +74,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('bpl0m414-kb89-');
+  $self->rawfixedpart('bpl0m414-kb80-');
   $self->rawsuffix('.fits');
   $self->rawformat('FITS');
   $self->format('NDF');
