@@ -1,14 +1,14 @@
-package ORAC::Calib::LCOSBIG;
+package ORAC::Calib::LCOSBIG_0M4;
 
 =head1 NAME
 
-ORAC::Calib::LCOSBIG;
+ORAC::Calib::LCOSBIG_0M4;
 
 =head1 SYNOPSIS
 
-  use ORAC::Calib::LCOSBIG;
+  use ORAC::Calib::LCOSBIG_0M4;
 
-  $Cal = new ORAC::Calib::LCOSBIG;
+  $Cal = new ORAC::Calib::LCOSBIG_0M4;
 
   $dark = $Cal->dark;
   $Cal->dark("darkname");
@@ -19,7 +19,7 @@ ORAC::Calib::LCOSBIG;
 
 =head1 DESCRIPTION
 
-This module contains methods for specifying LCOSBIG-specific calibration
+This module contains methods for specifying LCOSBIG_0M4-specific calibration
 objects. It provides a class derived from ORAC::Calib.  All the
 methods available to ORAC::Calib objects are available to
 ORAC::Calib::UKIRT objects.
@@ -154,7 +154,7 @@ Return (or set) the name of the current bias.
 
   $bias = $Cal->bias;
 
-This method is subclassed for LCOSBIG so that the warning messages when
+This method is subclassed for LCOSBIG_0M4 so that the warning messages when
 going through the list of possible biases are suppressed (5th argument = 0).
 Unlike the flat code we *do* croak (3rd argument = 0) if we fail to find a bias.
 
@@ -177,7 +177,7 @@ Return (or set) the name of the current dark.
 
   $dark = $Cal->dark;
 
-This method is subclassed for LCOSBIG so that the warning messages when
+This method is subclassed for LCOSBIG_0M4 so that the warning messages when
 going through the list of possible darks are suppressed (5th argument = 0).
 Unlike the flat code we *do* croak (3rd argument = 0) if we fail to find a dark.
 
@@ -200,7 +200,7 @@ Return (or set) the name of the current flat.
 
   $flat = $Cal->flat;
 
-This method is subclassed for LCOSBIG so that the warning messages when
+This method is subclassed for LCOSBIG_0M4 so that the warning messages when
 going through the list of possible flats are suppressed (5th argument = 0).
 Also we don't croak (3rd argument = 1) if we fail to find a flat so we can
 call the following code to set a default unity flat.
@@ -214,9 +214,9 @@ sub flat {
   unless ( defined $flat ) {
     # $uhdrref is a reference to the Frame uhdr hash
     my $uhdrref = $self->thingtwo;
-    my $defflatname = "flat_kb74_20120831_FAKEFLAT_bin2x2.sdf";
+    my $defflatname = "flat_kb80_20120830_FAKEFLAT_bin2x2.sdf";
     if ($uhdrref->{'ORAC_XBINNING'} == 1 && $uhdrref->{'ORAC_YBINNING'} == 1 ) {
-      $defflatname = "flat_kb74_20120831_FAKEFLAT_bin1x1.sdf";
+      $defflatname = "flat_kb80_20120830_FAKEFLAT_bin1x1.sdf";
     }
     my $defflat = $self->find_file($defflatname);
     if( defined( $defflat ) ) {
@@ -239,7 +239,7 @@ every effort is made to guarantee that the mask is suitable for use.
   $Cal->mask( $newmask );
 
 If no suitable mask can be found from the index file (or the currently
-set mask is not suitable), the LCOSBIG C<$ORAC_DATA_CAL/bpm-kb74> is returned by
+set mask is not suitable), the LCOSBIG_0M4 C<$ORAC_DATA_CAL/bpm-kb80> is returned by
 default (so long as the file does exist).  Note that a test for
 suitability can not be performed since there is no corresponding index
 entry for this default mask.
@@ -250,7 +250,7 @@ sub mask {
   my $self = shift;
   my $mask = $self->GenericIndexAccessor( "mask", 0, 0, 0, 0, @_ );
   unless ( defined $mask ) {
-    my $defmask = $self->find_file("bpm-kb74.sdf");
+    my $defmask = $self->find_file("bpm-kb80.sdf");
     if( defined( $defmask ) ) {
       $defmask =~ s/\.sdf$//;
       return $defmask;
@@ -267,7 +267,7 @@ sub mask {
 
 =head1 REVISION
 
-$Id: LCOSBIG.pm 6078 2012-09-05 22:17:28Z tlister $
+$Id: LCOSBIG_0M4.pm 6078 2012-09-05 22:17:28Z tlister $
 
 =head1 AUTHORS
 

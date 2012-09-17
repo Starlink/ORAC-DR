@@ -51,21 +51,33 @@ use ORAC::Version;
       _ADD_PIPELINE_VERSION_
 
       my $bias_used = $Cal->bias;
+# Check for too long length (67 is max allowed by SUBPAR)
+      if ( length($bias_used) > 50 ) {
+        my @bias_values = split('/', $bias_used);
+        $bias_used = $bias_values[-1];
+#       print "bias=$bias_used\n";
+      }
       my $dark_used = $Cal->dark;
+# Check for too long length (67 is max allowed by SUBPAR)
+      if ( length($dark_used) > 50 ) {
+        my @dark_values = split('/', $dark_used);
+        $dark_used = $dark_values[-1];
+#       print "dark=$dark_used\n";
+      }
       my $flat_used = $Cal->flat;
 # Check for too long length (67 is max allowed by SUBPAR)
       if ( length($flat_used) > 50 ) {
-      	my @flat_values = split('/', $flat_used);
-	$flat_used = $flat_values[-1];
-#	print "flat=$flat_used\n";
+        my @flat_values = split('/', $flat_used);
+        $flat_used = $flat_values[-1];
+#       print "flat=$flat_used\n";
       }
       my $shut_used = 'N/A'; #$Cal->shut;
       my $mask_used = $Cal->mask;
 # Check for too long length (67 is max allowed by SUBPAR)
       if ( length($mask_used) > 50 ) {
-      	my @bpm_values = split('oracdr/', $mask_used);
-	$mask_used = $bpm_values[1];
-#	print "mask=$mask_used\n";
+        my @bpm_values = split('oracdr/', $mask_used);
+        $mask_used = $bpm_values[1];
+#       print "mask=$mask_used\n";
       }
       my $fringe_used = 'N/A'; #$Cal->fringe;
 #      print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
@@ -73,22 +85,22 @@ use ORAC::Version;
 # Determine processing steps done
       my $ovscan_correct = 0;
       $ovscan_correct = $Frm->uhdr( "OVSCAN_CORRECT")
-      	      	      	   if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
+                           if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
       my $bias_removed = 0;
       $bias_removed = $Frm->uhdr( "BIAS_REMOVED")
-      	      	      	   if(defined $Frm->uhdr( "BIAS_REMOVED"));
+                           if(defined $Frm->uhdr( "BIAS_REMOVED"));
       my $dark_removed = 0;
       $dark_removed = $Frm->uhdr( "DARK_REMOVED")
-      	      	      	   if(defined $Frm->uhdr( "DARK_REMOVED"));
+                           if(defined $Frm->uhdr( "DARK_REMOVED"));
       my $ovscan_removed = 0;
       $ovscan_removed = $Frm->uhdr( "OVSCAN_REMOVED")
-      	      	      	   if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
+                           if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
       my $flat_removed = 0;
       $flat_removed = $Frm->uhdr( "FLAT_REMOVED")
-      	      	      	   if(defined $Frm->uhdr( "FLAT_REMOVED"));
+                           if(defined $Frm->uhdr( "FLAT_REMOVED"));
       my $fringe_removed = 0;
       $fringe_removed = $Frm->uhdr( "FRINGE_REMOVED")
-      	      	      	   if(defined $Frm->uhdr( "FRINGE_REMOVED"));
+                           if(defined $Frm->uhdr( "FRINGE_REMOVED"));
 
       _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATOV VALUE=$ovscan_correct, COMMENT=Status|flag|for|overscan|correction
       _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATBI VALUE=$bias_removed, COMMENT=Status|flag|for|bias|frame|correction
@@ -164,8 +176,15 @@ use ORAC::Version;
 #      orac_print "$frmdate $pubdate\n";
       _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBDAT VALUE=$pubdate COMMENT=[UTC]|Date|the|frame|becomes|public
 
-#      _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='COMMISSIONING'
-      _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='OPERATIONAL'
+      my $siteid = $Frm->hdr( "SITEID");
+      
+      if ( $siteid eq "elp") {
+          orac_print "SiteID=$siteid, setting to OPERATIONAL\n";
+          _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='OPERATIONAL'
+      } else {
+          orac_print "SiteID=$siteid, setting to COMMISSIONING\n";
+          _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='COMMISSIONING'
+      }
 
 # Set recipes used
       my $recipe = $Frm->recipe;
@@ -180,9 +199,9 @@ use ORAC::Version;
 
 # A little callback
       my $create_graphic = sub {
-      	my $out = shift;
+        my $out = shift;
 #          _CREATE_GRAPHIC_FROM_FILE_ FILE=$out . "_small" XRES=256 YRES=256 TYPE=PNG
-      	  _CREATE_GRAPHIC_FROM_FILE_ FILE=$out XRES=512 YRES=512 TYPE=PNG
+          _CREATE_GRAPHIC_FROM_FILE_ FILE=$out XRES=512 YRES=512 TYPE=PNG
       };
 
 # Create graphic file
@@ -196,8 +215,8 @@ use ORAC::Version;
 
 # If we have a final destination environment var. set, move files there.
       if ( defined $ENV{FINAL_DATA_OUT} ) {
-      	move($renamefile, $ENV{FINAL_DATA_OUT});
-	orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+        move($renamefile, $ENV{FINAL_DATA_OUT});
+        orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
       }
 # Convert FITS file
 #      my $wcs = $Frm->read_wcs( $file );
@@ -215,14 +234,14 @@ use ORAC::Version;
       my @tcorr_args = ($tcorr_path, $renamefile);
       system(@tcorr_args);
       if ( $? != 0 ) {
-      	printf "child exited with value %d\n", $? >> 8;
+        printf "child exited with value %d\n", $? >> 8;
       }
 # If we have a final destination environment var. set, move files there.
       if ( defined $ENV{FINAL_DATA_OUT} ) {
-      	move($renamefile, $ENV{FINAL_DATA_OUT});
-	orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
-	$renamefile =~ s/90.fits/90_cat.fits/;
-	orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
-      	move($renamefile, $ENV{FINAL_DATA_OUT});
+        move($renamefile, $ENV{FINAL_DATA_OUT});
+        orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+        $renamefile =~ s/90.fits/90_cat.fits/;
+        orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+        move($renamefile, $ENV{FINAL_DATA_OUT});
       }
     }
