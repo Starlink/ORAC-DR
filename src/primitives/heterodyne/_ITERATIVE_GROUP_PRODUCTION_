@@ -45,6 +45,12 @@ observations. [25]
 
 The number of iterations to perform. [1]
 
+=item LOWER_VELOCITY = REAL (Given)
+
+The requested lower velocity, in km/s to be applied to products
+created after the final iteration.  This argument can be overridden by
+the RECPAR_FINAL_LOWER_VELOCITY uhdr via the recipe parameter system.  [undef]
+
 =item MOMENTS = STRING (Given)
 
 The moment maps to create. These are any of the values allowed for the
@@ -150,6 +156,12 @@ The size of the border to be added to tiles. This is used when
 smoothing the cube in spatial extend in later processing so as to not
 add edge effects when merging tiles together. [0]
 
+=item UPPER_VELOCITY = REAL (Given)
+
+The requested upper velocity, in km/s to be applied to products
+created after the final iteration.  This argument can be overridden by
+the RECPAR_FINAL_UPPER_VELOCITY uhdr via the recipe parameter system.  [undef]
+
 =back
 
 =head1 NOTES
@@ -194,6 +206,7 @@ my $edges = get_prim_arg( $_PRIM_ARGS_, "EDGES", 0 );
 my $flatfield = get_prim_arg( $_PRIM_ARGS_, "FLATFIELD", 0 );
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $iterations = get_prim_arg( $_PRIM_ARGS_, "ITERATIONS", 1 );
+my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $method =  get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
 my $rms_levels =  get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.0' );
@@ -209,11 +222,15 @@ my $spread = get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' );
 my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
 my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", 1 );
 my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
+my $upper_vel = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
 
 # Handle recipe parameter overrides.
 $flatfield = ( defined( $Frm->uhdr( "RECPAR_FLATFIELD" ) ) ?
              $Frm->uhdr( "RECPAR_FLATFIELD" )              :
              $flatfield );
+$lower_vel = ( defined( $Frm->uhdr( "RECPAR_FINAL_LOWER_VELOCITY" ) ) ?
+             $Frm->uhdr( "RECPAR_FINAL_LOWER_VELOCITY" )              :
+             $lower_vel );
 $moments = ( defined( $Frm->uhdr( "RECPAR_MOMENTS" ) ) ?
            $Frm->uhdr( "RECPAR_MOMENTS" )              :
            $moments );
@@ -238,6 +255,9 @@ $system = ( defined( $Frm->uhdr( "RECPAR_SYSTEM" ) ) ?
 $tile = ( defined( $Frm->uhdr( "RECPAR_TILE" ) ) ?
           $Frm->uhdr( "RECPAR_TILE" )            :
           $tile );
+$upper_vel = ( defined( $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY" ) ) ?
+             $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY" )              :
+             $upper_vel );
 
 
 # Only process if we're on the last member of a group.
@@ -334,7 +354,17 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
 
-    _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
+    foreach my $Frm ( $Grp->members ) {
+       _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
+
+# Want trimmed velocity range for final product?
+       if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
+          _RESTRICT_VELOCITY_RANGE_ GROUP=0 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+       }
+
+      _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=0 FLAG_QUAL_BAD=1
+       orac_print "\n";
+    }
 
     _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
 
@@ -350,10 +380,17 @@ if( $Grp->lastallmembers( $Frm ) ) {
     orac_say "Iterations completed. Creating final group files.\n";
     _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
 
+    my $tagit = ( ! ( defined( $lower_vel ) || defined( $upper_vel ) ) );
     if( $edges ) {
-      _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
+      _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=$tagit
     } else {
-      _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=1
+      _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=$tagit
+    }
+
+    # Trim final cube, and hence subsequent products from it.
+    if ( !$tagit ) {
+       _RESTRICT_VELOCITY_RANGE_ GROUP=1 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+       _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 FLAG_QUAL_BAD=1
     }
 
     _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
