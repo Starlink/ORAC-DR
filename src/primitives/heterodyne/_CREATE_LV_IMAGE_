@@ -1,0 +1,109 @@
+=head1 NAME
+
+_RESTRICT_VELOCITY_RANGE_
+
+=head1 DESCRIPTION
+
+This primitive forms an LV image, where L stands for longitude or
+latitude, and V for velocity.  It collapses the group file along the
+other spatial co-ordinate axis, as specfied by the AXIS argument
+using the integ estimator.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item AXIS = INTEGER (Given)
+
+The axis to collapse in the cube to form the LV image.  Can be the
+axis's index or its generic skylat" or "skylon" ["skylat"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for an ACSIS spatial cube.
+
+=item *
+
+The recipe parameter LV_IMAGE must be set true for the primitive to
+create an LV image.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The LV image with suffix _lv.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, NDFTRACE.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle arguments.
+my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", "skylat" );
+
+# Handle recipe parameters.
+$axis = ( defined( $Frm->uhdr( "RECPAR_LV_AXIS" ) ) ?
+           $Frm->uhdr( "RECPAR_LV_AXIS" )            :
+           $axis );
+my $make_lv = ( defined( $Frm->uhdr( "RECPAR_LV_IMAGE" ) ) ?
+              $Frm->uhdr( "RECPAR_LV_IMAGE" )            :
+              0 );
+
+# Return if an LV has not been explictly requested.
+if ( ! defined( $make_lv ) || ! $make_lv ) {
+  return 0;
+}
+
+foreach my $Obj ( $Grp ) {
+  foreach my $i ( 1 .. $Obj->nfiles ) {
+
+    my ( $in, $out ) = $Obj->inout( "_lv", $i );
+
+    # Create the LV image.
+    my $params = "in=$in out=$out axis=$axis ";
+    $params .= "trim variance=false estimator=integ accept";
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out" );
+    my( $ORAC_STATUS, @wcs_labels ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flabel" );
+
+    # Report to user.
+    my $plot_type = $wcs_labels[0];
+    $plot_type .= "-velocity";
+    $plot_type =~ tr/ /_/;
+    orac_say "Created $plot_type image in $out from $in.";
+
+    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$plot_type
+    $Obj->sync_headers;
+
+  }
+}
+
+# Tidy up output.
+orac_say "";
