@@ -168,7 +168,7 @@ sub flat {
     my $uhdrref = $self->thingtwo;
     my $defflatname = "fakeflat.sdf";
     if ($uhdrref->{'ORAC_XBINNING'} == 2 && $uhdrref->{'ORAC_YBINNING'} == 2 ) {
-      my $defflatname = "fakeflat_bin2x2.sdf";
+      $defflatname = "fakeflat_bin2x2.sdf";
     }
     my $defflat = $self->find_file($defflatname);
     if( defined( $defflat ) ) {
