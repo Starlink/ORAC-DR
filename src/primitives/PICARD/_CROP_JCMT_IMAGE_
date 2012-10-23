@@ -16,6 +16,9 @@ given by the map parameters in the header or to a user-specified size.
 The user may specify the desired map width and height or a map radius
 (for a circular ouput region) via recipe parameters.
 
+The desired map size is checked against the input image dimensions and
+the smaller of the two sizes is used for the output image.
+
 =head1 ARGUMENTS
 
 This primitive has no arguments. All options are set via recipe
@@ -26,6 +29,10 @@ parameters.
 The following external task is used:
 
 =over 4
+
+=item KAPPA
+
+NDFTRACE
 
 =item ORAC-DR primitives:
 
@@ -46,6 +53,14 @@ C<OUTPUT_NAME> recipe parameter.
 
 Currently only works for SCUBA-2 but the primitives used are not
 specific to that instrument and should work for heterodyne data.
+
+There is a possibly undesireable interaction between the
+C<APERTURE_RADIUS> and the various output map size recipe parameters
+(e.g. C<MAP_RADIUS> etc). If the given map size is less than 4 times
+the aperture radius, the map size will be set to 4 times the aperture
+radius. Note there is a default value of 30 arcsec. The workaround is
+to also set the C<APERTURE_RADIUS> parameter and to make it small (say
+1 arcsec).
 
 =head1 AUTHOR
 
@@ -87,17 +102,26 @@ my $in = $Frm->file;
 my $out = (defined $Frm->uhdr("RECPAR_OUTPUT_NAME") && $Grp->num == 0)
   ? $Frm->uhdr("RECPAR_OUTPUT_NAME") : $in . "_crop";
 
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+my $mapwidth = 0.5*$pixscale[0]*$dims[0];
+my $maphght = 0.5*$pixscale[1]*$dims[1];
+my $mapsize = ($dims[0] < $dims[1]) ? $mapwidth : $maphght;
+
 # If a map radius has been given then use that to create a circular output map
 if ($mapradius) {
   # Set a minimum size if an aperture radius is given
   if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) {
     my $minmapsize = 4.0 * $Frm->uhdr("RECPAR_APERTURE_RADIUS");
-    $mapradius = $minmapsize if ($mapradius < $minmapsize);
+    if ($mapradius < $minmapsize) {
+      orac_warn "Input radius ($mapradius arcsec) is smaller than minimum based on photometry aperture ($minmapsize arcsec)\n";
+      $mapradius = $minmapsize;
+    }
   }
   # However, the circular region cannot extend beyond the existing map boundary.
-  my $param = ($Frm->hdr("MAP_HGHT") > $Frm->hdr("MAP_WDTH")) ? "MAP_WDTH" : "MAP_HGHT";
-  if ($mapradius > $Frm->hdr($param)) {
-    $mapradius = $Frm->hdr($param);
+  if ($mapradius > $mapsize) {
+    $mapradius = $mapsize;
     orac_warn "Output image radius cannot exceed input map size ($mapradius arcsec)\n"
   }
   orac_print "Output image will be a circle of radius $mapradius arcsec\n" if $verbose;
@@ -122,13 +146,13 @@ if ($mapradius) {
       $newwidth = $minmapsize if (defined $Frm->uhdr("RECPAR_MAP_WIDTH") &&
 				  $Frm->uhdr("RECPAR_MAP_WIDTH") < $minmapsize);
     } else {
-      $newwidth = $minmapsize if ($Frm->hdr("MAP_WDTH") < $minmapsize);
+      $newwidth = $minmapsize if ($mapwidth < $minmapsize);
     }
     if ($newheight) {
       $newheight = $minmapsize if (defined $Frm->uhdr("RECPAR_MAP_HEIGHT") &&
 				   $Frm->uhdr("RECPAR_MAP_HEIGHT") < $minmapsize);
     } else {
-      $newheight = $minmapsize if ($Frm->hdr("MAP_HGHT") < $minmapsize);
+      $newheight = $minmapsize if ($maphght < $minmapsize);
     }
   }
 
