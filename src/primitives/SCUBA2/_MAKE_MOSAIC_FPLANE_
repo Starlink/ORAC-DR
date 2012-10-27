@@ -33,26 +33,30 @@ the default orientations of each subarray. Clearly a better way to do
 this would be to create a reference image, as is possible for on-sky
 data.
 
+The output mosaic is stored in the Frame object and is tagged with the
+given suffix.
+
 =head1 ARGUMENTS
 
 This primitive supports the following arguments:
 
 =over 4
 
-=item B<INFILES>
-
-Array reference with list of files to mosaic. Default is to use all
-files in the current Frame.
-
-=item B<OUT>
-
-Name of output file. Default is to use the C<inout> method to create a
-file with suffix C<_fpmos>.
-
 =item B<REFERENCE>
 
 A hash reference contain the name of the reference subarray and the
 corresponding file name. No default.
+
+=item B<SMURF>
+
+The name of an NDF component under the C<.more.smurf> extension to
+combine into the mosaic. No check is made to see if it exists. The
+top-level data component will be used if not specified.
+
+=item B<SUFFIX>
+
+The suffix to use for the output focal-plane mosaic. A default of
+C<_fpmos> is used if not given.
 
 =back
 
@@ -70,11 +74,12 @@ FLIP, NDFCOPY, ROTATE, WCSFRAME, WCSMOSAIC
 
 =head1 OUTPUT DATA
 
-None.
+The Frame object contains the focal-plane mosaic and is tagged with
+the given suffix.
 
 =head1 OUTPUT FILES
 
-The output file with suffic C<_fpmos>, or that given by the B<OUT>
+The output file with suffix C<_fpmos>, or that given by the B<SUFFIX>
 parameter.
 
 =head1 AUTHOR
@@ -83,7 +88,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 the University of British Columbia.  All
+Copyright (C) 2011-2012 the University of British Columbia.  All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -103,12 +108,16 @@ USA.
 
 =cut
 
-# Input files
-my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", undef);
-my @infiles = ($infiles && ref($infiles) eq "ARRAY") ? @{$infiles} : $Frm->files;
+# Output file suffix
+my $suffix = get_prim_arg($_PRIM_ARGS_, "SUFFIX", "_fpmos");
 
-# Output file - default to a fpmos suffix
-my $outname = get_prim_arg($_PRIM_ARGS_, "OUT", $Frm->inout("_fpmos"));
+my $smurf = get_prim_arg($_PRIM_ARGS_, "SMURF", undef);
+my @files;
+if ($smurf) {
+  @files = map { $_.".more.smurf.$smurf" } $Frm->files;
+} else {
+  @files = $Frm->files;
+}
 
 # Reference subarray and image - no default
 my $ref = get_prim_arg($_PRIM_ARGS_, "REFERENCE", undef);
@@ -120,7 +129,7 @@ my $refsub = $ref->{refsub};
 my $mosref = $ref->{refimage};
 
 # Set the coordinate frame to FPLANE
-foreach my $file (@infiles) {
+foreach my $file (@files) {
   $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$file frame=fplane");
 }
 
@@ -157,7 +166,7 @@ if ($refsub eq "s8b") {
   $flip = 1;
   $axis = 1;
 }
-my $inlist = write_file_list( @infiles );
+my $inlist = write_file_list( @files );
 my $mos = ORAC::TempFile->new();
 
 # Combine responsivity images using nearest-neighbour
@@ -178,5 +187,8 @@ if ($flip) {
   $processed = $flipped;
 }
 
-# Copy result to given output file
-$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$outname");
+# Copy result to given output file, store and tag with the current suffix
+my $fplane_mos = $Frm->rewrite_outfile_subarray(scalar($Frm->inout($suffix)), 1);
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$processed out=$fplane_mos");
+$Frm->files($fplane_mos);
+$Frm->tagset($suffix);
