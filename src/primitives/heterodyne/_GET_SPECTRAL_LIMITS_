@@ -1,0 +1,112 @@
+=head1 NAME
+
+_GET_SPECTRAL_LIMITS - Retrieves the spectral limits of a frame.
+
+=head1 DESCRIPTION
+
+This primitive returns the upper and lower spectral for a given frame.
+Spectra normally comprise just noise towards the ends of the spectral
+range.  The normal procedure is to trim these off at a fixed percentage,
+however there may be occasions where this is too aggressive a trim or
+excludes part of the desired final velocity range.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item FILE = STRING (Given)
+
+The name of the file to retrieve the dimensions for. If it is not defined,
+then defer to the current Frame.  ['']
+
+=item LBOUND = INTEGER (Returned)
+
+The lower bound of the spectral range.
+
+=item TRIM_PERCENT = REAL (Given)
+
+The percentage of the spectral range to trim to ensure exclusion of the
+noisy peripheries of the spectra.  This may be overidden by the
+recipe parameters _FINAL_LOWER_VELOCITY and _FINAL_UPPER_VELOCITY_.
+[85]
+
+=item UBOUND = INTEGER (Returned)
+
+The upper bound of the spectral range.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 TASKS
+
+KAPPA: NDFTRACE.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie <mjc@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+# Handle arguments.
+# =================
+
+# Obtain the file.  Spectral trimming occurs before a group object is formed
+# and therefore no GROUP argument is needed, merely default to the current
+# Frame.
+my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", $Frm->file );
+if ( defined( $_GET_SPECTRAL_LIMITS_{FILE} ) ) {
+   $file = $_GET_SPECTRAL_LIMITS_{FILE};
+} else {
+   $file = $Frm->file;
+}
+
+my $trim_percent = get_prim_arg( $_PRIM_ARGS_, "TRIM_PERCENT", "85" );
+$trim_percent = max( 80, min( 95, $trim_percent ) );
+
+# Handle recipe parameter overrides.
+
+# Generate a comma-separated list if this has been turned into a stringified
+# ARRAY reference.
+$trim_percent = ( defined( $Frm->uhdr( "RECPAR_TRIM_PERCENT" ) ) ?
+                $Frm->uhdr( "RECPAR_TRIM_PERCENT" )              :
+                $trim_percent );
+
+# Constrain by the requested spectral range.
+my $lower_vel = ( defined( $Frm->uhdr( "RECPAR_FINAL_LOWER_VELOCITY" ) ) ?
+                $Frm->uhdr( "RECPAR_FINAL_LOWER_VELOCITY" )              :
+                undef );
+my $upper_vel = ( defined( $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY" ) ) ?
+                $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY" )              :
+                undef );
+
+# Determine the trim limits.
+# ==========================
+
+# Find the trim fraction.
+my $frac = 0.5 * ( 100.0 - $trim_percent );
+
+_GET_DIMENSIONS_  FILE=$file GROUP=0
+
+# Some surveys request spectral range slightly beyond the normal 85% cuts.
+# For ACSIS data we assume that the WCS co-ordinates are in velocities.
+my $flbnd = $_GET_DIMENSIONS_{FLBOUND};
+my $fubnd = $_GET_DIMENSIONS_{FUBOUND};
+my $spec_range = $fubnd->[0] - $flbnd->[0];
+my $trim_lower = $flbnd->[0] + $frac * $spec_range;
+my $trim_upper = $fubnd->[0] - $frac * $spec_range;
+
+$_GET_SPECTRAL_LIMITS_{UBOUND} = max( $trim_upper, $upper_vel );
+$_GET_SPECTRAL_LIMITS_{LBOUND} = min( $trim_lower, $lower_vel );
+
