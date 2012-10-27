@@ -34,8 +34,8 @@ If true, the Group file will be calibrated.
 
 =item B<UNITS>
 
-Controls the units of the FCF. The options are C<BEAM> or C<BEAMEQUIV>
-for Jy/beam/pW and C<ARCSEC> for Jy/arcsec**2/pW. Default is C<BEAM>.
+Controls the units of the FCF. The options are C<BEAM> for Jy/beam/pW
+and C<ARCSEC> for Jy/arcsec**2/pW. Default is C<BEAM>.
 
 =back
 
@@ -57,8 +57,12 @@ _GET_PIXEL_SCALE_
 
 =head1 NOTES
 
-No attempt is made to determine whether the calibration has already
-been applied to a Group file.
+This primitive does nothing if the current object already has a
+calibrated product.
+
+=head1 OUTPUT DATA
+
+The object has the product set to C<calib> and is tagged with the same.
 
 =head1 OUTPUT FILES
 
@@ -71,7 +75,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009-2010 The University of British Columbia.
+Copyright (C) 2009-2012 The University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
@@ -96,9 +100,11 @@ USA.
 # Read the arguments
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 my $Obj = ($group) ? $Grp : $Frm;
+my $calproduct = "calib";
 
 # Only proceed if the NOCALIB header is NOT set.
 my $proceed = ($Obj->uhdr("NOCALIB")) ? 0 : 1;
+$proceed = 0 if ($Obj->product && $Obj->product eq $calproduct);
 $proceed = ($group && $Grp->file_exists) ? 1 : $proceed;
 
 if ( $proceed ) {
@@ -109,8 +115,8 @@ if ( $proceed ) {
   my $units = 'BEAM';
   if (exists $_CALIBRATE_DATA_{UNITS} ) {
     $units = uc( $_CALIBRATE_DATA_{UNITS});
-    if ($units ne 'BEAM' && $units ne 'ARCSEC' && $units ne 'BEAMEQUIV') {
-      orac_throw "_CALIBRATE_DATA_: Units must be BEAM, BEAMEQUIV or ARCSEC not '$units'";
+    if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+      orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
     }
   }
 
@@ -135,7 +141,8 @@ if ( $proceed ) {
   for my $i (1..$Obj->nfiles) {
     my $file = $Obj->file($i);
     my $parea = 1.0; # Dummy pixel area
-    # For ARCSEC and BEAMEQUIV we need to multiply by the pixel area
+    # For ARCSEC and BEAMEQUIV we need to multiply by the pixel area -
+    # calculate this for each file in the object
     if ($units ne 'BEAM') {
       _GET_PIXEL_SCALE_ IMAGE=$file
       $parea = $_GET_PIXEL_SCALE_{AREA};
@@ -163,6 +170,8 @@ if ( $proceed ) {
     # Update file
     $Obj->file($i, $out);
   }
+  $Obj->product($calproduct);
+  $Obj->tagset($calproduct);
 
   orac_printp "Data calibrated in $calunitstr\n";
 }
