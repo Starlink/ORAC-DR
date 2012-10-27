@@ -21,9 +21,32 @@ are displayed on the same scale, along with their histograms of values
 between the current and previous solutions is also displayed as a 2-D
 image scaled with +/-10 %.
 
+The output responsivity mosaic contains three (or four) NDF components
+under the C<.more.smurf> extension:
+
+=over 4
+
+=item C<_respnew>
+
+The new (aka PROPOSED) responsivity mosaic (same as the main data component);
+
+=item C<_respold>
+
+The old (aka CURRENT) responsivity mosaic;
+
+=item C<_respdelta>
+
+The percentage change mosaic;
+
+=item C<_respratio>
+
+Responsivity ratio mosaic (optional).
+
+=back
+
 =head1 ARGUMENTS
 
-This primitive supports the following arguments:
+This primitive supports the following argument:
 
 =over 4
 
@@ -57,19 +80,27 @@ The B<CLIP> parameter applies to the data in the current solution. The
 corresponding absolute value is used to define the range of values to
 be displayed from the previous solution.
 
-This primitive relies on the current and previous responsivity files
-corresponding to file numbers 2 and 3 in the given Frame object.
-
 =head1 OUTPUT DATA
 
-On exit the global Frame object will contain the name of the percentage
-change image. However, note that this file will be deleted at the end
-of processing by the REDUCE_FLATFIELD recipe.
+The Frame is updated with the results of several intermediate steps
+and the name of the final responsivity mosaic (with suffix C<_respmos>
+and tag C<respmos>). The files in the mosaic are stored in the Frame
+and tagged with C<flat>. The new and previous responsivity mosaics
+have suffices C<_respnew> and C<_respold> respectively (and tagged
+with those suffices). They are also stored together in the Frame
+(tagged as C<new+old_resp>) for display purposes. The percentage
+change image has suffix (and tag) C<_respdelta>. If created, the
+responsitivity ratio mosaic has suffix and tag C<_respratio>.
+
+Note, however, that the Frame object is returned to its original state
+on exit.
 
 =head1 OUTPUT FILES
 
-The responsivity mosaic with suffix C<_respmos> will remain on disk,
-though it is not stored for use by any other primitives.
+The responsivity mosaic with suffix C<_respmos>. The intermediate
+files (suffices C<_respnew>, C<_respold>, C<_respdelta> and perhaps
+C<_respratio>) will also remain on disk but will be deleted at the end
+of processing.
 
 =head1 AUTHOR
 
@@ -77,8 +108,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2011-2012 the University of British Columbia. All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -97,18 +128,20 @@ USA.
 
 =cut
 
+$Frm->tagset("display_fastflat_in");
 # Check for a solution before attempting to mosaic
+#unless ($Frm->tagexists("resp_new")) {
 unless ($Frm->uhdr("RESP_NEW")) {
   orac_warn "No responsivities to display\n";
   return ORAC__OK;
 }
+#$Frm->tagretrieve("resp_old");
+#my $prev = $Frm->file;
 my $prev = $Frm->uhdr("RESP_OLD");
 
 # Derive the list of current/previous filenames - the assumption here
 # is that each Frame in the Group contains 1 file per subarray
 my @files = map { $_->files } $Grp->members;
-my @curfiles = map { $_ .".more.smurf.resp_new" } @files;
-my @prefiles = map { $_ .".more.smurf.resp_old" } @files;
 
 # Reference subarray
 my $short = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 1 : 0;
@@ -133,76 +166,70 @@ my %refimage = ( refsub => $refsub );
 
 orac_print "\nCreating combined responsivity images...";
 
-# Output file name for responsivity mosaic: _respmos
-my $out = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_respmos")));
-my @out;
+my @outfpmos;
+$Frm->files(@files);
+$Frm->tagset("flat");
 
 # Create mosaic for current/previous (PROPOSED/CURRENT)
 my $wave = ($short) ? "450 um" : "850 um";
 foreach my $soln ("PROPOSED", "CURRENT") {
-  my (@infiles, $ext, $newsoln);
+  my ($ext, $newsoln, $suffix);
   if ($soln eq "PROPOSED") {
     $newsoln = ($Grp->uhdr("BATCH_FLAT")) ? "Last (".lc($soln).") fastflat" : $soln;
-    @infiles = @curfiles;
     $ext = "resp_new";
+    $suffix = "_respnew";
   } else {
     # Skip creation of previous responsivity mosaic if there is no solution
     next unless ($prev);
     $newsoln = ($Grp->uhdr("BATCH_FLAT")) ? "First (".lc($soln).") fastflat" : $soln;
-    @infiles = @prefiles;
     $ext = "resp_old";
+    $suffix = "_respold";
   }
 
-  my $outname = $out . ".more.smurf.$ext";
-  my $mosref = $ref.".more.smurf.$ext";
-  my $fpmos = ORAC::TempFile->new();
-
-  $refimage{refimage} = $mosref;
-  _MAKE_MOSAIC_FPLANE_ INFILES=\@infiles OUT=$fpmos REFERENCE=\%refimage
-
-  # Save result to a file - first store the resp_new as the main data
-  # component, then as an NDF extension
-  if ($ext eq "resp_new") {
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$fpmos out=$out");
-  }
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$fpmos out=$outname");
+  $refimage{refimage} = $ref . ".more.smurf.$ext";
+  _MAKE_MOSAIC_FPLANE_ SUFFIX=$suffix SMURF=$ext REFERENCE=\%refimage
+  my $fpmos = $Frm->file;
 
   my $title = "$newsoln $wave solution";
   $title .= " (QL)" if ($Frm->uhdr("QUICKLOOK"));
   $title .= " (summit)" if ($Frm->uhdr("SUMMIT"));
-  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$outname title='$title'");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$fpmos title='$title'");
 
-  push (@out, $outname);
+  push (@outfpmos, $fpmos);
+  $Frm->tagretrieve("flat");
 }
+$Frm->files(@outfpmos);
+$Frm->tagset("new+old_resp");
 orac_print " done.";
 
-my $pcresp;
 if ($prev) {
   # Create the `percentage change' image
-  my $deltafile = $out.".more.smurf.resp_delta";
+  my $respdelta = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_respdelta")));
   my $exp = "PA*(IA-IB)/IB";
-  my $args = "exp=$exp IA=$out[0] IB=$out[1] PA=100.0 out=$deltafile";
+  my $args = "exp=$exp IA=$outfpmos[0] IB=$outfpmos[1] PA=100.0 out=$respdelta";
   $Mon{kappa_mon}->obeyw("maths","$args");
-  $args = "ndf=$deltafile title='Percentage change'";
+  $args = "ndf=$respdelta title='Percentage change'";
   $Mon{ndfpack_mon}->obeyw("settitle","$args");
-
-  # Store this as another extension in flatfield file
-  $pcresp = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_pcrsp")));
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$deltafile out=$pcresp");
+  $Frm->files($respdelta);
+  $Frm->tagset("_respdelta");
+  $Frm->tagretrieve("new+old_resp");
 
   # Calculate responsivity ratio image - note there is no display
   # associated with this image and should probably not be created in the
   # QL or SUMMIT pipelines
   unless ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT")) {
-    my $ratio = $out . ".more.smurf.resp_ratio";
-    $args = "in1=$out[0] in2=$out[1] out=$ratio title='Responsivity ratio: proposed/current'";
+    my $ratio = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_respratio")));
+    $args = "in1=$outfpmos[0] in2=$outfpmos[1] out=$ratio title='Responsivity ratio: proposed/current'";
     $Mon{kappa_mon}->obeyw("div","$args");
+    $Frm->files($ratio);
+    $Frm->tagset("_respratio");
+    $Frm->tagretrieve("new+old_resp");
   }
 }
 
 # Find min/max of current responsivity image so previous image can
 # be displayed on same scale
-_FIND_IMAGE_STATISTICS_ IMAGE=$out[0] HISTAT=0 VERBOSE=0
+_FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file HISTAT=0 VERBOSE=0
 my $zmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
 my $zmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
 my $clip;
@@ -219,21 +246,34 @@ $options{SIGMA} = $clip if (defined $clip);
 # Display the results
 orac_print " Displaying data...\n";
 orac_warn "No previous solution to display - percentage change image will not be created\n" unless ($prev);
-my $tmpFrm = $Frm->new();
-$tmpFrm->files(@out);
-$Display->display_data( $tmpFrm, \%options, -1 );
+$Display->display_data( $Frm, \%options, -1 );
 
-if ($pcresp) {
-  # Now display the percentage change image
-  $tmpFrm->files( ($pcresp) );
+if ($Frm->tagexists("_respdelta")) {
+  # Now display the percentage change image - this must be done
+  # separately as it needs a different scale
+  $Frm->tagretrieve( "_respdelta" );
   # Display limits for delta image
   ($zmin, $zmax) = (-10.0, 10.0);
   %options = ( ZMIN => $zmin, ZMAX => $zmax );
   $options{SIGMA} = $clip if (defined $clip);
-  $Display->display_data($tmpFrm, \%options, -1);
-
-  # Don't need to keep this file
-  $Frm->push_intermediates($pcresp);
+  $Display->display_data($Frm, \%options, -1);
 }
 
-$Frm->push_intermediates($out);
+# Output file name for responsivity mosaic: _respmos
+my $out = $Frm->rewrite_outfile_subarray(scalar($Frm->inout("_respmos")));
+$Frm->tagretrieve("_respnew");
+my $cpargs = "in=".($Frm->file)." out=$out";
+$Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
+foreach my $tag (qw/ _respnew _respold _respdelta _respratio /) {
+  if ($Frm->tagexists($tag)) {
+    $Frm->tagretrieve($tag);
+    my $ext = $tag;
+    $ext =~ s/^\_//;# strip leading underscore
+    my $args = "in=".($Frm->file)." out=$out.more.smurf.".$ext;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+  }
+}
+
+$Frm->files($out);
+$Frm->tagset("respmos");
+$Frm->tagretrieve("display_fastflat_in");
