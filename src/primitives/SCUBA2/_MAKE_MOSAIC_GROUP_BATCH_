@@ -35,6 +35,11 @@ The following arguments are supported:
 The method to be used for resampling the images. Default value is
 C<nearest>.
 
+=item B<MOSAIC_TASK>
+
+Task to use for combining files. Must be either C<wcsmosaic> or
+C<makemos>. Default is C<wcsmosaic>.
+
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
@@ -110,34 +115,33 @@ if ( $Grp->lastmember($Frm) ) {
   my $nfiles = scalar(@frmfiles);
 
   if ( $nfiles > 0 ) {
-    # We are having some issues with wcsmosaic so in the short term
-    # include some MAKEMOS code
-    my $use_makemos = 1;
-    my $mostask = ($use_makemos) ? "MAKEMOS" : "WCSMOSAIC";
-
-    # If using makemos, the images should be aligned to a common
-    # world coordinate system
-    if ($use_makemos) {
-      my $tmpfrm = $Frm->new;
-      $tmpfrm->files(@frmfiles);
-      _ALIGN_ARRAYS_ METHOD=nearest FRAME=$tmpfrm REFIMAGE=!
-      @frmfiles = $tmpfrm->files;
-      # Store in the Frame object to delete later
-      $Frm->push_intermediates(@frmfiles);
-    }
-
-    orac_print "Mosaicking Group file with $mostask: "
-      .( ($nfiles == 1) ? "using $nfiles file" : "combining $nfiles files")."...\n"
-	if ($verbose);
 
     my $out = $Grp->inout("_mos");
 
     # With only a single file, just ndfcopy the input file to the
     # output, otherwise combine with wcsmosaic
     if ( $nfiles == 1 ) {
+      orac_print "Creating Group file from single input file... ";
       $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$frmfiles[0] out=$out");
-
     } elsif ( $nfiles > 1 ) {
+
+      my $mostask = lc(get_prim_arg($_PRIM_ARGS_, "MOSAIC_TASK", "wcsmosaic"));
+      my $use_makemos = ($mostask eq "makemos") ? 1 : 0;
+
+      # If using makemos, the images should be aligned to a common
+      # world coordinate system
+      if ($use_makemos) {
+	my $tmpfrm = $Frm->new;
+	$tmpfrm->files(@frmfiles);
+	_ALIGN_ARRAYS_ METHOD=nearest FRAME=$tmpfrm REFIMAGE=!
+	@frmfiles = $tmpfrm->files;
+	# Store in the Frame object to delete later
+	$Frm->push_intermediates(@frmfiles);
+      }
+
+      orac_print "Mosaicking Group file with $mostask combining $nfiles files...\n"
+	  if ($verbose);
+
       # Calculate the relative offsets of each source and shift the
       # WCS to align the peaks for better mosaicking but only for
       # sources processed with the bright_compact config file or from
@@ -183,12 +187,18 @@ if ( $Grp->lastmember($Frm) ) {
       my $newbounds = ( scalar(@bounds) == 4 ) ? \@bounds : undef;
       _ADD_IMAGES_ INLIST=\@frmfiles OUT=$out COMPS=EXP_TIME,WEIGHTS BOUNDS=$newbounds VERBOSE=0
     }
-    $Grp->file($out);
+    $Grp->force_product_update("coadd", $out);
     $Grp->readhdr;
+    $Grp->tagset("coadd");
     $Grp->uhdr("NEWIMAGE",1);
-    orac_print "Done - Group file $out created\n" if ($verbose);
+    if ($verbose) {
+      orac_print "done.\n";
+      my $nfilestxt = ($nfiles == 1) ? "$nfiles file" : "$nfiles files";
+      orac_print "Group file $out created from $nfilestxt\n", "green";
+    }
   } else {
     # Error or warning?
+    orac_print "\n";
     orac_warn "All Frames in Group marked as bad - no Group file created\n";
   }
 
