@@ -60,43 +60,30 @@ MAKEMOS
 
 =item KAPPA:
 
-NDFCOPY, PASTE, SETBOUND, SETORIGIN
+NDFCOPY, NDFTRACE, PASTE, SETBOUND, SETORIGIN, STATS, WCSATTRIB,
+WCSSLIDE
 
 =item ORAC-DR PRIMITIVES:
 
-_FIT_SOURCE_, _WRITE_FLAG_FILE_
+_CROP_IMAGE_FRAME_, _FIND_MAP_PEAK_, _WRITE_FLAG_FILE_
 
 =back
 
 =head1 NOTES
 
-Future enhancements may include:
-
-=over 4
-
-=item *
-
-Checking the number of subgroups is the same as the number of focus
-positions
-
-=item *
-
-Cropping images around source
-
-=back
+None.
 
 =head1 OUTPUT DATA
-
-On completion, the Group uhdr entry C<FOCUS_CUBE> is set to unity.
 
 The list of focus settings is stored in the C<FOCPOSNS> Group uhdr
 entry.
 
+The Group contains the name of the cube, while the product and current
+tag are set to C<focus_cube>.
+
 =head1 OUTPUT FILES
 
-The cube has suffix C<_foc>. Images for each focus position have
-suffix C<_focN> where N is an integer which spans the range 1 to the
-number of focus positions.
+The cube has suffix C<_foc>.
 
 This primitive writes a .ok file in $ORAC_DATA_OUT for the JCMT
 POINTING_FOCUS task to calculate the actual pointing offsets used by
@@ -108,8 +95,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2008 the University of British Columbia. All Rights
-Reserved.
+Copyright (C) 2007-2008,2012 the University of British Columbia. All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -130,6 +117,10 @@ USA.
 
 # Should I be verbose? (Default to yes)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Store Frame entry settings should they need to be reset
+$Frm->tagset("create_focus_cube");
+my $frmproduct = $Frm->product;
 
 # Get current focus position
 my $curfocposn = $Frm->hdrval("FOCPOSN");
@@ -197,7 +188,7 @@ my $focusobs = ( lc($Frm->uhdr("ORAC_OBSERVATION_TYPE")) eq "focus" ) ? 1 : 0;
 $focusobs = 0 if (defined $Frm->hdr("SEQ_TYPE") && $Frm->hdr("SEQ_TYPE") !~ /focus/i);
 # However, what happens if we get to the end of the obs and no cube
 # has been created? Just try creating a cube with whatever data exist.
-if ($Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE")) {
+if ($Frm->uhdr("OBSEND") && !$Grp->product) {
   if ($Cal->isplanet($Frm->hdr("OBJECT"))) {
     orac_print "\nObservation has ended with no cube created - creating one now\n";
     $focusobs = 1;
@@ -235,7 +226,7 @@ if ( scalar(@focposns) == $Frm->hdr("NFOCSTEP") || $is_lastpos ) {
 
 # Do we have a completed FOCUS observation, and does the cube already
 # exist? Other checks: should be a standard source
-if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
+if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->product) {
   orac_print "Enough data collected - creating FOCUS cube\n", 'green';
   # Which axis are we dealing with?
   my $axis = $Frm->hdr("FOCAXIS");
@@ -247,10 +238,7 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   $Grp->uhdr("FOCPOSNS",\@focposns);
   # Create lookup table for focus position and plane file extension
   my $nfoc = scalar( @focposns );
-  my %focposidx;
-  for my $i ( 0 .. $#focposns) {
-    $focposidx{$focposns[$i]} = "_foc".($i+1);
-  }
+  my %focposidx = map { $focposns[$_] => "_foc".($_+1) } 0..$#focposns;
 
   # Create the cube:
   # 1) Retrieve SKY mapping/frame for later use
@@ -316,13 +304,12 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
       $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
     }
     # Trim to 90x90 arcsec
-    my $crop = new ORAC::TempFile;
-    my $cropimage = $crop->file;
-    my $focfile = "$focfiles[0]";
-    _CROP_IMAGE_ HEIGHT=90 WIDTH=90 IMAGE=$focfile OUT=$cropimage
+    $Frm->file($focfiles[0]);
+    $Frm->tagset($focposidx{$focposn});
+    _CROP_IMAGE_FRAME_ HEIGHT=90 WIDTH=90 VERBOSE=0
 
     # Strip frequency axis so we can add an SMU axis later
-    my $cpargs = "in=$cropimage out=$planeimage title=$title";
+    my $cpargs = "in=".$Frm->file." out=$planeimage title=$title";
     $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs trim=true trimwcs=true");
 
     # Set to offset coordinate system
@@ -332,11 +319,14 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
     # Store output file in current subgrp
     $subgrp->files( $planeimage );
 
-    # Derive sky mapping and frame
-    $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
-    $Mon{atools_mon}->obeyw("astgetmapping","$args");
-    $args = "this=$planeimage iframe=ast__current result=skyframe$$.ast";
-    $Mon{atools_mon}->obeyw("astgetframe","$args");
+    # Derive sky mapping and frame and store for later use
+    unless ($Grp->uhdr("MAPPING")) {
+      $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
+      $Mon{atools_mon}->obeyw("astgetmapping","$args");
+      $args = "this=$planeimage iframe=ast__current result=skyframe$$.ast";
+      $Mon{atools_mon}->obeyw("astgetframe","$args");
+      $Grp->uhdr("MAPPING",1);
+    }
 
     # Retrieve coords of first pixel
     $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$planeimage");
@@ -358,6 +348,7 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   }
 
   $Grp->files(@planes);
+  $Grp->tagset("focus_images");
 
   # Check that we can make at least 3 planes on a cube to fit a quadratic
   orac_warn "Number of SMU positions ($nfoc) is not sufficient to create a valid FOCUS cube\n"
@@ -409,13 +400,16 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   # just in case...
   my $midplane = int(($nfoc + 1) / 2);
   # Take a copy of the relevant plane in the cube
-  my $midfile = ORAC::TempFile->new();
+  my $midfile = $Frm->inout("_midplane");
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$cubename(,,$midplane) out=$midfile trimwcs trim");
+  $Frm->file($midfile);
+  $Frm->tagset("midplane");
+  $Frm->product("midplane");
   # Find the peak position just in case the source is way off centre -
   # adjust the WCS if so
   orac_print "adjusting WCS to put source at image centre...\n" if $verbose;
   my $initpos = [0,0];
-  _FIND_MAP_PEAK_ PLOTFIT=0 IMAGE=$midfile FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
+  _FIND_MAP_PEAK_ PLOTFIT=0 FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
   # If the peak could be determined, and had a S/N exceeding 10 then proceed with shift
   my $SNR_MIN = 10.0;
   if (defined $_FIND_MAP_PEAK_{PEAK} &&
@@ -430,12 +424,12 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
     orac_warn "Unable to locate a significant maximum - cube will not be adjusted\n";
   }
 
-  # Store the cube name as the Grp file
-  $Grp->files($cubename);
+  # Store the cube name as the Grp file and update product and tags
+  my $product = "focus_cube";
+  $Grp->force_product_update($product, $cubename);
+  $Grp->tagset($product);
 
   orac_print ("Cube created successfully and ready for processing\n", 'green');
-  # Store a flag to indicate that a cube has been created
-  $Grp->uhdr("FOCUS_CUBE", ($Grp->file_exists) ? 1 : 0);
 
   # Write the .ok file in the output directory
   _WRITE_FLAG_FILE_ FILE=$cubename
@@ -465,6 +459,8 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
     $Display->display_data( $subgrp, \%options, -1 );
   }
 
-} else {
-  $Grp->uhdr("FOCUS_CUBE",0);
+  # Set Frame back to input status - this is probably not necessary as
+  # Frame processing is complete
+  $Frm->tagretrieve("create_focus_cube");
+  $Frm->product($frmproduct) if ($frmproduct);
 }
