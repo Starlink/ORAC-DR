@@ -214,6 +214,7 @@ if ( $proceed ) {
   orac_print "Calculating FCFs for $src -";
 
   # File to work on
+  $Obj->tagset("find_calibration_map_input");
   my $in = $Obj->file;
 
   # Get the pixel scale for calculating fit boxes
@@ -225,7 +226,7 @@ if ( $proceed ) {
   my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
 
   # For deriving FCFs we should be able to use the SkyRef attribute as
-  # an initial guess
+  # an initial guess for the source position
   $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
   ($ORAC_STATUS, my $offset) = $Mon{ndfpack_mon}->get("wcsattrib","value");
   my $initpos;
@@ -241,16 +242,14 @@ if ( $proceed ) {
   # Begin by running the matched-filter on the calibrator - this will
   # be used multiple times and it saves some time in the QL to do it
   # once here
-  _APPLY_MATCHED_FILTER_ IN=$in GROUP=$group VERBOSE=0 STORE=0
-  my $in_mf = $_APPLY_MATCHED_FILTER_{OUT};
-  # Store the _mf file on the intermediates array so it can be
-  # deleted later
-  $Obj->push_intermediates($in_mf);
+  my $inproduct = $Obj->product;
+  _APPLY_MATCHED_FILTER_ GROUP=$group VERBOSE=0
+  my $mf_product = $Obj->product;
+  $Obj->product($inproduct);
 
-  # Set a flag to indicate that it is the input map which is being plotted
-  $Frm->uhdr("PLOT_DATAFIT", 1);
   # Find the peak signal in the image
-  _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1 MF=$in_mf
+  $Obj->tagretrieve("find_calibration_map_input");
+  _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1
   my $mapfitpar = $_FIND_MAP_PEAK_{BEAM};
 
   # Retrieve the position - if successful, proceed with deriving an FCF
@@ -268,7 +267,7 @@ if ( $proceed ) {
     # Find the integrated intensity within the given aperture. Note
     # that the image should have a flat background in order to obtain
     # an accurate result
-    _APERTURE_PHOTOMETRY_ IMAGE=$in RADIUS=$radius
+    _APERTURE_PHOTOMETRY_ RADIUS=$radius
 
     # Retrieve the results
     my %results = ( BEAM => $_FIND_MAP_PEAK_{PEAK},
@@ -281,9 +280,13 @@ if ( $proceed ) {
     # Use a box of about 1.5 FWHM because the beamfit algorithm does not
     # know how to fit the negative ring.
     my $box = $Cal->fwhm() * 1.5 / $pixscale;
-    # Set a flag to indicate that it is the matched-filtered map which is being plotted
-    $Frm->uhdr("PLOT_MF_FIT", 1);
-    _FIND_MAP_PEAK_ IMAGE=$in_mf MF=$in_mf VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
+    # Set a flag to indicate that it is the matched-filtered map which
+    # is being plotted
+    $Obj->tagretrieve("matchfilt");
+    $Obj->product($mf_product);
+    _FIND_MAP_PEAK_ VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
+    $Obj->tagretrieve("find_calibration_map_input");
+    $Obj->product($inproduct);
     my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
     my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
     if ($matched_peak) {
@@ -474,4 +477,6 @@ if ( $proceed ) {
     }
   }
 
+  # Make sure the files in the current object are the same as those on entry
+  $Obj->tagretrieve("find_calibration_map_input");
 }
