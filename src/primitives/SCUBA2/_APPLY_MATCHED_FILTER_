@@ -31,8 +31,7 @@ its existence.
 
 If the user does not specify a PSF image then a image containing a
 unit-height Gaussian PSF with a FWHM equal to the Airy disk radius is
-created. This file has suffix C<_psf> and will be left on disk on
-completion of the primitive.
+created. This file has suffix C<_psf>.
 
 =head1 ARGUMENTS
 
@@ -62,11 +61,6 @@ Type of normalization to carry out on the PSF. If C<peak> then PSF is
 normalized to a peak of 1; if C<sum> the PSF is normalized to a sum of
 1. Default is C<peak>. Only accessed when creating a PSF image.
 
-=item B<OBSEND>
-
-Optional flag to denote that processing should be delayed until the
-current observation has ended. Default is 0 (do not wait).
-
 =item B<OUT>
 
 Name of output image. Default is to use the C<inout> method to create
@@ -83,11 +77,6 @@ used in applying the matched filter. Default is 1 (yes).
 
 Full-width at half-maximum in arcsec of Gaussian used to smooth input
 image and PSF. Default is 30 arcsec at 850 um, 20 arcsec at 450 um.
-
-=item B<STORE>
-
-A flag to denote whether or not the output image is to be stored in
-the current Frame or Group. Default is 0 (no).
 
 =item B<VERBOSE>
 
@@ -106,11 +95,17 @@ The following external tasks are used:
 CDIV, CHPIX, CMULT, CONVOLVE, CREFRAME, DIV, GAUSMOOTH, MATHS, MULT,
 SETVAR
 
+=item ORAC-DR PRIMITIVES
+
+_CREATE_PSF_IMAGE_, _GET_PIXEL_SCALE_
+
 =back
 
 =head1 OUTPUT DATA
 
-None.
+The input object is updated to contain the new matched-filtered
+image. The object product is defined as C<Matched-filtered> and the
+C<matchfilt> tag is applied.
 
 =head1 OUTPUT FILES
 
@@ -151,7 +146,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia. All Rights Reserved.
+Copyright (C) 2010-2012 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -169,12 +165,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
 USA.
 
 =cut
-
-# Option to wait until the observation has ended
-my $wait_until_obsend = get_prim_arg($_PRIM_ARGS_, "OBSEND", 0);
-if ($wait_until_obsend) {
-  return ORAC__OK unless ($Frm->uhdr("OBSEND"));
-}
 
 # Is the input file from the current Frame or Group?
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
@@ -197,18 +187,19 @@ if ($Frm->uhdr("QUICKLOOK")) {
   return ORAC__OK unless ($Obj->uhdr("NEWIMAGE") == 1);
 }
 
-# Is the output file to be stored in the current object?
-my $store = get_prim_arg($_PRIM_ARGS_, "STORE", 0);
+# Check that the input data have not already been filtered
+my $product = "Matched-filtered";
+if ($Obj->product eq $product) {
+  orac_warn "Will not apply filter to matched-filtered input\n";
+  return ORAC__OK;
+}
 
 # Obtain input image - default to current file in given object
 my $in = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
-my $inputfile = $in;
 # Obtain output image - use object inout method if not specified
 my $out = get_prim_arg($_PRIM_ARGS_, "OUT", undef);
 if (!$out) {
   $out = $Obj->inout("_mf");
-  # Store name of output file for retrieval
-  $_PRIM_ARGS_->{OUT} = $out;
 }
 
 # Obtain optional PSF image
@@ -251,8 +242,8 @@ my $tempb = new ORAC::TempFile;
 my $tempfileb = $tempb->file;
 
 # Retrieve the pixel scale for later use
-_GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
-my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
+_GET_PIXEL_SCALE_ VERBOSE=0
+my $pixscale = sprintf "%.1f", $_GET_PIXEL_SCALE_{PIXSCALE};
 
 # If no psf has been specified, check recipe parameter for name of
 # suitable image in current working dir otherwise generate a PSF image
@@ -266,7 +257,13 @@ if (!$psf) {
     my $psffile = File::Spec->catfile($cwd, $psfname);
     if ( -e $psffile ) {
       # Check that the pixel scales are consistent?
-      $psf = $psffile;
+      _GET_PIXEL_SCALE_ IMAGE=$psffile VERBOSE=0
+      my $psf_pixscale = sprintf "%.1f", $_GET_PIXEL_SCALE_{PIXSCALE};
+      if ($psf_pixscale == $pixscale) {
+	$psf = $psffile;
+     } else {
+	orac_err "Unable to use input PSF, $psfname, due to different pixel scale ($psf_pixscale) from image ($pixscale) - falling back on a default PSF\n";
+      }
     } else {
       orac_warn "Given PSF file, $psffile, does not exist: creating one\n";
     }
@@ -280,14 +277,14 @@ if (!$psf) {
     $norm = "peak" unless ($norm eq "peak" || $norm eq "sum");
 
     # Use inout method to define a suitable PSF file name
-    $psf = ($store) ? $Obj->inout("_psf") : new ORAC::TempFile;
+    $psf = $Obj->inout("_psf");
     _CREATE_PSF_IMAGE_ PSF=$psf PIXSIZE=$pixscale NORM=$norm SMOOTH=$smooth SMOOTH_FWHM=$smooth_fwhm VERBOSE=$verbose
 
     # Abort with an error if no psf image could be created
     if ($psf) {
       # Store the PSF image in the intermediates array so it can be deleted
       # at the end of the recipe
-      $Obj->push_intermediates($psf) if ($store);
+      $Obj->push_intermediates($psf);
     } else {
       orac_term "Unable to create a PSF image";
     }
@@ -346,8 +343,6 @@ if ($units) {
 
 orac_print " done\n" if ($verbose);
 
-# Store the output file if requested - note that for group processing,
-# the original input file should also be stored so it can be
-# retrieved at the end of the recipe
-my @out = ($group) ? ($inputfile, $out) : ($out);
-$Obj->files(@out) if ($store);
+# Store the matched-filtered map and update the product and store a tag
+$Obj->force_product_update($product, $out);
+$Obj->tagset("matchfilt");
