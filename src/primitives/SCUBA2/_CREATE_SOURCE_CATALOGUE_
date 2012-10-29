@@ -50,11 +50,6 @@ methods. Default is C<FELLWALKER>.
 
 Minimum number of connected pixels defining a source. Default is 9.
 
-=item B<SMOOTH_FWHM>
-
-FWHM of Gaussian used to smooth the image before subtracting as part
-of applying a matched filter. Default is 30".
-
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
@@ -70,8 +65,7 @@ The following external tasks are used:
 
 =item ORAC-DR PRIMITIVES
 
-_APPLY_MATCHED_FILTER_, _CALC_SCUBA2_SNR_, _CROP_IMAGE_FRAME_,
-_FIND_SOURCES_
+_CALC_SCUBA2_SNR_, _FIND_SOURCES_
 
 =back
 
@@ -137,27 +131,24 @@ my $proceed = 1;
 $proceed = 0 if ($group && !$Grp->file_exists);
 
 if ($proceed) {
-  my $use_mf = 0;
-  if ($group && ($Grp->nfiles > 1)) {
-    # Option to use the matched-filtered Group map if one exists
-    $use_mf = get_prim_arg($_PRIM_ARGS_, "USE_MF", 0);
-  }
 
-  my $currentfile = ($group && $Grp->file_exists) ? ($use_mf ? $Grp->file(2) : $Grp->file) : $Frm->file;
+  $Obj->tagset("create_src_cat_input");
 
   # Calculate S/N map if necessary - append "_snr" suffix
-  my $snrmap = $currentfile . "_snr";
-  if ($Frm->uhdr("RECPAR_SNRMAP")) {
-    $snrmap = $currentfile;
+  my $snrmap;
+  if ($Obj->tagexists("snr")) {
+    $Obj->tagretrieve("snr");
   } else {
+    # Otherwise calculate a S/N map here - use the matched-filtered
+    # map if one exists
+    if ($Obj->tagexists("matchfilt")) {
+      $Obj->tagretrieve("matchfilt");
+    }
     orac_print "Calculating S/N image... " if ($verbose);
-    _CALC_SCUBA2_SNR_ IN=$currentfile OUT=$snrmap STORE=0 VERBOSE=0
-    $Grp->push_intermediates($snrmap);
+    _CALC_SCUBA2_SNR_ VERBOSE=0
   }
-  # Set the SNRMAP Frame uhdr entry to true as, one way or another,
-  # the next primitive will be analyzing a S/N map
-  $Frm->uhdr("SNRMAP",1);
 
   # Run CUPID
-  _FIND_SOURCES_ IMAGE=$snrmap WRITE_CATALOGUE=1 METHOD=$method MINPIX=$minpix DETECT_SIGMA=$detect
+  _FIND_SOURCES_ WRITE_CATALOGUE=1 METHOD=$method MINPIX=$minpix DETECT_SIGMA=$detect
+  $Obj->tagretrieve("create_src_cat_input");
 }
