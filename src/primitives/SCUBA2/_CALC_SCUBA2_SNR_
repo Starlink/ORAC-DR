@@ -37,11 +37,6 @@ above if not specified.
 Name of output image. Default is to use the C<inout> method to create
 an output file with the suffix C<_snr>.
 
-=item B<STORE>
-
-A flag to denote whether or not the output image is to be stored in
-the current Frame or Group. Default is 0 (no).
-
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 1 (yes).
@@ -66,15 +61,12 @@ _FIND_IMAGE_STATISTICS_
 
 =head1 OUTPUT DATA
 
-The Frame uhdr contains the entry C<SNRMAP> which is 1 if the
-signal-to-noise ratio image was calculated and stored in the current
-object, zero otherwise.
+The current object is updated with the SNR image and tagged C<snr>.
 
 =head1 OUTPUT FILES
 
-If left to use defaults, creates a file with the suffix
-C<_snr>. Otherwise creates the output file specified by the B<OUT>
-parameter.
+By defaults creates a file with the suffix C<_snr>, but that may be
+overridden by the B<OUT> parameter.
 
 =head1 NOTES
 
@@ -112,27 +104,20 @@ my $Obj = ($group) ? $Grp : $Frm;
 
 my $proceed = 1;
 if ( $group ) {
-  $proceed = $Grp->lastmember($Frm);
+  # Wait for the last member - because...?
+  $proceed = ($Grp->file_exists) ? 1 : 0;
 }
 
 if ( $proceed ) {
   # Verbose flag
   my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-  # Is the output file to be stored in the current object?
-  my $store = get_prim_arg($_PRIM_ARGS_, "STORE", 0);
-
   # Obtain input image - default to current file in given object
   my $in = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
 
-  # For Group processing, it may be that the desired input file is the
-  # matched-filtered output which is stored as the second file in the Group
-  my $use_mf = get_prim_arg($_PRIM_ARGS_, "USE_MF", 0);
-  $in = $Obj->file(2) if ($group && $use_mf);
-
   # Obtain output image - use object inout method if not specified
   my $out = get_prim_arg($_PRIM_ARGS_, "OUT", undef);
-  $out = $Obj->inout("_snr") unless ($out);
+  $out = $Obj->inout("_snr") unless (defined $out);
 
   # Only do this if the file actually has a VARIANCE component.
   $Mon{ndfpack_mon}->obeyw("ndftrace", "ndf=$in");
@@ -157,20 +142,10 @@ if ( $proceed ) {
       orac_print "SNR image range $min to $max: sigma = $sigma from $numgood pixels$extra\n";
     }
 
-    # We need to set the PRODUCT header properly in the output regardless
-    # of whether we are storing it in the Object or not. If we are not
-    # we go through the motions anyhow. The reason is that we propagate a
-    # PRODUCT header with value "reduced" which is now incorrect.
-    my $thisObj = $Obj;
-    if (!$store) {
-      $thisObj = $Obj->new();
-    }
-
     # Update PRODUCT and store filenames in object
-    $thisObj->force_product_update( "snr", $out );
+    $Obj->force_product_update( "snr", $out );
+    $Obj->tagset("snr");
 
-    # Store a Frame uhdr entry to indicate it now contains a S/N map
-    $Frm->uhdr("SNRMAP",$store);
   } else {
     orac_warn "No SNR created: input file, $in, has no variance component\n";
   }
