@@ -6,6 +6,10 @@ _PLOT_FIT_PROFILE_ - plot X and Y slices through an image along with fit
 
 =head1 SYNOPSIS
 
+ _PLOT_FIT_PROFILE_
+
+ _PLOT_FIT_PROFILE_ GROUP=1
+
  _PLOT_FIT_PROFILE_ IMAGE=$data MODEL=$fit
 
 =head1 DESCRIPTION
@@ -15,28 +19,20 @@ profiles are plotted as a function of arcsec side by side in a Kapview
 window.
 
 However, when called as part of calculating flux conversion factors,
-four panels are plotted. The Frame uhdr entries C<PLOT_DATAFIT> and
-C<PLOT_MF_FIT> are used to determine whether the data should be
-plotted side-by-side on the top row (for map data) or the bottom row
-(matched-filtered map data). Note that only two panels are plotted
-when this primitive is called: the complete display requires two
-calls.
+four panels are plotted. The current object product is used to
+determine whether the data should be plotted side-by-side on the top
+row (for map data) or the bottom row (matched-filtered map data). Note
+that only two panels are plotted when this primitive is called: the
+complete display requires two calls.
+
+The input files are retrieved from the current Frame or Group object,
+which must have been tagged with C<profile_fit>.
 
 =head1 ARGUMENTS
 
-The following arguments are supported:
+The following argument is supported:
 
 =over 2
-
-=item B<IMAGE>
-
-Name of image to plot. No default. The pipeline will terminate with an
-error if not specified.
-
-=item B<MODEL>
-
-Name of fitted model to plot. No default. The pipeline will terminate
-with an error if not specified.
 
 =item B<VERBOSE>
 
@@ -63,12 +59,17 @@ _FIND_IMAGE_STATISTICS_
 
 =head1 NOTES
 
+The current Frame or Group object must contain two files: the image on
+which the fit was performed and the result of the fit. These are
+retrieved using the tag C<profile_fit>.
+
 Input data must have at least 2 dimensions. It is assumed that the
 first two dimensions are the X and Y axes respectively.
 
 =head1 OUTPUT DATA
 
-None.
+The plotted data and fit are stored on the intermediates array unless
+the results are to be left on disk.
 
 =head1 OUTPUT FILES
 
@@ -80,7 +81,7 @@ of the recipe.
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2011 University of British Columbia. All Rights
+Copyright (C) 2011-2012 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -100,24 +101,33 @@ USA.
 
 =cut
 
-my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
-my $model = get_prim_arg($_PRIM_ARGS_, "MODEL", undef);
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
 
-return ORAC__TERM unless ($image && $model);
+my ($image, $model);
+if ($Obj->tagretrieve("profile_fit")) {
+  ($image, $model) = $Obj->files;
+} else {
+  orac_err "Unable to plot results - input image and model not defined\n";
+  return ORAC__TERM;
+}
 
-# Should I be verbose? (Default to yes)
+# Have the input data been processed with the matched filter?
+my $is_mf = ($Obj->product eq "Matched-filtered") ? 1 : 0;
+
+# Should this primitive be verbose?
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
+# Define a title for the displayed images
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$image");
 my ($ORAC_STATUS, $title) = $Mon{ndfpack_mon}->get("ndftrace","title");
-$title = ($title ne "") ? $title : $Frm->hdr("OBJECT");
-my $newtitle = "'$title'";
-my $extra = "...";
-my $wave = ($Frm->hdr("FILTER") =~ /850/) ? "850 um" : "450 um";
-if ($Frm->uhdr("PLOT_MF_FIT")) {
+$title = ($title ne "") ? $title : $Obj->hdr("OBJECT");
+my ($newtitle, $extra);
+my $wave = ($Obj->hdr("FILTER") =~ /850/) ? "850 um" : "450 um";
+if ($is_mf) {
   $extra = " for matched-filtered map...";
   $newtitle = "'$title - matched filter fit at $wave'";
-} elsif ($Frm->uhdr("PLOT_DATAFIT")) {
+} else {
   $extra = " for data map...";
   $newtitle = "'$title - map fit at $wave'";
 }
@@ -157,23 +167,21 @@ for my $i (0 .. 1) {
   my $section = ($i==0) ? ",$peakpos->[1]:$peakpos->[1]," : "$peakpos->[0]:$peakpos->[0],,";
   my $indata = $image ."($section)";
   my $inmodel = $model . "($section)";
-  my $data = $Frm->inout("_sourcefit");
+  my $data = $Obj->inout("_sourcefit");
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$indata out=$data trim trimwcs");
   my $model = $data ."_model";
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$inmodel out=$model trim trimwcs");
 
+  # Create a temporary Frame object for displaying the results
   my $tmpFrm = $Frm->new;
   $tmpFrm->files($model);
   $tmpFrm->files($data);
 
   my $region = 0;
-  if ($Frm->uhdr("PLOT_MF_FIT")) {
+  if ($is_mf) {
     $region = ($i==0) ? 3 : 4;
-  } elsif ($Frm->uhdr("PLOT_DATAFIT")) {
-    $region = ($i==0) ? 1 : 2;
   } else {
-    $region = ($i==0) ? 5 : 6;
-    $newtitle = "'$title'";
+    $region = ($i==0) ? 1 : 2;
   }
 
   # Set title and axis attributes
@@ -188,14 +196,14 @@ for my $i (0 .. 1) {
 
   if ($Frm->uhdr("RECPAR_KEEPFIT")) {
     # Keep the profiles on disk
-    my $suffix = (($i == 0) ? "_x" : "_y") . ($Frm->uhdr("PLOT_MF_FIT") ? "mf" : "") . "profile";
-    my $outdata = $Frm->inout($suffix);
+    my $suffix = (($i == 0) ? "_x" : "_y") . ($is_mf ? "mf" : "") . "profile";
+    my $outdata = $Obj->inout($suffix);
     $Mon{ndfpack_mon}->obeyw("ndfcopy", "in=$data out=$outdata");
     $outdata .= ".more.smurf.fitprofile";
     $Mon{ndfpack_mon}->obeyw("ndfcopy", "in=$model out=$outdata");
   } else {
     # Store for deletion at end of processing
-    $Frm->push_intermediates($data, $model);
+    $Obj->push_intermediates($data, $model);
   }
 }
 
