@@ -55,21 +55,14 @@ false (0).
 =item B<IMAGE>
 
 Name of input image. Default is to use the file obtained from Grp or
-Frm depending on the value of B<GROUP>. Must be a file name, not an
-NDF section.
+Frm depending on the value of B<GROUP>. If given, must be a file name,
+not an NDF section.
 
 =item B<INITPOS>
 
 Optional reference to an array containing the X, Y coordinate to be
 used as the initial estimate of the peak position. If not given, the
 entire image will be searched for the brightest peak.
-
-=item B<MF>
-
-The name of a file which has had the matched-filter run on it
-already. The peak of this image is used as the initial estimate to the
-fit to the source. If not given (the default), the matched filter will
-be applied to the input image.
 
 =item B<PLOTFIT>
 
@@ -179,7 +172,11 @@ USA.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Which object?
-my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+$Obj->tagset("find_map_peak_input");
+my $inproduct = $Obj->product;
 
 # Input file
 my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
@@ -214,8 +211,9 @@ if ($initpos) {
   if ($region < $dims[0] && $region < $dims[1]) {
     my ($x, $y) = ($initpos->[0], $initpos->[1]);
     my $infile = $in. "($x~$region,$y~$region,)";
-    $image = ORAC::TempFile->new;
+    $image = $Obj->inout("_region");
     $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$infile out=$image");
+    $Obj->push_intermediates($image);
   }
 }
 
@@ -239,16 +237,16 @@ if ($usesnr) {
 my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr, $posn);
 if ( $peaksn > 5 ) {
   # User can supply a matched-filtered image to save some time
-  my $image_mf = get_prim_arg($_PRIM_ARGS_, "MF", undef);
-  if (!$image_mf) {
-    $image_mf = new ORAC::TempFile;
-    _APPLY_MATCHED_FILTER_ IN=$image OUT=$image_mf STORE=0 VERBOSE=0
+  my $image_mf;
+  unless ($Obj->tagretrieve("matchfilt")) {
+    _APPLY_MATCHED_FILTER_ VERBOSE=0
   }
+  $image_mf = $Obj->file;
 
   # Find position of max value - restrict search to a 11-pixel box for
   # calibrators. Might be worth using the map size as defined in
   # header to avoid picking up edge pixels for other targets.
-  my $ndf = ($Cal->iscalsource($Frm->hdr("OBJECT"))) ? $image_mf."(0~11,0~11,)" : $image_mf;
+  my $ndf = ($Cal->iscalsource($Obj->hdr("OBJECT"))) ? $image_mf."(0~11,0~11,)" : $image_mf;
   $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
   my ($ORAC_STATUS, $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
   # Split into coordinates
@@ -276,11 +274,11 @@ if ($fitpeak) {
 
   # Size of region to fit - use a smaller default for pointing
   # observations as the image will have been trimmed
-  my $box_default = (lc($Frm->hdr("OBS_TYPE")) eq "pointing") ? 15 : 25;
-  # Double the default box size for `large' planets at 450 um
-  my $bigplanet = (uc($Frm->hdr("OBJECT")) eq "JUPITER") ? 1
-    : (uc($Frm->hdr("OBJECT")) eq "SATURN" ? 1 : 0);
-  $box_default *= 2 if ($bigplanet && $Frm->hdr("FILTER") =~ /450/);
+  my $box_default = (lc($Obj->hdr("OBS_TYPE")) eq "pointing") ? 15 : 25;
+  # Double the default box size for "large" planets at 450 um
+  my $bigplanet = (uc($Obj->hdr("OBJECT")) eq "JUPITER") ? 1
+    : (uc($Obj->hdr("OBJECT")) eq "SATURN" ? 1 : 0);
+  $box_default *= 2 if ($bigplanet && $Obj->hdr("FILTER") =~ /450/);
   # However, if FITBOX is given, assume that the caller has done their
   # bit in choosing a suitable size
   my $fitbox = get_prim_arg($_PRIM_ARGS_, "FITBOX", $box_default);
@@ -317,7 +315,12 @@ if ($fitpeak) {
 
     # Plot fit + data?
     if ($plotfit) {
-      _PLOT_FIT_PROFILE_ IMAGE=$image MODEL=$_FIT_SOURCE_{MODELFIT}
+      # Store and tag the image and fit - restoring the contents of
+      # the object can safely be left to the end of the primitive
+      # because the object is not used again
+      $Obj->files($image, $_FIT_SOURCE_{MODELFIT});
+      $Obj->tagset("profile_fit");
+      _PLOT_FIT_PROFILE_ GROUP=$group
     }
   } else {
     orac_warn "Fit to source failed - using peak position instead\n";
@@ -341,3 +344,7 @@ $_PRIM_ARGS_->{PEAK} = $peak;
 $_PRIM_ARGS_->{PEAKERR} = $dpeak;
 $_PRIM_ARGS_->{POSITION} = $posn;
 $_PRIM_ARGS_->{SNR} = $snr;
+
+# Restore object to original state
+$Obj->tagretrieve("find_map_peak_input");
+$Obj->product( $inproduct );
