@@ -1004,6 +1004,26 @@ sub product {
   return $self->{Product};
 }
 
+=item B<tagexists>
+
+Check a given tag against the list of current tags and return true if
+a match is found.
+
+  my $tag_exists = $self->tagexists( $tag );
+
+The comparison is case sensitive.
+
+=cut
+
+sub tagexists {
+  my $self = shift;
+  if (@_) {
+    my $intag = shift;
+    return 1 if (defined $self->tags->{$intag});
+  }
+  return 0;
+}
+
 # internal accessor for tags hash. Not a public interface
 # use the tagretrieve and tagset methods.
 
