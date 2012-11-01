@@ -1,0 +1,429 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_NORMALIZE_RECEPTOR_RESPONSIVITY_ - Remove flat-field effects.
+
+=head1 DESCRIPTION
+
+This primitive removes a global flat-field from a baselined time-series
+cube. It collapses the cube along the frequency and time axes, then
+normalizes the flux in the receptors to the tracking receptor's
+flux. It then uses this multiplicative factor to normalize the input
+time-series data.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item LOWER_VELOCITY = REAL (Given)
+
+The requested lower velocity for the flat-field estimations.
+This argument can be overridden by the RECPAR_FLAT_LOWER_VELOCITY uhdr
+via the recipe parameter system.  [undef]
+
+=item MINSNR = REAL (Given)
+
+Minimum signal to noise threshold applied to the spatial cube for each
+receptor before ratios are formed.  A non-positive value requests that
+all voxels are compared.  This argument can be overridden by the
+RECPAR_FLAT_MINIMUM_SNR uhdr via the recipe parameter system.  [3.0]
+
+=item REFERENCE_RECEPTOR = STRING (Given)
+
+Which receptor is the reference receptor to which the others are
+normalized. ['H05']
+
+=item UPPER_VELOCITY = REAL (Given)
+
+The requested upper velocity for the flat-field estimations.
+This argument can be overridden by the RECPAR_FLAT_UPPER_VELOCITY uhdr
+via the recipe parameter system.  [undef]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive should only be used when you can be assured that each
+receptor has sampled the same amount of flux across the
+observation. Rasters of clouds are good candidates, jiggles or grids
+are not.
+
+=item *
+
+This primitive is suitable for baselined time-series ACSIS cubes.
+
+=item *
+
+The cube is collapsed along the time and frequency axes using the
+'sum' estimator.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The flat-fielded time-series cube with suffix _ff.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, CENTROID, CHPIX, CMULT, COLLAPSE, DIV, HISTOGRAM, MANIC,
+       NDFCOPY, NDFTRACE, SETUNITS, SETVAR, STATS;
+SMURF: MAKECUBE.
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Obtain arguments and recipe parameters.
+# =======================================
+
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
+my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
+my $upper_vel = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
+my $snr = get_prim_arg( $_PRIM_ARGS_, "MINSNR", 3.0 );
+
+$lower_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
+             $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
+             $lower_vel );
+$upper_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" ) ) ?
+             $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" )              :
+             $upper_vel );
+$snr = ( defined( $Frm->uhdr( "RECPAR_FLAT_MINIMUM_SNR" ) ) ?
+         $Frm->uhdr( "RECPAR_FLAT_MINIMUM_SNR" )              :
+         $snr );
+
+# Integer velocity must be made floating point so that NDF sectioning
+# does not regard it as pixels.
+if ( $lower_vel =~ /^[+-]?\d+$/ ) { $lower_vel = sprintf( "%.1f", $lower_vel ) }
+if ( $upper_vel =~ /^[+-]?\d+$/ ) { $upper_vel = sprintf( "%.1f", $upper_vel ) }
+
+my $flat_range = "";
+if ( defined( $lower_vel ) && defined( $upper_vel ) ) {
+   $flat_range = "$lower_vel" . ":" . "$upper_vel";
+} else {
+   orac_warn "Flat fielding selected without specifying the velocity range to perform \n";
+   orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the \n";
+   orac_warn "analysis may be swamped by noise. \n";
+   orac_warn "Set FLAT_LOWER_VELOCITY and FLAT_UPPER_VELOCITY to span strong \n";
+   orac_warn "astronomical signal.\n";
+}
+
+# Obtain the MAKECUBE parameters.
+   my $makecube_params = $Grp->uhdr( "MAKECUBE_GROUP_PARAMETERS" );
+
+
+my $ORAC_STATUS;
+
+my $isok = eval { require JCMT::ACSIS::Array; 1; };
+if ( ! $isok ) {
+   orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
+   orac_warn "Cannot remove flat-field.\n";
+
+# Selected the files to process.
+# ==============================
+} else {
+
+   my @Objs;
+   if ( $group == 0 ) {
+       push @Objs, $Frm;
+   } elsif ( $group == 1 ) {
+      push @Objs, $Grp;
+   } elsif ( $group == 2 ) {
+      @Objs = $Grp->members;
+   }
+
+# Only do this if we're not doing a Group, or if we are doing a
+# Group and this Frame is the last member of the Group.
+   if ( $group != 1 ||
+        ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
+
+      orac_say "Detector gain correction";
+
+# Process every file in in each Frame.
+      foreach my $Obj ( @Objs ) {
+
+         foreach my $i ( 1 .. $Obj->nfiles ) {
+
+            my ( $in, $out ) = $Obj->inout( "_ff", $i );
+
+# Inquire attributes needed for the output cube.
+# ==============================================
+
+# Retrieve the units of the input cube.
+            $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in fullframe" );
+            my( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+
+# Retrieve dimensions of input cube.
+            _GET_DIMENSIONS_ FILE=$in
+            my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
+            my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
+            my $flbound = $_GET_DIMENSIONS_{FLBOUND};
+            my $fubound = $_GET_DIMENSIONS_{FUBOUND};
+
+
+# Form a one-dimensional NDF of the receptors.
+# ============================================
+
+# This is to retain metadata and auxiliary arrays.  It will contain the
+# receptor ratios.
+            my $tempref = new ORAC::TempFile( 0 );
+            my $temp0file = new ORAC::TempFile( 0 );
+            my $temp1file = new ORAC::TempFile( 0 );
+            my $temp2file = new ORAC::TempFile( 0 );
+
+            my $params = "in=$in out=$temp0file estimator=mean wlim=0.0 axis=3 trim";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            $params = "in=$temp0file out=$temp1file estimator=mean wlim=0.0 axis=1 trim";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Give the NDF a VARIANCE component.
+            $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$temp1file variance=DATA" );
+
+
+# Make spatial cube for reference receptor.
+# =========================================
+
+# Form set of receptors in the input file.
+            my $array = new JCMT::ACSIS::Array( File => $in );
+
+# Retrieve the list of bad detectors from the calibration system.
+            $Cal->bad_receptors( "INDEXORMASTER" );
+            my @baddets = $Cal->bad_receptors_list;
+            orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @baddets ) );
+
+# Form sorted set of receptors that are not bad in the master list.
+            my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+            @receptors = sort @receptors;
+
+# Find the reference receptor.
+            my $ref = ( defined( $reference_receptor ) ?
+                        $reference_receptor            :
+                        $Obj->hdr( "REFRECEP" ) );
+
+# Make the spectral cube for the reference receptor.
+            my $refpixel = $array->pixel( $ref );
+            $Mon{'smurf_mon'}->obeyw( "makecube", "$makecube_params in=$in(,$refpixel,) out=$tempref" );
+
+# Hash to store the ratios.
+            my %flat_ratio;
+            my %flat_ratio_error;
+
+# Find and store the ratio between each receptor and the reference receptor.
+# ==========================================================================
+            foreach my $receptor ( @receptors ) {
+               my $pixel = $array->pixel( $receptor );
+
+# Temporary fudge until bad_receptors_qa indexing is working.  Look
+# for a bad plane.
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in(,$pixel,)" );
+               ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+               ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+
+               if ( $receptor eq $ref ) {
+
+# Insert the defined factor into the NDF.   KAPPA_REPLACE would be helpful here
+# to make the changes in situ.
+                  $params = "in=$temp1file out=$temp2file newval=1.0 section=$refpixel";
+                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+                  $params = "in=$temp2file out=$temp1file newval=0.0 section=$refpixel comp=error";
+                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+                  $flat_ratio{$ref} = 1.0;
+                  $flat_ratio_error{$ref} = 0.0;
+
+# More of the fudge.
+               } elsif ( $numbad < 0.99 * $numpix ) {
+
+# Set up some temporary files.
+                  my $tempcube = new ORAC::TempFile( 0 );
+                  my $temp4file = new ORAC::TempFile( 0 );
+                  my $temp5file = new ORAC::TempFile( 0 );
+                  my $temp6file = new ORAC::TempFile( 0 );
+                  my $temp7file = new ORAC::TempFile( 0 );
+                  my $temp8file = new ORAC::TempFile( 0 );
+                  my $temp9file = new ORAC::TempFile( 0 );
+                  my $temp10file = new ORAC::TempFile( 0 );
+
+# Make the spectral cube for the current receptor using the same
+# parameters.
+                  $params = "$makecube_params out=$tempcube ";
+                  $params .= "in=$in(,$pixel,)";
+                  $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
+
+# Mask the low SNR regions.
+# -------------------------
+                  if ( $snr > 0.0 ) {
+
+# Create a SNR spectral cube of the velocity slab to threshold to exclude
+# noisy regions from the voxel by voxel comparison.  MAKESNR automatic
+# MINVAR cuts out good data.
+                     $params = "in=$tempcube(,,$flat_range) out=$temp4file";
+                     $Mon{'kappa_mon'}->obeyw( "makesnr", "$params" );
+
+# Threshold to select the astronomical signal.  It is possible
+# to use more sophisticated clump finding... but that requires much
+# extra processing.  3.0 is a compromise between number of points
+# in low-signal regions versus a bias to lower ratios for lowe SNR
+# thresholds.
+                     my $thresh = $snr;
+                     $params = "in=$temp4file out=$temp5file ";
+                     $params .= "thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
+                     $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Form and apply the mask.
+                     $params = "in=$temp5file out=$temp6file scalar=0.0";
+                     $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+                     $params = "in1=$tempcube(,,$flat_range) in2=$temp6file out=$temp7file";
+                     $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Use all of the good voxels in the slab.
+                  } else {
+                     $params = "in=$tempcube(,,$flat_range) out=$temp7file";
+                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+                  }
+
+# Derive the histogram of ratios.
+# ===============================
+
+# Find the pixel-by-pixel ratios for the velocity slab.
+                  $params = "in1=$temp7file in2=$tempref(,,$flat_range) out=$temp8file";
+                  $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+# Form the histogram of ratios.  Because of noise and the inclusion of
+# sky data there will be a wide range and negative values.  These
+# should not matter at we expect a clear, if broad peak, centred between
+# 0.4 and 1.4 and largely close to 1.
+                  $params = "range='-1,3' numbin=200 device=! ";
+                  $params .= "in=$temp8file out=$temp9file";
+                  $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+
+# Give the histogram a VARIANCE component.
+                  $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$temp9file variance=DATA" );
+
+# Smooth the histogram.
+                  $params = "in=$temp9file out=$temp10file fwhm=5";
+                  $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+
+# Find the centroid of the ratios histogram.
+# ==========================================
+
+# Find the location of the peak of the smoothed histogram.
+                  $params = "ndf=$temp10file";
+                  $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+                  ( $ORAC_STATUS, my $init ) = $Mon{'kappa_mon'}->get( "stats", "maxwcs" );
+
+# With 0.02-width bins it should be possible to estimate the centroid
+# to around 0.003.
+                  $params = "search=51 maxshift=26 toler=0.001 cerror ";
+                  $params .= "ndf=$temp9file init=$init maxiter=9 mode=interface";
+                  my $CENTROID_STATUS = $$Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
+
+                  my $factor;
+                  my $error;
+                  if ( $CENTROID_STATUS == ORAC__OK ) {
+                     ( $ORAC_STATUS, $factor ) = $Mon{'kappa_mon'}->get( "centroid", "centre" );
+                     ( $ORAC_STATUS, $error ) = $Mon{'kappa_mon'}->get( "centroid", "error" );
+
+# Use hard-code integer error code for KPG__NOCEN.
+                  } elsif ( $CENTROID_STATUS == 234521384 ) {
+                     orac_warn "CENTROID failed: unable to determine position of ratio centroid\n";
+
+# Use the location of the peak of the smoothed histogram.  Use a
+# nominal error, larger than normally seen from CENTROID comparable
+# with the bin width.
+                     $factor = $init;
+                     $error = 0.02;
+                  }
+
+# Store the factor and its error in the one-dimensional NDF.
+# Need to make CHPIX to be to read a series of values and sections via groups.
+                  $params = "in=$temp1file out=$temp2file newval=$factor section=$pixel";
+                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+                  $params = "in=$temp2file out=$temp1file newval=$error section=$pixel comp=error";
+                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+                  $flat_ratio{$receptor} = $factor;
+                  $flat_ratio_error{$receptor} = $error;
+
+# Use dummy values for undefined data.
+               } else {
+                  $flat_ratio{$receptor} = 1.0;
+                  $flat_ratio_error{$receptor} = 0.0;
+
+               }
+            }
+
+# Form and apply the flat-field cube.
+# ===================================
+
+# Grow the vector of receptor ratios into a cube.
+            my $temp11file = new ORAC::TempFile( 0 );
+            $params = "in=$temp1file out=$temp11file axes=[0,1,0] lbound=[";
+            $params .= join( ',', $lbound->[0], $lbound->[2] );
+            $params .= "] ubound=[";
+            $params .= join( ',', $ubound->[0], $ubound->[2] );
+            $params .= "]";
+            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Divide this ratio cube into the input cube, creating the flat-fielded output.
+            $params = "in1=$in in2=$temp11file out=$out";
+            $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+# Set the units back to what they were.
+            $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
+
+# Update the Object.
+            $Obj->file( $i, $out );
+
+# Request that the output file be removed upon completion of group processing.
+            $Grp->push_intermediates( $out );
+
+# Report the receptor ratios.
+            my $type = "Flat field normalisation";
+            _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
+
+            $type = "Flat field normalisation errors";
+            _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio_error TYPE=$type
+
+           orac_say "$in to $out:";
+           orac_say " Removed flat-field.";
+
+         }
+      }
+   }
+
+# Tidy up output.
+   orac_print "\n";
+
+}
