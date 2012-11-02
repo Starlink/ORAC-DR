@@ -145,7 +145,7 @@ sub bad_receptors_qa_index {
 
 Return a list of receptor names that should be masked as bad for the
 current observation. The source of this list depends on the setting of
-the badbols() accessor.
+the bad_receptors() accessor.
 
 =cut
 
