@@ -14,8 +14,7 @@ This primitive sorts the input files using a combination of
 pre-defined and user-specified FITS headers and creates a 3-d cube for
 each set of criteria using those images. The third axis is time.
 
-By default, a stack will be created for each separate UT date. SCUBA-2
-data will also sorted by the shutter value.
+By default SCUBA-2 data will be sorted by the shutter value.
 
 =head1 ARGUMENTS
 
@@ -23,19 +22,27 @@ This primitive has no arguments.
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 2
+
+=item KAPPA
+
+CREFRAME, NDFCOPY, WCSMOSAIC
 
 =item SMURF
 
 STACKFRAMES
 
+=ITEM ORAC-DR PRIMITIVES
+
+_DELETE_TEMP_FILES_
+
 =back
 
 =head1 OUTPUT DATA
 
-None
+None.
 
 =head1 OUTPUT FILES
 
@@ -77,9 +84,9 @@ USA.
 if ($Grp->lastmember($Frm)) {
 
   # Define the FITS header keys for grouping files to stack
-  my @keys = qw/ UTDATE /;
+  my @keys;
   if ($Frm->hdr("INSTRUME") =~ /scuba-2/i) {
-    # SCUBA2 frames must be sorted by shutter as well
+    # SCUBA2 frames must be sorted by shutter
     push(@keys, "SHUTTER");
   }
   # Add any user-defined keys - note no checking is made that these are valid!
@@ -107,32 +114,73 @@ if ($Grp->lastmember($Frm)) {
     }
   }
   orac_print " done\n";
+  $Frm->tagset("stack_jcmt_frames");
 
-  # Stack each group of files - add the NDF extension to the filename if appropriate
+  # Stack each group of files
   my $suffix = ($Frm->uhdr("RECPAR_NDF_EXTEN")) ?
     "_".$Frm->uhdr("RECPAR_NDF_EXTEN") ."_stack" : "_stack";
+
   foreach my $stack ( sort keys %stacks ) {
-
-    # Store the files in a temporary Frame object
-    my $frm = $Frm->new();
-    $frm->files( @{$stacks{$stack}} );
-    my $stackfile = $frm->inout($suffix);
-    orac_print "Creating $stackfile from ".($frm->nfiles)." files\n";
-
-    # Add path to the given NDF extension if necessary
-    my @files = (defined $Frm->uhdr("RECPAR_NDF_EXTEN")) ?
-      map { $_ . ".more.smurf." .$Frm->uhdr("RECPAR_NDF_EXTEN") } $frm->files :
-	$frm->files;
-
+    my @stackfiles = @{$stacks{$stack}};
     # Only stack if there are multiple files
-    if (@files > 1) {
-      my $inlist = write_file_list(@files);
-      my $args = "in=^$inlist out=$stackfile sort sortby=MJD";
+    if (@stackfiles > 1) {
+
+      # Add path to the given NDF extension if necessary
+      $Frm->files(@stackfiles);
+
+      my $stackfile = $Frm->inout($suffix);
+      orac_print "Creating $stackfile from ".($Frm->nfiles)." files\n";
+
+      orac_print "Determining output bounds for this stack...";
+      my $filelist = write_file_list($Frm->files);
+      my $args = "in=^$filelist out=! lbnd=! ubnd=! ref=!";
+      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+      my ($ORAC_STATUS, @lbound) = $Mon{kappa_mon}->get("wcsmosaic","lbound");
+      ($ORAC_STATUS, my @ubound) = $Mon{kappa_mon}->get("wcsmosaic","ubound");
+
+      my $lbound = join(",",@lbound[0..1]);
+      my $ubound = join(",",@ubound[0..1]);
+
+      my $template = ORAC::TempFile->new();
+      my $title = $Frm->hdr('OBJECT');
+      my $imgargs = "lbound=\[$lbound\] ubound=\[$ubound\] out=$template mode=bl title='Template'";
+      $Mon{kappa_mon}->obeyw("creframe","$imgargs");
+
+      orac_print " Resizing input files to match...\n";
+      my @copy;
+      foreach my $i (1 .. $Frm->nfiles) {
+	my ($in, $copy) = $Frm->inout("_grid", $i);
+	my $tmp = ORAC::TempFile->new();
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$tmp trimwcs trim");
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmp out=$copy like=$template");
+	push(@copy, $copy);
+      }
+      $Frm->files(@copy);
+
+      my $inlist = write_file_list($Frm->files);
+      my $tmpstack = ORAC::TempFile->new();
+      $args = "in=^$inlist out=$tmpstack sort sortby=MJD";
       $Mon{smurf_mon}->obeyw("stackframes", "$args");
+      # Trim excess bad pixels
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmpstack out=$stackfile trim trimbad");
+      orac_print "Stack $stackfile created\n";
     } else {
-      orac_warn "Stack for $stackfile has only 1 file - ignoring\n";
+      orac_warn "Output stack has only 1 file - ignoring\n";
     }
   }
+  $Frm->tagretrieve("stack_jcmt_frames");
+
+  # Delete the intermediate files
+  _DELETE_TEMP_FILES_ KEEP=_stack
+
 } else {
   orac_print "Waiting until last Frame before processing...\n";
+  # Make a copy of the input file here to simplify processing and
+  # tidy-up
+  my ($in, $copy) = $Frm->inout("_copy");
+  if (defined $Frm->uhdr("RECPAR_NDF_EXTEN")) {
+    $in .= ".more.smurf." .$Frm->uhdr("RECPAR_NDF_EXTEN");
+  }
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$copy");
+  $Frm->files($copy);
 }
