@@ -41,6 +41,8 @@ use vars qw/ $VERSION/;
 $VERSION = '1.0';
 
 __PACKAGE__->CreateBasicAccessors( baseshift => { isarray => 1 },
+                                   bias => { copyindex => 1 },
+                                   dark => { copyindex => 1 },
                                    dqc => {},
                                    flat => { copyindex => 1 },
                                    astromqc => {},
@@ -146,6 +148,52 @@ sub zeropoint {
 
 =over 4
 
+=item B<bias>
+
+Return (or set) the name of the current bias.
+
+  $bias = $Cal->bias;
+
+This method is subclassed for LCOCC so that the warning messages when
+going through the list of possible biases are suppressed (5th argument = 0).
+Unlike the flat code we *do* croak (3rd argument = 0) if we fail to find a bias.
+
+=cut
+
+sub bias {
+  my $self = shift;
+  my $bias =  $self->GenericIndexAccessor( "bias", 0, 0, 0, 0, @_ );
+  unless ( defined $bias ) {
+# Give up...
+    croak "No suitable bias was found in index file and no default allowed.";
+  }
+  $bias .= ".sdf" unless $bias =~ /\.sdf$/;
+  return $self->find_file( $bias );
+}
+
+=item B<dark>
+
+Return (or set) the name of the current dark.
+
+  $dark = $Cal->dark;
+
+This method is subclassed for LCOCC so that the warning messages when
+going through the list of possible darks are suppressed (5th argument = 0).
+Unlike the flat code we *do* croak (3rd argument = 0) if we fail to find a dark.
+
+=cut
+
+sub dark {
+  my $self = shift;
+  my $dark =  $self->GenericIndexAccessor( "dark", 0, 0, 0, 0, @_ );
+  unless ( defined $dark ) {
+# Give up...
+    croak "No suitable dark was found in index file and no default allowed.";
+  }
+  $dark .= ".sdf" unless $dark =~ /\.sdf$/;
+  return $self->find_file( $dark );
+}
+
 =item B<flat>
 
 Return (or set) the name of the current flat.
@@ -166,9 +214,9 @@ sub flat {
   unless ( defined $flat ) {
     # $uhdrref is a reference to the Frame uhdr hash
     my $uhdrref = $self->thingtwo;
-    my $defflatname = "fakeflat.sdf";
-    if ($uhdrref->{'ORAC_XBINNING'} == 2 && $uhdrref->{'ORAC_YBINNING'} == 2 ) {
-      $defflatname = "fakeflat_bin2x2.sdf";
+    my $defflatname = "flat_kb10_20121107_FAKEFLAT_bin2x2.sdf";
+    if ($uhdrref->{'ORAC_XBINNING'} == 1 && $uhdrref->{'ORAC_YBINNING'} == 1 ) {
+      $defflatname = "flat_kb10_20121107_FAKEFLAT_bin2x2.sdf";
     }
     my $defflat = $self->find_file($defflatname);
     if( defined( $defflat ) ) {
@@ -191,7 +239,7 @@ every effort is made to guarantee that the mask is suitable for use.
   $Cal->mask( $newmask );
 
 If no suitable mask can be found from the index file (or the currently
-set mask is not suitable), the LCOCC C<$ORAC_DATA_CAL/bpm_kb22> is returned by
+set mask is not suitable), the LCOCC C<$ORAC_DATA_CAL/bpm-kb10> is returned by
 default (so long as the file does exist).  Note that a test for
 suitability can not be performed since there is no corresponding index
 entry for this default mask.
@@ -202,7 +250,7 @@ sub mask {
   my $self = shift;
   my $mask = $self->GenericIndexAccessor( "mask", 0, 0, 0, 0, @_ );
   unless ( defined $mask ) {
-    my $defmask = $self->find_file("bpm_kb22.sdf");
+    my $defmask = $self->find_file("bpm-kb10.sdf");
     if( defined( $defmask ) ) {
       $defmask =~ s/\.sdf$//;
       return $defmask;
