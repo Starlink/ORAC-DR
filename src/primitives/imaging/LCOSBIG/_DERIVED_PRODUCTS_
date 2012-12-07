@@ -194,12 +194,12 @@ use ORAC::Version;
       }
 
 # Set recipes used
-      my $recipe = $Frm->recipe;
-#      orac_print "Recipe=$recipe\n";
-      _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
+      my $framerecipe = $Frm->uhdr("ORAC_DR_RECIPE"); #recipe;
+#      orac_print "Recipe=$framerecipe\n";
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$framerecipe COMMENT=Processing|Recipes|required/used
       my $postprocrecipe = 'timecorrect';
       _SET_FILE_FITS_ITEM_ FILE=$file KEY=PPRECIPE VALUE=$postprocrecipe COMMENT=Post-Processing|Recipes|required/used
-#      use Data::Dumper ; print Dumper $Frm->hdr;
+#      use Data::Dumper ; print Dumper $Frm;
 
 # Set the ASN_TYPE to prevent warning in _CREATE_GRAPHIC_FROM_FILE_
       $Frm->uhdr( "ASN_TYPE", 'obs');
@@ -215,15 +215,25 @@ use ORAC::Version;
       $create_graphic->( $file );
       my $pngfile = $file . '.png';
       my $renamefile = $pngfile;
-      $renamefile =~ s/00_bp_ff/90/;
+      if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+        $renamefile =~ s/00_bp_ff/10/;
+      } else {
+        $renamefile =~ s/00_bp_ff/90/;
+      }
       unlink $renamefile;
 #      print "New filename=$pngfile $renamefile\n";
       rename $pngfile, $renamefile;
 
 # If we have a final destination environment var. set, move files there.
+      my $final_dest;
       if ( defined $ENV{FINAL_DATA_OUT} ) {
-        move($renamefile, $ENV{FINAL_DATA_OUT});
-        orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+        $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
+        if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+          $final_dest = File::Spec->catfile($final_dest, "quicklook");
+          mkdir $final_dest;
+        }
+        move($renamefile, $final_dest);
+        orac_print "Moving ". $renamefile . " to final data place=" . $final_dest . "\n";
       }
 # Convert FITS file
 #      my $wcs = $Frm->read_wcs( $file );
@@ -231,7 +241,11 @@ use ORAC::Version;
       _CONVERT_TO_FITS_
       my $fitsfile = $_CONVERT_TO_FITS_{FILENAME};
       $renamefile = $fitsfile;
-      $renamefile =~ s/00_bp_ff/90/;
+      if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+        $renamefile =~ s/00_bp_ff/10/;
+      } else {
+        $renamefile =~ s/00_bp_ff/90/;
+      }
       unlink $renamefile;
 #      print "New filename=$fitsfile $renamefile\n";
       rename $fitsfile, $renamefile;
@@ -245,10 +259,14 @@ use ORAC::Version;
       }
 # If we have a final destination environment var. set, move files there.
       if ( defined $ENV{FINAL_DATA_OUT} ) {
-        move($renamefile, $ENV{FINAL_DATA_OUT});
-        orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
-        $renamefile =~ s/90.fits/90_cat.fits/;
-        orac_print "Moving ". $renamefile . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
-        move($renamefile, $ENV{FINAL_DATA_OUT});
+        move($renamefile, $final_dest);
+        orac_print "Moving ". $renamefile . " to final data place=" . $final_dest . "\n";
+        if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+          $renamefile =~ s/10.fits/10_cat.fits/;
+        } else {
+          $renamefile =~ s/90.fits/90_cat.fits/;
+        }
+        orac_print "Moving ". $renamefile . " to final data place=" . $final_dest . "\n";
+        move($renamefile, $final_dest);
       }
     }
