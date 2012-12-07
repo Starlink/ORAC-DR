@@ -214,9 +214,9 @@ sub flat {
   unless ( defined $flat ) {
     # $uhdrref is a reference to the Frame uhdr hash
     my $uhdrref = $self->thingtwo;
-    my $defflatname = "flat_kb74_20120831_FAKEFLAT_bin2x2.sdf";
+    my $defflatname = "flat_kb73_20121127_FAKEFLAT_bin2x2.sdf";
     if ($uhdrref->{'ORAC_XBINNING'} == 1 && $uhdrref->{'ORAC_YBINNING'} == 1 ) {
-      $defflatname = "flat_kb74_20120831_FAKEFLAT_bin1x1.sdf";
+      $defflatname = "flat_kb73_20121127_FAKEFLAT_bin1x1.sdf";
     }
     my $defflat = $self->find_file($defflatname);
     if( defined( $defflat ) ) {
@@ -239,7 +239,7 @@ every effort is made to guarantee that the mask is suitable for use.
   $Cal->mask( $newmask );
 
 If no suitable mask can be found from the index file (or the currently
-set mask is not suitable), the LCOSBIG C<$ORAC_DATA_CAL/bpm-kb74> is returned by
+set mask is not suitable), the LCOSBIG C<$ORAC_DATA_CAL/bpm-kb73> is returned by
 default (so long as the file does exist).  Note that a test for
 suitability can not be performed since there is no corresponding index
 entry for this default mask.
@@ -250,7 +250,7 @@ sub mask {
   my $self = shift;
   my $mask = $self->GenericIndexAccessor( "mask", 0, 0, 0, 0, @_ );
   unless ( defined $mask ) {
-    my $defmask = $self->find_file("bpm-kb74.sdf");
+    my $defmask = $self->find_file("bpm-kb73.sdf");
     if( defined( $defmask ) ) {
       $defmask =~ s/\.sdf$//;
       return $defmask;
