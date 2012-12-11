@@ -6,7 +6,9 @@ _ADD_IMAGES_ - Add together a series of 2-D images
 
 =head1 SYNOPSIS
 
-_ADD_IMAGES_ INLIST=$imagelistref OUT=$out
+ _ADD_IMAGES_ OUT=$out
+
+ _ADD_IMAGES_ OUT=$out INLIST=$imagelistref
 
 =head1 DESCRIPTION
 
@@ -38,14 +40,15 @@ extension.
 
 =item B<INLIST>
 
-Perl reference to array of image file names. No default.
+Perl reference to array of image file names. Default list will be
+obtained from the current Frame object.
 
 =item B<OUT>
 
 Name of output file in which to write new NDF components corresponding
-to those given in the B<COMPS> parameter. This file should already
-exist and the existing version(s) of the given NDF components are
-deleted. The default is the current Frame file.
+to those given in the B<COMPS> parameter. This file must already exist
+and the existing version(s) of the given NDF components are
+deleted. No default.
 
 =back
 
@@ -86,7 +89,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 the University of British Columbia. All Rights
+Copyright (C) 2008,2012 the University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -106,20 +109,22 @@ USA.
 
 =cut
 
+my $add_images = "add_images";
+
 # Should I be verbose (default to no)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-# Check arguments
+# Output file - no default
+my $outfile = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+orac_err "_ADD_IMAGES_ must be given an output file name\n"
+  unless ($outfile);
+
+# Optional input list
 my $inref = get_prim_arg( $_PRIM_ARGS_, "INLIST", undef );
-# No default value, so throw an error if no input list
-orac_throw "Error: must supply reference to list of input files to _ADD_IMAGES_\n"
-  unless ( defined $inref || (ref($inref) ne "ARRAY") );
-
-# Input list of files
-my @infiles = @{ $inref };
-
-# Output file - default to current Frame file
-my $outfile = get_prim_arg( $_PRIM_ARGS_, "OUT", $Frm->file );
+if ( defined $inref && (ref($inref) eq "ARRAY") ) {
+  $Frm->tagset($add_images);
+  $Frm->files(@{$inref});
+}
 
 # Name of components to add if defined - default to exp_time and weights
 my $complist = uc(get_prim_arg( $_PRIM_ARGS_, "COMPS", "EXP_TIME,WEIGHTS" ));
@@ -144,8 +149,7 @@ if ( defined $bounds && (ref($bounds) eq "ARRAY") ) {
 }
 
 # Number of input files - if there is only one file then do nothing
-my $nfiles = scalar(@infiles);
-if ( $nfiles > 1 ) {
+if ( $Frm->nfiles > 1 ) {
   foreach my $comp ( @comps ) {
     # Check that the chosen component "exists"
     if ( $Frm->uhdr("$comp") ) {
@@ -157,11 +161,13 @@ if ( $nfiles > 1 ) {
       orac_print "Calculating total $known_comps{$comp}... " if ($verbose);
 
       # Use MSTATS with estimator=sum
-      my @inlist = map { $_.".MORE.SMURF.".$comp.$boundstr } @infiles;
-      my $inlist = write_file_list( @inlist );
+      my $inlist = write_file_list(map { $_.".MORE.SMURF.".$comp.$boundstr } $Frm->files);
       my $args = "in=^$inlist wlim=0 variance=f trim=false estimator=sum single=false out=$out";
       $Mon{kappa_mon}->obeyw("mstats","$args");
     }
   }
   orac_print "done\n" if ($verbose);
 }
+
+# Restore Frame to input state if necessary
+$Frm->tagretrieve($add_images) if ($Frm->tagexists($add_images));
