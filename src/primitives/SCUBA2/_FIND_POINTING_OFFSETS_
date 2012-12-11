@@ -153,8 +153,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2009, 2011 the University of British Columbia. All
-Rights Reserved.
+Copyright (C) 2007-2009, 2011-2012 the University of British
+Columbia. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -190,16 +190,21 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
   # current Frame uhdr.
   my $proceed = $Frm->uhdr("OBSEND");
 
-  # Always proceed in the QL and SUMMIT pipelines
+  # Proceed in the QL and SUMMIT pipelines if a new or
+  # matched-filtered image exists
   if (defined $Frm->uhdr("QUICKLOOK") || defined $Frm->uhdr("SUMMIT")) {
-    # But only if a new Group image has been created this time round
-    $proceed = ($Grp->uhdr("NEWIMAGE")) ? 1 : 0;
+    $proceed = (defined $Grp->product &&
+		($Grp->product eq "newimage" ||
+		 $Grp->product eq "Matched-filtered"))
+      ? 1 : 0;
   }
 
   # No point proceeding if no Group file exists
   $proceed = 0 unless ($Grp->file_exists);
 
   if ( $proceed ) {
+    $Grp->tagset("find_pointing_offsets");
+
     # Pointing should be done at the end of an observation so always use
     # the Group file
     my $in = $Grp->file;
@@ -217,25 +222,20 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
     # access/attribute conflicts with the official POINTING_FOCUS
     # task. Do this step before the system attempts to access the
     # Group file.
-    my $incopy = new ORAC::TempFile;
-    my $incopyfile = $incopy->file;
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
+    my $grpcopy = $Grp->inout("_copy");
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$grpcopy");
     # Set the offset coordinate system to Origin and the formatting of
     # axes to arcseconds with 4 decimal places
     my $newformat = "s.4";
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system(1)=AZEL,Format(1)=$newformat,Format(2)=$newformat'");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$grpcopy mode=mset setting='skyrefis=origin,alignoffset=1,system(1)=AZEL,Format(1)=$newformat,Format(2)=$newformat'");
+    # Store the copy in the group so it can be picked up
+    $Grp->files($grpcopy);
 
     # See if the image has a suitable point source - search an area 20
     # pixels in diameter
     my $searchbox = 20;
-    my $point_src;
-    if ($Grp->uhdr("NEWIMAGE") == 1) {
-      _ASSESS_IMAGE_ IMAGE=$incopyfile VERBOSE=0 BOX=$searchbox
-      $point_src = $_ASSESS_IMAGE_{POINT};
-    } else {
-      $point_src = 0;
-    }
-    if ( $point_src ) {
+    _ASSESS_IMAGE_ GROUP=1 VERBOSE=0 BOX=$searchbox
+    if ( $_ASSESS_IMAGE_{POINT} ) {
       # AzEl offsets for centroid and beamfit
       my ($cendaz, $cendel, $beamdaz, $beamdel);
       my @fit;
@@ -243,7 +243,7 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 
       # Find source position offsets using the temporary copy of the
       # Grp image.
-      _CENTROID_IMAGE_ IMAGE=$incopyfile
+      _CENTROID_IMAGE_ GROUP=1
 
       # Returned value from _CENTROID_IMAGE_ is an empty array ref if
       # there was a problem determining the centroid, so de-reference
@@ -274,7 +274,7 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	$cendaz = "*****";
 	$cendel = "*****";
       }
-      _FIT_SOURCE_ IMAGE=$incopyfile VERBOSE=0 BOX=9 XYPOS=$xypos GAUSSIAN=0
+      _FIT_SOURCE_ IMAGE=$grpcopy VERBOSE=0 BOX=9 XYPOS=$xypos GAUSSIAN=0
       if ( $_FIT_SOURCE_{FIT} == 1 ) {
 	@results = @{ $_FIT_SOURCE_{POSITION} };
 	$beamdaz = sprintf "%5.2f", $results[0];
@@ -289,16 +289,14 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	orac_warn "Unable to calculate pointing offsets - could not fit a 2-D gaussian\n";
       }
 
-      # Write fit parameters to data file
+      # Write fit parameters to data file to be used by the
+      # POINTING_FOCUS task
       if ( @fit ) {
 	JCMT::Pointing->write_fit_to_datafile($in, @fit);
       } else {
 	$uselog = 0;
 	orac_warn "Unable to determine source offsets\n";
       }
-
-      # Delete the temporary file
-      undef $incopy;
 
       # Write info to log file if requested
       if ( $uselog ) {
@@ -315,17 +313,12 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
       orac_warn "Unable to locate a point source to determine pointing offsets\n";
     } # If image OK
 
+    # Restore Grp file to input state
+    $Grp->tagretrieve("find_pointing_offsets");
+
     # Write .ok flag file in output directory - the POINTING_FOCUS task
     # can pick up from here.
     _WRITE_FLAG_FILE_
-
-    # Restore current coadd as Group file - most important for the QL
-    # and SUMMIT pipelines. Now, this *assumes* that the coadd is the
-    # second file, which is the case if the preceding primitive called
-    # the matched filter.
-    if ($Grp->nfiles > 1) {
-      $Grp->files( $Grp->file(2) );
-    }
 
   } # If OBSEND/proceed
 } else {
