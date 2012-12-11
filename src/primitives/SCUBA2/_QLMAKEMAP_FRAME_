@@ -49,8 +49,8 @@ _RETRIEVE_GOOD_DATA_FRAME_
 
 =head1 OUTPUT DATA
 
-The Frame uhdr entries C<SKY_SUBTRACTION>, C<EXTINCTION> and
-C<NEWIMAGE> are set to 1 on success.
+The Frame uhdr entries C<SKY_SUBTRACTION> and C<EXTINCTION> are set to
+1 on success.
 
 =head1 OUTPUT FILES
 
@@ -111,8 +111,6 @@ if (($Frm->hdr("PROJECT") =~ /^jcmtcal/i || lc(substr($Frm->hdr("PROJECT"),4,2))
 if ($Frm->uhdr("DARKONLY")) {
   # Do not calibrate these data
   $Frm->uhdr("NOCALIB",1);
-  # Set a flag to indicate a map was not made
-  $Frm->uhdr("NEWIMAGE",0);
   # Force the sky subtraction and extinction flags to unity so that
   # these steps are not attempted on non-image data
   $Frm->uhdr("SKY_SUBTRACTION",1);
@@ -210,9 +208,6 @@ $args .= join(" ", map { "$_=$makemapargs{$_}" } keys %makemapargs);
 # Call makemap - really must have some sort of feedback to user
 orac_print "Calling makemap using iterate method - ";
 
-# Newimage will be used to determine if a new image was created by
-# this primitive. Set an optimistic default.
-my $newimage = 1;
 # Error message text
 my $msg;
 my $fault_msg = "If this failure is not associated with a bad observation please file a fault\n";
@@ -231,13 +226,16 @@ if ( $SMURF_STATUS == ORAC__OK ) {
   $fullout .= ".sdf" unless ($fullout =~ /.sdf$/); # hack...
   if ( -e $fullout ) {
     # Register the new file name
-    $Frm->files( $out );
-
-    # Re-read the header
+    $Frm->force_product_update("makemap", $out);
+    $Frm->tagset("makemap");
+    # Re-read the header as the number of files has changed
     $Frm->readhdr();
+    # Use the newimage tag/product for pipeline checks
+    $Frm->product("newimage");
+    $Frm->tagset("newimage");
 
-    # Set the title to include the source name - add obs num if
-    # running at the summit
+    # Set the title to include the source name - add observation
+    # number for running the QL at the telescope
     my $title = "'$object / $obsnum #$subscan'";
     $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
 
@@ -261,12 +259,9 @@ if ( $SMURF_STATUS == ORAC__OK ) {
       # Mark current frame as good now that we have a map
       $Frm->isgood(1);
 
-      # Set a flag to indicate a new map was made
-      $newimage = 1;
     } else {
       # Mark this frame as BAD since every bolometer was flagged
       $Frm->isgood(0);
-      $newimage = 0;
       $msg = "Makemap created a blank map: data from this Frame will be ignored.\n$fault_msg";
     }
 
@@ -274,7 +269,6 @@ if ( $SMURF_STATUS == ORAC__OK ) {
     # Mark this frame as BAD. The only reason we would be here is
     # that the data are bad/corrupt.
     $Frm->isgood(0);
-    $newimage = 0;
     $msg = "Makemap failed to create an output file (corrupt data): data from this Frame will be ignored.\n\n$fault_msg";
   }
 } else {
@@ -298,13 +292,10 @@ if ( $SMURF_STATUS == ORAC__OK ) {
     $msg = "Makemap failed for an unknown reason: data from this Frame will be ignored\n$fault_msg";
   }
   $Frm->isgood(0);
-  $newimage = 0;
 }
 
-# Set a flag to indicate whether or not a map was made
-$Frm->uhdr("NEWIMAGE",$newimage);
 # If no new image was created issue an error saying why
-unless ($newimage) {
+unless ($Frm->tagexists("newimage")) {
   $Frm->uhdr("NOCALIB",1);
   # Terminate the recipe unless we're processing the last member and
   # have more than one member in the group, in which case we still

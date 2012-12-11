@@ -153,8 +153,6 @@ if (($Frm->hdr("PROJECT") =~ /^jcmtcal/i || lc(substr($Frm->hdr("PROJECT"),4,2))
 if ($Frm->uhdr("DARKONLY")) {
   # Do not calibrate these data
   $Frm->uhdr("NOCALIB",1);
-  # Set a flag to indicate a map was not made
-  $Frm->uhdr("NEWIMAGE",0);
   return ORAC__OK;
 }
 
@@ -194,7 +192,7 @@ if ( $infiles eq "FRAME" ) {
   my $subGrp = $Grp->subgrp(OBSNUM => $obsnum);
   foreach my $frmobj ( $subGrp->members ) {
     # Only add data from frames which do not contain images
-    if ($frmobj->isgood && !$frmobj->uhdr("NEWIMAGE")) {
+    if ($frmobj->isgood && !$frmobj->tagexists("newimage")) {
       _RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats FRAME=$frmobj
       push (@infiles, @{$_RETRIEVE_GOOD_DATA_FRAME_{FILES}})
 	if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
@@ -321,13 +319,11 @@ $args .= " resist=".($Frm->uhdr("RECPAR_RESIST_CFG"))
 # Call makemap - really must have some sort of feedback to user
 orac_print "Calling makemap using $method method\n";
 
-# Newimage will be used to determine if a new image was created by
-# this primitive. Set an optimistic default.
-my $newimage = 1;
 # Error message text
 my $msg;
 
 # Check the output map bounds
+my $proceed = 1;
 _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
 if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
   my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
@@ -338,13 +334,13 @@ if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
   # The bounds check failed so mark the current frame as bad and
   # set an error message
   $Frm->isgood(0);
-  $newimage = 0;
+  $proceed = 0;
   $msg = "Checking map size failed - skipping this observation\n";
 }
 
 my $fault_msg = "If this failure is not associated with a bad observation please file a fault\n";
 
-if ($newimage) {
+if ($proceed) {
   my $nfiles = scalar(@infiles);
   # Now create output map using the new bounds if necessary
   orac_print "Making map from $nfiles input files";
@@ -373,7 +369,9 @@ if ($newimage) {
       # the header because the Frame now contains only a single image
       # file.
       $Frm->force_product_update("makemap", $out);
+      $Frm->tagset("makemap");
       $Frm->readhdr();
+      $Frm->product("newimage");
       $Frm->tagset("newimage");
 
       # Check the image to see if the target is covered by good pixels
@@ -388,9 +386,6 @@ if ($newimage) {
 	# Mark current frame as good now that we have a map
 	$Frm->isgood(1);
 
-	# Set a flag to indicate a new map was made
-	$newimage = 1;
-
 	# Set Frame EXP_TIME and WEIGHTS flags
 	$Frm->uhdr("EXP_TIME",1);
 	$Frm->uhdr("WEIGHTS",1);
@@ -402,14 +397,12 @@ if ($newimage) {
       } else {
 	# Mark this frame as BAD since every bolometer was flagged
 	$Frm->isgood(0);
-	$newimage = 0;
 	$msg = "Makemap created a blank map: data from this Frame will be ignored.\n$fault_msg";
       }
     } else {
       # Mark this frame as BAD. The only reason we would be here is
       # that the data are bad/corrupt.
       $Frm->isgood(0);
-      $newimage = 0;
       $msg = "Makemap failed to create an output file (corrupt data): data from this Frame will be ignored.\n\n$fault_msg";
     }
   } else {
@@ -425,26 +418,21 @@ if ($newimage) {
       $msg = "No science data found: data from this Frame will be ignored\n";
     } elsif ( $SMURF_STATUS == ORAC__BADENG ) {
       # ORAC__BADENG - indicates SMURF has crashed. Mark the Frame as
-      # bad, set the NEWIMAGE flag to false and return immediately
-      # with the current status
+      # bad and return immediately with the current status
       orac_err "***** SMURF has crashed - aborting recipe *****\n";
       delete $Mon{smurf_mon};
       $Frm->isgood(0);
-      $Frm->uhdr("NEWIMAGE",0);
       return $SMURF_STATUS;
     } else {
       # Everything else...
       $msg = "Makemap failed for an unknown reason: data from this Frame will be ignored\n$fault_msg";
     }
     $Frm->isgood(0);
-    $newimage = 0;
   }
 }
 
-# Set a flag to indicate whether or not a map was made
-$Frm->uhdr("NEWIMAGE",$newimage);
 # If no new image was created issue an error saying why
-unless ($newimage) {
+unless ($Frm->product && $Frm->product eq "newimage") {
   $Frm->uhdr("NOCALIB",1);
   $Frm->uhdr("EXTINCTION",1);
   $Frm->uhdr("SKY_SUBTRACTION",1);

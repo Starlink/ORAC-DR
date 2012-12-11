@@ -120,8 +120,8 @@ is called as it is optimized for that use.
 
 =head1 OUTPUT DATA
 
-On exit, the Group uhdr contains the entry NEWIMAGE which is set to 1
-if a new Group file was created.
+On exit, the Group product is defined as C<newimage> if a new Group
+file was created. The Group file is also tagged with the same label.
 
 =head1 OUTPUT FILES
 
@@ -135,7 +135,9 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2004-2008 Particle Physics and Astronomy Research
-Council and University of British Columbia.  All Rights Reserved.
+Council
+Copyright (C) 2004-2008,2012 University of British Columbia.
+All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -163,7 +165,7 @@ my $wait = get_prim_arg($_PRIM_ARGS_, "WAIT", 0);
 # Check whether the proceed conditions are met - proceed if we're not
 # waiting until the obs has ended, OR if we *are* waiting and the obs
 # has ended, provided a new image exists.
-if ( (!$wait || ($wait && $Frm->uhdr('OBSEND')) ) && $Frm->uhdr("NEWIMAGE") ) {
+if ( (!$wait || ($wait && $Frm->uhdr('OBSEND')) ) && $Frm->tagexists("newimage") ) {
 
   # Do we want to use makemos?
   my $makemos = get_prim_arg($_PRIM_ARGS_, "MAKEMOS", 0);
@@ -203,26 +205,23 @@ if ( (!$wait || ($wait && $Frm->uhdr('OBSEND')) ) && $Frm->uhdr("NEWIMAGE") ) {
     # This primitive always uses makemos, default method is SIGMA so
     # pass on SIGMAS parameter
     _MAKE_MOSAIC_GROUP_DESPIKE_ NMOS=$nmos VERBOSE=$verbose SIGMAS=$sigmas
-    # Tell the display system that there's a new image to display
-    $Grp->uhdr("NEWIMAGE",1) if $_MAKE_MOSAIC_GROUP_DESPIKE_{NEWIMAGE};
-
   } else {
-
     # Method for determining resampling the image during alignment
     my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
-
-    # Unset the NEWIMAGE flag
-    $Grp->uhdr("NEWIMAGE",0);
-
     _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose NMOS=$nmos
 
-    # Tell the display system that there's a new image to display
-    my $newgrpimage = ($_MAKE_MOSAIC_{NEWIMAGE}) ? 1 : 0;
-    $newgrpimage = -1 if ($Frm->uhdr("NEWIMAGE") == -1 && $newgrpimage);
-    $Grp->uhdr("NEWIMAGE", $newgrpimage );
+    if ($_MAKE_MOSAIC_{NEWIMAGE}) {
+      orac_print "Updating product and tags...\n";
+      # Store the "coadd" product in the new file...
+      $Grp->force_product_update("coadd", $Grp->file);
+      $Grp->tagset("coadd");
+      # ...but use "newimage" as the product for the purposes of the pipeline
+      $Grp->product("newimage");
+      $Grp->tagset("newimage");
+    }
   }
 } else {
-  # If the proceed conditions were not met, tell the pipeline that no
-  # new Group image was created this time round
-  $Grp->uhdr("NEWIMAGE",0);
+  # Update group product to be "old" if a new image was created on the
+  # previous pass through the recipe
+  $Grp->product("oldimage") if ($Grp->product && $Grp->product eq "newimage");
 }
