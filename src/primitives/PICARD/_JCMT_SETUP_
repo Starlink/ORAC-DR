@@ -34,10 +34,14 @@ _JCMT_VERIFY_PARAMETERS_
 
 =head1 NOTES
 
-Since the first file is used to set the current units, and downstream
-decisions may be made based on those units, passing in a mix of
-calibrated and uncalibrated data is likely to lead to strange results
-and is not recommended.
+None.
+
+=head1 OUTPUT DATA
+
+The input data are tagged with C<newimage>. If the units are blank, it
+is assumed that the input file is a signal-to-noise ratio (SNR)
+image. In this case, an C<snr> product is defined and the data are
+tagged with the same.
 
 =head1 AUTHOR
 
@@ -45,7 +49,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009-2011 University of British Columbia. All Rights
+Copyright (C) 2009-2012 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -71,13 +75,16 @@ _JCMT_VERIFY_PARAMETERS_
 # For Picard, the observation has always ended :-)
 $Frm->uhdr("OBSEND",1);
 
-# And there's always a new image
-$Frm->uhdr("NEWIMAGE",1);
+# Tag the contents of the frame with "newimage"
+$Frm->tagset("newimage");
+$Frm->product("newimage");
 
 # Get the current units so we quote the calibration factor - assume
 # that all input data have the same units, so pick the first file in
-# the Frame and use that as a template.
-my $in = $Frm->file(1);
+# the Frame and use that as a template. Note that ORAC_DATA_UNITS
+# could be used here except that it always falls back on a default of
+# pW for SCUBA-2 data, which is incorrect for S/N maps.
+my $in = $Frm->file;
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
 my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
 $Frm->uhdr("DATA_UNITS", $dataunits);
@@ -91,10 +98,16 @@ if ($Frm->hdr("INSTRUME") eq "SCUBA-2") {
   } else {
     $Frm->uhdr("NOCALIB", 1);
   }
-
   # For the purposes of Picard, say that sky subtraction has been done
   # so background-subtracted images have the suffix _back
   $Frm->uhdr("SKY_SUBTRACTION", 1);
+}
+
+# If the units are not defined, then the Frame contains a S/N image
+# and it should be tagged as such
+if ($dataunits eq "") {
+  $Frm->tagset("snr");
+  $Frm->product("snr");
 }
 
 orac_print "Processing data for ".$Frm->hdr("OBJECT")."\n";
