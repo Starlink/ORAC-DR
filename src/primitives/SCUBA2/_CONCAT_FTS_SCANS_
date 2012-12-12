@@ -1,0 +1,96 @@
+=head1 NAME
+
+_CONCAT_FTS_SCANS_ - Find and concatenate scans of the moving mirror
+
+=head1 SYNOPSIS
+
+ _CONCAT_FTS_SCANS_
+
+=head1 DESCRIPTION
+
+This primitive identifies files which comprise scans of the FTS
+moving mirror, and concatenates them.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+None.
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my @files = $Frm->files();
+my %scanin = ();
+my %scanout = ();
+my @output = ();
+
+# Build list of files which should be concatenated,
+# identified by observation ID and sequence count.
+
+foreach (my $i = 0; $i < scalar @files; $i ++) {
+  next unless lc($Frm->hdrval('SEQ_TYPE', $i)) eq 'science';
+  my $id = $Frm->hdrval('OBSIDSS', $i) . '_' .
+           $Frm->hdrval('SEQCOUNT', $i);
+
+  unless (exists($scanin{$id})) {
+    my ($in, $out) = $Frm->inout('con', $i + 1);
+    $scanin{$id} = [$in];
+    $scanout{$id} = $out;
+  }
+  else {
+    push @{$scanin{$id}}, $files[$i];
+  }
+}
+
+# Apply sc2concat to the files.
+
+foreach my $id (keys %scanin) {
+  my $in = write_file_list(@{$scanin{$id}});
+  my $out = $scanout{$id};
+
+  $Mon{'smurf_mon'}->obeyw('sc2concat', "in=^$in out=$out flat=true");
+
+  push @output, $out;
+}
+
+# Return list of concatenated files.
+
+$Frm->files(@output);
