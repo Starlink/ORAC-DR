@@ -1,15 +1,14 @@
 =head1 NAME
 
-_CONCAT_FTS_SCANS_ - Find and concatenate scans of the moving mirror
+_BASELINE_INTERFEROGRAM_ - baselines the interferogram
 
 =head1 SYNOPSIS
 
- _CONCAT_FTS_SCANS_
+ _BASELINE_INTERFEROGRAM_
 
 =head1 DESCRIPTION
 
-This primitive identifies files which comprise scans of the FTS
-moving mirror, and concatenates them.
+This primitive subtracts a baseline from the interferogram.
 
 =head1 ARGUMENTS
 
@@ -17,7 +16,7 @@ None.
 
 =head1 EXTERNAL TASKS
 
-SMURF.
+KAPPA.
 
 =head1 OUTPUT DATA
 
@@ -57,40 +56,30 @@ USA.
 
 =cut
 
-my @files = sort $Frm->files();
-my %scanin = ();
-my %scanout = ();
 my @output = ();
 
-# Build list of files which should be concatenated,
-# identified by observation ID and sequence count.
-
-foreach (my $i = 0; $i < scalar @files; $i ++) {
-  next unless lc($Frm->hdrval('SEQ_TYPE', $i)) eq 'science';
-  my $id = $Frm->hdrval('OBSIDSS', $i) . '_' .
-           $Frm->hdrval('SEQCOUNT', $i);
-
-  unless (exists($scanin{$id})) {
-    my ($in, $out) = $Frm->inout('con', $i + 1);
-    $scanin{$id} = [$in];
-    $scanout{$id} = $out;
-  }
-  else {
-    push @{$scanin{$id}}, $files[$i];
-  }
+my $zpd = $Frm->uhdr("RECPAR_ZPD_ESTIMATE");
+unless (defined $zpd) {
+ $zpd = 228;
+ orac_warn('RECPAR ZPD_ESTIMATE is missing, using default value ' . $zpd);
 }
 
-# Apply sc2concat to the files.
+my ($off, $wid) = $Frm->hdr('FILTER') =~ /850/
+                ? (6, 3)
+                : (3, 3);
 
-foreach my $id (keys %scanin) {
-  my $in = write_file_list(@{$scanin{$id}});
-  my $out = $scanout{$id};
+my $range = '"'
+          . ($zpd - ($off + $wid)) . ','
+          . ($zpd - $off) . ','
+          . ($zpd + $off) . ','
+          . ($zpd + $off + $wid) . '"';
 
-  $Mon{'smurf_mon'}->obeyw('sc2concat', "in=^$in out=$out flat=true");
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $out) = $Frm->inout('_bas', $i);
+
+  $Mon{'kappa_mon'}->obeyw('mfittrend', "$in 3 $range $out order=0 modifyin=false subtract=true");
 
   push @output, $out;
 }
-
-# Return list of concatenated files.
 
 $Frm->files(@output);
