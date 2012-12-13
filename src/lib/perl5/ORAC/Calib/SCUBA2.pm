@@ -237,6 +237,7 @@ __PACKAGE__->CreateBasicAccessors( mask => {},
 				   setupflat => {},
 				   noise => {},
 				   nep => {},
+                                   zeropath => {},
 );
 
 =head1 PUBLIC METHODS
@@ -640,6 +641,24 @@ sub nep {
   my $warn = 0;
   return $self->GenericIndexAccessor( "nep", -1, 1, 0, $warn, @_ );
 }
+
+
+=item B<zeropath>
+
+Return (or set) the name of the current zeropath file(s).
+
+  $zeropath = $Cal->zeropath();
+
+=cut
+
+sub zeropath {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( 'zeropath', -1, 1, 0, $warn, @_ );
+}
+
+
 
 =back
 
