@@ -1,0 +1,124 @@
+=head1 NAME
+
+_FIT_INTERFEROGRAM_PEAK_ - fits a peak in an interferogram
+
+=head1 SYNOPSIS
+
+ _SET_INTERFEROGRAM_PEAK_
+
+=head1 DESCRIPTION
+
+This primitive fits a peak in an interferogram.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+KAPPA, SMURF, NDFPACK.
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+use JSA::Headers qw/read_jcmtstate/;
+
+my @output = ();
+
+my $zpd = $Frm->uhdr("RECPAR_ZPD_ESTIMATE");
+unless (defined $zpd) {
+ $zpd = 228.0;
+ orac_warn('RECPAR ZPD_ESTIMATE is missing, using default value ' . $zpd);
+}
+
+
+# Write FIT1D config file.
+
+my $cfg = new ORAC::TempFile(OPEN => 1, SUFFIX => '.def');
+{
+  local $\ = "\n"; local $, = "\n";
+  my $fh= $cfg->handle();
+  print $fh '^'.$ENV{'SMURF_DIR'}.'/smurf_fit1d.def',
+            'function=gaussian',
+            'ncomp=1',
+            'minwidth=1',
+            'axis=3';
+  $fh->close();
+}
+
+
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $thr) = $Frm->inout('_thr', $i);
+  #$Frm->push_intermediates($thr);
+  $Mon{'kappa_mon'}->obeyw('thresh', "$in $thr thrlo=0 newlo=0 thrhi=1000 newhi=bad");
+
+  # Write FIT1D values file.
+
+  my %state = read_jcmtstate($in, undef, 'FTS_POS');
+
+  my $val = new ORAC::TempFile(OPEN => 1, SUFFIX => '.def');
+  {
+    local $\ = "\n"; local $, = "\n";
+    my $fh= $val->handle();
+    print $fh 'comp1.c=0.03',
+              'fix1.c=1',
+              'comp1.b=' . $zpd,
+              'comp1.a=0.2';
+    $fh->close();
+  }
+
+  # Perform fit.
+
+  my (undef, $fit) = $Frm->inout('_fit', $i);
+  #$Frm->push_intermediates($fit);
+  $Mon{'smurf_mon'}->obeyw('fit1d', "$thr $fit rms=0.1 config=^$cfg userval=^$val");
+
+  my (undef, $pos) = $Frm->inout('_pos', $i);
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$fit.MORE.SMURF_FIT1D.COMP_1\(,,2\) $pos");
+
+  # Copy across FITS headers to stop ORAC-DR complaining.
+
+  my $tmp = new ORAC::TempFile(OPEN => 0, SUFFIX => '.lis');
+  $Mon{'ndfpack_mon'}->obeyw('fitslist', "$thr $tmp");
+  $Mon{'ndfpack_mon'}->obeyw('fitstext', "$pos $tmp");
+
+  push @output, $pos;
+}
+
+$Frm->files(@output);
+

@@ -1,15 +1,14 @@
 =head1 NAME
 
-_CONCAT_FTS_SCANS_ - Find and concatenate scans of the moving mirror
+_FILL_ZPD_MAP_ - fills gaps in a ZPD map
 
 =head1 SYNOPSIS
 
- _CONCAT_FTS_SCANS_
+ _FILL_ZPD_MAP_
 
 =head1 DESCRIPTION
 
-This primitive identifies files which comprise scans of the FTS
-moving mirror, and concatenates them.
+This primitive runs thresh and fillbad.
 
 =head1 ARGUMENTS
 
@@ -17,7 +16,7 @@ None.
 
 =head1 EXTERNAL TASKS
 
-SMURF.
+KAPPA.
 
 =head1 OUTPUT DATA
 
@@ -57,40 +56,27 @@ USA.
 
 =cut
 
-my @files = sort $Frm->files();
-my %scanin = ();
-my %scanout = ();
 my @output = ();
 
-# Build list of files which should be concatenated,
-# identified by observation ID and sequence count.
-
-foreach (my $i = 0; $i < scalar @files; $i ++) {
-  next unless lc($Frm->hdrval('SEQ_TYPE', $i)) eq 'science';
-  my $id = $Frm->hdrval('OBSIDSS', $i) . '_' .
-           $Frm->hdrval('SEQCOUNT', $i);
-
-  unless (exists($scanin{$id})) {
-    my ($in, $out) = $Frm->inout('con', $i + 1);
-    $scanin{$id} = [$in];
-    $scanout{$id} = $out;
-  }
-  else {
-    push @{$scanin{$id}}, $files[$i];
-  }
+my $zpd = $Frm->uhdr("RECPAR_ZPD_ESTIMATE");
+unless (defined $zpd) {
+ $zpd = 228.0;
+ orac_warn('RECPAR ZPD_ESTIMATE is missing, using default value ' . $zpd);
 }
 
-# Apply sc2concat to the files.
+my $min = $zpd - 3.0;
+my $max = $zpd + 3.0;
 
-foreach my $id (keys %scanin) {
-  my $in = write_file_list(@{$scanin{$id}});
-  my $out = $scanout{$id};
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $thr) = $Frm->inout('_pth', $i);
+  #$Frm->push_intermediates($thr);
+  $Mon{'kappa_mon'}->obeyw('thresh', "$in $thr $min $max bad bad");
 
-  $Mon{'smurf_mon'}->obeyw('sc2concat', "in=^$in out=$out flat=true");
+  my (undef, $out) = $Frm->inout('_zpd', $i);
+  $Mon{'kappa_mon'}->obeyw('fillbad', "$thr $out niter=2 size=[2,2]");
 
   push @output, $out;
 }
 
-# Return list of concatenated files.
-
 $Frm->files(@output);
+

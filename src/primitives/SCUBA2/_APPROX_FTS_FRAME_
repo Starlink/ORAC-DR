@@ -1,0 +1,105 @@
+=head1 NAME
+
+_APPROX_FTS_FRAME_ - adds a frame with the approximate moving mirror position
+
+=head1 SYNOPSIS
+
+ _APPROX_FTS_FRAME_
+
+=head1 DESCRIPTION
+
+This primitive extracts the position of the moving mirror and uses
+it to create a frame with a linear approximation to it.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+NDFPACK.
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+use JSA::Headers qw/read_jcmtstate/;
+
+my @output = ();
+
+my $zpd = $Frm->uhdr("RECPAR_ZPD_ESTIMATE");
+unless (defined $zpd) {
+ $zpd = 228.0;
+ orac_warn('RECPAR ZPD_ESTIMATE is missing, using default value ' . $zpd);
+}
+
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $out) = $Frm->inout('_aff', $i);
+  my %state = read_jcmtstate($in, undef, 'FTS_POS');
+
+  my $i0 = fts2pix($zpd - 10.0, $state{'FTS_POS'});
+  my $i1 = fts2pix($zpd + 10.0, $state{'FTS_POS'});
+  my $p0 = $i0 + 0.5;
+  my $p1 = $i1 + 0.5;
+  my $z0 = $state{'FTS_POS'}->[$i0];
+  my $z1 = $state{'FTS_POS'}->[$i1];
+  my $grad = ($z1 - $z0) / ($p1 - $p0);
+  my $cons = $z0 - ($p0 * $grad);
+  my $mapping = "[0,1,0,0,0,0,1,0,$cons,0,0,$grad]";
+
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$in $out");
+  $Mon{'ndfpack_mon'}->obeyw('wcsadd', "$out PIXEL APPROX-MIRROR linear tr=$mapping attrs=!");
+
+  push @output, $out;
+}
+
+$Frm->files(@output);
+
+sub fts2pix {
+  my ($targ, $ary) = @_;
+
+  my $i = 0;
+  my $prev = undef;
+  foreach my $pos (@$ary) {
+    return $i if $pos == $targ
+              or defined($prev)
+              && ($prev < $targ && $targ < $pos
+               or $prev > $targ && $targ > $pos);
+    $i ++;
+    $prev = $pos;
+  }
+}

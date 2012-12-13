@@ -1,15 +1,15 @@
 =head1 NAME
 
-_CONCAT_FTS_SCANS_ - Find and concatenate scans of the moving mirror
+_SET_FTS_AXIS_ - sets the 3rd axis to the moving mirror position
 
 =head1 SYNOPSIS
 
- _CONCAT_FTS_SCANS_
+ _SET_FTS_AXIS_
 
 =head1 DESCRIPTION
 
-This primitive identifies files which comprise scans of the FTS
-moving mirror, and concatenates them.
+This primitive extracts the position of the moving mirror and uses
+it to set the third axis.
 
 =head1 ARGUMENTS
 
@@ -17,7 +17,7 @@ None.
 
 =head1 EXTERNAL TASKS
 
-SMURF.
+NDFPACK.
 
 =head1 OUTPUT DATA
 
@@ -57,40 +57,24 @@ USA.
 
 =cut
 
-my @files = sort $Frm->files();
-my %scanin = ();
-my %scanout = ();
+use JSA::Headers qw/read_jcmtstate/;
+
 my @output = ();
 
-# Build list of files which should be concatenated,
-# identified by observation ID and sequence count.
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $out) = $Frm->inout('_fax', $i);
+  my %state = read_jcmtstate($in, undef, 'FTS_POS');
 
-foreach (my $i = 0; $i < scalar @files; $i ++) {
-  next unless lc($Frm->hdrval('SEQ_TYPE', $i)) eq 'science';
-  my $id = $Frm->hdrval('OBSIDSS', $i) . '_' .
-           $Frm->hdrval('SEQCOUNT', $i);
+  my $tmp = new ORAC::TempFile(OPEN => 1, SUFFIX => '.dat');
+  my $fh= $tmp->handle();
+  print $fh $_, "\n" foreach @{$state{'FTS_POS'}};
+  $fh->close();
 
-  unless (exists($scanin{$id})) {
-    my ($in, $out) = $Frm->inout('con', $i + 1);
-    $scanin{$id} = [$in];
-    $scanout{$id} = $out;
-  }
-  else {
-    push @{$scanin{$id}}, $files[$i];
-  }
-}
-
-# Apply sc2concat to the files.
-
-foreach my $id (keys %scanin) {
-  my $in = write_file_list(@{$scanin{$id}});
-  my $out = $scanout{$id};
-
-  $Mon{'smurf_mon'}->obeyw('sc2concat', "in=^$in out=$out flat=true");
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$in $out");
+  $Mon{'ndfpack_mon'}->obeyw('setaxis', "$out 3 file file=$tmp");
+  $Mon{'ndfpack_mon'}->obeyw('wcsframe', "$out axis");
 
   push @output, $out;
 }
-
-# Return list of concatenated files.
 
 $Frm->files(@output);
