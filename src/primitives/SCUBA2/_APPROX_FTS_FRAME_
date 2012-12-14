@@ -61,35 +61,12 @@ use JSA::Headers qw/read_jcmtstate/;
 
 my @output = ();
 
-my $zpd = $Frm->uhdr("RECPAR_ZPD_ESTIMATE");
-unless (defined $zpd) {
- $zpd = 228.0;
- orac_warn('RECPAR ZPD_ESTIMATE is missing, using default value ' . $zpd);
-}
+my $zpd = $Frm->uhdr('FTS_ZPD_ESTIMATE');
+orac_termerr('FTS_ZPD_ESTIMATE is missing') unless defined $zpd;
+my $center = $Frm->uhdr('FTS_STAGE_CENTER');
+orac_termerr('FTS_STAGE_CENTER') unless defined $center;
 
-for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
-  my ($in, $out) = $Frm->inout('_aff', $i);
-  my %state = read_jcmtstate($in, undef, 'FTS_POS');
-
-  my $i0 = fts2pix($zpd - 10.0, $state{'FTS_POS'});
-  my $i1 = fts2pix($zpd + 10.0, $state{'FTS_POS'});
-  my $p0 = $i0 + 0.5;
-  my $p1 = $i1 + 0.5;
-  my $z0 = $state{'FTS_POS'}->[$i0];
-  my $z1 = $state{'FTS_POS'}->[$i1];
-  my $grad = ($z1 - $z0) / ($p1 - $p0);
-  my $cons = $z0 - ($p0 * $grad);
-  my $mapping = "[0,1,0,0,0,0,1,0,$cons,0,0,$grad]";
-
-  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$in $out");
-  $Mon{'ndfpack_mon'}->obeyw('wcsadd', "$out PIXEL APPROX-MIRROR linear tr=$mapping attrs=!");
-
-  push @output, $out;
-}
-
-$Frm->files(@output);
-
-sub fts2pix {
+my $fts2pix = sub {
   my ($targ, $ary) = @_;
 
   my $i = 0;
@@ -102,4 +79,27 @@ sub fts2pix {
     $i ++;
     $prev = $pos;
   }
+};
+
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $out) = $Frm->inout('_aff', $i);
+  my %state = read_jcmtstate($in, undef, 'FTS_POS');
+
+  my $i0 = $fts2pix->($center + $zpd - 10.0, $state{'FTS_POS'});
+  my $i1 = $fts2pix->($center + $zpd + 10.0, $state{'FTS_POS'});
+  my $p0 = $i0 + 0.5;
+  my $p1 = $i1 + 0.5;
+  my $z0 = $state{'FTS_POS'}->[$i0] - $center;
+  my $z1 = $state{'FTS_POS'}->[$i1] - $center;
+  my $grad = ($z1 - $z0) / ($p1 - $p0);
+  my $cons = $z0 - ($p0 * $grad);
+  my $mapping = "[0,1,0,0,0,0,1,0,$cons,0,0,$grad]";
+
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$in $out");
+  $Mon{'ndfpack_mon'}->obeyw('wcsadd', "$out PIXEL APPROX-MIRROR linear tr=$mapping attrs=!");
+
+  push @output, $out;
 }
+
+$Frm->files(@output);
+
