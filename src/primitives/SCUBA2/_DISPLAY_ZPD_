@@ -1,0 +1,131 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_DISPLAY_ZPD_ - Display FTS-2 ZPD
+
+=head1 SYNOPSIS
+
+_DISPLAY_ZPD_
+
+=head1 DESCRIPTION
+
+This primitive displays the ZPD data in a Kapview
+window. The subarrays are mosaicked in the focal plane and this image
+is displayed, allowing a direct comparison of the relative noise in
+each subarray. The ZPD image is displayed in the top row and a
+histogram in the bottom row.
+
+It is based on _DISPLAY_NOISE_.
+
+=head1 ARGUMENTS
+
+This primitive supports no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used by this primitive:
+
+=over 4
+
+=item KAPPA:
+
+NDFTRACE, SETTITLE
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_, _MAKE_MOSAIC_FPLANE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The ZPD mosaic is stored in the current Frame (suffix C<_zpdmos>).
+
+=head1 OUTPUT FILES
+
+The mosaic of the noise images has a suffix C<_zpdmos>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009-2012 the University of British Columbia.  All
+Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Proceed with making a focal-plane
+# mosaic and displaying it
+if (1) {
+  # Reference subarray
+  my $short = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 1 : 0;
+  my $refsub =  ($short) ? "s4d" : "s8b";
+  # Mosaic ZPD files
+  my %ref;
+  # Currently use just 1 file per subarray
+  foreach my $file ($Frm->files) {
+    # Never trust the filenames...
+    my $fitshdr = new Astro::FITS::Header::NDF( File => $file );
+    $ref{lc($fitshdr->value("SUBARRAY"))} = $file;
+  }
+  #$Frm->files(values %ref);
+  my $ref = $ref{$refsub};
+  unless ($ref) {
+    # Pick first one...
+    my @subs = sort keys %ref;
+    $refsub = $subs[0];
+    $ref = $ref{$refsub};
+  }
+  # Output file name for responsivity mosaic: _zpdmos
+  my $zpdmos = "_zpdmos";
+  my $wave = ($short) ? "450 um" : "850 um";
+  # Set the title of the noise image to something meaningful
+  my $obs = $Frm->hdr("OBSNUM");
+  my $extra = "";
+  if ($Frm->uhdr("QUICKLOOK")) {
+    $extra = "/ scan " .$Frm->hdr("NSUBSCAN"). " (QL)";
+  } elsif ($Frm->uhdr("SUMMIT")) {
+    $extra = "/ scan " .$Frm->hdr("NSUBSCAN"). " (SUMMIT)";
+  }
+  my $title = "ZPD $wave: obs $obs $extra";
+
+  orac_print "\nDisplaying focal-plane mosaic for $title\n";
+
+  my %refimage = ( refsub => $refsub, refimage => $ref );
+  _MAKE_MOSAIC_FPLANE_ SUFFIX=$zpdmos REFERENCE=\%refimage
+  my $out = $Frm->file;
+  my $args = "ndf=$out title='$title'";
+  $Mon{ndfpack_mon}->obeyw("settitle","$args");
+
+  # Make sure there is a defined upper limit for the histogram
+  _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=data VERBOSE=0
+  my $plotmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
+  my $plotmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+
+  # Display the histograms
+  my %options = ( ZMIN => $plotmin, ZMAX => $plotmax, WINDOW => 1,
+                  ZAUTOSCALE => 0, TITLE => $title );
+  $Display->display_data($Frm, \%options, -1);
+
+  # Store the noise file in the Frame
+  $Frm->files($out);
+}
