@@ -137,7 +137,7 @@ USA.
 =cut
 
 # Return immediately if the Frame only contains darks or flatfielded data
-return ORAC__OK if ($Frm->uhdr("DARKONLY") || $Frm->uhdr("FLATFIELD"));
+return ORAC__OK if ($Frm->tagexists("dark") || $Frm->uhdr("FLATFIELD"));
 
 # Write a log file? Default to yes
 my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
@@ -314,9 +314,11 @@ if ($usenoise) {
     my $nefdimage = $nefdfile->file;
     if ( $keep_nefd_image ) {
       # Redefine the NEFD image name if the user wants to keep it on
-      # disk
-      $nefdimage = $Obj->inout("_nefd");
+      # disk - it will now be written as an extension in the original
+      # file. WARNING: this will OVERWRITE any existing NEFD
+      # component!!!
       orac_print " creating NEFD image on disk" if $verbose;
+      $nefdimage = $datafile . ".MORE.SMURF.NEFD";
     }
     orac_print "\n";
 
@@ -325,6 +327,12 @@ if ($usenoise) {
     my $exptime = $datafile . ".MORE.SMURF.EXP_TIME";
     my $args = "exp=$exp VA=$datafile IB=$exptime out=$nefdimage";
     $Mon{kappa_mon}->obeyw("maths","$args");
+
+    # Unfortunately this will have copied the variance along with the
+    # exp_time and weights components below the NEFD component, so
+    # delete these
+    $Mon{ndfpack_mon}->obeyw("setext","ndf=$nefdimage xname=smurf option=delete noloop");
+    $Mon{ndfpack_mon}->obeyw("setvar","ndf=$nefdimage variance=!");
 
     # Obtain NEFD estimate from NEFD image
     _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage VERBOSE=0 HISTAT=$histat
