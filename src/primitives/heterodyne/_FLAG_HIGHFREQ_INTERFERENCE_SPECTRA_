@@ -194,6 +194,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp10file = new ORAC::TempFile( 0 );
    my $temp11file = new ORAC::TempFile( 0 );
    my $temp12file = new ORAC::TempFile( 0 );
+   my $temp13file = new ORAC::TempFile( 0 );
+   my $temp14file = new ORAC::TempFile( 0 );
 
 # We need the dimensions of the input file for later.
    _GET_DIMENSIONS_ FILE=$in
@@ -345,6 +347,52 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
             orac_say( "       $eject spectra removed out of $total." );
          } else {
             orac_say( "       No spectra removed out of $total." );
+         }
+
+# Early data exhibit a further effect, a persistent beating oscillatory
+# high-frequency noise that has the same phase for all affected spectra,
+# just the intensity varies.  The signal this generates peaks about 5%
+# of the strong signal.  This is just a first crude attempt at
+# filtering them.  They seem to occur between the the first type of
+# high-frequency interference.
+         my $phase2 = 1;
+         if ( $phase2 ) {
+            if ( $eject > 0 ) {
+
+# The first step is to exclude the strong signals from the flattened
+# profile.  The previous FINDBACK tracks the weaker slowly varying
+# edge signal.
+               $params = "ia=$temp3file ib=$temp4file ";
+               $params .= "exp=ia+0*ib out=$temp13file";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+            } else {
+               $params = "in=$temp3file out=$temp13file";
+               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            }
+
+# Estimate and subtract the 'continuum' level.  0.4 aims to exclude
+# broad regions of affected spectra but still allow for trending.
+# While the the 500 is arbitrary, it is based on a few empirical
+# observations of the time extent of blocks of affected spectra.
+            my $box = max( int( 0.4 * $total ), 500 );
+            $params = "in=$temp13file out=$temp14file box=$box sub accept";
+            $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# Threshold the profile at a fixed level  Using clip means and standard
+# deviations have not worked too well.
+            $threshold = 0.0036;
+            orac_say( "    Turning off spectra with differential rms edginess above " . sprintf( "%.4f", $threshold ) );
+            $params = "in=$temp14file out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+            ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
+            ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
+            if ( $eject == 1 ) {
+               orac_say( "       One spectrum removed out of $kept." );
+            } elsif ( $eject > 0 ) {
+               orac_say( "       $eject spectra removed out of $kept." );
+            } else {
+               orac_say( "       No spectra removed out of $kept." );
+            }
          }
 
 # Add plane for receptor into mask cube.
