@@ -12,7 +12,10 @@ This primitive fits a peak in an interferogram.
 
 =head1 ARGUMENTS
 
-None.
+ESTIMATE can either be 'fixed' to search only near the
+specified ZPD position estimate, or 'smooth' to smooth
+the interferogram to determine an initial estimate of
+the position.
 
 =head1 EXTERNAL TASKS
 
@@ -60,18 +63,18 @@ use JSA::Headers qw/read_jcmtstate/;
 
 my @output = ();
 
+my $estimate = lc(get_prim_arg($_PRIM_ARGS_, 'ESTIMATE', 'fixed'));
 my $zpd = $Frm->uhdr('FTS_ZPD_ESTIMATE');
 orac_termerr('FTS_ZPD_ESTIMATE is missing') unless defined $zpd;
 my $height = $Frm->uhdr('FTS_ZPD_PEAK_HEIGHT');
 orac_termerr('FTS_ZPD_PEAK_HEIGHT is missing') unless defined $height;
 my $width = $Frm->uhdr('FTS_ZPD_PEAK_WIDTH');
 orac_termerr('FTS_ZPD_PEAK_WIDTH is missing') unless defined $width;
-my $tol = $Frm->uhdr('FTS_ZPD_TOLERANCE');
-orac_termerr('FTS_ZPD_TOLERANCE is missing') unless defined $tol;
 my $off = $Frm->uhdr('FTS_ZPD_BASE_OFFSET');
 orac_termerr('FTS_ZPD_BASE_OFFSET is missing') unless defined $off;
 my $wid = $Frm->uhdr('FTS_ZPD_BASE_WIDTH');
 orac_termerr('FTS_ZPD_BASE_WIDTH is missing') unless defined $wid;
+my $boxwidth = $Frm->hdr('FILTER') =~ /850/ ? 200 : 100;
 
 my $range = sprintf('%.03f:%.03f', $zpd - ($off + $wid), $zpd - $off);
 
@@ -86,8 +89,7 @@ my $cfg = new ORAC::TempFile(OPEN => 1, SUFFIX => '.def');
             'function=gaussian',
             'ncomp=1',
             'minwidth=1',
-            'axis=3',
-            'range=(' . ($zpd - $tol) . ' ,' . ($zpd + $tol) . ')';
+            'axis=3';
   $fh->close();
 }
 
@@ -119,18 +121,41 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   my ($ORAC_STATUS, @values) = $Mon{'kappa_mon'}->get('stats', qw/PERVAL/);
   my $rms = $values[0];
 
-  # Write FIT1D values file.
+  # Determine initial ZPD estimate.
 
-  my %state = read_jcmtstate($in, undef, 'FTS_POS');
+  my @fitparams = (
+                    'comp1.c=' . $width,
+                    'fix1.c=1',
+                  );
+  my $parndf = '!';
+
+  if ($estimate eq 'fixed') {
+    push @fitparams, 'comp1.b=' . $zpd,
+                     'comp1.a=' . $height,
+  }
+  elsif ($estimate eq 'smooth') {
+    # In this mode, we smooth the absolute value of the interferogram
+    # to fit the ZPD feature.  This gives us an NDF we can feed back
+    # into FIT1D to fit the central fringe.
+
+    my (undef, $abs) = $Frm->inout('_abs', $i);
+    $Mon{'kappa_mon'}->obeyw('maths', "abs(ia) $abs ia=$in");
+    my (undef, $smo) = $Frm->inout('_smo', $i);
+    $Mon{'kappa_mon'}->obeyw('block', "$abs $smo box=[1,1,$boxwidth]");
+    (undef, $parndf) = $Frm->inout('_sft', $i);
+    $Mon{'smurf_mon'}->obeyw('fit1d', "in=$smo out=$parndf parndf=! rms=$rms config=^$cfg userval=\"comp1.c=$wid\"");
+  }
+  else {
+    orac_termerr('Unknown ZPD estimation method ' . $estimate);
+  }
+
+  # Write FIT1D values file.
 
   my $val = new ORAC::TempFile(OPEN => 1, SUFFIX => '.def');
   {
     local $\ = "\n"; local $, = "\n";
     my $fh= $val->handle();
-    print $fh 'comp1.c=' . $width,
-              'fix1.c=1',
-              'comp1.b=' . $zpd,
-              'comp1.a=' . $height;
+    print $fh @fitparams;
     $fh->close();
   }
 
@@ -138,7 +163,7 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
 
   my (undef, $fit) = $Frm->inout('_fit', $i);
   #$Frm->push_intermediates($fit);
-  $Mon{'smurf_mon'}->obeyw('fit1d', "$thr $fit rms=$rms config=^$cfg userval=^$val");
+  $Mon{'smurf_mon'}->obeyw('fit1d', "in=$thr out=$fit parndf=$parndf rms=$rms config=^$cfg userval=^$val");
 
   my (undef, $pos) = $Frm->inout('_pos', $i);
   $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$fit.MORE.SMURF_FIT1D.COMP_1\(,,2\) $pos trim=true");
