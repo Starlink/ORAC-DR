@@ -169,25 +169,7 @@ if ( ! $isok ) {
 
 # Process every file in in each Frame.
       foreach my $Obj ( @Objs ) {
-
-         foreach my $i ( 1 .. $Obj->nfiles ) {
-
-            my ( $in, $out ) = $Obj->inout( "_ff", $i );
-
-# Inquire attributes needed for the output cube.
-# ==============================================
-
-# Retrieve the units of the input cube.
-            $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in fullframe" );
-            my( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
-
-# Retrieve dimensions of input cube.
-            _GET_DIMENSIONS_ FILE=$in
-            my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
-            my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
-            my $flbound = $_GET_DIMENSIONS_{FLBOUND};
-            my $fubound = $_GET_DIMENSIONS_{FUBOUND};
-
+         my $in = $Obj->file( 1 );
 
 # Form a one-dimensional NDF of the receptors.
 # ============================================
@@ -230,7 +212,14 @@ if ( ! $isok ) {
 
 # Make the spectral cube for the reference receptor.
             my $refpixel = $array->pixel( $ref );
-            $Mon{'smurf_mon'}->obeyw( "makecube", "$makecube_params in=$in(,$refpixel,) out=$tempref" );
+
+# Need to combine all the data for an observation.
+            my @tsfiles;
+            foreach my $i ( 1 .. $Obj->nfiles ) {
+               push @tsfiles, $Obj->file( $i ) . "(,$refpixel,)"
+            }
+            my $inlist = write_file_list ( @tsfiles );
+            $Mon{'smurf_mon'}->obeyw( "makecube", "$makecube_params in=^$inlist out=$tempref" );
 
 # Hash to store the ratios.
             my %flat_ratio;
@@ -282,8 +271,12 @@ if ( ! $isok ) {
 
 # Make the spectral cube for the current receptor using the same
 # parameters.
-                  $params = "$makecube_params out=$tempcube ";
-                  $params .= "in=$in(,$pixel,)";
+                  my @tsfiles;
+                  foreach my $i ( 1 .. $Obj->nfiles ) {
+                     push @tsfiles, $Obj->file( $i ) . "(,$pixel,)"
+                  }
+                  my $inlist = write_file_list ( @tsfiles );
+                  $params = "$makecube_params out=$tempcube$receptor in=^$inlist";
                   $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
 
 # Mask the low SNR regions.
@@ -391,8 +384,33 @@ if ( ! $isok ) {
                }
             }
 
+# Report the receptor ratios.
+         my $type = "Flat field normalisation";
+         _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
+
+         $type = "Flat field normalisation errors";
+         _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio_error TYPE=$type
+
 # Form and apply the flat-field cube.
 # ===================================
+
+         foreach my $i ( 1 .. $Obj->nfiles ) {
+            my ( $in, $out ) = $Obj->inout( "_ff", $i );
+
+# Inquire attributes needed for the output cube.
+# ----------------------------------------------
+
+# Retrieve the units of the input cube.
+            $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in fullframe" );
+            my( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+
+# Retrieve dimensions of input cube.
+            _GET_DIMENSIONS_ FILE=$in
+            my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
+            my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
+
+# Form flat-field cube.
+# ---------------------
 
 # Grow the vector of receptor ratios into a cube.
             my $temp11file = new ORAC::TempFile( 0 );
@@ -416,15 +434,8 @@ if ( ! $isok ) {
 # Request that the output file be removed upon completion of group processing.
             $Grp->push_intermediates( $out );
 
-# Report the receptor ratios.
-            my $type = "Flat field normalisation";
-            _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
-
-            $type = "Flat field normalisation errors";
-            _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio_error TYPE=$type
-
-           orac_say "$in to $out:";
-           orac_say " Removed flat-field.";
+            orac_say "$in to $out:";
+            orac_say " Removed flat-field.";
 
          }
       }
