@@ -176,213 +176,212 @@ if ( ! $isok ) {
 
 # This is to retain metadata and auxiliary arrays.  It will contain the
 # receptor ratios.
-            my $tempref = new ORAC::TempFile( 0 );
-            my $temp0file = new ORAC::TempFile( 0 );
-            my $temp1file = new ORAC::TempFile( 0 );
-            my $temp2file = new ORAC::TempFile( 0 );
+         my $tempref = new ORAC::TempFile( 0 );
+         my $temp0file = new ORAC::TempFile( 0 );
+         my $temp1file = new ORAC::TempFile( 0 );
+         my $temp2file = new ORAC::TempFile( 0 );
 
-            my $params = "in=$in out=$temp0file estimator=mean wlim=0.0 axis=3 trim";
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-            $params = "in=$temp0file out=$temp1file estimator=mean wlim=0.0 axis=1 trim";
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         my $params = "in=$in out=$temp0file estimator=mean wlim=0.0 axis=3 trim";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         $params = "in=$temp0file out=$temp1file estimator=mean wlim=0.0 axis=1 trim";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Give the NDF a VARIANCE component.
-            $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$temp1file variance=DATA" );
-
+         $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$temp1file variance=DATA" );
 
 # Make spatial cube for reference receptor.
 # =========================================
 
 # Form set of receptors in the input file.
-            my $array = new JCMT::ACSIS::Array( File => $in );
+         my $array = new JCMT::ACSIS::Array( File => $in );
 
 # Retrieve the list of bad detectors from the calibration system.
-            $Cal->bad_receptors( "INDEXORMASTER" );
-            my @baddets = $Cal->bad_receptors_list;
-            orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @baddets ) );
+         $Cal->bad_receptors( "INDEXORMASTER" );
+         my @baddets = $Cal->bad_receptors_list;
+         orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @baddets ) );
 
 # Form sorted set of receptors that are not bad in the master list.
-            my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
-            @receptors = sort @receptors;
+         my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+         @receptors = sort @receptors;
 
 # Find the reference receptor.
-            my $ref = ( defined( $reference_receptor ) ?
-                        $reference_receptor            :
-                        $Obj->hdr( "REFRECEP" ) );
+         my $ref = ( defined( $reference_receptor ) ?
+                     $reference_receptor            :
+                     $Obj->hdr( "REFRECEP" ) );
 
 # Make the spectral cube for the reference receptor.
-            my $refpixel = $array->pixel( $ref );
+         my $refpixel = $array->pixel( $ref );
 
 # Need to combine all the data for an observation.
-            my @tsfiles;
-            foreach my $i ( 1 .. $Obj->nfiles ) {
-               push @tsfiles, $Obj->file( $i ) . "(,$refpixel,)"
-            }
-            my $inlist = write_file_list ( @tsfiles );
-            $Mon{'smurf_mon'}->obeyw( "makecube", "$makecube_params in=^$inlist out=$tempref" );
+         my @tsfiles;
+         foreach my $i ( 1 .. $Obj->nfiles ) {
+            push @tsfiles, $Obj->file( $i ) . "(,$refpixel,)"
+         }
+         my $inlist = write_file_list ( @tsfiles );
+         $Mon{'smurf_mon'}->obeyw( "makecube", "$makecube_params in=^$inlist out=$tempref" );
 
 # Hash to store the ratios.
-            my %flat_ratio;
-            my %flat_ratio_error;
+         my %flat_ratio;
+         my %flat_ratio_error;
 
 # Find and store the ratio between each receptor and the reference receptor.
 # ==========================================================================
-            foreach my $receptor ( @receptors ) {
-               my $pixel = $array->pixel( $receptor );
+         foreach my $receptor ( @receptors ) {
+            my $pixel = $array->pixel( $receptor );
 
 # Temporary fudge until bad_receptors_qa indexing is working.  Look
 # for a bad plane.
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in(,$pixel,)" );
-               ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
-               ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in(,$pixel,)" );
+            ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+            ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
 
-               if ( $receptor eq $ref ) {
+            if ( $receptor eq $ref ) {
 
 # More of the fudge.
-                  if ( $numbad > 0.99 * $numpix ) {
-                     orac_warn( "Unable to flat field $in because its " .
-                                "reference receptor $receptor is bad.\n" );
-                     last;
-                  }
+               if ( $numbad > 0.99 * $numpix ) {
+                  orac_warn( "Unable to flat field $in because its " .
+                             "reference receptor $receptor is bad.\n" );
+                  last;
+               }
 
 # Insert the defined factor into the NDF.   KAPPA_REPLACE would be helpful here
 # to make the changes in situ.
-                  $params = "in=$temp1file out=$temp2file newval=1.0 section=$refpixel";
-                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+               $params = "in=$temp1file out=$temp2file newval=1.0 section=$refpixel";
+               $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-                  $params = "in=$temp2file out=$temp1file newval=0.0 section=$refpixel comp=error";
-                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+               $params = "in=$temp2file out=$temp1file newval=0.0 section=$refpixel comp=error";
+               $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-                  $flat_ratio{$ref} = 1.0;
-                  $flat_ratio_error{$ref} = 0.0;
+               $flat_ratio{$ref} = 1.0;
+               $flat_ratio_error{$ref} = 0.0;
 
 # More of the fudge.
-               } elsif ( $numbad < 0.99 * $numpix ) {
+            } elsif ( $numbad < 0.99 * $numpix ) {
 
 # Set up some temporary files.
-                  my $tempcube = new ORAC::TempFile( 0 );
-                  my $temp4file = new ORAC::TempFile( 0 );
-                  my $temp5file = new ORAC::TempFile( 0 );
-                  my $temp6file = new ORAC::TempFile( 0 );
-                  my $temp7file = new ORAC::TempFile( 0 );
-                  my $temp8file = new ORAC::TempFile( 0 );
-                  my $temp9file = new ORAC::TempFile( 0 );
-                  my $temp10file = new ORAC::TempFile( 0 );
+               my $tempcube = new ORAC::TempFile( 0 );
+               my $temp4file = new ORAC::TempFile( 0 );
+               my $temp5file = new ORAC::TempFile( 0 );
+               my $temp6file = new ORAC::TempFile( 0 );
+               my $temp7file = new ORAC::TempFile( 0 );
+               my $temp8file = new ORAC::TempFile( 0 );
+               my $temp9file = new ORAC::TempFile( 0 );
+               my $temp10file = new ORAC::TempFile( 0 );
 
 # Make the spectral cube for the current receptor using the same
 # parameters.
-                  my @tsfiles;
-                  foreach my $i ( 1 .. $Obj->nfiles ) {
-                     push @tsfiles, $Obj->file( $i ) . "(,$pixel,)"
-                  }
-                  my $inlist = write_file_list ( @tsfiles );
-                  $params = "$makecube_params out=$tempcube$receptor in=^$inlist";
-                  $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
+               my @tsfiles;
+               foreach my $i ( 1 .. $Obj->nfiles ) {
+                  push @tsfiles, $Obj->file( $i ) . "(,$pixel,)"
+               }
+               my $inlist = write_file_list ( @tsfiles );
+               $params = "$makecube_params out=$tempcube$receptor in=^$inlist";
+               $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
 
 # Mask the low SNR regions.
 # -------------------------
-                  if ( $snr > 0.0 ) {
+               if ( $snr > 0.0 ) {
 
 # Create a SNR spectral cube of the velocity slab to threshold to exclude
 # noisy regions from the voxel by voxel comparison.  MAKESNR automatic
 # MINVAR cuts out good data.
-                     $params = "in=$tempcube(,,$flat_range) out=$temp4file";
-                     $Mon{'kappa_mon'}->obeyw( "makesnr", "$params" );
+                  $params = "in=$tempcube(,,$flat_range) out=$temp4file";
+                  $Mon{'kappa_mon'}->obeyw( "makesnr", "$params" );
 
 # Threshold to select the astronomical signal.  It is possible
 # to use more sophisticated clump finding... but that requires much
 # extra processing.  3.0 is a compromise between number of points
 # in low-signal regions versus a bias to lower ratios for lowe SNR
 # thresholds.
-                     my $thresh = $snr;
-                     $params = "in=$temp4file out=$temp5file ";
-                     $params .= "thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
-                     $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+                  my $thresh = $snr;
+                  $params = "in=$temp4file out=$temp5file ";
+                  $params .= "thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
+                  $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Form and apply the mask.
-                     $params = "in=$temp5file out=$temp6file scalar=0.0";
-                     $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+                  $params = "in=$temp5file out=$temp6file scalar=0.0";
+                  $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
-                     $params = "in1=$tempcube(,,$flat_range) in2=$temp6file out=$temp7file";
-                     $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+                  $params = "in1=$tempcube(,,$flat_range) in2=$temp6file out=$temp7file";
+                  $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
 # Use all of the good voxels in the slab.
-                  } else {
-                     $params = "in=$tempcube(,,$flat_range) out=$temp7file";
-                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-                  }
+               } else {
+                  $params = "in=$tempcube(,,$flat_range) out=$temp7file";
+                  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+               }
 
 # Derive the histogram of ratios.
 # ===============================
 
 # Find the pixel-by-pixel ratios for the velocity slab.
-                  $params = "in1=$temp7file in2=$tempref(,,$flat_range) out=$temp8file";
-                  $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+               $params = "in1=$temp7file in2=$tempref(,,$flat_range) out=$temp8file";
+               $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
 # Form the histogram of ratios.  Because of noise and the inclusion of
 # sky data there will be a wide range and negative values.  These
 # should not matter at we expect a clear, if broad peak, centred between
 # 0.4 and 1.4 and largely close to 1.
-                  $params = "range='-1,3' numbin=200 device=! ";
-                  $params .= "in=$temp8file out=$temp9file";
-                  $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+               $params = "range='-1,3' numbin=200 device=! ";
+               $params .= "in=$temp8file out=$temp9file";
+               $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
 
 # Give the histogram a VARIANCE component.
-                  $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$temp9file variance=DATA" );
+               $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$temp9file variance=DATA" );
 
 # Smooth the histogram.
-                  $params = "in=$temp9file out=$temp10file fwhm=5";
-                  $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+               $params = "in=$temp9file out=$temp10file fwhm=5";
+               $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
 
 # Find the centroid of the ratios histogram.
 # ==========================================
 
 # Find the location of the peak of the smoothed histogram.
-                  $params = "ndf=$temp10file";
-                  $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-                  ( $ORAC_STATUS, my $init ) = $Mon{'kappa_mon'}->get( "stats", "maxwcs" );
+               $params = "ndf=$temp10file";
+               $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+               ( $ORAC_STATUS, my $init ) = $Mon{'kappa_mon'}->get( "stats", "maxwcs" );
 
 # With 0.02-width bins it should be possible to estimate the centroid
 # to around 0.003.
-                  $params = "search=51 maxshift=26 toler=0.001 cerror ";
-                  $params .= "ndf=$temp9file init=$init maxiter=9 mode=interface";
-                  my $CENTROID_STATUS = $$Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
+               $params = "search=51 maxshift=26 toler=0.001 cerror ";
+               $params .= "ndf=$temp9file init=$init maxiter=9 mode=interface";
+               my $CENTROID_STATUS = $$Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
 
-                  my $factor;
-                  my $error;
-                  if ( $CENTROID_STATUS == ORAC__OK ) {
-                     ( $ORAC_STATUS, $factor ) = $Mon{'kappa_mon'}->get( "centroid", "centre" );
-                     ( $ORAC_STATUS, $error ) = $Mon{'kappa_mon'}->get( "centroid", "error" );
+               my $factor;
+               my $error;
+               if ( $CENTROID_STATUS == ORAC__OK ) {
+                  ( $ORAC_STATUS, $factor ) = $Mon{'kappa_mon'}->get( "centroid", "centre" );
+                  ( $ORAC_STATUS, $error ) = $Mon{'kappa_mon'}->get( "centroid", "error" );
 
 # Use hard-code integer error code for KPG__NOCEN.
-                  } elsif ( $CENTROID_STATUS == 234521384 ) {
-                     orac_warn "CENTROID failed: unable to determine position of ratio centroid\n";
+               } elsif ( $CENTROID_STATUS == 234521384 ) {
+                  orac_warn "CENTROID failed: unable to determine position of ratio centroid\n";
 
 # Use the location of the peak of the smoothed histogram.  Use a
 # nominal error, larger than normally seen from CENTROID comparable
 # with the bin width.
-                     $factor = $init;
-                     $error = 0.02;
-                  }
+                  $factor = $init;
+                  $error = 0.02;
+               }
 
 # Store the factor and its error in the one-dimensional NDF.
 # Need to make CHPIX to be to read a series of values and sections via groups.
-                  $params = "in=$temp1file out=$temp2file newval=$factor section=$pixel";
-                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+               $params = "in=$temp1file out=$temp2file newval=$factor section=$pixel";
+               $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-                  $params = "in=$temp2file out=$temp1file newval=$error section=$pixel comp=error";
-                  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+               $params = "in=$temp2file out=$temp1file newval=$error section=$pixel comp=error";
+               $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-                  $flat_ratio{$receptor} = $factor;
-                  $flat_ratio_error{$receptor} = $error;
+               $flat_ratio{$receptor} = $factor;
+               $flat_ratio_error{$receptor} = $error;
 
 # Use dummy values for undefined data.
-               } else {
-                  $flat_ratio{$receptor} = 1.0;
-                  $flat_ratio_error{$receptor} = 0.0;
+            } else {
+               $flat_ratio{$receptor} = 1.0;
+               $flat_ratio_error{$receptor} = 0.0;
 
-               }
             }
+         }
 
 # Report the receptor ratios.
          my $type = "Flat field normalisation";
