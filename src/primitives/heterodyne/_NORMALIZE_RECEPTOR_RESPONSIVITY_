@@ -222,8 +222,13 @@ if ( ! $isok ) {
 
 # Try some smoothing in the velocity direction to mitigate against
 # biasing the ratios to a random 0.
-         $params = "in=$tempref out=$temprefs box=[1,1,15] accept";
-         $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+         $params = "in=$tempref(,,$flat_range) out=$temprefs box=[3,3,11] estimator=mean";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+# Obtain a noise estimate.
+         $params = "ndf=$temprefs clip=[2,2,2]";
+         $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+         ( $ORAC_STATUS, my $sigmaref ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
 # Hash to store the ratios.
          my %flat_ratio;
@@ -284,6 +289,11 @@ if ( ! $isok ) {
                $params = "$makecube_params out=$tempcube in=^$inlist";
                $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
 
+# Try some smoothing in the velocity direction to mitigate against
+# biasing the ratios to a random 0.
+               $params = "in=$tempcube(,,$flat_range) out=$temp13file box=[3,3,11] estimator=mean";
+               $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
 # Mask the low SNR regions.
 # -------------------------
                if ( $snr > 0.0 ) {
@@ -291,7 +301,7 @@ if ( ! $isok ) {
 # Create a SNR spectral cube of the velocity slab to threshold to exclude
 # noisy regions from the voxel by voxel comparison.  MAKESNR automatic
 # MINVAR cuts out good data.
-                  $params = "in=$tempcube(,,$flat_range) out=$temp4file";
+                  $params = "in=$temp13file out=$temp4file";
                   $Mon{'kappa_mon'}->obeyw( "makesnr", "$params" );
 
 # Threshold to select the astronomical signal.  It is possible
@@ -308,26 +318,27 @@ if ( ! $isok ) {
                   $params = "in=$temp5file out=$temp6file scalar=0.0";
                   $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
-                  $params = "in1=$tempcube(,,$flat_range) in2=$temp6file out=$temp7file";
+                  $params = "in1=$temp13file in2=$temp6file out=$temp7file";
                   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
 # Use all of the good voxels in the slab.
                } else {
-                  $params = "in=$tempcube(,,$flat_range) out=$temp7file";
+                  $params = "in=$temp13file out=$temp7file";
                   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
                }
 
 # Derive the histogram of ratios.
 # ===============================
 
-# Try some smoothing in the velocity direction to mitigate against
-# biasing the ratios to a random 0.
-               $params = "in=$temp7file out=$temp13file box=[1,1,15] accept";
-               $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+                $params = "ndf=$temp7file clip=[2,2,2]";
+                $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+                ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-# Find the pixel-by-pixel ratios for the velocity slab.
-               $params = "in1=$temp13file in2=$temprefs(,,$flat_range) out=$temp8file";
-               $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+# Find the pixel-by-pixel ratios for the velocity slab, excluding outliers.
+               $params = "exp='qif(IA>4*PA&&IB>4*PB&&abs(IA-IB)<6*(PA+PB),IA/IB,<bad>)' ";
+               $params .= "pa=$sigma pb=$sigmaref ";
+               $params .= "ia=$temp7file ib=$temprefs out=$temp8file";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Form the histogram of ratios.  Because of noise and the inclusion of
 # sky data there will be a wide range and negative values.  These
