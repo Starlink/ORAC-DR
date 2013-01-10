@@ -20,7 +20,20 @@ set output = "$thisdir/sun233_classes.tex"
 
 # These are  the classes relevant to recipe writers
 set input = ""
-foreach i ( Calib.pm Calib/SCUBA.pm Constants.pm  Display.pm Frame.pm Frame/NDF.pm Frame/UKIRT.pm Frame/SCUBA.pm General.pm Group.pm Group/NDF.pm Group/UFTI.pm Group/SCUBA.pm Index.pm LogFile.pm Loop.pm Msg/Control/AMS.pm Msg/Task/ADAM.pm Print.pm TempFile.pm)
+foreach i ( \
+            Bounds.pm \
+            Calib.pm Calib/WFCAM.pm \
+                Calib/ACSIS.pm Calib/SCUBA.pm Calib/SCUBA2.pm \
+            Constants.pm Display.pm \
+            Frame.pm Frame/NDF.pm Frame/UKIRT.pm Frame/WFCAM.pm \
+                Frame/JCMT.pm Frame/ACSIS.pm Frame/SCUBA.pm Frame/SCUBA2.pm \
+            General.pm \
+            Group.pm Group/NDF.pm Group/UKIRT.pm Group/WFCAM.pm \
+                Group/ACSIS.pm Group/SCUBA.pm Group/SCUBA2.pm \
+            Index.pm LogFile.pm Loop.pm \
+            Msg/Control/AMS.pm Msg/Task/ADAM.pm \
+            Print.pm TempFile.pm \
+          )
   echo $i
   set input = "$input ORAC/$i"
 end
@@ -40,7 +53,15 @@ sed -i 's/[ \t]*$//' $output
 set output = "$thisdir/sun233_coreclasses.tex"
 
 set input = ""
-foreach i ( Basic.pm Convert.pm Core.pm  Display/Base.pm Display/GAIA.pm Display/KAPVIEW.pm Inst/Defn.pm Msg/EngineLaunch.pm Msg/MessysLaunch.pm)
+foreach i ( \
+            BaseFile.pm BaseFITS.pm BaseGSD.pm BaseNDF.pm \
+            Basic.pm \
+            Convert.pm Core.pm \
+            Display/Base.pm Display/GAIA.pm Display/KAPVIEW.pm \
+            Error.pm \
+            Inst/Defn.pm \
+            Msg/EngineLaunch.pm Msg/MessysLaunch.pm \
+          )
   echo $i
   set input = "$input ORAC/$i"
 end
