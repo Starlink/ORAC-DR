@@ -240,6 +240,8 @@ sub gui_id {
   return "$gui_id";
 }
 
+=back
+
 =head1 SEE ALSO
 
 L<ORAC::Group::NDF>
