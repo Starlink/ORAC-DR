@@ -1051,6 +1051,16 @@ sub scanindex {
   my $self = shift;
   my %filter = @_;
 
+  # Optimization for ORAC::Index::Extern: we don't want to call
+  # indexref or indexkeys or indexentry repeatedly because all of
+  # these will have the time-consuming side-effect of checking the
+  # file-status.  Therefore get a reference to the index hash once:
+  my $idxref = $self->indexref();
+
+  # Abort now if there are no entries, to avoid attempting to
+  # set up the filters unnecessarily.
+  return () unless %$idxref;
+
   foreach my $key ( keys %filter ) {
     if ( $filter{$key} =~ m|^/| ) {
       my $regex = $filter{$key};
@@ -1076,23 +1086,16 @@ sub scanindex {
       last if /^ORACTIME$/;
       $oractime ++;
     }
-
     # Set the filter only if we found it.
     if ($oractime < scalar $self->_num_rules()) {
       $since = $filter{':SINCE'};
     }
     else {
-      orac_warn('ORAC::Index::scanindex can not apply :SINCE filter due to lack of ORACTIME field');
+      orac_warn('ORAC::Index::scanindex can not apply :SINCE filter due to lack of ORACTIME field in ' . $self->indexfile() . "\n");
     }
 
     delete $filter{':SINCE'};
   }
-
-  # Optimization for ORAC::Index::Extern: we don't want to call
-  # indexref or indexkeys or indexentry repeatedly because all of
-  # these will have the time-consuming side-effect of checking the
-  # file-status.  Therefore get a reference to the index hash once:
-  my $idxref = $self->indexref();
 
   # Loop over hash keys in index (random order)
   my @match;
