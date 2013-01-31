@@ -1182,8 +1182,8 @@ sub _parse_obey_line {
   # Do the regexp separately so that we can handle the situation
   # where the monolith path is not stored in a hash
   $line =~ /\{\s*[\'\"]*(\w+)[\'\"]*\s*\}->obeyw/ && ($monolith = $1);
-  $line =~ /->obeyw\(\s*\"(\w+)\"/ && ($task = $1);
-  $line =~ /->obeyw\(\s*\"\w+\"\s*,\s*\"(.+)\"/ && ($args = $1);
+  $line =~ /->obeyw\(\s*[\'\"](\w+)[\'\"]/ && ($task = $1);
+  $line =~ /->obeyw\(\s*[\'\"]\w+[\'\"]\s*,\s*[\'\"](.+)[\'\"]/ && ($args = $1);
   $args = '(No arguments)' unless defined $args;
   $task = '(Unknown)' unless defined $task;
 
