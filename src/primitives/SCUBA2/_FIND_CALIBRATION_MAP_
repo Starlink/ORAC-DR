@@ -186,7 +186,7 @@ if ( !defined $sourceflux ) {
 
 # Proceed with FCF calculation if it's OK to do so
 if ( $proceed ) {
-  orac_print "Calculating FCFs for $src -";
+  orac_print "\nCalculating FCFs for $src:\n";
 
   # File to work on
   $Obj->tagset("find_calibration_map_input");
@@ -223,238 +223,218 @@ if ( $proceed ) {
   $Obj->product($inproduct);
 
   # Find the peak signal in the image
+  orac_print "  Finding map peak...\n";
   $Obj->tagretrieve("find_calibration_map_input");
   _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1
   my $mapfitpar = $_FIND_MAP_PEAK_{BEAM};
 
   # Retrieve the position - if successful, proceed with deriving an FCF
   my $posn = $_FIND_MAP_PEAK_{POSITION};
+
+  # Set the aperture radius using a recipe parameter, otherwise
+  # default to twice the FWHM.
+  my $fwhm = $Cal->fwhm;
+  my $radius = (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) ?
+    $Frm->uhdr("RECPAR_APERTURE_RADIUS") : 2.0*$fwhm;
+
+  # Find the integrated intensity within the given aperture. Note that
+  # the image should have a flat background in order to obtain an
+  # accurate result. Also, the peak position is not necessary as the
+  # photometry routine will perform centroiding before calculating the flux.
+  orac_print "  Determining total flux...\n";
+  _APERTURE_PHOTOMETRY_ RADIUS=$radius VERBOSE=0
+
+  my %results = ( ARCSEC => $_APERTURE_PHOTOMETRY_{TOTALFLUX} );
+  my %results_err = ( ARCSEC_ERR => $_APERTURE_PHOTOMETRY_{TOTALFLUXERR} );
+
   if (@$posn) {
     # Having gone to the trouble of fitting the peak, store it as it
     # might be useful later
     $Frm->uhdr("MAP_PEAK_POSITION", $posn);
-    # Set the aperture radius using a recipe parameter, otherwise
-    # default to twice the FWHM.
-    my $fwhm = $Cal->fwhm;
-    my $radius = (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) ?
-      $Frm->uhdr("RECPAR_APERTURE_RADIUS") : 2.0*$fwhm;
-
-    # Find the integrated intensity within the given aperture. Note
-    # that the image should have a flat background in order to obtain
-    # an accurate result
-    _APERTURE_PHOTOMETRY_ RADIUS=$radius
 
     # Retrieve the results
-    my %results = ( BEAM => $_FIND_MAP_PEAK_{PEAK},
-		    ARCSEC => $_APERTURE_PHOTOMETRY_{TOTALFLUX}
-		  );
-    my %results_err = ( BEAM_ERR => $_FIND_MAP_PEAK_{PEAKERR},
-			ARCSEC_ERR => $_APERTURE_PHOTOMETRY_{TOTALFLUXERR}
-		      );
+    $results{BEAM} = $_FIND_MAP_PEAK_{PEAK};
+    $results_err{BEAM_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
+  }
 
-    # Use a box of about 1.5 FWHM because the beamfit algorithm does not
-    # know how to fit the negative ring.
-    my $box = $Cal->fwhm() * 1.5 / $pixscale;
-    # Set a flag to indicate that it is the matched-filtered map which
-    # is being plotted
-    $Obj->tagretrieve("matchfilt");
-    $Obj->product($mf_product);
-    _FIND_MAP_PEAK_ VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
-    $Obj->tagretrieve("find_calibration_map_input");
-    $Obj->product($inproduct);
-    my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
-    my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
-    if ($matched_peak) {
-      $results{BEAMMATCH} = $matched_peak;
-      $results_err{BEAMMATCH_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
+  # Now find the peak in the matched-filtered map - this can succeed
+  # where fitting the un-filtered map can fail due to the enhanced
+  # signal-to-noise ratio.
+  $Obj->tagretrieve("matchfilt");
+  $Obj->product($mf_product);
+
+  # Use a box of about 1.5 FWHM because the beamfit algorithm does not
+  # know how to fit the negative ring.
+  orac_print "  Finding peak in matched-filtered map...\n";
+  my $box = $Cal->fwhm() * 1.5 / $pixscale;
+  _FIND_MAP_PEAK_ VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
+  $Obj->tagretrieve("find_calibration_map_input");
+  $Obj->product($inproduct);
+  my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
+  my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
+  if ($matched_peak) {
+    $results{BEAMMATCH} = $matched_peak;
+    $results_err{BEAMMATCH_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
+  }
+
+
+  # Now report on the results - looping over each FCF type in turn
+  my $bad_results = 0;
+  my %fcf;
+
+  # Define a code ref to return peak/total flux
+  my $get_flux = sub {
+    my ($src_flux, $total) = @_;
+    my $flux = $src_flux;
+    if (ref($src_flux)) {
+      $flux = ($total) ? $src_flux->[1] : $src_flux->[0];
+    }
+    return $flux;
+  };
+
+  my $calacc = ($filter =~ /850/) ? 5 : 10;
+
+  # Loop over the different type of results
+  orac_print "\n";
+  foreach my $type (sort keys %results) {
+    my $errtype = $type . "_ERR";
+
+    # Type specific configurations
+    my ($ismap, $units);
+    if ($type =~  /^ARCSEC/) {
+      $ismap = 1;  # Need full integrated flux
+      $units = "Jy/arcsec**2/$dataunits";
     } else {
-      orac_err "Unable to determine a FCF of type BEAMMATCH for this observation\n";
+      # BEAM
+      $units = "Jy/beam/$dataunits";
+      $ismap = 0;
     }
 
-    # Define a code ref to return peak/total flux
-    my $get_flux = sub {
-      my ($src_flux, $total) = @_;
-      my $flux = $src_flux;
-      if (ref($src_flux)) {
-	$flux = ($total) ? $src_flux->[1] : $src_flux->[0];
-      }
-      return $flux;
-    };
+    orac_print "Determining FCF of type ".($type).":";
+    unless (defined $results{$type}) {
+      orac_print " - Failed!\n", "red";
+      orac_err "Calibration did not return a result\n";
+      orac_err "Unable to determine a FCF of type $type for this observation\n";
+      $bad_results++;
+      next;
+    }
 
-    my $bad_results = 0;
-    my %fcf;
-    # Loop over the different type of results
-    foreach my $type (sort keys %results) {
+    # Trap zero or negative flux when things have gone very badly wrong
+    if ( $results{$type} <= 0) {
+      $bad_results++;
+      # This is obviously a Bad Thing (TM)
+      orac_print " - Failed!\n", "red";
+      my $garbage = ($results{$type} == 0) ? "zero"
+	: "a negative flux measurement";
+      orac_err "Calibration returned $garbage\n";
+      orac_err "Unable to determine a FCF of type $type for this observation\n";
+      next;
+    }
+    orac_print "\n";
+
+    # Now get the peak/total flux for this filter
+    my $flux = (defined $sourceflux) ? $get_flux->($sourceflux, $ismap)
+      : $Cal->fluxcal($src, $filter, $ismap);
+
+    # If we have a flux, store the FCF in the calibration system
+    if (defined $flux) {
+      my $printunits = ($type =~ /^ARCSEC/) ? $dataunits ." arcsec**2" : $dataunits;
+      orac_print "  Flux = $flux; Data = ". (sprintf "%g", $results{$type}). " $printunits\n";
+
+      # Calculate the new gain
+      my $fcf = $flux / $results{$type};
+      my $dfcf = (defined $results_err{$errtype})
+	? $fcf * ($results_err{$errtype} / $results{$type}) : 0.0;
+
+      # Store the result in the calibration system
+      my $pfcf = sprintf "%7.3f", $fcf;
+      my $pdfcf = sprintf "%7.3f", $dfcf;
+      my $text = ($store) ? "Storing new" : "Derived";
+      # Announce the new gain
+      my $fcfcol = "green";
+      my $gain_type = ($type eq "BEAMMATCH") ? "BEAM" : $type;
+      my $stdfcf = $Cal->gain($filter, $gain_type);
+      my $pcdiff = sprintf "%.1f", (100*($fcf - $stdfcf)/$stdfcf);
+      my $hilo = ($pcdiff > 0) ? "higher" : "lower";
+      $pcdiff = abs($pcdiff);
+      if ($pcdiff > $calacc) {
+	if ($pcdiff > 2*$calacc) {
+	  $fcfcol = "red";
+	} else {
+	  $fcfcol = "yellow";
+	}
+      }
+      orac_print "  $text FCF for $filter: $pfcf +/- $pdfcf $units (cf $stdfcf: $pcdiff% $hilo)\n", "$fcfcol";
+
+      if ( $store ) {
+	# Set the current gain - add to index file
+	# This means that we have to create a hash with the
+	# new keyword GAIN and the selected filter FILTER
+	$Obj->uhdr("GAIN", $fcf);
+	$Obj->uhdr("UNITS", $type);
+	$Obj->uhdr("FWHM", $fwhm);
+
+	# Need to append type to file name so that the keys are unique
+	$Cal->gainsindex->add($Obj->file() ."_$type",
+			      { %{$Obj->hdr}, %{$Obj->uhdr}});
+      }
+      $fcf{$type} = $fcf;
       my $errtype = $type . "_ERR";
+      $fcf{$errtype} = $dfcf;
 
-      # Type specific configurations
-      my ($ismap, $units);
-      if ($type =~  /^ARCSEC/) {
-	$ismap = 1;  # Need full integrated flux
-	$units = "Jy/arcsec**2/$dataunits";
-      } else {
-	$units = "Jy/beam/$dataunits";
-	if ($type =~ /^BEAMEQUIV/) {
-	  # Need integrated flux for BEAMEQUIV calibration
-	  $ismap = 1;
-	} else {
-	  $ismap = 0;
-	}
-      }
-
-      orac_print "Determining calibration of type ".($type).":";
-      unless (defined $results{$type}) {
-	orac_print " - Failed!\n", "red";
-	orac_err "Calibration did not return a result\n";
-	orac_err "Unable to determine a FCF of type $type for this observation\n";
-	$bad_results++;
-	next;
-      }
-      # Trap zero when things have gone very badly wrong
-      if ( $results{$type} <= 0) {
-	$bad_results++;
-	# This is obviously a Bad Thing (TM)
-	orac_print " - Failed!\n", "red";
-	my $garbage = ($results{$type} == 0) ? "zero"
-	  : "a negative flux measurement";
-	orac_err "Calibration returned $garbage\n";
-	orac_err "Unable to determine a FCF of type $type for this observation\n";
-	next;
-      } else {
-	orac_print "\n";
-      }
-
-      # Now get the peak/total flux for this filter
-      my $flux = (defined $sourceflux) ? $get_flux->($sourceflux, $ismap)
-	: $Cal->fluxcal($src, $filter, $ismap);
-
-      # If we have a flux, store the FCF in the calibration system
-      if (defined $flux) {
-	my $printunits = ($type =~ /^ARCSEC/) ? $dataunits ." arcsec**2" : $dataunits;
-	orac_print "  Flux ($type) = $flux; Data = ". $results{$type}. " $printunits\n";
-
-	# Calculate the new gain
-	my $fcf = $flux / $results{$type};
-	my $dfcf = (defined $results_err{$errtype})
-	  ? $fcf * ($results_err{$errtype} / $results{$type}) : 0.0;
-
-	# Store the result in the calibration system
-	my $pfcf = sprintf "%.4f", $fcf;
-	my $pdfcf = sprintf "%.4f", $dfcf;
-	if ( $store ) {
-	  # Announce the new gain
-	  orac_print("  Storing new gain for $filter: $pfcf +/- $pdfcf $units\n",'yellow');
-
-	  # Set the current gain - add to index file
-	  # This means that we have to create a hash with the
-	  # new keyword GAIN and the selected filter FILTER
-	  $Obj->uhdr("GAIN", $fcf);
-	  $Obj->uhdr("UNITS", $type);
-	  $Obj->uhdr("FWHM", $fwhm);
-
-	  # Need to append type to file name so that the keys are unique
-	  $Cal->gainsindex->add($Obj->file() ."_$type",
-				{ %{$Obj->hdr}, %{$Obj->uhdr}});
-	} else {
-	  orac_print ("  Derived FCF for $filter: $pfcf +/- $pdfcf $units\n", "yellow");
-	}
-	$fcf{$type} = $fcf;
-	my $errtype = $type . "_ERR";
-	$fcf{$errtype} = $dfcf;
-
-	# Additionally it seems that a user-friendly logfile is
-	# a requirement
-	my $logtype = "fcf";
-	my @names = ("FCF", "FCFerr", "FCF_units", "FWHM");
-	my @values = ($fcf, $dfcf, $type, $fwhm);
-	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
-      } else {
-	orac_warn "Unable to calculate a flux for source $src\n";
-      }
-    }
-
-    # Check if all the FCFs were bad in some way
-    if ($bad_results >= scalar(keys %results)) {
-      $Obj->isgood(0);
-      orac_err "No FCFs could be determined for this observation: marking as bad\n";
-    } else {
-      # Sanity check: the BEAM FCF should be related to the ARCSEC FCF
-      # using the empirical beam area: BEAM = ARCSEC * beamconv
-      if (defined $fcf{ARCSEC} && defined $fcf{BEAM}) {
-	my $beamconv = $Cal->beamarea(2.0*$radius);
-	my $beamfwhm = sprintf("%.2f", sqrt($beamconv/1.133));
-	my $altbeamconv = $fcf{BEAM} / $fcf{ARCSEC};
-	my $pcbeamconv = sprintf "%.1f", 100.0 * ($altbeamconv - $beamconv) / $beamconv;
-	my $msg = ($pcbeamconv > 0) ? "higher" : "lower";
-	$pcbeamconv = abs($pcbeamconv);
-	my $altfwhm = sprintf("%.2f", sqrt($altbeamconv/1.133));
-	orac_print "Using ARCSEC/BEAM FCF ratio to derive beam area:\n";
-	orac_print " derived   = ".(sprintf "%.2f", $altbeamconv)." arcsec^2/beam / FWHM = $altfwhm arcsec\n empirical = $beamconv arcsec^2/beam / FWHM = $beamfwhm arcsec\n";
-	orac_print " Derived beam area is $pcbeamconv % $msg\n\n";
-      } else {
-	orac_warn "Unable to estimate consistency between ARCSEC and BEAM FCFs\n";
-      }
-      # Store results in primitive hash
-      $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
-    }
-
-    # Log fit parameters here
-    my $logfitpar = get_prim_arg($_PRIM_ARGS_, "LOGFITPAR", 0);
-    if ($logfitpar && $mapfitpar && $matchfitpar) {
-      my %map_fit = %{ $mapfitpar };
-      my %mf_fit = %{ $matchfitpar };
-      my $logtype = "fit_fcf";
-      my @names = ("A", "B", "Peak", "Unc", "Gamma", "Dgamma",
-		   "A_mf", "B_mf", "Peak_mf", "Unc_mf", "Gamma_mf", "Dgamma_mf",
-		   "File");
-      my @values = ($map_fit{MAJFWHM}->[0], $map_fit{MINFWHM}->[0],
-		    $map_fit{AMPLITUDE}->[0], $map_fit{AMPLITUDE}->[1],
-		    $map_fit{GAMMA}->[0], $map_fit{GAMMA}->[1],
-		    $mf_fit{MAJFWHM}->[0], $mf_fit{MINFWHM}->[0],
-		    $mf_fit{AMPLITUDE}->[0], $mf_fit{AMPLITUDE}->[1],
-		    $mf_fit{GAMMA}->[0], $mf_fit{GAMMA}->[1], $in
-		   );
+      # Additionally it seems that a user-friendly logfile is
+      # a requirement
+      my $logtype = "fcf";
+      my @names = ("FCF", "FCFerr", "FCF_units", "FWHM");
+      my @values = ($fcf, $dfcf, $type, $fwhm);
       _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
-    }
-
-  } else {
-    # This block is reached if no position could be determined
-    if ( !$group ) {
-      # If this is a Frame object and no FCF could be determined then
-      # check if the image has enough s/n to detect it
-      # Find the peak in a 30x30 pixel square box
-      my $image = $Frm->file . "(0~30,0~30)";
-      _FIND_IMAGE_STATISTICS_ IMAGE=$image VERBOSE=0
-      _CALC_IMAGE_NOISE_ VERBOSE=0 LOGFILE=0
-      my $snr;
-      if (!defined $_CALC_IMAGE_NOISE_{SIGMA} || $_CALC_IMAGE_NOISE_{SIGMA} == 0) {
-        $snr = "NaN";
-      } else {
-        $snr = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX} / $_CALC_IMAGE_NOISE_{SIGMA};
-      }
-
-      my $text = "Unable to determine a FCF for this observation";
-      # Set minimum S/N of 10
-      use constant SNR_MIN => 10.0;
-      $snr = sprintf "%.1f", $snr;
-      # If the noise is too high, just issue a warning
-      if ( $snr ne "NaN" && $snr < SNR_MIN ) {
-	$text .= ": noise too high to locate ".($Obj->hdr("OBJECT"))." (S/N = $snr)";
-	orac_warn "$text\n";
-      } else {
-	$text .= ": bad data? (S/N = $snr)";
-	$Obj->isgood(0);
-	# Check Grp membership unless it's the last one so subsequent
-	# calls to lastmember will still work as expected
-	$Grp->check_membership unless ( $Grp->lastmember($Frm) );
-	# Otherwise issue an error
-	orac_err "$text\n";
-      }
     } else {
-      # Just issue a warning otherwise
-      orac_warn "Unable to determine a FCF for this observation\n";
+      orac_warn "Unable to calculate a flux for source $src\n";
     }
   }
+
+  # Check if all the FCFs were bad in some way
+  if ($bad_results >= scalar(keys %results)) {
+    $Obj->isgood(0);
+    orac_err "No FCFs could be determined for this observation: marking as bad\n";
+  } elsif (defined $fcf{ARCSEC} && defined $fcf{BEAM}) {
+    # Sanity check: the BEAM FCF should be related to the ARCSEC FCF
+    # using the empirical beam area: BEAM = ARCSEC * beamconv
+    my $beamconv = $Cal->beamarea(2.0*$radius);
+    my $beamfwhm = sprintf("%.2f", sqrt($beamconv/1.133));
+    my $altbeamconv = $fcf{BEAM} / $fcf{ARCSEC};
+    my $pcbeamconv = sprintf "%.1f", 100.0 * ($altbeamconv - $beamconv) / $beamconv;
+    my $msg = ($pcbeamconv > 0) ? "higher" : "lower";
+    $pcbeamconv = abs($pcbeamconv);
+    my $altfwhm = sprintf("%.2f", sqrt($altbeamconv/1.133));
+    orac_print "Using ARCSEC/BEAM FCF ratio to derive beam area:\n";
+    orac_print " derived   = ".(sprintf "%.2f", $altbeamconv)." arcsec^2/beam / FWHM = $altfwhm arcsec\n empirical = $beamconv arcsec^2/beam / FWHM = $beamfwhm arcsec\n";
+    orac_print " Derived beam area is $pcbeamconv % $msg\n\n";
+  } else {
+    orac_warn "Unable to check relative calibration using ARCSEC and BEAM FCFs\n";
+  }
+  # Store results in primitive hash
+  $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
+
+  # Log fit parameters here
+  my $logfitpar = get_prim_arg($_PRIM_ARGS_, "LOGFITPAR", 0);
+  if ($logfitpar && $mapfitpar && $matchfitpar) {
+    my %map_fit = %{ $mapfitpar };
+    my %mf_fit = %{ $matchfitpar };
+    my $logtype = "fit_fcf";
+    my @names = ("A", "B", "Peak", "Unc", "Gamma", "Dgamma",
+		 "A_mf", "B_mf", "Peak_mf", "Unc_mf", "Gamma_mf", "Dgamma_mf",
+		 "File");
+    my @values = ($map_fit{MAJFWHM}->[0], $map_fit{MINFWHM}->[0],
+		  $map_fit{AMPLITUDE}->[0], $map_fit{AMPLITUDE}->[1],
+		  $map_fit{GAMMA}->[0], $map_fit{GAMMA}->[1],
+		  $mf_fit{MAJFWHM}->[0], $mf_fit{MINFWHM}->[0],
+		  $mf_fit{AMPLITUDE}->[0], $mf_fit{AMPLITUDE}->[1],
+		  $mf_fit{GAMMA}->[0], $mf_fit{GAMMA}->[1], $in
+		 );
+    _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
+  }
+  orac_print "\n";
 
   # Make sure the files in the current object are the same as those on entry
   $Obj->tagretrieve("find_calibration_map_input");
