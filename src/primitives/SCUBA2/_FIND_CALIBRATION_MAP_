@@ -51,6 +51,11 @@ overridden by the C<RECPAR_AUTOPHOTOM> recipe parameter.
 True if the Group image should be used. Otherwise the current Frame is
 used.
 
+=item B<LOGFILE>
+
+A flag to denote whether the derived FCFs should be written to a log
+file. Default is 1 (write a logfile).
+
 =item B<LOGFITPAR>
 
 A flag to denote whether the fit parameters should be written to a log
@@ -81,7 +86,7 @@ NDFTRACE
 
 =item ORAC-DR PRIMITIVES
 
-_ADD_LOG_ENTRY_, _FIND_INTEGRATED_INTENSITY_, _FIND_MAP_PEAK_
+_ADD_LOG_ENTRY_, _APERTURE_PHOTOMETRY_, _FIND_MAP_PEAK_, _GET_PIXEL_SCALE_
 
 =back
 
@@ -153,7 +158,7 @@ USA.
 =cut
 
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
-
+my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 
 my $autophotom = get_prim_arg($_PRIM_ARGS_, "AUTOPHOTOM", 0);
@@ -281,6 +286,8 @@ if ( $proceed ) {
   # Now report on the results - looping over each FCF type in turn
   my $bad_results = 0;
   my %fcf;
+  # Accepted percentage calibration accuracy
+  my $calacc = ($filter =~ /850/) ? 5 : 10;
 
   # Define a code ref to return peak/total flux
   my $get_flux = sub {
@@ -291,8 +298,6 @@ if ( $proceed ) {
     }
     return $flux;
   };
-
-  my $calacc = ($filter =~ /850/) ? 5 : 10;
 
   # Loop over the different type of results
   orac_print "\n";
@@ -378,22 +383,17 @@ if ( $proceed ) {
 	$Cal->gainsindex->add($Obj->file() ."_$type",
 			      { %{$Obj->hdr}, %{$Obj->uhdr}});
       }
-      $fcf{$type} = $fcf;
+      $fcf{$type} = sprintf "%.3f", $fcf;
       my $errtype = $type . "_ERR";
-      $fcf{$errtype} = $dfcf;
+      $fcf{$errtype} = sprintf "%.3f", $dfcf;
 
-      # Additionally it seems that a user-friendly logfile is
-      # a requirement
-      my $logtype = "fcf";
-      my @names = ("FCF", "FCFerr", "FCF_units", "FWHM");
-      my @values = ($fcf, $dfcf, $type, $fwhm);
-      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
     } else {
       orac_warn "Unable to calculate a flux for source $src\n";
     }
   }
 
   # Check if all the FCFs were bad in some way
+  my $altfwhm = "NaN";
   if ($bad_results >= scalar(keys %results)) {
     $Obj->isgood(0);
     orac_err "No FCFs could be determined for this observation: marking as bad\n";
@@ -406,15 +406,29 @@ if ( $proceed ) {
     my $pcbeamconv = sprintf "%.1f", 100.0 * ($altbeamconv - $beamconv) / $beamconv;
     my $msg = ($pcbeamconv > 0) ? "higher" : "lower";
     $pcbeamconv = abs($pcbeamconv);
-    my $altfwhm = sprintf("%.2f", sqrt($altbeamconv/1.133));
+    $altfwhm = sprintf("%.2f", sqrt($altbeamconv/1.133));
     orac_print "Using ARCSEC/BEAM FCF ratio to derive beam area:\n";
     orac_print " derived   = ".(sprintf "%.2f", $altbeamconv)." arcsec^2/beam / FWHM = $altfwhm arcsec\n empirical = $beamconv arcsec^2/beam / FWHM = $beamfwhm arcsec\n";
-    orac_print " Derived beam area is $pcbeamconv % $msg\n\n";
+    my $calcol = ($pcbeamconv < $calacc) ? "green" : (($pcbeamconv < 2*$calacc) ? "yellow" : "red");
+    orac_print " Derived beam area is $pcbeamconv % $msg\n", "$calcol";
   } else {
     orac_warn "Unable to check relative calibration using ARCSEC and BEAM FCFs\n";
   }
   # Store results in primitive hash
   $_FIND_CALIBRATION_MAP_{FCF} = \%fcf;
+
+  # Additionally it seems that a user-friendly logfile is required
+  if ($logfile) {
+    my $logtype = "fcf";
+    my @names = ("FCF_ARCSEC", "FCFerr", "FCF_BEAM", "FCFerr", "FCF_BEAMMATCH",
+		 "FCFerr", "FWHM_eff");
+    foreach my $k (qw/ ARCSEC ARCSEC_ERR BEAM BEAM_ERR BEAMMATCH BEAMMATCH_ERR /) {
+      $fcf{$k} = "NaN" unless (defined $fcf{$k});
+    }
+    my @values = ($fcf{ARCSEC}, $fcf{ARCSEC_ERR}, $fcf{BEAM}, $fcf{BEAM_ERR},
+		  $fcf{BEAMMATCH}, $fcf{BEAMMATCH_ERR}, $altfwhm);
+    _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
+  }
 
   # Log fit parameters here
   my $logfitpar = get_prim_arg($_PRIM_ARGS_, "LOGFITPAR", 0);
