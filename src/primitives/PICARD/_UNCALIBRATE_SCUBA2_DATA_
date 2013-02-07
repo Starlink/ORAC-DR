@@ -34,11 +34,12 @@ CDIV, NDFTRACE, SETUNITS
 
 =head1 OUTPUT DATA
 
-The Frame is updated to contain the uncalibrated data files.
+The Frame is updated to contain the uncalibrated data files and tagged
+with C<uncal>.
 
 =head1 OUTPUT FILES
 
-Creates output files with the suffix C<_uncal>.
+Creates output files with the appended suffix C<_uncal>.
 
 =head1 NOTES
 
@@ -51,7 +52,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia. All Rights
+Copyright (C) 2010,2013 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -71,25 +72,17 @@ USA.
 
 =cut
 
-# Uncalibrated data files
-my @uncal;
-
-# Loop over files in the Frame
-for my $i (1 .. $Frm->nfiles) {
-  # Obtain the current units for the input file to determine the FCF
-  # calibration type
-  my ($in, $out) = $Frm->inout("_uncal", $i);
-  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
-  my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
-  if ($units eq "pW") {
-    # Make a copy of uncalibrated data files - not strictly necessary
-    orac_print "File $in already contains uncalibrated data";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
-    # Add to uncal array so it's stored in the Frame
-    push(@uncal, $in);
-    next;
-  }
-
+# Obtain the current units for the input file to determine the FCF
+# calibration type
+my $in = $Frm->file;
+my $uncal = $in . "_uncal";
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+if ($units eq "pW") {
+  # Print a message and exit
+  orac_print "File $in already contains uncalibrated data\n";
+  $uncal = $in;
+} else {
   my $fcf_units = ($units =~ /beam/) ? "BEAM" : "ARCSEC";
   # Assume units of Jy if not mJy
   my $mult = ($units =~ /^mJy/) ? 1000.0 : 1.0;
@@ -98,15 +91,16 @@ for my $i (1 .. $Frm->nfiles) {
   # calibration and that data are in mJy/beam
   my $fcf = $mult * $Cal->gain($Frm->uhdr("ORAC_FILTER"), $fcf_units);
 
-  my $args = "in=$in out=$out scalar=$fcf";
+  my $args = "in=$in out=$uncal scalar=$fcf";
   $Mon{kappa_mon}->obeyw("cdiv","$args");
 
-  # Change units to pW
-  $args = "ndf=$out units=pW";
-  $Mon{ndfpack_mon}->obeyw("setunits","$args");
+  orac_print "Undoing default calibration of $fcf $units/pW - output units are pW\n";
 
-  push(@uncal, $out);
+  # Change units to pW
+  $args = "ndf=$uncal units=pW";
+  $Mon{ndfpack_mon}->obeyw("setunits","$args");
 }
 
 # Store in the current Frame object
-$Frm->files(@uncal);
+$Frm->files($uncal);
+$Frm->tagset("uncal");
