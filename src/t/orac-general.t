@@ -4,7 +4,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 38;
+use Test::More tests => 28;
 
 
 
@@ -63,10 +63,10 @@ is($keyvals{file},"blah");
 is($keyvals{oops},22);
 is($keyvals{oopsy},22);
 is(ref($keyvals{range}),"ARRAY");
-eq_array($keyvals{range},[qw/a b/],"Compare quoted array");
-eq_array($keyvals{curly},[qw/c d/],"Compare curly bracketed array");
-eq_array($keyvals{unquot},[qw/1 2/], "Compare unquoted internal array");
-eq_array($keyvals{wow},[qw/c d e/], "Compare final non-quoted array");
+is_deeply($keyvals{range},[qw/a b/],"Compare quoted array");
+is_deeply($keyvals{curly},[qw/c d/],"Compare curly bracketed array");
+is_deeply($keyvals{unquot},[qw/1 2/], "Compare unquoted internal array");
+is_deeply($keyvals{wow},[qw/c d e/], "Compare final non-quoted array");
 
 
 print "# parse_obslist\n";
@@ -76,26 +76,6 @@ my @obs = parse_obslist("5,9:11");
 
 is(scalar(@obs), scalar(@expected));
 
-for (0..scalar(@expected)) {
+for (0 .. $#expected) {
   is($obs[$_], $expected[$_]);
-}
-
-
-exit;
-
-sub eq_array {
-  my ($a, $b, $c) = @_;
-
-  if (defined $c) {
-    $c .= ":";
-  } else {
-    $c = '';
-  }
-
-  is(scalar(@$a), scalar(@$b), "$c Compare size");
-
-  for my $i (0..$#$a) {
-    is($a->[$i], $b->[$i], "$c Compare element $i");
-  }
-
 }

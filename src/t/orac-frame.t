@@ -24,6 +24,11 @@ ok($frm->uhdr("TEST_HEADER"), 52);
 
 ok($frm->uhdr("UNDEF"),undef);
 
+# Set a dummy header to prevent
+# ORAC::BaseFile::calc_orac_headers()
+# dieing because it couldn't translate
+# any headers.
+$frm->hdr(INSTRUME => 'ORACDRTEST');
 
 # Set up some made up file names
 # to test file name handling

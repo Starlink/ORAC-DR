@@ -11,6 +11,7 @@ use Test; # Not really needed since we don't use ok()
 use File::Find;
 
 our @modules;
+our %modules_skip;
 
 # If ORAC_SKIP_COMPILE_TEST environment variable is set we
 # just skip this test because it takes a long time
@@ -19,6 +20,28 @@ if (exists $ENV{ORAC_SKIP_COMPILE_TEST}) {
   exit;
 }
 
+# DRAMA and NBS are not included in the current standard
+# Starlink installation, so avoid trying to compile the
+# modules that require them if we don't have them.
+
+my $pid;
+unless ($pid = fork) {
+  require DRAMA;
+  exit 0;
+} else {
+  waitpid($pid, 0);
+  if ($?) {
+    $modules_skip{$_} = 1 foreach qw/ORAC::Msg::Task::DRAMA
+                                     ORAC::Msg::Control::DRAMA/;
+} }
+unless ($pid = fork) {
+  require Starlink::NBS;
+  exit 0;
+} else {
+  waitpid($pid, 0);
+  if ($?) {
+    $modules_skip{$_} = 1 foreach qw/ORAC::Display::P4/;
+} }
 
 # Scan the blib/lib/ORAC directory looking for modules
 
@@ -30,7 +53,6 @@ find({ wanted => \&wanted,
 # Start the tests
 plan tests => scalar(@modules);
 
-
 # Loop through each module and try to run it
 
 $| = 1;
@@ -40,7 +62,6 @@ for my $module (@modules) {
   # Try forking. Perl test suite runs
   # we have to fork because each "use" will contaminate the
   # symbol table and we want to start with a clean slate.
-  my $pid;
   if ($pid = fork) {
     # parent
 
@@ -76,8 +97,6 @@ sub wanted {
   # is it a module
   return unless $pm =~ /\.pm$/;
 
-  print "# pm is $pm\n";
-
   # Remove the blib/lib (assumes unix!)
   $pm =~ s|^blib/lib/||;
 
@@ -86,6 +105,8 @@ sub wanted {
 
   # Remove .pm
   $pm =~ s/\.pm$//;
+
+  return if $modules_skip{$pm};
 
   push(@modules, $pm);
 }
