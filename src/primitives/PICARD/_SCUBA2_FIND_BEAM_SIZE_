@@ -1,0 +1,126 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_FIND_BEAM_SIZE_ - determine the beam properties from a SCUBA-2 image
+
+=head1 SYNOPSIS
+
+_SCUBA2_FIND_BEAM_SIZE_
+
+=head1 DESCRIPTION
+
+This PICARD primitive fits the current image with a known profile in
+order to estimate the beam size.
+
+If deriving the beam from a group image, the images should have been
+registered before coadding. No check is made to see if this has been done.
+
+The default behaviour is to fit a single Gaussian with C<beamfit>,
+though this may be overridden with the recipe parameters
+C<FIT_GAUSSIAN> and C<FIT_METHOD> respectively.
+
+=head1 ARGUMENTS
+
+This primitive has the following arguments:
+
+=over 4
+
+=item B<GROUP>
+
+A flag to indicate that the group file should be use if it
+exists. Default is 0 (use the current Frame file).
+
+=item B<LOGFILE>
+
+A flag to denote whether to store information in the C<PICARD_RESULTS>
+hash for later writing to a logfile. Overridden by the presence of the
+C<RECPAR_LOGFILE> recipe parameter. Default is 1.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+SCUBA2: _FIND_BEAM_SIZE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The beam properties are stored in the C<%picard_results> hash with
+keys C<fwhm> and C<errbeam> along with a flag to indicate whether or
+not the fit was a Gaussian (C<gaussian>).
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Use the Group or Frame file?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+
+my $proceed = 1;
+if ($group && !$Grp->file_exists) {
+  orac_warn "Group file does not exist - unable to determine beam\n";
+  $proceed = 0;
+}
+
+if ($proceed) {
+  # Tell the user what's going on
+  orac_print ("\nCalling _SCUBA2_FIND_BEAM_SIZE_: determine beam parameters\n", "yellow");
+
+  # Are results to be written to a log file? Override with recipe parameter.
+  my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
+  $logfile = $Frm->uhdr("RECPAR_LOGFILE")
+    if (defined $Frm->uhdr("RECPAR_LOGFILE"));
+
+  # Retrieve existing results if present
+  my %picard_results;
+  if (defined $Frm->uhdr("PICARD_RESULTS")) {
+    %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
+  }
+
+  # Note we don't want this primitive to write a log file
+  _FIND_BEAM_SIZE_ VERBOSE=0 LOGFILE=0
+
+  $picard_results{fwhm} = $Cal->fwhm;
+  $picard_results{errbeam} = $Cal->errbeam;
+  $picard_results{gaussian} = (defined $Frm->uhdr("RECPAR_FIT_GAUSSIAN"))
+    ? $Frm->uhdr("RECPAR_FIT_GAUSSIAN") : 1;
+
+  # Store the results hash in the Frame uhdr
+  if ( $logfile ) {
+    $Frm->uhdr("PICARD_RESULTS", \%picard_results);
+  }
+}
