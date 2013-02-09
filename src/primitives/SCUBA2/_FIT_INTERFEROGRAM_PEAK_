@@ -59,6 +59,7 @@ USA.
 
 =cut
 
+use IO::File;
 use JSA::Headers qw/read_jcmtstate/;
 
 my @output = ();
@@ -94,13 +95,39 @@ my $cfg = new ORAC::TempFile(OPEN => 1, SUFFIX => '.def');
 }
 
 
+# Only necessary to determine the shutter status in this
+# way until we have the shutter FITS headers.
+my $shutter;
+do {
+  my $ocscfg = new ORAC::TempFile(OPEN => 0, SUFFIX => '.xml');
+  my $opt = $Frm->raw() . '.MORE.JCMTOCS.CONFIG ' . $ocscfg;
+  $Mon{'hdstools_mon'}->obeyw('hwrite', $opt);
+  my $fh = new IO::File($ocscfg);
+  local $/ = undef;
+  $_ = <$fh>; s/\n//g;
+  $fh->close();
+
+  if (/SHUT8C +VALUE="INBEAM"/ and /SHUT8D +VALUE="OUTOFBEAM"/) {
+    $shutter = 's8c';
+  } elsif (/SHUT8D +VALUE="INBEAM"/ and /SHUT8C +VALUE="OUTOFBEAM"/) {
+    $shutter = 's8d';
+  } else {
+    orac_termerr('Could not determine which shutter was in the beam.');
+  }
+};
+
+# Which shutter the 450um subarrays correspond to:
+my %shutter = (s4a => 's8d', s4b => 's8c');
+
 for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   my ($in, $neg) = $Frm->inout('_neg', $i);
   my $subarray = lc($Frm->subarray($in));
 
   # Invert interferogram if we expect negative fringes.
+  my $beam = $shutter{$subarray} || $subarray;
 
-  if (grep {$_ eq $subarray} qw/s4b s8d/) {
+  if ($shutter ne $beam) {
+    orac_say("Shutter in $shutter beam so inverting $subarray interferogram.");
     $Mon{'kappa_mon'}->obeyw('cmult', "$in -1.0 $neg");
     $in = $neg;
   }
