@@ -7,8 +7,8 @@ _CALIBRATE_DATA_ - Multiply data by the flux conversion factor
 =head1 SYNOPSIS
 
  _CALIBRATE_DATA_ UNITS=BEAM
- _CALIBRATE_DATA_ UNITS=BEAMEQUIV
  _CALIBRATE_DATA_ UNITS=ARCSEC
+ _CALIBRATE_DATA_ UNITS=BEAM FCF=530
 
 =head1 DESCRIPTION
 
@@ -27,6 +27,12 @@ set.
 The following arguments are supported:
 
 =over 4
+
+=item B<FCF>
+
+The value of the flux conversion factor to be used in calibrating the
+data in appopriate units. Default is to retrieve the relevant FCF from
+the calibration object.
 
 =item B<GROUP>
 
@@ -114,15 +120,15 @@ if ( $proceed ) {
   my $filt_corr = ($group && defined $Grp->uhdr("FCF_CORR_AMP"))
     ? $Grp->uhdr("FCF_CORR_AMP") : 1;
 
-  my $units = 'BEAM';
-  if (exists $_CALIBRATE_DATA_{UNITS} ) {
-    $units = uc( $_CALIBRATE_DATA_{UNITS});
-    if ($units ne 'BEAM' && $units ne 'ARCSEC') {
-      orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
-    }
+  my $units = uc(get_prim_arg($_PRIM_ARGS_, "UNITS", 'BEAM'));
+  if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+    orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
   }
   $units = $Frm->uhdr("RECPAR_CALUNITS")
     if (defined $Frm->uhdr("RECPAR_CALUNITS"));
+
+  my $fcf = get_prim_arg($_PRIM_ARGS_, "FCF",
+			 $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units));
 
   # Multiplication factor - convert to mJy
   my $mult = 1000.0;
@@ -153,11 +159,10 @@ if ( $proceed ) {
       $parea = $_GET_PIXEL_SCALE_{AREA};
     }
 
-    # Retrieve the current FCF value from the calibration object. This
-    # will calibrate our data in Jy and then if we multiply by an
-    # extra 1000 we get mJy.
-    # The multiplication factor includes the /pixel correction in ARCSEC
-    my $gain = $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units) * $mult * $parea / $filt_corr;
+    # Use the given FCF value to calibrate the data in Jy. Multiply by
+    # the relevant factor above to get mJy. The multiplication factor
+    # includes the /pixel correction in ARCSEC
+    my $gain = $fcf * $mult * $parea / $filt_corr;
 
     # Retrieve input and output names - just append in PICARD
     my ($in, $out) = ($Frm->uhdr("PICARD")) ? ($Frm->file($i), $Frm->file($i)."_cal")
