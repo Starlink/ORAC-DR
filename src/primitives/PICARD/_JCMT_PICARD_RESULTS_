@@ -55,21 +55,25 @@ Frequency in GHz.
 
 Observation number.
 
+=item * radius
+
+Radius of aperture used for photometry in arcsec (SCUBA-2 only)
+
 =item * source
 
 Source name.
 
 =item * tau
 
-Mean optical depth at 225 GHz for current file.
+Mean optical depth at the observed wavelength for current file.
+
+=item * tau225
+
+Mean 225-GHz tau derived from WVM for current file.
 
 =item * wavelen
 
 Wavelength in um.
-
-=item * wvm
-
-Mean WVM tau for current file.
 
 =back
 
@@ -83,7 +87,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia. All Rights
+Copyright (C) 2010,2013 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -105,18 +109,21 @@ USA.
 
 use constant CSOL => 2.9979e8;
 
-my %picard_results;
-$picard_results{file} = $Frm->file;
-$picard_results{date} = sprintf "%.7f", $Frm->hdr("ORACTIME");
+# Add some basic info: filename, date, source and observation number
+my %picard_results = ( file => $Frm->file,
+		       date => (sprintf "%.7f", $Frm->hdr("ORACTIME")),
+		       source => $Frm->hdr("OBJECT"),
+		       obsnum => $Frm->hdr("OBSNUM")
+		     );
 
-# Object, observation number and wavelength
-$picard_results{source} = $Frm->hdr("OBJECT");
-$picard_results{obsnum} = $Frm->hdr("OBSNUM");
+# Wavelength and frequency
 my ($freq, $wavelen);
 if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" ) {
   $wavelen = 1.0e6 * $Frm->hdr("WAVELEN");
   $freq = sprintf "%8.4f", CSOL / (1.0e9 * $Frm->hdr("WAVELEN"));
+
 } else {
+  # Pick a representative frequency
   if ($Frm->hdr("OBS_SB") eq "USB") {
     $freq = 0.5 * ($Frm->hdr("LOFREQS") + $Frm->hdr("LOFREQE")) +
       $Frm->hdr("IFFREQ");
@@ -130,15 +137,18 @@ if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" ) {
 $picard_results{wavelen} = $wavelen;
 $picard_results{freq} = $freq;
 
-# Optical depth
+# Aperture photometry radius - this is always defined for SCUBA-2
+$picard_results{radius} = (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS"))
+  ? $Frm->uhdr("RECPAR_APERTURE_RADIUS") : 0;
+
+# Optical depth at 225 GHz and at the observing wavelength
 use JCMT::Tau;
 my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
-$picard_results{wvm} = $tau;
-($picard_results{tau}, my $status) = get_tau( $Frm->hdr("FILTER"),
-					      "CSO", $tau);
+$picard_results{tau225} = $tau;
+($picard_results{tau}, my $status) = get_tau($Frm->hdr("FILTER"), "CSO", $tau);
 
 # Airmass
-$picard_results{airmass} = 0.5 * ( $Frm->hdr("AMSTART") +
-				   $Frm->hdr("AMEND"));
+$picard_results{airmass} = 0.5 * ($Frm->hdr("AMSTART") + $Frm->hdr("AMEND"));
 
+# Store these values
 $Frm->uhdr("PICARD_RESULTS", \%picard_results);
