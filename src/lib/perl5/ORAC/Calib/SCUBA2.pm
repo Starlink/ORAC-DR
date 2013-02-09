@@ -266,6 +266,7 @@ sub new {
 
 # This assumes we have a hash object
   $obj->{Beam} = {},           # Current best-fit beam parameters
+  $obj->{ErrBeam} = undef,     # Current estimate of error beam
   $obj->{FWHM} = undef,        # Current mean main-beam FWHM
   $obj->{SkyRefImage} = undef; # Name of current reference image
 
@@ -328,8 +329,10 @@ sub subinst {
 
 A simple method to set or retrieve the beam full-width-at-half-maximum
 (FWHM). If the complete beam parameters are required, the B<beam>
-method should be used instead. If the FWHM is undef then a hard-wired
-default value, appropriate for the current wavelength, is returned.
+method should be used instead. If the FWHM is undef then the routine
+checks to see if any beam parameters have been derived, and if so it
+calculates the FWHM from those. Otherwise a hard-wired default value,
+appropriate for the current wavelength, is returned.
 
   $Cal->fwhm( $fwhm );
 
@@ -346,12 +349,18 @@ sub fwhm {
     return;
   }
 
-  # Get
+  # Get - and auto-set if not defined
   my $fwhm = (defined $self->{FWHM}) ? $self->{FWHM} : 0;
 
   if ( $fwhm == 0 ) {
-    my $thingref = $self->thingone;
-    $fwhm = ( $self->subinst() eq '850') ? 14.0 : 7.5;
+    if ($self->beampar) {
+      my $beampar = $self->beampar;
+      $fwhm = sqrt($beampar->{Bmaj}*$beampar->{Bmin});
+      $self->fwhm($fwhm);
+    } else {
+      my $thingref = $self->thingone;
+      $fwhm = ( $self->subinst() eq '850') ? 14.0 : 7.5;
+    }
   }
   return $fwhm;
 }
@@ -449,11 +458,47 @@ sub beampar {
 
     $self->{Beam}->{ErrFrac} = $beamargs{errfrac};
 
-    return;
+    # Store FWHM and error beam
+    $self->fwhm;
+    $self->errbeam;
+
+    return $self->{Beam};
   }
 
   return $self->{Beam};
 
+}
+
+=item B<errbeam>
+
+The current estimated fractional error beam as a percentage of the
+total as given in the C<beampar> results. If not defined, this method
+will check for stored C<beampar> results and will set the atribute
+accordingly. Alternatively a value may be given.
+
+  my $errbeam = $Cal->errbeam;
+
+  $Cal->errbeam($errbeam);
+
+=cut
+
+sub errbeam {
+  my $self = shift;
+
+  my $errbeam;
+  if (@_) {
+    $errbeam = shift;
+    $self->{ErrBeam} = $errbeam;
+  } else {
+    if ($self->{ErrBeam}) {
+      $errbeam = $self->{ErrBeam};
+    } elsif ($self->beampar) {
+      $errbeam = $self->beampar->{ErrFrac};
+      $self->errbeam($errbeam) if ($errbeam);
+    }
+  }
+
+  return $errbeam;
 }
 
 =item B<nep_spec>
