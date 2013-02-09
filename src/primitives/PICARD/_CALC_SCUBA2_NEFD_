@@ -95,55 +95,21 @@ $logfile = $Frm->uhdr("RECPAR_LOGFILE")
 # needed.
 my $nefdlog = ($logfile) ? 0 : 1;
 
-# Should the raw/original input files be used?
-my $raw = get_prim_arg($_PRIM_ARGS_, "RAW", 0);
-
-# Should the data be calibrated using derived or standard FCFs?
-my $usefcf = (defined $Frm->uhdr("RECPAR_USEFCF"))
-  ? $Frm->uhdr("RECPAR_USEFCF") : 0;
-
-# Use the original files if necessary
-if ( $raw ) {
-  $Frm->files( $Frm->raw );
+# The data must be calibrated to calculate the NEFD - retrieve
+# existing calibrated data if they exist, otherwise apply standard
+# calibration
+if ( $Frm->tagexists("calib") ) {
+  $Frm->tagretrieve("calib");
+} else {
+  # Note the calibration done here will be affected by the USEFCF
+  # recipe parameter
+  _CALIBRATE_SCUBA2_DATA_
 }
 
 # Retrieve existing results if present
 my %picard_results;
 if (defined $Frm->uhdr("PICARD_RESULTS")) {
   %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
-}
-
-# Calibrate using derived FCF is requested
-if ( $usefcf ) {
-  my $fcf;
-  my $caltype = (defined $Frm->uhdr("RECPAR_USEFCF_CALTYPE"))
-    ? $Frm->uhdr("RECPAR_USEFCF_CALTYPE") : "BEAM";
-  if ( $caltype eq "BEAM" ) {
-    $fcf = $picard_results{fcf_beam};
-  } elsif ( $caltype eq "BEAMMATCH" ) {
-    $fcf = $picard_results{fcf_matchbeam};
-  } elsif ( $caltype eq "ARCSEC" ) {
-    $fcf = $picard_results{fcf_asec};
-  } else {
-    orac_warn "Unknown calibration type, $caltype: falling back on BEAM\n";
-    $caltype = "BEAM";
-    $fcf = $picard_results{fcf};
-  }
-  if (defined $fcf) {
-    orac_print "Calibrating data using derived $caltype FCF...\n";
-    my $out = $Frm->inout("_cal");
-    # Calibrate data in mJy per whatever
-    $fcf *= 1000.0;
-    my $args = "in=".($Frm->file)." out=$out scalar=$fcf";
-    $Mon{kappa_mon}->obeyw("cmult","$args");
-    $Frm->files($out);
-  } else {
-    orac_warn "No FCF derived, using standard $caltype FCF instead\n";
-    _CALIBRATE_DATA_ UNITS=$caltype
-  }
-} else {
-  # Otherwise use default calibration `per beam'
-  _CALIBRATE_DATA_
 }
 
 # Inform user of progress.
