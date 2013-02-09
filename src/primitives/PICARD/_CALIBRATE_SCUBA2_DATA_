@@ -1,0 +1,129 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALIBRATE_SCUBA2_DATA_ - calibrate SCUBA-2 data in specified units
+
+=head1 SYNOPSIS
+
+_CALIBRATE_SCUBA2_DATA_
+
+=head1 DESCRIPTION
+
+This PICARD primitive will calibrate the specified data using either a
+derived or a standard flux conversion factor. The user can request
+that data tagged with a particular tag be calibrated instead of the
+current files. However, the calibrated files will always be stored in
+the current Frame.
+
+Requires access to the SCUBA-2 calibration class.
+
+=head1 ARGUMENTS
+
+This primitive has the following arguments:
+
+=over 2
+
+=item B<TAG>
+
+Retrieve and calibrate files of a particular tag if present. Default
+is to use the current files.
+
+=item B<UNITS>
+
+Calibration units. Must be C<ARCSEC> or C<BEAM>. Default is
+C<BEAM>. Overridden by the recipe parameter C<USEFCF_CALTYPE> if
+C<USEFCF> is given.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 2
+
+=item ORAC-DR primitives:
+
+SCUBA2: _CALIBRATE_DATA_
+
+=back
+
+=head1 OUTPUT DATA
+
+The calibrated data file is stored in the current Frame object.
+
+=head1 OUTPUT FILES
+
+Writes output files with the suffix C<_cal>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print "\nCalling _CALIBRATE_SCUBA2_DATA_: calibrate data using standard or derived FCF\n", "yellow";
+
+# Select data with a particular tag if given (and it exists)
+my $tag = get_prim_arg($_PRIM_ARGS_, "TAG", undef);
+if ($tag) {
+  $Frm->tagretrieve($tag) if $Frm->tagexists($tag);
+}
+
+# Retrieve existing results if present
+my %picard_results;
+if (defined $Frm->uhdr("PICARD_RESULTS")) {
+  %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
+}
+
+# Retrieve calibration type - may override later with recipe parameter
+my $caltype = get_prim_arg($_PRIM_ARGS_, "UNITS", "BEAM");
+
+# Should the data be calibrated using derived or standard FCFs?
+my $usefcf = (defined $Frm->uhdr("RECPAR_USEFCF"))
+  ? $Frm->uhdr("RECPAR_USEFCF") : 0;
+
+# Calibrate using derived FCF is requested
+if ( $usefcf ) {
+  $caltype = $Frm->uhdr("RECPAR_USEFCF_CALTYPE")
+    if (defined $Frm->uhdr("RECPAR_USEFCF_CALTYPE"));
+
+  my $fcftype = "fcf_".lc($caltype);
+  my $fcf = $picard_results{$fcftype};
+  if (!$fcf) {
+    orac_warn "Unknown calibration type, $caltype: falling back on BEAM\n";
+    $caltype = "BEAM";
+    $fcf = $picard_results{fcf_beam};
+  }
+  if (defined $fcf) {
+    orac_print "Calibrating data using derived $caltype FCF...\n";
+    _CALIBRATE_DATA_ UNITS=$caltype FCF=$fcf
+  } else {
+    orac_warn "No FCF derived, using standard $caltype FCF instead\n";
+    _CALIBRATE_DATA_ UNITS=$caltype
+  }
+} else {
+  # Otherwise use default calibration `per beam'
+  _CALIBRATE_DATA_ UNITS=$caltype
+}
