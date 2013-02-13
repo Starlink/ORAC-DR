@@ -265,7 +265,7 @@ sub new {
   my $obj = $self->SUPER::new( @_ );
 
 # This assumes we have a hash object
-  $obj->{Beam} = {},           # Current best-fit beam parameters
+  $obj->{Beam} = undef,        # Current best-fit beam parameters
   $obj->{ErrBeam} = undef,     # Current estimate of error beam
   $obj->{FWHM} = undef,        # Current mean main-beam FWHM
   $obj->{SkyRefImage} = undef; # Name of current reference image
