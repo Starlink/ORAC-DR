@@ -2,28 +2,39 @@
 
 =head1 NAME
 
-_CREATE_MAP_PSF_ - Create
+_CREATE_MAP_PSF_ - Create a PSF image from a template
 
 =head1 SYNOPSIS
 
- _CREATE_MAP_PSF_ PSF_IMAGE=$psf
+ _CREATE_MAP_PSF_
 
- _CREATE_MAP_PSF_ PSF_IMAGE=$psf PSF_BOX=120
+ _CREATE_MAP_PSF_ PSF=$psf
+
+ _CREATE_MAP_PSF_ PSF=$psf PSF_BOX=120
 
 =head1 DESCRIPTION
 
-This primitive creates a map-filtered PSF with no bad pixels for use
-with a noise-whitening filter and thence a matched filter. A
-pre-defined central region is used as the basis of the psf image
-(default is 90 pixels across), with the image padded with zeros beyond
-that. The region should be large enough to encompass the negative ring
-around the peak, with some room to spare.
+This primitive creates a PSF image with no bad pixels for use with a
+noise-whitening filter and thence a matched filter. A pre-defined
+central region is used as the basis of the psf image (default is 90
+pixels across), with the image padded with zeros beyond that. The
+region should be large enough to encompass the negative ring around
+the peak, with some room to spare.
+
+The input PSF template can be specified as an input parameter, or else
+it is retrieved from the object determined by the B<GROUP> argument if
+the C<psf> tag exists.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
+
+=item B<GROUP>
+
+Flag to indicate whether the results should be stored in the Frame or
+Group object. Defaul is 1 (Group).
 
 =item B<PSF_BOX>
 
@@ -64,11 +75,11 @@ coordinate frame.
 
 =head1 OUTPUT DATA
 
-None.
+The PSF is stored in the current object and tagged with C<psf>.
 
 =head1 OUTPUT FILES
 
-Creates a single output Group image with a suffix of C<_mos>.
+None.
 
 =head1 AUTHORS
 
@@ -76,7 +87,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012 University of British Columbia.  All Rights
+Copyright (C) 2012-2013 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -96,14 +107,27 @@ USA.
 
 =cut
 
+# Use group or Frame?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 1);
+my $Obj = ($group) ? $Grp : $Frm;
+
+$Obj->tagset("create_map_psf");
+
 # PSF map coadd
-my $psf_image = get_prim_arg($_PRIM_ARGS_, "PSF_IMAGE", undef);
+my $psf_image = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
+
+# If not specified, use the file tagged with psf if that tag exists
+if (!$psf_image && $Obj->tagexists("psf")) {
+  $Obj->tagretrieve("psf");
+  $psf_image = $Obj->file;
+}
 
 if ($psf_image) {
-
   # Region of PSF to use - default to 90 pixels
   my $psf_box = get_prim_arg($_PRIM_ARGS_, "PSF_BOX", 90);
 
+  # If the input PSF was specified as a recipe parameter then check
+  # it has enough pixels
   if (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) {
     my $npix_box = $psf_box*$psf_box;
     _FIND_IMAGE_STATISTICS_ IMAGE=$psf_image VERBOSE=0
@@ -113,11 +137,12 @@ if ($psf_image) {
     }
   }
 
+  # Temp files
   my $tempfile1 = ORAC::TempFile->new();
   my $tempfile2 = ORAC::TempFile->new();
   my $tempfile3 = ORAC::TempFile->new();
 
-  # First, copy out the desired section
+  # First, copy out the desired section from the original input image
   my $in = $psf_image ."(0~$psf_box,0~$psf_box,)";
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$tempfile1");
   # Then pad to original image size
@@ -137,11 +162,12 @@ if ($psf_image) {
   # reduced by the map-making process. However, if FAKEMAP_SCALE is
   # not defined, we have to assume the input PSF is already normalized
   # to the correct amplitude.
-  my $fakescale = (defined $Grp->uhdr("FAKEMAP_SCALE")) ? $Grp->uhdr("FAKEMAP_SCALE") : 1;
+  my $fakescale = (defined $Obj->uhdr("FAKEMAP_SCALE")) ?
+    $Obj->uhdr("FAKEMAP_SCALE") : 1;
   if (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
      $fakescale = $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
      # If the user has set a value of -1, the amplitude should be
-     # taken as the fakescale so the PSF amplitude ends up as unity below
+     # used as the fakescale so the PSF amplitude ends up as unity below
      if ($fakescale == -1) {
        _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 REGION=20 VERBOSE=0
        $fakescale = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
@@ -157,15 +183,21 @@ if ($psf_image) {
   my $peak = sprintf "%.3g", $results->{MAX};
   if ($peak == 1) {
     orac_print "$peak - FCF does not need to be scaled\n", "green";
-  } else {
+  } elsif ($peak != 0) {
     my $pkpc = int(100/$results->{MAX});
-    orac_print "$peak - peak FCF should be scaled by $pkpc %\n", "green";
+    orac_print "$peak - BEAM FCF should be scaled by $pkpc %\n", "green";
+  } else {
+    orac_warn "Unable to determine FCF scaling factor - peak is 0!\n";
   }
   # Store the amplitude of the PSF
-  $Grp->uhdr("FCF_CORR_AMP", $results->{MAX});
+  $Obj->uhdr("FCF_CORR_AMP", $results->{MAX});
 
-  # Finally store the map-filtered PSF image in the Group uhdr
-  $Grp->uhdr("PSF_IMAGE", $psf_image);
+  # Finally store and tag the map-filtered PSF image in the current object
+  $Obj->files($psf_image);
+  $Obj->tagset("psf");
+
+  # Restore object to input state
+  $Obj->tagretrieve("create_map_psf");
 
 } else {
   orac_err "No input PSF image to use as a template\n";
