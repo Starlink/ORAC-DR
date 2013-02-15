@@ -47,6 +47,9 @@ estimator is given.
 
 =item B<GROUP>
 
+Flag to indicate whether to use the current Group or Frame
+object. Default is 0 (use Frame).
+
 =item B<IMAGE>
 
 Image from which the box area is to be calculated. No default.
@@ -85,6 +88,10 @@ On exit the Group uhdr contains the new key C<WHITEN_BOX> with the
 size of the whitening box to ensure the same value is used in
 subsequent calls to this primitive.
 
+The current object will contain the whitened image, and will be tagged
+with either C<whiten> or C<whitepsf>, depending on the type of file
+stored.
+
 =head1 OUTPUT FILES
 
 The C<whitened> version of the input image with suffix C<_whiten> or
@@ -96,7 +103,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012 the University of British Columbia. All Rights
+Copyright (C) 2012-2013 the University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -127,17 +134,19 @@ my $wait = ($group && !$Grp->lastmember($Frm)) ? 1 : 0;
 unless ($wait) {
   my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
 
+  # Store input state
+  $Obj->tagset("whiten_image");
+
   my $whiten = "image";
   if (defined $image) {
-    if (uc($image) eq "PSF_IMAGE") {
-      $image = $Obj->uhdr("PSF_IMAGE");
-      $whiten = "psf";
+    my $psftag = "psf";
+    if (lc($image) eq $psftag && $Obj->tagretrieve($psftag)) {
+      $image = $Obj->file;
+      $whiten = $psftag;
     }
   } else {
     $image = $Obj->file;
-    if ($group) {
-      undef $image unless ($Grp->file_exists);
-    }
+    undef $image if ($group && !$Grp->file_exists);
   }
 
   # Error message if no input file
@@ -160,10 +169,13 @@ unless ($wait) {
     # doesn't exceed image size. A value of 0 will determine the box
     # size automatically based on the noise.
     my $box = get_prim_arg($_PRIM_ARGS_, "BOX", 0);
-    # Override with recipe parameter
-    $box = $Frm->uhdr("RECPAR_WHITEN_BOX") if (defined $Frm->uhdr("RECPAR_WHITEN_BOX"));
-    # But if a value already exists, use that
-    $box = $Grp->uhdr("WHITEN_BOX") if (defined $Grp->uhdr("WHITEN_BOX"));
+    if (defined $Grp->uhdr("WHITEN_BOX")) {
+      # Use an existing value if present
+      $box = $Grp->uhdr("WHITEN_BOX");
+    } elsif (defined $Frm->uhdr("RECPAR_WHITEN_BOX")) {
+      # Override with recipe parameter
+      $box = $Frm->uhdr("RECPAR_WHITEN_BOX");
+    }
     # If none defined then apply a threshold to the noise to calculate
     # the region to use
     if ($box == 0) {
@@ -185,11 +197,9 @@ unless ($wait) {
     my $ref = $refimage . "(0~$box,0~$box)";
     $Mon{smurf_mon}->obeyw("sc2filtermap","in=$image out=$out whiten whiterefmap=$ref");
 
-    if ($whiten eq "psf") {
-      $Obj->uhdr("PSF_IMAGE", $out);
-    } else {
-      $Obj->file($out);
-    }
+    $Obj->files($out);
+    $Obj->tagset(($whiten eq "image") ? "whiten" : "whitepsf");
+
     # Store the box size in the FITS header of the output file
     my $fitshdr = new Astro::FITS::Header::NDF( File => $out );
     my $newitem = new Astro::FITS::Header::Item( Keyword => "WHITEBOX",
@@ -198,6 +208,8 @@ unless ($wait) {
     $fitshdr->insert(-1, $newitem);
     $fitshdr->writehdr( File => $out );
     orac_print " done\n";
-  }
 
+    # Restore object to input state if this is a PSF image
+    $Obj->tagretrieve("whiten_image") if ($whiten ne "image");
+  }
 }
