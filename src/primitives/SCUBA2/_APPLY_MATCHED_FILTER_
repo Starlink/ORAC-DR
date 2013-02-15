@@ -29,8 +29,10 @@ pixel. The variances stored with the resulting image are given by:
 The input file must contain a variance, though no check is made for
 its existence.
 
-If the user does not specify a PSF image then a image containing a
-unit-height Gaussian PSF with a FWHM equal to the Airy disk radius is
+The PSF may be supplied by the user, either through a named parameter,
+a recipe parameter or via the C<psf> or C<whitepsf> tags. If the user
+does not specify a PSF image then a image containing a unit-height
+Gaussian PSF with a FWHM equal to the Airy disk radius is
 created. This file has suffix C<_psf>.
 
 =head1 ARGUMENTS
@@ -202,9 +204,6 @@ if (!$out) {
 
 # Obtain optional PSF image
 my $psf = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
-if (defined $psf && uc($psf) eq "PSF_IMAGE") {
-  $psf = $Obj->uhdr("PSF_IMAGE");
-}
 
 # The input image and PSF may be smoothed by a gaussian with given
 # FWHM and subtracted from each. The default size is 30" at 850 um,
@@ -246,9 +245,18 @@ my $pixscale = sprintf "%.1f", $_GET_PIXEL_SCALE_{PIXSCALE};
 # If no psf has been specified, check recipe parameter for name of
 # suitable image in current working dir otherwise generate a PSF image
 if (!$psf) {
-  # Has the user specified a recipe parameter with the name of the PSF
-  # image?
-  if (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) {
+  $Obj->tagset("input");
+  if ($Obj->tagexists("whitepsf")) {
+    # Retrieve a whitened PSF if it exists
+    $Obj->tagretrieve("whitepsf");
+    $psf = $Obj->file;
+  } elsif ($Obj->tagexists("psf")) {
+    # Otherwise retrieve whatever PSF has been stored
+    $Obj->tagretrieve("psf");
+    $psf = $Obj->file;
+  } elsif (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) {
+    # Has the user specified a recipe parameter with the name of the PSF
+    # image?
     my $psfname = $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
     use File::Spec;
     my $cwd = $ENV{ORAC_DATA_OUT};
@@ -266,6 +274,7 @@ if (!$psf) {
       orac_warn "Given PSF file, $psffile, does not exist: creating one\n";
     }
   }
+  $Obj->tagretrieve("input");
 
   # If no PSF file exists by this point, create one ourselves
   if (!$psf) {
