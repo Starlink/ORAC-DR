@@ -121,49 +121,67 @@ if ($Grp->lastmember($Frm)) {
     my @files = map { $_->file($i) } grep { $_->isgood > 0 } $Grp->members;
     $nfiles = @files;
 
-    # Create a local Grp & Frm to do the mosaicking
-    my $Grp = $Grp->new();
-    my $Frm = $Frm->new();
-    $Frm->files(@files);
-    $Frm->readhdr;
-    $Frm->uhdr(%{$fuhdr});
-    $Grp->allmembers(($Frm));
-    $Grp->file("temp".$i);
-    _MAKE_MOSAIC_GROUP_BATCH_ VERBOSE=0 METHOD=nearest
-    if ($Grp->file_exists) {
-      # Make a copy of the group file using the pre-determined name
-      my $in = $Grp->file;
-      my $out = $out[$i-1];
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
-      # Delete the group file as it's no longer needed
-      $Grp->erase;
+    if (@files > 1) {
+      # Create a local Grp & Frm to do the mosaicking
+      my $Grp = $Grp->new();
+      my $Frm = $Frm->new();
+      $Frm->files(@files);
+      $Frm->readhdr;
+      $Frm->uhdr(%{$fuhdr});
+      $Grp->allmembers(($Frm));
+      $Grp->file("temp".$i);
+      _MAKE_MOSAIC_GROUP_BATCH_ VERBOSE=0 METHOD=nearest
+      if ($Grp->file_exists) {
+	# Make a copy of the group file using the pre-determined name
+	my $in = $Grp->file;
+	my $out = $out[$i-1];
+
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+	# Delete the group file as it's no longer needed
+	$Grp->erase;
+      }
+      _DELETE_TEMP_FILES_GROUP_ KEEP=none ALSOGRP=0 VERBOSE=0
+    } else {
+      orac_warn "Unable to create group coadd - insufficient good frames\n";
+      last;
     }
-    _DELETE_TEMP_FILES_GROUP_ KEEP=none ALSOGRP=0 VERBOSE=0
   }
 
-  my $files = ($nfiles == 1) ? "files" : "file";
-  orac_print "Group coadd $out[0] created from $nfiles $files\n";
   # Store the output coadd in the Group
   $Grp->files($out[0]);
-  $Grp->readhdr;
-  $Grp->tagset("coadd");
-  $Grp->product("newimage");
-  $Grp->tagset("newimage");
-  # Set a uhdr entry for calibrating the data
-  $Grp->uhdr("ORAC_FILTER", $Frm->uhdr("ORAC_FILTER"));
-  $Grp->uhdr("NOCALIB",0);
+  if ($Grp->file_exists) {
+    # Read the header if the file exists
+    $Grp->readhdr;
+    $Grp->tagset("coadd");
+    # Now if the user has given a PSF image, we need to make sure it has
+    # the same dimensions as the map
+    if ($end == 1) {
+      my $inpsf = $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
+      my $args = "in=$inpsf out=".($out[1])." like=".($out[0]);
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+    }
+    # Store it in the Group for later retrieval
+    $Grp->files($out[1]);
+    $Grp->tagset("psf");
 
-  # Now if the user has given a PSF image, we need to make sure it has
-  # the same dimensions as the map
-  if ($end == 1) {
-    my $inpsf = $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
-    my $args = "in=$inpsf out=".($out[1])." like=".($out[0]);
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+    # Now return to the coadd
+    $Grp->tagretrieve("coadd");
+    my $files = ($nfiles == 1) ? "file" : "files";
+    orac_print "Group coadd $out[0] created from $nfiles $files\n";
+    $Grp->product("newimage");
+    $Grp->tagset("newimage");
+    # Set a uhdr entry for calibrating the data
+    $Grp->uhdr("ORAC_FILTER", $Frm->uhdr("ORAC_FILTER"));
+    $Grp->uhdr("NOCALIB",0);
+
+    # Trim the (coadded) PSF image and pad with zeros to remove
+    # low-signal-to-noise pixels - the result will be stored in the Grp
+    # uhdr as PSF_IMAGE and picked up by later primitives
+    _CREATE_MAP_PSF_ PSF_BOX=90
+  } else {
+    orac_err "Unable to create Group coadd or map PSF\n";
+    $Grp->uhdr("NOCALIB",1);
   }
-  # Trim the (coadded) PSF image and pad with zeros to remove
-  # low-signal-to-noise pixels - the result will be stored in the Grp
-  # uhdr as PSF_IMAGE and picked up by later primitives
-  _CREATE_MAP_PSF_ PSF_IMAGE=$out[1] PSF_BOX=90
 } else {
   # The Group file does not yet exist and so calibration should not be
   # attempted - set the NOCALIB flag to true
