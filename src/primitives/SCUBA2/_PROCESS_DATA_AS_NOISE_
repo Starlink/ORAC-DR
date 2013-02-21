@@ -93,29 +93,69 @@ USA.
 
 =cut
 
-# Should we be verbose (default to yes)?
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
-
-# Low frequency measurement point
-my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.5 );
-
-# High frequency measurement range for estimating white part of
-# spectrum - this will be overriden in _CALCULATE_NOISE_ by the
-# NOISE_FREQRANGE recipe parameter if present
-my $freqrange = get_prim_arg( $_PRIM_ARGS_, "FREQRANGE", "2,10" );
-
 # Process any science (open shutter) data as a noise observation -
 # except for Mars and Jupiter
 unless ($Frm->tagexists("dark")) {
   if ( $Frm->hdr("OBJECT") =~ /^mars/i || $Frm->hdr("OBJECT") =~ /^jupiter/i) {
     orac_print "Skipping noise calculation for ".($Frm->hdr("OBJECT"))." - source is too bright for reliable results \n";
   } else {
+    # Should we be verbose (default to yes)?
+    my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+    # Low frequency measurement point - this and freqrange will be
+    # overridden in _CALCULATE_NOISE_ by the NOISE_FREQLO and
+    # NOISE_FREQRANGE recipe parameters if present
+    my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.5 );
+
+    # High frequency measurement range for estimating white part of
+    # spectrum
+    my $freqrange = get_prim_arg( $_PRIM_ARGS_, "FREQRANGE", "2,10" );
+
+    my $noisecalc = (defined $Frm->uhdr("RECPAR_NOISE_CALC"))
+      ? $Frm->uhdr("RECPAR_NOISE_CALC") : "quick";
+
+    # If the Frame contains multiple subscans, pick out the first
+    # on-sky that is not the fast-flat if doing a "quick" noise
+    # calculation, or select all of the on-sky files if doing a "full"
+    # noise calculation
+    if ($Frm->nfiles > $Frm->numsubarrays) {
+      my (@onsky_files, @fastflats, $ffsubscan, $skysubscan);
+      if ($noisecalc ne "full") {
+	foreach my $i (0 .. $Frm->nfiles-1) {
+	  # Pick out the fastflats
+	  if ($Frm->hdrval("SEQ_TYPE", $i) =~ /fastflat/i) {
+	    push(@fastflats, $Frm->file($i+1));
+	    $ffsubscan = $Frm->hdrval("NSUBSCAN",$i) unless ($ffsubscan);
+	    next;
+	  }
+	  # Pick out the first on-sky data file
+	  if ($Frm->hdrval("SEQ_TYPE", $i) =~ /science/i &&
+	      $Frm->hdrval("SHUTTER", $i) == 1) {
+	    if ($skysubscan) {
+	      push(@onsky_files, $Frm->file($i+1))
+		if ($Frm->hdrval("NSUBSCAN", $i) == $skysubscan);
+	    } else {
+	      push(@onsky_files, $Frm->file($i+1));
+	    }
+	    $skysubscan = $Frm->hdrval("NSUBSCAN",$i) unless ($skysubscan);
+	  }
+	}
+	push(@onsky_files, @fastflats) if (@fastflats);
+      } else {
+	# Filter out darks for the full calculation
+	@onsky_files = map {$Frm->file($_)} grep {$Frm->hdrval("SHUTTER",$_-1) == 1} 1..$Frm->nfiles;
+      }
+      $Frm->files(@onsky_files);
+      $Frm->readhdr;
+    }
+
     # Calculate the noise from this initial dark
     _CALCULATE_NOISE_ FREQRANGE=$freqrange FREQLO=$freqlo
 
     # Analyse the NEP & noise results, print to screen and do QA checks
-    _ANALYZE_NOISE_ QA=1 NEP=1
-    _ANALYZE_NOISE_ QA=0 NEP=0 VERBOSE=0
+    _ANALYZE_NOISE_ QA=0 NEP=1 VERBOSE=$verbose
+    $verbose = 0 if ($Frm->uhdr("QUICKLOOK"));
+    _ANALYZE_NOISE_ QA=1 NEP=0 VERBOSE=$verbose
 
     # Create a focal-plane mosaic of the noise images and display it
     _DISPLAY_NOISE_
