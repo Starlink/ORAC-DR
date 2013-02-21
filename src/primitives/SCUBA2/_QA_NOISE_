@@ -13,7 +13,7 @@ _QA_NOISE_
 This primitive performs basic quality assurance checks on the outcome
 of the noise calculations, issuing pass/fail notices depending on
 whether the number of bolometers exceeds a minimum value, the noise
-and effective NEP are below thresholds specified in C<qa.ini>.
+and weighted NEP are below thresholds specified in C<qa.ini>.
 
 =head1 ARGUMENTS
 
@@ -54,7 +54,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011-12 University of British Columbia. All Rights
+Copyright (C) 2011-2013 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -95,10 +95,10 @@ if ($Frm->uhdr("QA_REPORT_INFO")) {
   # Determine if this is Sky or Dark noise/NEP
   $opts{noisetype} = (defined $Frm->hdr("SHUTTER") && $Frm->hdr("SHUTTER") == 0) ? "DARK" : "SKY";
 
-  # Check number of bolometers, median noise and effective NEP
+  # Check number of bolometers, median noise and weighted NEP
   if ($verbose) {
-    orac_print " Sub    Nbol     Noise     NEP_eff   NEP_wt\n";
-    orac_print "---------------------------------------------\n";
+    orac_print " Sub    Nbol     Noise     NEP_wt\n";
+    orac_print "-----------------------------------\n";
   }
   # Temporary until we get per-subarray thresholds
   $opts{molecule} = $Frm->hdr("FILTER");
@@ -149,20 +149,19 @@ if ($Frm->uhdr("QA_REPORT_INFO")) {
 
     $qa_report_info{$subarray}->{QA_NBOLO}  = $report_pass_fail->("NBOLO", "gt");
     $qa_report_info{$subarray}->{QA_NOISE}  = $report_pass_fail->("NOISE", "lt");
-    $qa_report_info{$subarray}->{QA_EFFNEP} = $report_pass_fail->("EFFNEP", "lt");
     $qa_report_info{$subarray}->{QA_WTNEP}  = $report_pass_fail->("WTNEP", "lt");
     orac_print "\n" if ($verbose);
   }
   orac_print "\n" if ($verbose);
   # Store the modified hash reference
   $Frm->uhdr("QA_REPORT_INFO", \%qa_report_info);
-  # Also store Noise spec for display
-  my $noisekey = $opts{noisetype}."_NOISE";
-  my $noise_spec = $qa->get_data( key => $noisekey, %opts );
+  # Also store Noise and weighted NP spec for display
+  my $noise_spec = $qa->get_data( key => $opts{noisetype}."_NOISE", %opts );
   $Frm->uhdr("NOISE_SPEC", $noise_spec);
-  my $nep_spec = $qa->get_data( key => "EFFNEP", %opts );
-  # Multiply the effective NEP by the sqrt of the max number of
-  # bolometers, 1280, to get an ideal NEP spec
-  use constant SQRTNBOL => 35.7770876;
-  $Frm->uhdr("NEP_SPEC", SQRTNBOL * $nep_spec);
+  # Need to fudge the molecule for the QA to get the right spec from
+  # the worst-performing subarray
+  $opts{molecule} = ($opts{molecule} =~ /850/) ? "s8d" : "s4c";
+  my $nep_spec = $qa->get_data( key => $opts{noisetype}."_WTNEP", %opts );
+  # Multiply the weighted NEP by 2 since it represents a median value
+  $Frm->uhdr("NEP_SPEC", 2 * $nep_spec);
 }
