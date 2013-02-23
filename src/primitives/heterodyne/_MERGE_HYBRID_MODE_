@@ -71,39 +71,39 @@ Rights Reserved.
 
 =cut
 
-if( $Frm->uhdr( "ISHYBRID" ) ) {
+if ( $Frm->uhdr( "ISHYBRID" ) ) {
 
   orac_print "Hybrid mode observations. Merging spectra.\n";
 
-  my %newFrms;
   my @newfrmout;
+  my @outfiles;
+  my $params;
 
-  # Split up the files into pairs, paired by NSUBSCAN header.
-  foreach my $file ( $Frm->files ) {
-    my $tmpFrm = new $Frm;
-    $tmpFrm->files( $file );
-    push @{$newFrms{$tmpFrm->hdr( "NSUBSCAN" )}}, $file;
-  }
+  # Previous subband is the initially the first.
+  my $last_dc_corrected = $Frm->file( 1 );
 
-  foreach my $nsubscan ( sort keys %newFrms ) {
+  # Retrieve bounds for the first file.
+  _GET_DIMENSIONS_ FILE=$last_dc_corrected
+  my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
+  my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
 
-    my $files = $newFrms{$nsubscan};
+  # Retrieve the units so we can set them back to whatever they are
+  # now.  MATHS trounces units.
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$last_dc_corrected" );
+  my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
 
-    my @outfiles;
+  foreach my $nsubband ( 2 .. $Frm->nfiles ) {
 
-    orac_say " Calculating overlap for subscan $nsubscan.";
+    my $next_subband = $Frm->file( $nsubband );
+    orac_say " Calculating overlap for subband $nsubband.";
 
     # Get the overlap range.
-    _CALCULATE_HYBRID_OVERLAP_ FILE1=$files->[0] FILE2=$files->[1]
+    _CALCULATE_HYBRID_OVERLAP_ FILE1=$last_dc_corrected FILE2=$next_subband
     my $low = $_CALCULATE_HYBRID_OVERLAP_{LBOUND};
     my $high = $_CALCULATE_HYBRID_OVERLAP_{UBOUND};
 
-    # Retrieve bounds for each file.
-    _GET_DIMENSIONS_ FILE=$files->[0]
-    my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
-    my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
-
-    _GET_DIMENSIONS_ FILE=$files->[1]
+    # Retrieve bounds for the next subband file.
+    _GET_DIMENSIONS_ FILE=$next_subband
     my $lbounds2 = $_GET_DIMENSIONS_{LBOUND};
     my $ubounds2 = $_GET_DIMENSIONS_{UBOUND};
 
@@ -111,24 +111,19 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
 
     my $range = "";
     if ( $low > $high ) {
-      orac_warn "No overlap between the input cubes.  Only using median over whole spectrum to determine DC offset";
+      orac_warn "No overlap between the input cubes.";
     }
-
-    # Retrieve the units so we can set them back to whatever they are
-    # now.  MATHS trounces units.
-    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=" . $files->[0] );
-    my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
 
     # Use COLLAPSE to find the median for each spectrum.
     my $temp1file = new ORAC::TempFile( 0 );
     my $temp2file = new ORAC::TempFile( 0 );
 
-    my $params = "in=" . $files->[0] . "($range,,) out=$temp1file";
+    $params = "in=$last_dc_corrected($range,,) out=$temp1file";
     $params .= " estimator=median axis=spec variance wlim=0.0";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-    $params = "in=" . $files->[1] . "($range,,) out=$temp2file";
-    $params .= " estimator=median axis=spec variance=true wlim=0.0";
+    $params = "in=$next_subband($range,,) out=$temp2file";
+    $params .= " estimator=median axis=spec variance wlim=0.0";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
     # DC level adjustment is half the difference.
@@ -142,14 +137,28 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     $params .= "lbound=" . $lbounds1->[0] . " ubound=" . $ubounds1->[0];
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-    ( undef, my $out ) = $Frm->inout( "_dc", $nsubscan );
-    $params = "in1=" . $files->[0] . " in2=$temp4file out=$out";
+    # Must avoid having the same input and output NDF names.  After the
+    # first pair the lower of the two for comparison will have the same
+    # suffix.
+    my $in = $last_dc_corrected;
+    if ( $nsubband > 2 ) {
+       my $temp5file = new ORAC::TempFile( 0 );
+       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$last_dc_corrected out=$temp5file" );
+       $in = $temp5file;
+    }
+
+    ( undef, my $out ) = $Frm->inout( "_dc", $nsubband - 1 );
+    $params = "in1=$in in2=$temp4file out=$out";
     $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+    # Assume that the units are the same for all files.  If not, then
+    # the offsetting process makes not sense anyway.
     $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
-    orac_print $files->[0] . " to $out:\n";
+
+    orac_print $last_dc_corrected . " to $out:\n";
     orac_print " Removed DC-level offset.\n";
 
-    push @outfiles, $out;
+    if ( $nsubband == 2 ) { push @outfiles, $out }
 
     # Grow the DC adjustment into another cube and subtract it from
     # the second file.
@@ -158,28 +167,40 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     $params .= "lbound=" . $lbounds2->[0] . " ubound=" . $ubounds2->[0];
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-    $out = $files->[1];
+    $out = $next_subband;
     $out =~ s/_[a-z]+/_dc/;
-    $params = "in1=" . $files->[1] . " in2=$temp5file out=$out";
+    $params = "in1=$next_subband in2=$temp5file out=$out";
     $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+    # Assume that the units are the same for all files.  If not, then
+    # the offsetting process makes not sense anyway.
     $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
-    orac_print $files->[1] . " to $out:\n";
+
+    orac_print "$next_subband to $out:\n";
     orac_print " Removed DC-level offset.\n";
 
+    # Record the DC-corrected spectra for mosaicking.
     push @outfiles, $out;
 
-    # We have two DC-corrected files, now WCSMOSAIC them.
-    ( undef, $out ) = $Frm->inout( "_merge", $nsubscan );
-    $params = "in='" . ( join ',',@outfiles ) . "' out=$out method=nearest";
-    $params .= " lbnd=! ubnd=! ref=! variance genvar=false wlim=0";
-    $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+    # Want to offset against the already corrected nth subband.
+    $last_dc_corrected = $out;
 
-    orac_print join ',', @outfiles;
-    orac_print " to $out:\n";
-    orac_print " Merged hybrid-mode files.\n";
-
-    push @newfrmout, $out;
+    # The upper subband now becomes the lower.
+    $lbounds1 = $lbounds2;
+    $ubounds1 = $ubounds2;
   }
+
+  # We have $nsubband DC-corrected files, now WCSMOSAIC them.
+  ( undef, my $out ) = $Frm->inout( "_merge", 1 );
+  $params = "in='" . ( join ',',@outfiles ) . "' out=$out method=nearest";
+  $params .= " lbnd=! ubnd=! ref=! variance genvar=false wlim=0";
+  $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+
+  orac_print join ',', @outfiles;
+  orac_print " to $out:\n";
+  orac_print " Merged hybrid-mode files.\n";
+
+  push @newfrmout, $out;
 
   $Frm->product( "merge" );
   $Frm->files( @newfrmout );
