@@ -1,0 +1,158 @@
+=head1 NAME
+
+_INDEX_BAD_RECEPTORS_
+
+=head1 DESCRIPTION
+
+This primitive identifies receptors whose data are entirely bad
+but not flagged as bad, and records them in the bad_receceptor index.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS timeseries data.
+
+=item *
+
+This primitive is suitable for spectral-line observations.
+
+=back
+
+=back
+
+=head1 TASKS
+
+KAPPA: STATS.
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science & Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+use JCMT::ACSIS::Array;
+
+# Inquire whether or not to look for bad receptor data.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_INDEX_BAD_RECEPTORS" ) ) ?
+            $Frm->uhdr( "RECPAR_INDEX_BAD_RECEPTORS" )              :
+            1 );
+if ( ! $apply ) { goto RETURN }
+
+
+# Form arrays of bad detectors.
+# =============================
+
+# Retrieve the list of bad detectors from the calibration system ONLY
+# ignoring the ones set locally.  The reading of INDEXORMASTER is
+# done to setup the survey (survey_br).
+$Cal->bad_receptors( "MASTER" );
+my @baddets = $Cal->bad_receptors_list;
+orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+# Still need to invoke the bad_receptors_list method although the
+# resulting array is not used.
+$Cal->bad_receptors( "INDEXORMASTER" );
+my @tmpdets = $Cal->bad_receptors_list;
+orac_say( "  Receptors indexed by the calibration system: " . join( ",", sort @tmpdets ) );
+
+# Store the name of the first file in the list for the index file.
+my $first_file_in = $Frm->file( 1 );
+my @bad_receptors;
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Set/get filenames.
+   my $in = $Frm->file( $i );
+   orac_say( "Check that receptors have non-bad data." );
+
+   my $array = new JCMT::ACSIS::Array( File => $in );
+
+# Form set of receptors that are not bad in the master list.
+   my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+   @receptors = sort @receptors;
+
+   foreach my $receptor ( @receptors ) {
+      orac_say( "  Receptor $receptor." );
+      my $pixel = $array->pixel( $receptor );
+
+      my $ORAC_STATUS;
+
+# Check that the receptor is not completely bad.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in(,$pixel,)" );
+      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+      if ( $numbad >= 0.999 * $numpix ) {
+         orac_say("    Most or all of the data for this receptor are already bad." );
+         push @bad_receptors, $receptor;
+      }
+   }
+}
+
+# Make sure each bad detector is mentioned only once.
+my %seen = ();
+my @bad_receptors_uniq = ();
+
+foreach my $item ( @bad_receptors ) {
+   push( @bad_receptors_uniq, $item ) unless $seen{$item}++;
+}
+
+my $lofreq = $Frm->hdr( "LOFREQS" );
+my $survey_br = defined( $Frm->uhdr( "SURVEY_BR" ) ) ? $Frm->uhdr( "SURVEY_BR" ) : 'Telescope';
+
+# Sort out bad receptors.  They'll be added to the calibration system
+# for either the specific survey or for everything, and only for the
+# current LOFREQ +/- 1 GHz.
+if ( scalar( @bad_receptors ) > 0 ) {
+   my %recep_hash = ( %{$Frm->hdr },
+                      LOFREQ_MAX => $lofreq + 1,
+                      LOFREQ_MIN => $lofreq - 1,
+                      DETECTORS => ( join ',',@bad_receptors_uniq ),
+                      SURVEY_BR => $survey_br,
+                    );
+
+   orac_say( " Masking receptor(s) " .
+             join( ",", sort @bad_receptors_uniq ) . " for survey $survey_br." );
+
+   $Cal->bad_receptors_qa_index->add( $first_file_in, \%recep_hash );
+
+}
+
+# Tidy-up output.
+orac_print "\n";
+
+RETURN:
