@@ -1,0 +1,173 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_PROCESS_DATA_AS_NOISE_FRAME_ - calculate sky noise properties from some or all science data in current Frame
+
+=head1 SYNOPSIS
+
+_PROCESS_DATA_AS_NOISE_FRAME_
+
+=head1 DESCRIPTION
+
+This primitive groups the files in the current frame according to the
+desired noise calculation before passing them to another
+primitive. The files may be processd as follows:
+
+=over 2
+
+=item QUICK
+
+Compute the noise properties using only the first set of files with
+on-sky data. For most observations will correspond to 30 seconds of
+data. This is the default behaviour.
+
+=item EACH
+
+Calculate the noise for every single file separately in turn.
+
+=item FULL
+
+Calculate the noise properties of the entire time stream as a single
+data set.
+
+=back
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=over 2
+
+=item B<NOISE_CALC>
+
+Amount of data to use in noise calculation. May be C<quick>, C<each>
+or C<full>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES:
+
+_PROCESS_DATA_AS_NOISE_
+
+=back
+
+=head1 NOTES
+
+Results are reported for each subarray separately. See the
+documentation for L<_CALCULATE_NOISE|_CALCULATE_NOISE_>.
+
+=head1 OUTPUT DATA
+
+The current Frame object is updated with the output noise files each
+time through the loop, and on exit will contain the results of the
+most recent noise calculation.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $noisecalc = get_prim_arg($_PRIM_ARGS_, "NOISE_CALC", "quick");
+$noisecalc = $Frm->uhdr("RECPAR_NOISE_CALC")
+  if (defined $Frm->uhdr("RECPAR_NOISE_CALC"));
+
+# If the Frame contains multiple subscans, pick out the first
+# on-sky that is not the fast-flat if doing a "quick" noise
+# calculation, or select all of the on-sky files if doing a "full"
+# noise calculation
+
+# Obtain lists of related files using the following keys
+my @related_keys = ("SUBARRAY", "SHUTTER", "SEQ_TYPE");
+push (@related_keys, "NSUBSCAN") unless ($noisecalc eq "full");
+my %related_subarray = $Frm->files_from_hdr( @related_keys );
+
+my %fastflats = map { $_ => $related_subarray{$_} } grep { $_ =~ /fastflat/i}
+  keys %related_subarray;
+my %ffsub;
+foreach my $ffkey (keys %fastflats) {
+  my $subarray = substr($ffkey, 0, 3);
+  $ffsub{$subarray} = $fastflats{$ffkey};
+}
+
+my %related;
+if ($noisecalc eq "full") {
+  # In this case we just retrieve every file recorded with the shutter
+  # open
+  my @files;
+  foreach my $key (keys %related_subarray) {
+    push(@files, @{$related_subarray{$key}}) if ($key =~ /1.0/);
+  }
+  $related{full} = \@files;
+} else {
+  # Retrieve the list of subscan numbers and subarrays
+  my @subscans = $Frm->hdrvals("NSUBSCAN");
+  my @subarrays = $Frm->hdrvals("SUBARRAY");
+
+  # Loop over each subscan and subarray to pick out the science files
+  # associated with each subscan
+  foreach my $nsubscan (@subscans) {
+    my @scanfiles;
+    foreach my $subarray (@subarrays) {
+      my $testkey = $subarray . "1.0science". $nsubscan;
+      # Store the data files and corresponding fastflat if science
+      # data exists for the current subarray/subscan
+      if ($related_subarray{$testkey}) {
+	push(@scanfiles, @{$related_subarray{$testkey}});
+	push(@scanfiles, @{$ffsub{$subarray}});
+      }
+    }
+
+    # Store the list of files indexed by subscan
+    if (@scanfiles) {
+      $related{(sprintf "%03s", $nsubscan)} = \@scanfiles;
+      last if ($noisecalc eq "quick");
+    }
+  }
+}
+
+orac_print "\n";
+# Now calculate noise properties for each group of files
+foreach my $key (sort keys %related) {
+
+  my $data = ($noisecalc eq "each") ? "subscan ".(sprintf "%g", $key) :
+    ($noisecalc eq "quick") ? "first 30-sec of data" : "full time stream";
+  orac_print "Calculating noise properties of $data\n";
+
+  # Store the files in the current Frame
+  $Frm->files(@{$related{$key}});
+  $Frm->readhdr;
+  _PROCESS_DATA_AS_NOISE_
+}
+
