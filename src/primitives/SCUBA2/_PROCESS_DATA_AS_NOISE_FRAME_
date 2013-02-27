@@ -20,11 +20,12 @@ primitive. The files may be processd as follows:
 
 Compute the noise properties using only the first set of files with
 on-sky data. For most observations will correspond to 30 seconds of
-data. This is the default behaviour.
+data.
 
 =item EACH
 
-Calculate the noise for every single file separately in turn.
+Calculate the noise for every single file separately in turn. This is
+the default behaviour.
 
 =item FULL
 
@@ -35,14 +36,19 @@ data set.
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 2
+
+=item B<LOGFILE>
+
+Flag to indicate whether or not a log file should be written. Default
+is 1 (yes).
 
 =item B<NOISE_CALC>
 
 Amount of data to use in noise calculation. May be C<quick>, C<each>
-or C<full>.
+or C<full>. Default is C<each>.
 
 =back
 
@@ -54,7 +60,7 @@ The following external task is used:
 
 =item ORAC-DR PRIMITIVES:
 
-_PROCESS_DATA_AS_NOISE_
+_ADD_LOG_ENTRY_, _PROCESS_DATA_AS_NOISE_
 
 =back
 
@@ -63,11 +69,15 @@ _PROCESS_DATA_AS_NOISE_
 Results are reported for each subarray separately. See the
 documentation for L<_CALCULATE_NOISE|_CALCULATE_NOISE_>.
 
+A log file is written called C<log.scinoiseXXX> where C<XXX> is the
+filter for the current data (850 or 450). This ensures that 850 and
+450 um data are lgged separately.
+
 =head1 OUTPUT DATA
 
 The current Frame object is updated with the output noise files each
-time through the loop, and on exit will contain the results of the
-most recent noise calculation.
+time through the loop, and on exit will contain the results of all the
+noise calculations.
 
 =head1 OUTPUT FILES
 
@@ -99,9 +109,11 @@ USA.
 
 =cut
 
-my $noisecalc = get_prim_arg($_PRIM_ARGS_, "NOISE_CALC", "quick");
+my $noisecalc = get_prim_arg($_PRIM_ARGS_, "NOISE_CALC", "each");
 $noisecalc = $Frm->uhdr("RECPAR_NOISE_CALC")
   if (defined $Frm->uhdr("RECPAR_NOISE_CALC"));
+
+my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 
 # If the Frame contains multiple subscans, pick out the first
 # on-sky that is not the fast-flat if doing a "quick" noise
@@ -159,9 +171,15 @@ if ($noisecalc eq "full") {
 
 orac_print "\n";
 # Now calculate noise properties for each group of files
+my @subarrays = $Frm->subarrays;
+my @logparams = qw/ UT Obs Nsubscan /;
+foreach my $subarray (@subarrays) {
+  push(@logparams, map { $subarray ."_".$_ } qw/Nbol Noise NEPwt/);
+}
+my $datanoiselog = "scinoise" . $Frm->hdr("FILTER");
 foreach my $key (sort keys %related) {
 
-  my $data = ($noisecalc eq "each") ? "subscan ".(sprintf "%g", $key) :
+  my $data = ($noisecalc eq "each") ? "subscan ".(sprintf "%d", $key) :
     ($noisecalc eq "quick") ? "first 30-sec of data" : "full time stream";
   orac_print "Calculating noise properties of $data\n";
 
@@ -169,5 +187,29 @@ foreach my $key (sort keys %related) {
   $Frm->files(@{$related{$key}});
   $Frm->readhdr;
   _PROCESS_DATA_AS_NOISE_
-}
 
+  # Store all the mosaics for stacking later
+  push(my @noifiles, $Frm->file);
+  if ($Frm->tagexists("scinoi") && $noisecalc eq "each") {
+    $Frm->tagretrieve("scinoi");
+    push(@noifiles, $Frm->files);
+  }
+  $Frm->files(@noifiles);
+  $Frm->tagset("scinoi");
+
+  # Add an entry to the log file if desired
+  if ($uselog) {
+    my $qa_results = $Frm->uhdr("QA_REPORT_INFO");
+    my @entries = ( $Frm->hdr("DATE-OBS"), $Frm->hdr("OBSNUM"),
+		    (sprintf "%d", $key) );
+    my @vars = qw/NBOLO MEDIAN WTNEP/;
+    # Must loop over original list of subarrays so blank values can be
+    # added for subarrays with no data
+    foreach my $subarray (@subarrays) {
+      push(@entries, ($qa_results->{$subarray})
+	   ? (map { $qa_results->{$subarray}->{$_}} @vars)
+	   : ("nan", "nan", "nan") );
+    }
+    _ADD_LOG_ENTRY_ LOGFILE=$datanoiselog ENTRIES=\@entries PARAMS=\@logparams PARLIST=NONE
+  }
+}
