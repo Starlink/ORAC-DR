@@ -1,0 +1,140 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_STACK_FRAMES_ - create a 3-d stack of images
+
+=head1 SYNOPSIS
+
+ _STACK_IMAGES_ TAG=$tag
+
+ _STACK_IMAGES_ TAG=$tag NDF_EXT=nep
+
+=head1 DESCRIPTION
+
+This primitive retrieves a group of files specified by a given tag
+creates a 3-d cube of data as a function of date those images. The
+third axis is time (MJD).
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 2
+
+=item B<NDF_EXT>
+
+Comma-separated list of NDF extensions to stack. These must be located
+under the C<.more.smurf> hierarchy. No default.
+
+=item B<TAG>
+
+Tag to use for retrieving the files to stack. The output file name
+will take its suffix from this tag. No default.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item KAPPA
+
+NDFCOPY
+
+=item SMURF
+
+STACKFRAMES
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+A file with the suffix C<_ZZZZstack> is created for the files that
+match the given tag, C<ZZZZ>.
+
+=head1 NOTES
+
+If only a single file matches the sorting criteria then no stack is
+created.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Tag to search for
+my $tag = get_prim_arg($_PRIM_ARGS_, "TAG", undef);
+
+# Other NDF extensions to stack
+my $ndf_exten = get_prim_arg($_PRIM_ARGS_, "NDF_EXT", undef);
+
+if ($tag) {
+  my @stackfiles = map { $_->files } grep { $_->tagexists($tag) && $_->tagretrieve($tag)} $Grp->members;
+
+  if (@stackfiles && @stackfiles > 1) {
+
+    my $suffix = "_".$tag."stack";
+
+    my $stackfile = $Frm->strip_subscan(scalar($Frm->inout($suffix)));
+    orac_print "Creating stack $stackfile...";
+
+    # Check if all the same dimensions?
+
+    # Align if not...
+
+    # Stack the main data images
+    my $inlist = write_file_list(@stackfiles);
+    my $tmpstack = ORAC::TempFile->new();
+    my $args = "in=^$inlist out=$tmpstack sort sortby=MJD";
+    $Mon{smurf_mon}->obeyw("stackframes", "$args");
+    # Trim excess bad pixels
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmpstack out=$stackfile trim trimbad");
+
+    # Stack any requested NDF extensions - note that no check is made
+    # to see if they exist!
+    if ($ndf_exten) {
+      my @exten = split(/,/,$ndf_exten);
+      orac_print " + stacking";
+      foreach my $ext (@exten) {
+	orac_print " $ext...";
+	my @exten_files = map { $_.".more.smurf.$ext" } @stackfiles;
+	my $extlist = write_file_list(@exten_files);
+	my $stack = ORAC::TempFile->new();
+	$args = "in=^$extlist out=$stack sort sortby=MJD";
+	$Mon{smurf_mon}->obeyw("stackframes", "$args");
+
+	my $stackfile_ext = $stackfile . ".more.smurf.$ext";
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$stack out=$stackfile_ext trim trimbad");
+      }
+    }
+    orac_print " done\n";
+
+    $Frm->files($stackfile);
+  }
+}
