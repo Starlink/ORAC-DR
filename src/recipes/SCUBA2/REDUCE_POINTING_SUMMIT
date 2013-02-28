@@ -6,15 +6,20 @@ REDUCE_POINTING_SUMMIT - Process POINTING observations in the summit pipeline
 
 =head1 DESCRIPTION
 
-This recipe combines images from a POINTING observation, removes sky
-emission and corrects for extinction before calculating the offsets in
-Azimuth and Elevation from the nominal (0,0) position. The recipe also
-determines the beam size and the flux conversion factor (FCF) and
-writes them to log files.
+This recipe processes data from a POINTING observation in the SUMMIT
+pipeline.
 
-The image is processed with a matched filter before estimating the
-pointing offsets, but this output is not retained on disk. The reduced
-product remains the Group coadd.
+For DREAM/STARE, the images from the individual subarrays are
+combined, sky emission removed (assuming a simple DC offset) and
+corrected for extinction.
+
+SCAN-mode data are passed to the iterative map-maker. Fast-ramp
+flatfield files are processed and stored so the iterative map-maker
+can use them.
+
+The image is cropped to 90 arcsec on a side, and if the source is a
+known calibrator, the pipeline calculates FCFs. The map is then
+calibrated and tagged as a reduced product.
 
 For additional record keeping, the source position is fitted and
 offsets in Azimuth and Elevation from the nominal (0,0) position are
@@ -35,24 +40,27 @@ C<log.pointing>, C<log.beam> and C<log.fcf>.
 
 =item *
 
+Fast-ramp flatfield data are processed and results written to the log
+file C<log.flatfield>.
+
+=item *
+
 This recipe deals with both the 2-D DA-processed images and the time
 series data. Primitives which are meant for 2-D images are no-ops for
 time-series data.
 
 =item *
 
-The pointing offsets can be calculated from the centroid position or
-from a fit to the source: see the C<METHOD> parameter for
-_FIND_POINTING_OFFSETS_. The default is to determine the centroid.
+The pointing offsets are calculated from the centroid position and a
+fit to the source. They are written into the output file as a
+C<JCMT::Pointing> extension.
 
 =back
 
 =head1 DISPLAY
 
-The Frame image is not displayed.
-
-The Group image is displayed in Gaia window 2; its variance is
-displayed in window 3.
+The coadd is displayed in Gaia window 2; its variance is displayed in
+window 3.
 
 =head1 AUTHORS
 
@@ -109,16 +117,20 @@ _CREATE_IMAGE_FRAME_ SPREAD=BILINEAR MAKEMOS_METHOD=SIGMA GENVAR=1 MAKEMOS=1 SYS
 # of a successful fit
 _CROP_IMAGE_FRAME_ HEIGHT=90 WIDTH=90
 
+# Determine an FCF
+_FIND_CALIBRATION_MAP_
+
 # Calibrate data - this will calculate a FCF if a standard source has
 # been observed
-_FIND_CALIBRATION_MAP_
 _CALIBRATE_DATA_
 
+# Tag the calibrated map as a reduced product
 _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GRAPHIC=1
 
 # Create Group file
 _MAKE_MOSAIC_GROUP_ COADD_MODE=RUNNING
 
+# Tag the group coadd as a reduced product
 _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 GRAPHIC=1
 
 # Display it
@@ -129,10 +141,10 @@ _FIND_BEAM_SIZE_ GROUP=1
 
 # Apply the matched filter to improve signal-to-noise (especially
 # useful at 450 um).
-_APPLY_MATCHED_FILTER_ GROUP=1 STORE=1
+_APPLY_MATCHED_FILTER_ GROUP=1
 
 # Determine the pointing offsets and write results to a log file.
-# Note that a flag file is not written
+# Note that a flag file is not written.
 _FIND_POINTING_OFFSETS_
 
 # Delete temporary files, keeping calibrated data and flatfield
