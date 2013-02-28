@@ -6,21 +6,40 @@ SCUBA2_CHECK_CAL - perform SCUBA-2 calibration checks on standard sources
 
 =head1 DESCRIPTION
 
-A simple PICARD recipe to calculate fluxes, FCFs and NEFDs from a
-given source. The results are written to a log file called
-C<log.fcfnefd> if desired.
+A simple PICARD recipe to calculate fluxes, FCFs and beam size from a
+given uncalibrated map of a point source. The results are written to
+a log file called C<log.checkcal> if desired.
 
-The images are cropped to the given size (as specified in the FITS
+Procedure:
+
+=over 2
+
+=item * The images are cropped to the given size (as specified in the FITS
 headers or via the C<MAP_HEIGHT> and C<MAP_WIDTH> recipe parameters,
-and must be at least twice the diameter of the aperture) before having
-the background fitted and removed. The FCFs are calculated from these
-cropped, background-subtracted images. The source flux and image-plane
-noise are derived from aperture photometry on these images. NEFDs are
-calculated using the original input images (calibrated using either
-standard FCFs or those derived in the recipe).
+and must be at least twice the diameter of the aperture).
 
-The FCF calculation requires uncalibrated data and thus must be
-performed first.
+=item * A background may be fitted and removed. (Optional - only if
+the C<REMOVE_BACKGROUND> recipe parameter is true.)
+
+=item * The beam size is determined using KAPPA C<beamfit>.
+
+=item * FCFs are calculated from the cropped (background-subtracted)
+image.
+
+=item * The source flux and its uncertainty are derived from aperture
+photometry on these images. The background is estimate from an annulus
+with inner and outer radii of 1.25 and 2.0 times the aperture radius.
+
+=item * The map is calibrated using either the standard FCF or the one
+derived above (if the C<USEFCF> recipe parameter is true).
+
+=item * The noise is calculated from the calibrated map.
+
+=item * The matched filter is applied to the calibrated map.
+
+=item * Results are written to a log file, C<log.checkcal>.
+
+=back
 
 By default this recipe only works on known calibration
 sources. However, the user may specify the source flux at 850 and/or
@@ -40,47 +59,35 @@ The following parameters can be set via the -recpars option:
 
 =item APERTURE_RADIUS
 
-Radius of aperture in arcsec for calculating total flux.
-
-=item FLUX_450
-
-Source flux density at 450 um in Jy. Source-specific values may be
-given by appending the source name in upper case with spaces removed.
-
-=item FLUX_850
-
-Source flux density at 850 um in Jy. Source-specific values may be
-given by appending the source name in upper case with spaces removed.
-
-=item LOGFILE
-
-Flag to denote whether to write results to a log file at the end of
-processing.
-
-=item MAP_HEIGHT
-
-Height of map in arcsec after cropping. Must be at least twice the
-aperture diameter.
-
-=item MAP_WIDTH
-
-Width of map in arcsec after cropping. Must be at least twice the
-aperture diameter.
-
-=item MASK_SOURCE
-
-Flag to denote whether to mask the source before removing the
-background. Default is 0 (do not mask the source).
+Radius of aperture in arcsec for calculating total flux. The default
+is 30 arcsec.
 
 =item BACKGROUND_FITMETHOD
 
 Method to use for removing background. May be C<fitsurface>,
 C<findback>, C<plane> or C<dc>. Default is C<fitsurface>.
 
-=item FITSURFACE_FITTYPE
+=item FINDBACK_BOX
 
-Type of fit to use with fitsurface. May be C<polynomial> or
-C<spline>. Default is C<polynomial>.
+Size of the box (in pixels) used by findback. Default is 11.
+
+=item FIT_GAUSSIAN
+
+Flag to indicate whether or not to force a Gaussian fit to the source
+when estimating the beam parameters. Default is 1 (fit Gaussian).
+
+=item FIT_FIXAMP
+
+A flag to denote that the amplitude of the fit to the source should be
+fixed as the peak value in the map. Default is 0 (amplitude is a free
+parameter).
+
+=item FIT_FIXBACK
+
+Specifies the background level to be used in the fit to the
+source. May be C<!> to allow the background to float. If not given,
+the default is either a fixed level of 0 for known calibrators, or the
+background is left as a free parameter.
 
 =item FITSURFACE_FITPAR
 
@@ -89,15 +96,78 @@ C<polynomial>) or the number of knots (for C<spline>) in the X and Y
 directions respectively. A single number means the same value is used
 for both axes. Default is 2 for C<polynomial>, 4 for C<spline>.
 
+=item FITSURFACE_FITTYPE
+
+Type of fit to use with fitsurface. May be C<polynomial> or
+C<spline>. Default is C<polynomial>.
+
 =item FITSURFACE_KEEPSURFACE
 
 A flag to denote whether or not to keep the fitted surface on
 disk. Useful for debugging purposes. Default is 0 (do not keep on
 disk).
 
-=item FINDBACK_BOX
+=item FLUX_450
 
-Size of the box (in pixels) used by findback. Default is 11.
+Source flux density at 450 um in Jy. Source-specific values may be
+given by dot-appending the source name in upper case with spaces
+removed. For example, FLUX_450.DGTAU.
+
+=item FLUX_850
+
+Source flux density at 850 um in Jy. Source-specific values may be
+given by dot-appending the source name in upper case with spaces
+removed (see above).
+
+=item KEEPFILES
+
+A flag to indicate whether or not to keep all files produced by the
+recipe. May be 0 to keep no files, or +1 to keep only files with
+suffix C<_crop>, C<_back> and C<_mf>. Default is -1 (keep all files).
+
+=item LOGFILE
+
+Flag to denote whether to write results to a log file at the end of
+processing. Default is 1 (write log file).
+
+=item MAP_HEIGHT
+
+Height of map in arcsec after cropping. Must be at least twice the
+aperture diameter. Default is that in the FITS header.
+
+=item MAP_RADIUS
+
+Radius in arcsec of the circular region to define the map. Must be at
+least twice the aperture radius. Overrides the use of MAP_HEIGHT and
+MAP_WIDTH.
+
+=item MAP_WIDTH
+
+Width of map in arcsec after cropping. Must be at least twice the
+aperture diameter. Default is that in the FITS header.
+
+=item MASK_SOURCE
+
+Flag to denote whether to mask the source before removing the
+background. Default is 0 (do not mask the source).
+
+=item NOISE_METHOD
+
+Method used to calculate the noise in the calibrated image. May be
+C<VARIANCE> to use the variance, C<MASK> to mask out the source and
+calculate the image-plane standard deviation, or C<MINIMUM> to
+determine the lowest standard deviation in a series of apertures
+placed on the image. Default is C<VARIANCE>, and minimum match is
+supported.
+
+=item PSF_MATCHFILTER
+
+Name of a file to use as the PSF when applying the matched filter.
+
+=item REMOVE_BACKGROUND
+
+A flag to indicate whether or not a background should be estimated and
+removed from the image. Default is 0 (do not remove a background).
 
 =item USEFCF
 
@@ -107,8 +177,8 @@ if not specified.
 
 =item USEFCF_CALTYPE
 
-Calibration type to use if B<USEFCF> is 1. May be C<ARCSEC>, C<BEAM>
-or C<BEAMQUIV>. Default is C<BEAMQUIV>
+Calibration type to use if C<USEFCF> is 1. May be C<ARCSEC>, C<BEAM>
+or C<BEAMMATCH>. Default is C<BEAM>.
 
 =back
 
@@ -123,19 +193,31 @@ calibrator observations.
 
 =item *
 
+The default behaviour is to leave every file created during the recipe
+on disk. This may not be desireable - see the C<KEEPFILES> recipe
+parameter above to reduce the number of output files.
+
+=item *
+
 Re-processing data already processed by this recipe is not
 recommended.
 
 =item *
 
-If the recipe parameter FITSURFACE_KEEPSURFACE is true, then a file
+If the recipe parameter C<FITSURFACE_KEEPSURFACE> is true, then a file
 will be created (for each input file) with suffix C<_surface>.
+
+=item *
+
+Documentation for other recipes may list other recipe parameters that
+appear to be applicable to some of the stesp in this recipe, but are
+not shown due to the possibility of adverse interactions.
 
 =back
 
 =head1 DISPLAY
 
-No display is used by this recipe.
+None.
 
 =head1 AUTHORS
 
@@ -177,12 +259,14 @@ _CROP_JCMT_IMAGE_
 # parameter. Creates output files ending "_back".
 _SCUBA2_REMOVE_BACKGROUND_ MASK=1 USEPAR=1
 
+# Estimate the beam size by fitting a gaussian to the source
 _SCUBA2_FIND_BEAM_SIZE_
 
 # Calculate FCFs from the (background-subtracted) cropped image
 _CALC_SCUBA2_FCF_
 
-# Calibrate the cropped data
+# Calibrate the cropped data - use default FCF unless the USEFCF
+# recipe parameter is set
 _CALIBRATE_SCUBA2_DATA_ TAG=crop
 
 # Calculate the noise in the image from the variance
