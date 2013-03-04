@@ -75,6 +75,9 @@ my $off = $Frm->uhdr('FTS_ZPD_BASE_OFFSET');
 orac_termerr('FTS_ZPD_BASE_OFFSET is missing') unless defined $off;
 my $wid = $Frm->uhdr('FTS_ZPD_BASE_WIDTH');
 orac_termerr('FTS_ZPD_BASE_WIDTH is missing') unless defined $wid;
+my $tol = $Frm->uhdr('FTS_ZPD_TOLERANCE');
+orac_termerr('FTS_ZPD_TOLERANCE is missing') unless defined $tol;
+
 my $boxwidth = $Frm->hdr('FILTER') =~ /850/ ? 200 : 100;
 
 my $range = sprintf('%.03f:%.03f', $zpd - ($off + $wid), $zpd - $off);
@@ -165,12 +168,36 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
     # to fit the ZPD feature.  This gives us an NDF we can feed back
     # into FIT1D to fit the central fringe.
 
+    my (undef, $bak) = $Frm->inout('_bak', $i);
+    $Mon{'cupid_mon'}->obeyw('findback', "$in $bak box=[1,1,51] rms=!");
     my (undef, $abs) = $Frm->inout('_abs', $i);
-    $Mon{'kappa_mon'}->obeyw('maths', "abs(ia) $abs ia=$in");
+    $Mon{'kappa_mon'}->obeyw('sub', "$in $bak $abs");
+
     my (undef, $smo) = $Frm->inout('_smo', $i);
     $Mon{'kappa_mon'}->obeyw('block', "$abs $smo box=[1,1,$boxwidth]");
+
     (undef, $parndf) = $Frm->inout('_sft', $i);
     $Mon{'smurf_mon'}->obeyw('fit1d', "in=$smo out=$parndf parndf=! rms=$rms config=^$cfg userval=\"comp1.c=$wid\"");
+
+    my (undef, $sps) = $Frm->inout('_sps', $i);
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$parndf.MORE.SMURF_FIT1D.COMP_1\(,,2\) $sps trim=false");
+
+    _FIND_IMAGE_STATISTICS_ IMAGE=$sps COMP=data VERBOSE=0
+    my $sps_median = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+    orac_say("Median fit to smoothed interferogram: $sps_median");
+
+    my $min = $sps_median - $tol;
+    my $max = $sps_median + $tol;
+    my (undef, $sps_thr) = $Frm->inout('_spsthr', $i);
+    $Mon{'kappa_mon'}->obeyw('thresh', "$sps $sps_thr $min $max bad bad");
+
+    my (undef, $sps_fil) = $Frm->inout('_spsfil', $i);
+    $Mon{'kappa_mon'}->obeyw('fillbad', "$sps_thr $sps_fil niter=2 size=[2,2]");
+
+    my (undef, $sps_pas) = $Frm->inout('_sftpas', $i);
+    $Mon{'kappa_mon'}->obeyw('paste', "$parndf.MORE.SMURF_FIT1D.COMP_1 $sps_fil out=$sps_pas");
+
+    $Mon{'hdstools_mon'}->obeyw('hcopy', "$sps_pas $parndf.MORE.SMURF_FIT1D.COMP_1");
   }
   else {
     orac_termerr('Unknown ZPD estimation method ' . $estimate);
