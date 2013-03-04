@@ -65,34 +65,40 @@ my $zpd = $Frm->uhdr('FTS_ZPD_ESTIMATE');
 orac_termerr('FTS_ZPD_ESTIMATE is missing') unless defined $zpd;
 my $center = $Frm->uhdr('FTS_STAGE_CENTER');
 orac_termerr('FTS_STAGE_CENTER') unless defined $center;
+my $off = $Frm->uhdr('FTS_ZPD_BASE_OFFSET');
+orac_termerr('FTS_ZPD_BASE_OFFSET is missing') unless defined $off;
 
-my $fts2pix = sub {
-  my ($targ, $ary) = @_;
-
-  my $i = 0;
-  my $prev = undef;
-  foreach my $pos (@$ary) {
-    return $i if $pos == $targ
-              or defined($prev)
-              && ($prev < $targ && $targ < $pos
-               or $prev > $targ && $targ > $pos);
-    $i ++;
-    $prev = $pos;
-  }
-};
+my $y_min = $zpd - $off;
+my $y_max = $zpd + $off;
 
 for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   my ($in, $out) = $Frm->inout('_aff', $i);
   my %state = read_jcmtstate($in, undef, 'FTS_POS');
 
-  my $i0 = $fts2pix->($center + $zpd - 10.0, $state{'FTS_POS'});
-  my $i1 = $fts2pix->($center + $zpd + 10.0, $state{'FTS_POS'});
-  my $p0 = $i0 + 0.5;
-  my $p1 = $i1 + 0.5;
-  my $z0 = $state{'FTS_POS'}->[$i0] - $center;
-  my $z1 = $state{'FTS_POS'}->[$i1] - $center;
-  my $grad = ($z1 - $z0) / ($p1 - $p0);
-  my $cons = $z0 - ($p0 * $grad);
+  my $n = 0.0;
+  my $x = 0.0;
+  my $sx = 0.0;
+  my $sy = 0.0;
+  my $sxx = 0.0;
+  my $sxy = 0.0;
+
+  foreach my $y (@{$state{'FTS_POS'}}) {
+    $x += 1.0;
+    $y = $y - $center;
+
+    next if $y < $y_min;
+    next if $y > $y_max;
+
+    $n += 1.0;
+    $sx += $x;
+    $sy += $y;
+    $sxx += $x * $x;
+    $sxy += $x * $y;
+  }
+
+  my $grad = ($n * $sxy - $sx * $sy) / ($n * $sxx - $sx * $sx);
+  my $cons = ($sy - $grad * $sx) / $n;
+
   my $mapping = "[0,1,0,0,0,0,1,0,$cons,0,0,$grad]";
 
   $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$in $out");
