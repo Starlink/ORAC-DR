@@ -63,6 +63,7 @@ use IO::File;
 use JSA::Headers qw/read_jcmtstate/;
 
 my @output = ();
+my @intermediate_display = ();
 
 my $estimate = lc(get_prim_arg($_PRIM_ARGS_, 'ESTIMATE', 'fixed'));
 my $zpd = $Frm->uhdr('FTS_ZPD_ESTIMATE');
@@ -147,6 +148,9 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   #$Frm->push_intermediates($thr);
   $Mon{'kappa_mon'}->obeyw('thresh', "$in $thr thrlo=0 newlo=0 thrhi=1000 newhi=bad");
 
+  my $fitshdr = new ORAC::TempFile(OPEN => 0, SUFFIX => '.lis');
+  $Mon{'ndfpack_mon'}->obeyw('fitslist', "$thr $fitshdr");
+
   # Estimate interferogram RMS.
   # Currently do this by taking the 75% percentile of the baselined
   # interferogram in one of the baseline regions.  (Calculating
@@ -197,6 +201,11 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
     my (undef, $sps_thr) = $Frm->inout('_spsthr', $i);
     $Mon{'kappa_mon'}->obeyw('thresh', "$sps $sps_thr $min $max bad bad");
 
+    # Copy across FITS headers to stop ORAC-DR complaining.
+    $Mon{'ndfpack_mon'}->obeyw('fitstext', "$sps_thr $fitshdr");
+
+    push @intermediate_display, $sps_thr;
+
     my (undef, $sps_fil) = $Frm->inout('_spsfil', $i);
     $Mon{'kappa_mon'}->obeyw('fillbad', "$sps_thr $sps_fil niter=2 size=[2,2]");
 
@@ -230,11 +239,14 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
 
   # Copy across FITS headers to stop ORAC-DR complaining.
 
-  my $tmp = new ORAC::TempFile(OPEN => 0, SUFFIX => '.lis');
-  $Mon{'ndfpack_mon'}->obeyw('fitslist', "$thr $tmp");
-  $Mon{'ndfpack_mon'}->obeyw('fitstext', "$pos $tmp");
+  $Mon{'ndfpack_mon'}->obeyw('fitstext', "$pos $fitshdr");
 
   push @output, $pos;
+}
+
+if (@intermediate_display) {
+  $Frm->files(@intermediate_display);
+  _SET_TAG_ TAG=zpd_pos_estimate
 }
 
 $Frm->files(@output);
