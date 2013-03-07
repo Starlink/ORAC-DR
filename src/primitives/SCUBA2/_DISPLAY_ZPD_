@@ -1,4 +1,5 @@
 # -*-cperl-*-
+# vim: syn=perl
 
 =head1 NAME
 
@@ -20,7 +21,17 @@ It is based on _DISPLAY_NOISE_.
 
 =head1 ARGUMENTS
 
-This primitive supports no arguments.
+=over 4
+
+=item B<SUFFIX>
+
+File suffix for focal plane mosaic image.
+
+=item B<TITLE>
+
+Title to show on plots.
+
+=back
 
 =head1 EXTERNAL TASKS
 
@@ -73,59 +84,46 @@ USA.
 
 =cut
 
-# Proceed with making a focal-plane
-# mosaic and displaying it
-if (1) {
-  # Reference subarray
-  my $short = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 1 : 0;
-  my $refsub =  ($short) ? "s4d" : "s8b";
-  # Mosaic ZPD files
-  my %ref;
-  # Currently use just 1 file per subarray
-  foreach my $file ($Frm->files) {
-    # Never trust the filenames...
-    my $fitshdr = new Astro::FITS::Header::NDF( File => $file );
-    $ref{lc($fitshdr->value("SUBARRAY"))} = $file;
-  }
-  #$Frm->files(values %ref);
-  my $ref = $ref{$refsub};
-  unless ($ref) {
-    # Pick first one...
-    my @subs = sort keys %ref;
-    $refsub = $subs[0];
-    $ref = $ref{$refsub};
-  }
-  # Output file name for responsivity mosaic: _zpdmos
-  my $zpdmos = "_zpdmos";
-  my $wave = ($short) ? "450 um" : "850 um";
-  # Set the title of the noise image to something meaningful
-  my $obs = $Frm->hdr("OBSNUM");
-  my $extra = "";
-  if ($Frm->uhdr("QUICKLOOK")) {
-    $extra = "/ scan " .$Frm->hdr("NSUBSCAN"). " (QL)";
-  } elsif ($Frm->uhdr("SUMMIT")) {
-    $extra = "/ scan " .$Frm->hdr("NSUBSCAN"). " (SUMMIT)";
-  }
-  my $title = "ZPD $wave: obs $obs $extra";
+my $suffix = get_prim_arg($_PRIM_ARGS_, 'SUFFIX', '_zpdmos');
+my $title = get_prim_arg($_PRIM_ARGS_, 'TITLE', 'ZPD Position');
 
-  orac_print "\nDisplaying focal-plane mosaic for $title\n";
+# Determine reference subarray
 
-  my %refimage = ( refsub => $refsub, refimage => $ref );
-  _MAKE_MOSAIC_FPLANE_ SUFFIX=$zpdmos REFERENCE=\%refimage
-  my $out = $Frm->file;
-  my $args = "ndf=$out title='$title'";
-  $Mon{ndfpack_mon}->obeyw("settitle","$args");
+my $refsub = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 's4d' : 's8b';
 
-  # Make sure there is a defined upper limit for the histogram
-  _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=data VERBOSE=0
-  my $plotmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
-  my $plotmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+# Find reference image
 
-  # Display the histograms
-  my %options = ( ZMIN => $plotmin, ZMAX => $plotmax, WINDOW => 1,
-                  ZAUTOSCALE => 0, TITLE => $title );
-  $Display->display_data($Frm, \%options, -1);
-
-  # Store the noise file in the Frame
-  $Frm->files($out);
+my %ref;
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, undef) = $Frm->inout('NA', $i);
+  $ref{$Frm->subarray($i)} = $in;
 }
+
+my $ref = $ref{$refsub};
+unless ($ref) {
+  # Pick first one...
+  my @subs = sort keys %ref;
+  $refsub = $subs[0];
+  $ref = $ref{$refsub};
+}
+
+# Create the mosaic
+
+my %refimage = (refsub => $refsub, refimage => $ref);
+
+_MAKE_MOSAIC_FPLANE_ SUFFIX=$suffix REFERENCE=\%refimage
+my $out = $Frm->file();
+
+# Make sure there is a defined upper limit for the histogram
+
+_FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=data VERBOSE=0
+my $plotmin = $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MIN'};
+my $plotmax = $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MAX'};
+
+# Display the histograms
+
+my %options = (ZMIN => $plotmin, ZMAX => $plotmax, WINDOW => 1,
+               ZAUTOSCALE => 0, TITLE => $title);
+
+$Display->display_data($Frm, \%options, -1);
+
