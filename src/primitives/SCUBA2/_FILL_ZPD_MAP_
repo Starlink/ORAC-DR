@@ -1,0 +1,112 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_FILL_ZPD_MAP_ - fills ZPD map to remove gaps
+
+=head1 SYNOPSIS
+
+ _FILL_ZPD_MAP_
+
+=head1 DESCRIPTION
+
+This primitive runs fillbad.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<METHOD>
+
+Selects the method to use to fill the ZPD map. Options:
+
+=over 4
+
+=item fillbad
+
+=back
+
+=back
+
+=head1 EXTERNAL TASKS
+
+KAPPA.
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $method = lc(get_prim_arg($_PRIM_ARGS_, 'METHOD', 'fillbad'));
+
+my @output = ();
+
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my ($in, $out) = $Frm->inout('_zpd', $i);
+
+  # Fill the ZPD map.
+
+  if ($method eq 'fillbad') {
+    $Mon{'kappa_mon'}->obeyw('fillbad', "$in $out niter=2 size=[2,2]");
+  }
+  else {
+    orac_termerr('Unknown ZPD filling method ' . $method);
+  }
+
+  # Store in calibration system.
+
+  $Frm->subarray($out);
+  $Cal->zeropath($out);
+  $Cal->zeropathindex->add($out, {%{$Frm->hdr}, %{$Frm->uhdr}});
+
+  # Write log entry.
+
+  _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=data VERBOSE=0
+
+  my @headings = qw/Subarray Mean Median/;
+  my @values = (
+    $Frm->subarray($i),
+    $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MEAN'},
+    $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MEDIAN'},
+  );
+
+  _ADD_LOG_ENTRY_ LOGFILE=zpd ENTRIES=\@values PARAMS=\@headings
+
+  push @output, $out;
+}
+
+$Frm->files(@output);
+
