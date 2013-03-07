@@ -24,7 +24,32 @@ Selects the method to use to fill the ZPD map. Options:
 
 =item fillbad
 
+=item fitsurface
+
 =back
+
+=item B<ORDER>
+
+Order of polynomial fit for METHODs involving fitting. Default is 2.
+
+=item B<ACTION>
+
+Specifies how to apply the fit, for METHODs involving fitting.
+
+=over 4
+
+=item paste
+
+Pastes the input map on top of the fitted surface, so that
+only pixels which were previously blank are altered.
+
+=item replace
+
+Uses only the fitted surface.
+
+=back
+
+Default: paste.
 
 =back
 
@@ -74,19 +99,45 @@ USA.
 =cut
 
 my $method = lc(get_prim_arg($_PRIM_ARGS_, 'METHOD', 'fillbad'));
+my $order = lc(get_prim_arg($_PRIM_ARGS_, 'ORDER', 2));
+my $action = lc(get_prim_arg($_PRIM_ARGS_, 'ACTION', 'paste'));
 
 my @output = ();
 
 for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   my ($in, $out) = $Frm->inout('_zpd', $i);
 
+  my $fitted = 0; # Whether the method produced a fitted map.
+
+  # Determine where to save fitted surface.
+
+  my $fit;
+  if ($action eq 'replace') {
+    $fit = $out;
+  }
+  elsif ($action eq 'paste') {
+    (undef, $fit) = $Frm->inout('_zpdfit', $i);
+  }
+
   # Fill the ZPD map.
 
   if ($method eq 'fillbad') {
     $Mon{'kappa_mon'}->obeyw('fillbad', "$in $out niter=2 size=[2,2]");
   }
+  elsif ($method eq 'fitsurface') {
+    my $npar = $order + 1;
+    $Mon{'kappa_mon'}->obeyw('fitsurface', "$in polynomial nxpar=$npar nypar=$npar cosys=world");
+    $Mon{'kappa_mon'}->obeyw('makesurface', "$in $fit like=$in");
+    $fitted = 1;
+  }
   else {
     orac_termerr('Unknown ZPD filling method ' . $method);
+  }
+
+  # Paste if necessary.
+
+  if ($fitted and $action eq 'paste') {
+    $Mon{'kappa_mon'}->obeyw('paste', "$fit $in out=$out transp=true");
   }
 
   # Store in calibration system.
