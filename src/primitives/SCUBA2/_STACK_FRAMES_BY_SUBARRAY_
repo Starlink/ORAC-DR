@@ -1,0 +1,111 @@
+=head1 NAME
+
+_STACK_FRAMES_BY_SUBARRAY - stacks frames by subarray
+
+=head1 SYNOPSIS
+
+ _STACK_FRAMES_BY_SUBARRAY_
+
+=head1 DESCRIPTION
+
+This primitive runs stackframes on the files for each
+subarray.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<SUFFIX>
+
+The suffix to use for the output files.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+SMURF.
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $suffix = get_prim_arg($_PRIM_ARGS_, "SUFFIX", "_sbs");
+my @output = ();
+my %subarray_in = ();
+my %subarray_out = ();
+
+for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
+  my $subarray = $Frm->subarray($i);
+  my ($in, $out) = $Frm->inout($suffix, $i);
+  my (undef, $tmp) = $Frm->inout($suffix . 'tmp', $i);
+
+  # Sort out the frame of the file...
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy',"$in $tmp trim=true");
+  $Mon{'ndfpack_mon'}->obeyw('wcsframe', "$tmp fplane");
+
+  if (! exists($subarray_in{$subarray})) {
+    $subarray_in{$subarray} = [$tmp];
+    $subarray_out{$subarray} = $out;
+  }
+  else {
+    push @{$subarray_in{$subarray}}, $tmp;
+  }
+}
+
+for my $subarray (keys %subarray_in) {
+  my @files = @{$subarray_in{$subarray}};
+  my $out = $subarray_out{$subarray};
+
+  if (1 == scalar @files) {
+    # If there is only one file, just leave it in the frame
+    # as it was.
+
+    push @output, $files[0];
+  }
+  else {
+    # Otherwise stack the frames.
+
+    my $in = write_file_list(@files);
+
+    $Mon{'smurf_mon'}->obeyw('stackframes', "in=^$in out=$out sort=false");
+
+    push @output, $out;
+  }
+}
+
+$Frm->files(@output);
+
