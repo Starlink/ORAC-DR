@@ -63,20 +63,20 @@ $DEBUG = 0;                     # Turn off debugging mode
 # order START and END are inclusive.
 
 my %FCFS = ('850' => [             # Assumed to be in date order
-                   {
-                    START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC=> 2.34,
-                    BEAM  => 537,
-                   }
-                  ],
-         '450' => [
-                   {
-                    START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC => 4.71,
-                    BEAM   => 491,
-                   }
-                  ],
-        );
+		      {
+		       START => 20060101, # Beginning of SCUBA-2 history
+		       ARCSEC=> 2.34,
+		       BEAM  => 537,
+		      }
+		     ],
+	    '450' => [
+		      {
+		       START => 20060101, # Beginning of SCUBA-2 history
+		       ARCSEC => 4.71,
+		       BEAM   => 491,
+		      }
+		     ],
+	   );
 
 # These NEPs are the specifications in the dark which the arrays are
 # expected to meet
@@ -227,6 +227,20 @@ $ASECFLUXES{HLTAUB} = $ASECFLUXES{HLTAU};
 $BEAMFLUXES{MWC349A} = $BEAMFLUXES{MWC349};
 $ASECFLUXES{MWC349A} = $ASECFLUXES{MWC349};
 
+# JCMT beam parameters from SCUBA-2 calibration paper
+my %BEAMPAR = (	'850' => {
+			  FWHM1 => 13.0,
+			  FWHM2 => 48.0,
+			  AMP1 => 0.98,
+			  AMP2 => 0.02
+			 },
+		'450' => {
+			  FWHM1 => 7.9,
+			  FWHM2 => 25.0,
+			  AMP1 => 0.94,
+			  AMP2 => 0.06
+			 }
+	      );
 
 # Setup the object structure
 __PACKAGE__->CreateBasicAccessors( mask => {},
@@ -264,11 +278,11 @@ sub new {
   my $self = shift;
   my $obj = $self->SUPER::new( @_ );
 
-# This assumes we have a hash object
-  $obj->{Beam} = undef,        # Current best-fit beam parameters
-  $obj->{ErrBeam} = undef,     # Current estimate of error beam
-  $obj->{FWHM} = undef,        # Current mean main-beam FWHM
-  $obj->{SkyRefImage} = undef; # Name of current reference image
+  # This assumes we have a hash object
+  $obj->{BeamFit} = undef;        # Current best-fit beam parameters
+  $obj->{ErrBeamFit} = undef;     # Current estimate of error beam
+  $obj->{FWHM} = undef;           # Current mean main-beam FWHM
+  $obj->{SkyRefImage} = undef;    # Name of current reference image
 
   # Specify default tausys
   $obj->tausys( "CSO" );
@@ -282,101 +296,41 @@ sub new {
 
 =over 4
 
-=item B<default_fcfs>
+=item B<beam>
 
-Return the default FCF lookup table indexed by filter.
+Return the telescope beam parameters for the current wavelength. See
+the C<beamfit> method for the results of the most recent fit to the
+beam.
 
- %FCFS = $cal->default_fcfs();
+Returns a hash reference with the keys C<FWHM1>, C<FWHM2>, C<AMP1> and
+C<AMP2>.
 
-=cut
-
-sub default_fcfs {
-  return %FCFS;
-}
-
-=item B<secondary_calibrator_fluxes>
-
-Return the lookup table of fluxes for secondary calibrators. Takes an
-optional parameter which returns the total fluxes rather than the `per
-beam' values.
-
- %photfluxes = $cal->secondary_calibrator_fluxes( $ismap );
+  my $telescope_beam = $Cal->beam;
 
 =cut
 
-sub secondary_calibrator_fluxes {
+sub beam {
   my $self = shift;
-  my $ismap = shift if (@_);
-  return (defined $ismap && $ismap) ? %ASECFLUXES : %BEAMFLUXES;
+  return $BEAMPAR{$self->subinst};
 }
 
-=item B<subinst>
+=item B<beamamps>
 
-The sub-instrument associated with this calibration object.
-Options are "450" or "850".
+Return the relative amplitudes of the telescope beam components at the
+current wavelength. Returns either an array with two elements or array
+reference depending on caller. The first element corresponds to the
+main beam component.
 
-  $subinst = $Cal->subinst();
+  my $beamamps = $Cal->beamamps;
+  my @beamamps = $Cal->beamamps;
 
 =cut
 
-sub subinst {
-   my $self = shift;
-   my $thingref = $self->thingone;
-   return ( $thingref->{FILTER}  =~ /^85/ ? "850" : 450);
-}
-
-=item B<fwhm>
-
-A simple method to set or retrieve the beam full-width-at-half-maximum
-(FWHM). If the complete beam parameters are required, the B<beam>
-method should be used instead. If the FWHM is undef then the routine
-checks to see if any beam parameters have been derived, and if so it
-calculates the FWHM from those. Otherwise a hard-wired default value,
-appropriate for the current wavelength, is returned.
-
-  $Cal->fwhm( $fwhm );
-
-  my $fwhm = $Cal->fwhm;
-
-=cut
-
-sub fwhm {
+sub beamamps {
   my $self = shift;
-
-  # Set
-  if ( @_ ) {
-    $self->{FWHM} = shift;
-    return;
-  }
-
-  # Get - and auto-set if not defined
-  my $fwhm = (defined $self->{FWHM}) ? $self->{FWHM} : 0;
-
-  if ( $fwhm == 0 ) {
-    if ($self->beampar) {
-      my $beampar = $self->beampar;
-      $fwhm = sqrt($beampar->{Bmaj}*$beampar->{Bmin});
-      $self->fwhm($fwhm);
-    } else {
-      my $thingref = $self->thingone;
-      $fwhm = ( $self->subinst() eq '850') ? 14.0 : 7.5;
-    }
-  }
-  return $fwhm;
-}
-
-=item B<fwhm_eff>
-
-Returns the FWHM (in arcsec) of a Gaussian with the same area as the
-telescope beam (see the B<beamarea> method below).
-
-  $fwhm_eff = $Cal->fwhm_eff;
-
-=cut
-
-sub fwhm_eff {
-  my $self = shift;
-  return sqrt($self->beamarea/1.133);
+  my $beam = $self->beam;
+  return (wantarray) ? ($beam->{AMP1}, $beam->{AMP2})
+    : [$beam->{AMP1}, $beam->{AMP2}];
 }
 
 =item B<beamarea>
@@ -414,7 +368,7 @@ sub beamarea {
   return $ba;
 }
 
-=item B<beampar>
+=item B<beamfit>
 
 A method to set or retrieve the full parameter set for the most recent
 fit to the beam. If setting the beam parameters, all of the parameters
@@ -422,10 +376,10 @@ must be specified. The beam dimensions and orientation must be passed
 as array references. A hash reference containing the beam parameters
 is returned.
 
-  $Cal->beampar( majfwhm => \@majfwhm, minfwhm => \@minfwhm,
+  $Cal->beamfit( majfwhm => \@majfwhm, minfwhm => \@minfwhm,
 		 orient => \@orient, errfrac => $errfrac );
 
-  my $beampar_ref = $Cal->beampar;
+  my $beamfit_ref = $Cal->beamfit;
 
 Conventionally the units of the FWHM are arcsec, but it is up to the
 caller to ensure that the FWHM values are in the units of choice
@@ -433,10 +387,10 @@ before storing them here.
 
 =cut
 
-sub beampar {
+sub beamfit {
   my $self = shift;
 
-  # $self->beam is a hash reference. What should the keys be?
+  # $self->beamfit is a hash reference. What should the keys be?
   # BMAJ => val
   # BMAJERR => val
   # BMIN => val
@@ -449,24 +403,36 @@ sub beampar {
     my %beamargs = @_;
 
     # What if any of these is undef?
-    $self->{Beam}->{Bmaj} = $beamargs{majfwhm}->[0];
-    $self->{Beam}->{BmajErr} = $beamargs{majfwhm}->[1];
-    $self->{Beam}->{Bmin} = $beamargs{minfwhm}->[0];
-    $self->{Beam}->{BminErr} = $beamargs{minfwhm}->[1];
-    $self->{Beam}->{Pa} = $beamargs{orient}->[0];
-    $self->{Beam}->{PaErr} = $beamargs{orient}->[1];
+    $self->{BeamFit}->{Bmaj} = $beamargs{majfwhm}->[0];
+    $self->{BeamFit}->{BmajErr} = $beamargs{majfwhm}->[1];
+    $self->{BeamFit}->{Bmin} = $beamargs{minfwhm}->[0];
+    $self->{BeamFit}->{BminErr} = $beamargs{minfwhm}->[1];
+    $self->{BeamFit}->{Pa} = $beamargs{orient}->[0];
+    $self->{BeamFit}->{PaErr} = $beamargs{orient}->[1];
 
-    $self->{Beam}->{ErrFrac} = $beamargs{errfrac};
+    $self->{BeamFit}->{ErrFrac} = $beamargs{errfrac};
 
     # Store FWHM and error beam
     $self->fwhm;
     $self->errbeam;
 
-    return $self->{Beam};
+    return $self->{BeamFit};
   }
 
-  return $self->{Beam};
+  return $self->{BeamFit};
 
+}
+
+=item B<default_fcfs>
+
+Return the default FCF lookup table indexed by filter.
+
+ %FCFS = $cal->default_fcfs();
+
+=cut
+
+sub default_fcfs {
+  return %FCFS;
 }
 
 =item B<errbeam>
@@ -488,12 +454,12 @@ sub errbeam {
   my $errbeam;
   if (@_) {
     $errbeam = shift;
-    $self->{ErrBeam} = $errbeam;
+    $self->{ErrBeamFit} = $errbeam;
   } else {
-    if ($self->{ErrBeam}) {
-      $errbeam = $self->{ErrBeam};
-    } elsif ($self->beampar) {
-      $errbeam = $self->beampar->{ErrFrac};
+    if ($self->{ErrBeamFit}) {
+      $errbeam = $self->{ErrBeamFit};
+    } elsif ($self->beamfit) {
+      $errbeam = $self->beamfit->{ErrFrac};
       $self->errbeam($errbeam) if ($errbeam);
     }
   }
@@ -501,18 +467,81 @@ sub errbeam {
   return $errbeam;
 }
 
+=item B<fwhm>
+
+Return the telescope beam FWHM for the two components at the current
+wavelength. Returns either an array with two elements or array
+reference depending on caller. The first element is the main beam
+component.
+
+  my $fwhm = $Cal->fwhm;
+  my @fwhm = $Cal->fwhm;
+
+=cut
+
+sub fwhm {
+  my $self = shift;
+  my $beam = $self->beam;
+  return (wantarray) ? ($beam->{FWHM1}, $beam->{FWHM2})
+    : [$beam->{FWHM1}, $beam->{FWHM2}];
+}
+
+=item B<fwhm_eff>
+
+Returns the FWHM (in arcsec) of a Gaussian with the same area as the
+empirical telescope beam (see the B<beamarea> method below).
+
+  $fwhm_eff = $Cal->fwhm_eff;
+
+=cut
+
+sub fwhm_eff {
+  my $self = shift;
+  return sqrt($self->beamarea/1.133);
+}
+
+=item B<fwhm_fit>
+
+Retrieve the fitted beam full-width-at-half-maximum (FWHM). If the
+complete beam parameters are required, the B<beamfit> method should be
+used instead. Returns undef if no fit parameters have been stored.
+
+  my $fitted_fwhm = $Cal->fwhm_fit;
+
+=cut
+
+sub fwhm_fit {
+  my $self = shift;
+
+  # Set
+  if ( @_ ) {
+    $self->{FWHMfit} = shift;
+    return $self->fwhm;
+  }
+
+  # Get - and auto-set if not defined
+  my $fwhm_fit = $self->{FWHM_fit} if (defined $self->{FWHM_fit});
+  if ( !$fwhm_fit ) {
+    if ($self->beamfit) {
+      my $beampar = $self->beamfit;
+      $fwhm_fit = sqrt($beampar->{Bmaj}*$beampar->{Bmin});
+      $self->fwhm($fwhm_fit);
+    }
+  }
+  return $fwhm_fit;
+}
+
 =item B<nep_spec>
 
 Method to return the NEP spec for the current wavelength
 
+  my $nep_spec = $Cal->nep_spec;
+
 =cut
 
 sub nep_spec {
-
   my $self = shift;
-  my $nepkey = $self->subinst();
-
-  return $NEP{$nepkey};
+  return $NEP{$self->subinst};
 }
 
 =item B<refimage>
@@ -539,6 +568,28 @@ sub refimage {
 
   return $self->{SkyRefImage};
 }
+
+=item B<secondary_calibrator_fluxes>
+
+Return the lookup table of fluxes for secondary calibrators. Takes an
+optional parameter which returns the total fluxes rather than the `per
+beam' values.
+
+ %photfluxes = $cal->secondary_calibrator_fluxes( $ismap );
+
+=cut
+
+sub secondary_calibrator_fluxes {
+  my $self = shift;
+  my $ismap = shift if (@_);
+  return (defined $ismap && $ismap) ? %ASECFLUXES : %BEAMFLUXES;
+}
+
+=back
+
+=head2 Index Methods
+
+=over 4
 
 =item B<mask>
 
@@ -703,13 +754,68 @@ sub zeropath {
   return $self->GenericIndexAccessor( 'zeropath', -1, 1, 0, $warn, @_ );
 }
 
-
-
 =back
 
 =head2 General methods
 
 =over 4
+
+=item B<makemap_config>
+
+Return the full path to a default makemap config file. Options to
+return particular default configurations may be passed in as a
+hash. Valid keys are C<config_type> and C<pipeline>. The config type
+must be one of the supported values (see the contents of
+$STARLINK_DIR/share/smurf for available options). If given, the
+pipeline argument must be either C<ql> or C<summit> and causes this
+method to look in the directory defined by the environment variable
+ORAC_DATA_CAL.
+
+  my $config_file = $Cal->makemap_config;
+  my $config_file = $Cal->makemap_config( pipeline => "ql" );
+
+The C<config_type> is usually stored as a uhdr entry for the current
+Frame object.
+
+The C<pipeline> argument is ignored if the config type is given as C<moon>.
+
+=cut
+
+sub makemap_config {
+  my $self = shift;
+
+  my $configfile = "dimmconfig";
+  my @basedir = ($ENV{'STARLINK_DIR'}, "/share/smurf");
+
+  my %args = @_;
+  if ( %args ) {
+
+    # Append labels in the following order: config_type and pipeline.
+    my $config_type = lc($args{config_type}) if (defined $args{config_type});
+    if ( $config_type ) {
+      $configfile .= "_".$config_type
+        unless ( $config_type eq "normal" );
+    }
+
+    # Check for SUMMIT or QL pipeline
+    my $pipeline = "";
+    if (defined $args{pipeline}) {
+      # Make exceptions for the moon and bright_compact
+      $pipeline = lc($args{pipeline})
+	unless ($config_type &&
+		($config_type eq "moon" || $config_type eq "bright_compact"));
+    }
+    if ($pipeline eq "ql" || $pipeline eq "summit") {
+      # Note different base dir
+      @basedir = ($ENV{'ORAC_DATA_CAL'});
+      $configfile .= "_".$pipeline;
+    }
+  }
+
+  $configfile .= ".lis";
+
+  return File::Spec->catfile( @basedir, $configfile );
+}
 
 =item B<pixelscale>
 
@@ -717,6 +823,8 @@ Method to retrieve default values of the pixel scale for output
 images. The numbers are returned in ARCSEC. These numbers are
 hard-wired here and should always be retrieved with this
 method.
+
+Note this is intended for use with DREAM/STARE images, not SCAN data.
 
 =cut
 
@@ -800,103 +908,19 @@ sub respstats {
   return $self->{RespStats};
 }
 
-=item B<beam>
+=item B<subinst>
 
-Returns the beamsize associated with the supplied array.
+The sub-instrument associated with this calibration object.
+Returns either C<450> or C<850>.
 
-  @beam = $Cal->beam($arr);
-
-The values returned are FWHM major axis, FWHM minor axis, PA.
-
-=cut
-
-sub beam {
-  my $self = shift;
-  my $arr = shift;
-
-  # Default beam sizes
-  my @defaultbeam;
-  if ($arr =~ /^850/ || $arr =~ /^L/) {
-    @defaultbeam = (14.0, 14.0, 0.0); # 850 um
-  } else {
-    @defaultbeam = (7.5, 7.5, 0.0); # 450 um
-  }
-  my @beam = @defaultbeam;
-  return @beam;
-}
-
-=item B<store_beam>
-
-Stores the beam parameters for the given array
-
-  $Cal->store_beam($arr, @beamparms);
-
-Currently incomplete.
+  $subinst = $Cal->subinst();
 
 =cut
 
-sub store_beam {
-  my $self = shift;
-  my $arr = shift;
-  my @beamparameters = @_;
-
-}
-
-=item B<makemap_config>
-
-Return the full path to a default makemap config file. Options to
-return particular default configurations may be passed in as a
-hash. Valid keys are C<config_type> and C<pipeline>. The config type
-must be one of the supported values (see the contents of
-$STARLINK_DIR/share/smurf for available options). If given, the
-pipeline argument must be either C<ql> or C<summit> and causes this
-method to look in the directory defined by the environment variable
-ORAC_DATA_CAL.
-
-  my $config_file = $Cal->makemap_config;
-  my $config_file = $Cal->makemap_config( pipeline => "ql" );
-
-The C<config_type> is usually stored as a uhdr entry for the current
-Frame object.
-
-The C<pipeline> argument is ignored if the config type is given as C<moon>.
-
-=cut
-
-sub makemap_config {
-  my $self = shift;
-
-  my $configfile = "dimmconfig";
-  my @basedir = ($ENV{'STARLINK_DIR'}, "/share/smurf");
-
-  my %args = @_;
-  if ( %args ) {
-
-    # Append labels in the following order: config_type and pipeline.
-    my $config_type = lc($args{config_type}) if (defined $args{config_type});
-    if ( $config_type ) {
-      $configfile .= "_".$config_type
-        unless ( $config_type eq "normal" );
-    }
-
-    # Check for SUMMIT or QL pipeline
-    my $pipeline = "";
-    if (defined $args{pipeline}) {
-      # Make exceptions for the moon and bright_compact
-      $pipeline = lc($args{pipeline})
-	unless ($config_type &&
-		($config_type eq "moon" || $config_type eq "bright_compact"));
-    }
-    if ($pipeline eq "ql" || $pipeline eq "summit") {
-      # Note different base dir
-      @basedir = ($ENV{'ORAC_DATA_CAL'});
-      $configfile .= "_".$pipeline;
-    }
-  }
-
-  $configfile .= ".lis";
-
-  return File::Spec->catfile( @basedir, $configfile );
+sub subinst {
+   my $self = shift;
+   my $thingref = $self->thingone;
+   return ( $thingref->{FILTER}  =~ /^85/ ? "850" : "450" );
 }
 
 =back
