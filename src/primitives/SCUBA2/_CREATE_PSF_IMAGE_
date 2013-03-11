@@ -15,8 +15,11 @@ filter. The user must supply and input file and the name of the file
 to store the PSF image, though the latter may also be defined using
 the C<inout> method of the current Frame or Group if desired.
 
-By default, the PSF FWHM is obtained from the beamsize at the current
-wavelength, but may also be defined by the user.
+By default, the PSF FWHM is obtained from the telescope beam parameters
+at the current wavelength, but may also be defined by the user.
+
+The primitive accepts multiple gaussian components to be
+specified. The FWHM and relative amplitude for each.
 
 The PSF may optionally be smoothed and have the smoothed version
 subtracted from it. The smoothed version is returned.
@@ -26,6 +29,13 @@ subtracted from it. The smoothed version is returned.
 The following arguments are supported:
 
 =over 4
+
+=item B<FWHM>
+
+FWHM to be used in creating PSF. The PSF will have a radius equal to
+this value. May be a single value or array reference with two
+values. Default is to use the appropriate FWHM. Maybe overridden with
+the recipe parameter C<PSF_FWHM>.
 
 =item B<GROUP>
 
@@ -55,10 +65,10 @@ Name of output PSF image. Default is to create a psf file name using
 the C<inout> method of the Frame or Group depending on the value of
 the B<GROUP> parameter above.
 
-=item B<RADIUS>
+=item B<RELAMPS>
 
-Radius (HWHM) of PSF. Default is to use the appropriate FWHM. Maybe
-overridden with the recipe parameter C<PSF_FWHM>.
+Relative amplitudes of the gaussian components. Must be specified if
+the B<FWHM> is given.
 
 =item B<SMOOTH>
 
@@ -85,7 +95,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-CDIV, CHPIX, CREFRAME, GAUSMOOTH, NDFCOPY, SUB
+ADD, CDIV, CHPIX, CREFRAME, GAUSMOOTH, NDFCOPY, NDFTRACE, SUB
 
 =item ORAC-DR PRIMITIVES
 
@@ -112,7 +122,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 University of British Columbia. All Rights Reserved.
+Copyright (C) 2010,2013 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -148,7 +159,6 @@ my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 my $Obj = ($group) ? $Grp : $Frm;
 if (!$psf) {
   $psf = $Obj->inout("_psf");
-
   # Store the PSF image in the intermediates array so it can be deleted
   # at the end of the recipe
   $Obj->push_intermediates($psf);
@@ -158,6 +168,7 @@ if (!$psf) {
 my $smooth = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 1);
 my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH_FWHM", 30.0);
 
+# Pixel scale - either use-specified or obtained from an input file
 my $pixscale = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", undef);
 if ( !defined $pixscale ) {
   # Input file - only used for getting pixel scale
@@ -175,20 +186,68 @@ if ( !defined $pixscale ) {
 # Create a Gaussian PSF image with FWHM equal to Airy disk
 # radius. For the JCMT this is the default FWHM stored in the
 # calibration system.
-my $airy_radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", $Cal->fwhm);
+my $fwhm = get_prim_arg($_PRIM_ARGS_, "FWHM", scalar($Cal->fwhm));
 # Override with recipe parameter
-$airy_radius = $Frm->uhdr("RECPAR_PSF_FWHM")
+$fwhm = $Frm->uhdr("RECPAR_PSF_FWHM")
   if (defined $Frm->uhdr("RECPAR_PSF_FWHM"));
+
+# Set the relative amplitudes if necessary
+my (@fwhm, @relamps, $airy_radius);
+if (ref($fwhm)) {
+  my $relamps = get_prim_arg($_PRIM_ARGS_, "RELAMPS", undef);
+  $relamps = $Frm->uhdr("RECPAR_PSF_RELAMPS")
+    if (defined $Frm->uhdr("RECPAR_PSF_RELAMPS"));
+  if ($relamps) {
+    @relamps = @{$relamps};
+    my $relampsum = 0;
+    foreach my $i (0 ..$#relamps) {
+      $relampsum += $relamps[$i];
+    }
+    if ($relampsum != 1) {
+      orac_err "Relative amplitudes do not sum to unity\n";
+    }
+  } else {
+    # Default
+    @relamps = $Cal->beamamps;
+  }
+  @fwhm = @{$fwhm};
+  $airy_radius = ($fwhm[0] > $fwhm[1]) ? $fwhm[0] : $fwhm[1];
+} else {
+  push(@fwhm, $fwhm);
+  push(@relamps, 1);
+  $airy_radius = $fwhm;
+}
+my $ncomp = @fwhm;
 
 # FWHM and PSF image size in pixels - use 2x the smoothing FWHM if
 # necessary to ensure the PSF is well defined
 my $airy_pix = $airy_radius / $pixscale;
 my $smooth_pix = $smooth_fwhm / $pixscale;
-my $npix = ($smooth) ? 2*$smooth_pix : 2*$airy_pix;
 
 # The PSF will have bounds (-npix:npix,-npix:npix) unless a template
 # image is given
 my $like = get_prim_arg($_PRIM_ARGS_, "LIKE", undef);
+
+# Determine extra parameters for creframe, and size of region to
+# smooth with gaussian
+my ($extra, $imsize);
+if ($like) {
+  $extra = " like=$like";
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$like");
+  # A given image cannot be assumed to be square, so use the largest
+  # dimension
+  my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+  $imsize = ($dims[0] > $dims[1]) ? $dims[0] : $dims[1];
+} else {
+  # PSF bounds - use the largest of the possible scales - either the
+  # smoothing radius or the FWHM
+  my $npix = ($smooth) ? (($smooth_pix > $airy_pix) ? 2*$smooth_pix : 2*$airy_pix)
+    : 2*$airy_pix;
+  $extra = " lbound=[-$npix,-$npix] ubound=[$npix,$npix]";
+  $imsize = 2*$npix + 1;
+}
+
+orac_print "Creating PSF image..." if ($verbose);
 
 # Reuseable temp files
 my $temp1 = new ORAC::TempFile;
@@ -196,39 +255,58 @@ my $tempfile1 = $temp1->file;
 my $temp2 = new ORAC::TempFile;
 my $tempfile2 = $temp2->file;
 
-orac_print "Creating PSF image..." if ($verbose);
+my $comp1 = new ORAC::TempFile;
+my $compfile1 = $comp1->file;
+my $comp2 = new ORAC::TempFile;
+my $compfile2 = $comp2->file;
 
 # Create a flat image with value zero
-my $args = "mode=fl mean=0 out=$tempfile1";
-$args .= ($like) ? " like=$like" : " lbound=[-$npix,-$npix] ubound=[$npix,$npix]";
+my $args = "mode=fl mean=0 out=$tempfile1 $extra";
 $Mon{kappa_mon}->obeyw("creframe","$args");
 
 # Set the central pixel to a value of 1.0
 $args = "in=$tempfile1 out=$tempfile2 section='0,0' newval=1";
 $Mon{kappa_mon}->obeyw("chpix","$args");
 
-# Smooth this spike using a Gaussian kernel of FWHM equal to the Airy
-# radius. This produces a Gaussian PSF image. NOTE, the FWHM is the
-# Airy radius, not the diameter as might be expected. In practice it
-# seems like the FWHM of the point sources in a SCUBA-2 map is much
-# closer to the Airy radius than the Airy diameter. Gausmooth
-# preserves total data sum, so the output PSF image will have a total
-# data sum of unity.
-$args = "in=$tempfile2 fwhm=$airy_pix out=$tempfile1";
-$Mon{kappa_mon}->obeyw("gausmooth","$args");
+my @comps = ($compfile1, $compfile2);
+foreach my $count (0 .. $ncomp-1) {
+  # Smooth this spike using a Gaussian kernel of FWHM equal to the Airy
+  # radius. This produces a Gaussian PSF image. NOTE, the FWHM is the
+  # Airy radius, not the diameter as might be expected. In practice it
+  # seems like the FWHM of the point sources in a SCUBA-2 map is much
+  # closer to the Airy radius than the Airy diameter. Gausmooth
+  # preserves total data sum, so the output PSF image will have a total
+  # data sum of unity.
+  my $fwhmpix = $fwhm[$count] / $pixscale;
+  my $gauss = ORAC::TempFile->new();
+  $args = "in=$tempfile2 fwhm=$fwhmpix out=$gauss box=$imsize";
+  $Mon{kappa_mon}->obeyw("gausmooth","$args");
 
-# Normalise the PSF to a peak value of 1.0 if requested
-if ($norm eq "peak") {
-  _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 VERBOSE=0
-  my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-  $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 scalar=$peak out=$psf");
-  orac_print " normalizing..." if ($verbose);
+  if ($norm eq "peak") {
+    # Find the peak and use the relative amplitude to create a scaled
+    # normalized gaussian
+    _FIND_IMAGE_STATISTICS_ IMAGE=$gauss VERBOSE=0
+    my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX} / $relamps[$count];
+    $Mon{kappa_mon}->obeyw("cdiv","in=$gauss scalar=$peak out=$comps[$count]");
+  } else {
+    # If not normalizing by the peak, then the output PSF will be the
+    # sum of the individual components divided by the number of
+    # components - thus divide by ncomp here if necessary
+    $Mon{kappa_mon}->obeyw("cdiv","in=$gauss scalar=$ncomp out=$comps[$count]");
+  }
+}
+orac_print " normalizing..." if ($norm eq "peak" && $verbose);
+
+
+if ($ncomp == 2) {
+  $args = "in1=".$comps[0]." in2=".$comps[1]." out=$psf";
+  $Mon{kappa_mon}->obeyw("add","$args");
 } else {
-  # Otherwise just copy input to output
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1 out=$psf");
+  my $args = "in=".$comps[0]." out=$psf";
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
 }
 
-# If smoothing return the smoothed and subtracted version as the PSF
+# If smoothing, return the smoothed and subtracted version as the PSF
 if ($smooth) {
   orac_print " smoothing and subtracting from original..." if ($verbose);
   my $temp_psf = new ORAC::TempFile;
