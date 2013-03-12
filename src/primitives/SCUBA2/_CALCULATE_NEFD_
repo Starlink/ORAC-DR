@@ -161,6 +161,17 @@ unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" 
   $estimator = "MEDIAN";
 }
 
+# Code ref to calculate the extinction correction
+my $calc_extcor = sub {
+  my $obj = shift;
+  my $tau = $Cal->tau ( $obj->uhdr("ORAC_FILTER") );
+  my $airmass = 0.5*($obj->uhdr("ORAC_AIRMASS_START") +
+		     $obj->uhdr("ORAC_AIRMASS_END"));
+  return { airmass => $airmass,
+	   tau => $tau,
+	   extcor => exp($tau * $airmass), };
+};
+
 orac_print "Calculating NEFDs";
 # Only use HISTAT to calculate the mode
 my $histat = ($estimator eq "MODE") ? 1 : 0;
@@ -189,17 +200,6 @@ if ($usenoise) {
     # we will read information from each file
     # else just use the header values
     my @fileinfo;
-
-    # Code ref to calculate the extinction correction
-    my $calc_extcor = sub {
-      my $frm = shift;
-      my $tau = $Cal->tau ( $frm->uhdr("ORAC_FILTER") );
-      my $airmass = 0.5*($frm->uhdr("ORAC_AIRMASS_START") +
-                         $frm->uhdr("ORAC_AIRMASS_END"));
-      return { airmass => $airmass,
-               tau => $tau,
-               extcor => exp($tau * $airmass), };
-    };
 
     my $onsky = ($Frm->uhdr("ORAC_OBJECT") eq "DARK") ? 0 : 1;
     if ($onsky){
@@ -354,6 +354,8 @@ if ($usenoise) {
 	  orac_print "Effective NEFD  = $penefd mJy/beam s**0.5 using $numbol bolometers\n", "green";
 	}
       }
+      my $info = $calc_extcor->($Obj);
+      $znefd = $nefd / $info->{extcor};
 
     } else {
       orac_warn "Unable to derive NEFD using current $frmgrp image\n";
