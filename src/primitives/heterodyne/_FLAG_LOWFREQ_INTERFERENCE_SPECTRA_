@@ -77,6 +77,12 @@ exclude the -15 to +15 km/s range.  This argument can be overridden by
 the RECPAR_BASELINE_LINEARITY_LINEWIDTH uhdr via the recipe parameter
 system.  ["25.0"]
 
+=item MIN_SPECTRA = INTEGER (Given)
+
+Minimum number of good spectra for non-linearity filtering to be attempted.
+This argument can be overridden by the RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA
+uhdr via the recipe parameter system.  [50]
+
 =item SCALELENGTH = INTEGER (Given)
 
 The smoothing scale length in pixels.  Features narrower than this are
@@ -192,6 +198,7 @@ if ( ! $apply ) { goto RETURN }
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
 my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "25.0" );
+my $min_spec = get_prim_arg( $_PRIM_ARGS_, "MIN_SPECTRA", "50" );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 
 # Handle recipe parameter overrides.
@@ -205,6 +212,10 @@ $central_mask = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" ) )
 $smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" ) ) ?
                 $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" )       :
                 $smooth_scale );
+
+$min_spec = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" ) ) ?
+            $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" )              :
+            $min_spec );
 
 $edge_clip = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP" ) ) ?
              $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP" )              :
@@ -259,7 +270,7 @@ $edge_clip = "[" . join( ",", @clip_sigma ) . "]";
 # processed.  Valid receptors can then be rejected and bad ones included.
 # While this could be circumvented, such as making a private
 # $ORAC_DATA_CAL/index.bad_receptors and enter a null (H14) entry if
-# a night has no bad receptors.  A better technique is to use the 
+# a night has no bad receptors.  A better technique is to use the
 # -calib bad_receptors command-line option, through which one can also
 # supply a list of bad receptors directly.  Here we specify INDEX to only
 # use the pipeline-generated bad receptors.
@@ -283,6 +294,22 @@ my $params;
 my $osuffix = "_lfimasked";
 
 my $linearity_profiles = new ORAC::TempFile( 0 );
+
+# First determine if there are sufficient spectra to do a meaningful
+# analysis.  Sum through all the files, but almost certainly if there is
+# more than one file, there are sufficient spectra.
+my $no_spec = 0;
+foreach my $i ( 1 .. $Frm->nfiles ) {
+   my $in = $Frm->file( $i );
+   _GET_DIMENSIONS_ FILE=$in
+   my $dims = $_GET_DIMENSIONS_{DIMS};
+   $no_spec += $dims->[2];
+}
+
+if ( $no_spec < $min_spec ) {
+   orac_warn "Too few spectra ($no_spec) for low-frequency-interference analysis.  The minimum is $min_spec.\n";
+   goto RETURN;
+}
 
 my $no_times = 0;
 my @time_bounds;
