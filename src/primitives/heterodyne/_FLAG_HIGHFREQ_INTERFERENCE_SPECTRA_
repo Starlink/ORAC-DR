@@ -29,6 +29,11 @@ It has the advantage of retaining good data for receptors that are only
 occasionally bad, rather than rejecting all spectra for a receptor
 as _MASK_BAD_BASELINE_* primitives do.
 
+There is an option to detect bands of spectra affected by `ringing'
+interference, where the same high-frequency ripple extends over tens
+of spectra and strength has a steady increase then decline.  This is
+enabled through Argument RINGING.
+
 =head1 ARGUMENTS
 
 =over 4
@@ -42,6 +47,20 @@ will perform iterative sigma clipping of outliers, but standard
 deviations in the list should not decrease.  This argument
 can be overridden by the RECPAR_HIGHFREQ_INTERFERENCE_EDGE_CLIP
 uhdr via the recipe parameter system.  ["2.0,2.0,2.5,3.0"]
+
+=item RINGING = BOOLEAN (Given)
+
+Whether or not to test for ringing in the spectra.  This argument
+can be overridden by the RECPAR_HIGHFREQ_RINGING uhdr via the recipe
+parameter system.  Even if set to 1 (true), at least RINGING_MIN_SPECTRA
+spectra are required to give a sufficient baseline against which to
+detect spectra with ringing.  [0]
+
+=item RINGING_MIN_SPECTRA = INTEGER (Given)
+
+Minimum number of good spectra for ringing filtering to be attempted.
+This argument can be overridden by the RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA
+uhdr via the recipe parameter system.  [400]
 
 =item THRESH_CLIP = REAL (Given)
 
@@ -145,6 +164,8 @@ if ( ! $apply ) { goto RETURN }
 # =================
 
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
+my $ringing = get_prim_arg( $_PRIM_ARGS_, "RINGING", "0" );
+my $min_spec = get_prim_arg( $_PRIM_ARGS_, "RINGING_MIN_SPECTRA", "400" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
 
 # Handle recipe parameter overrides.
@@ -155,6 +176,13 @@ $edge_clip = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_EDGE_CLIP" ) )
              $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_EDGE_CLIP" )              :
              $edge_clip );
 if ( ref( $edge_clip ) eq 'ARRAY' ) { $edge_clip = join( ",", @{ $edge_clip } ) }
+
+$ringing = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" ) ) ?
+             $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" )            : $ringing );
+
+$min_spec = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" ) ) ?
+            $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" )              :
+            $min_spec );
 
 $thresh_clip = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP" ) ) ?
              $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP" )                :
@@ -219,7 +247,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # processed.  Valid receptors can then be rejected and bad ones included.
 # While this could be circumvented, such as making a private
 # $ORAC_DATA_CAL/index.bad_receptors and enter a null (H14) entry if
-# a night has no bad receptors.  A better technique is to use the 
+# a night has no bad receptors.  A better technique is to use the
 # -calib bad_receptors command-line option, through which one can also
 # supply a list of bad receptors directly.  Here we specify INDEX to only
 # use the pipeline-generated bad receptors.
@@ -363,9 +391,11 @@ orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @
 # just the intensity varies.  The signal this generates peaks about 5%
 # of the strong signal.  This is just a first crude attempt at
 # filtering them.  They seem to occur between the the first type of
-# high-frequency interference.
-         my $phase2 = 1;
-         if ( $phase2 ) {
+# high-frequency interference.  Given that ringing has been observed thus
+# far to extend typically over tens and even over 200 spectra, and
+# that some reference level for unaffected spectra is needed, define a
+# minimum number of spectra.
+         if ( $ringing && $numgood >= $min_spec ) {
             if ( $eject > 0 ) {
 
 # The first step is to exclude the strong signals from the flattened
