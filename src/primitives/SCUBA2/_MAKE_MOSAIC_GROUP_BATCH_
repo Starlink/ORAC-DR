@@ -6,9 +6,11 @@ _MAKE_MOSAIC_GROUP_BATCH_ - Create group mosaic in batch mode
 
 =head1 SYNOPSIS
 
-_MAKE_MOSAIC_GROUP_BATCH_
+ _MAKE_MOSAIC_GROUP_BATCH_
 
-_MAKE_MOSAIC_GROUP_BATCH_ METHOD=NEAREST
+ _MAKE_MOSAIC_GROUP_BATCH_ METHOD=NEAREST
+
+ _MAKE_MOSAIC_GROUP_BATCH_ MOSTAG=new
 
 =head1 DESCRIPTION
 
@@ -40,6 +42,12 @@ C<nearest>.
 Task to use for combining files. Must be either C<wcsmosaic> or
 C<makemos>. Default is C<wcsmosaic>.
 
+=item B<MOSTAG>
+
+Optional name of a tag for which data can be retrieved. No coadd will
+be created if the given tag does not exist. No default: will use all
+files from all good Frame objects in current Group if not specified.
+
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
@@ -70,19 +78,21 @@ coordinate frame.
 
 =head1 OUTPUT DATA
 
-None.
+The uhdr entry C<NMOSFILES> will contain the number of files in the
+coadd.
 
 =head1 OUTPUT FILES
 
-Creates a single output Group image with a suffix of C<_mos>.
+Creates a single output Group image with a suffix of C<_mos> (or the
+input tag if given).
 
 =head1 AUTHORS
 
-Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010-2012 University of British Columbia.  All Rights
+Copyright (C) 2010-2013 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -108,14 +118,19 @@ my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 # Image combination method. Default to nearest neighbour
 my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
 
+# Files tagged with this value will be coadded
+my $mostag = get_prim_arg($_PRIM_ARGS_, "MOSTAG", undef);
+
 # Proceed if the current Frame is the last member of the Group
 if ( $Grp->lastmember($Frm) ) {
   # Select all good Frame files
-  my @frmfiles = map { $_->files } grep { $_->isgood > 0 } $Grp->members;
+  my @frmfiles = map { $_->files } grep { (($mostag) ? $_->tagretrieve($mostag) : 1) && $_->isgood > 0 } $Grp->members;
   my $nfiles = scalar(@frmfiles);
+  $Grp->uhdr("NMOSFILES",$nfiles);
 
   if ( $nfiles > 0 ) {
-    my $out = $Grp->inout("_mos");
+    my $suffix = ($mostag) ? $mostag : "mos";
+    my $out = $Grp->inout("_$suffix");
 
     # With only a single file, just ndfcopy the input file to the
     # output, otherwise combine with wcsmosaic
@@ -123,7 +138,6 @@ if ( $Grp->lastmember($Frm) ) {
       orac_print "Creating Group file from single input file... ";
       $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$frmfiles[0] out=$out");
     } elsif ( $nfiles > 1 ) {
-
       my $mostask = lc(get_prim_arg($_PRIM_ARGS_, "MOSAIC_TASK", "wcsmosaic"));
       my $use_makemos = ($mostask eq "makemos") ? 1 : 0;
 
@@ -138,7 +152,7 @@ if ( $Grp->lastmember($Frm) ) {
 	$Frm->push_intermediates(@frmfiles);
       }
 
-      orac_print "Mosaicking Group file with $mostask combining $nfiles files...\n"
+      orac_print "Mosaicking Group file with $mostask combining $nfiles files..."
 	  if ($verbose);
 
       # Calculate the relative offsets of each source and shift the
