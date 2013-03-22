@@ -2,18 +2,20 @@
 
 =head1 NAME
 
-_MAKEMAP_FRAME_CLS_ - create signal and map-filtered psf images
+_MAKEMAP_FRAME_CLS_ - create map-filtered psf images
 
 =head1 SYNOPSIS
 
  _MAKEMAP_FRAME_CLS_
 
+ _MAKEMAP_FRAME_CLS_ CONFIG_TYPE=BRIGHT_COMPACT
+
 =head1 DESCRIPTION
 
-This primitive creates a signal map along with a map-filtered psf,
-derived from a nartificial gaussian inserted into the timeseries.  The
-data are processed as normal, and the processed repeated for a model
-PSF in order to understand how the processing affects a known point
+This primitive creates a map-filtered psf derived from an artificial
+gaussian inserted into the timeseries. The data should have already
+been processed as normal, and the processing is repeated for a model
+PSF in order to understand how the map-making affects a known point
 source.
 
 Rather than letting the pipeline generate one automatically, the user
@@ -21,16 +23,6 @@ may provide an artificial source to add to the timeseries, specified
 by the recipe parameter C<FAKEMAP_MAP>. They may also provide an
 alternative scaling factor via C<FAKEMAP_SCALE>. This value will not
 be scaled in the manner outlined below.
-
-The amplitude of the artifical point source created by the pipeline is
-3 or 10 Jy/beam at 850/450 um respectively. However, this amplitude
-may be scaled by the (square root of the) number of images that will
-be combined to create the final coadd in order to preserve the
-signal-to-noise ratio of the artificial source. This may be useful in
-ensuring that comparisons of the map-filtering are made with source of
-the same significance. If the map-maker is linear, it should not make
-a difference. The recipe parameter C<FAKEMAP_CONSTSNR> may be used to
-control this behaviour.
 
 =head1 ARGUMENTS
 
@@ -42,18 +34,6 @@ The following arguments are supported:
 
 Type of C<makemap> config file to use. Default is to use the standard
 C<BLANK_FIELD> config file.
-
-=item B<MAP_PSF>
-
-Flag to indicate whether the map-filtered psf should be created by
-this primitive. Default is 1 (yes).
-
-=item B<KEEP_SN>
-
-Flag to indicate that the amplitude of the artificial source should be
-scaled in order to ensure the signal-to-noise ratio of the fake source
-in the final coadd is independent of the number of images combined to
-make the coadd. Default is 1 (yes).
 
 =item B<VERBOSE>
 
@@ -101,7 +81,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012 University of British Columbia. All Rights Reserved.
+Copyright (C) 2012,2013 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -123,17 +104,12 @@ USA.
 # Be verbose? Default to yes.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-# Flag to denote that the map psf should be created - default to yes,
-# but override with recipe parameter
-my $map_psf = get_prim_arg($_PRIM_ARGS_, "MAP_PSF", 1);
-$map_psf = $Frm->uhdr("RECPAR_MAP_PSF") if (defined $Frm->uhdr("RECPAR_MAP_PSF"));
-
 my $config_type = get_prim_arg($_PRIM_ARGS_, "CONFIG_TYPE", "BLANK_FIELD");
 
-# Create frame image as usual
-_MAKEMAP_FRAME_ CONFIG_TYPE=$config_type
+# Names of output maps
+my ($image, $image_copy, $map_psf);
 
-my ($image, $image_copy);
+# Retrieve the existing image if created
 if ($Frm->product && $Frm->product eq "newimage") {
   $image = $Frm->file;
   # Make a copy of this file as it will be overwritten by the second
@@ -144,12 +120,26 @@ if ($Frm->product && $Frm->product eq "newimage") {
   $Frm->push_intermediates($image_copy);
 } else {
   orac_err "Creation of map failed - unable to create corresponding map PSF\n";
-  $map_psf = 0;
 }
 
-# Now create the map PSF
-if ($map_psf) {
-  orac_print "Creating map-filtered PSF for this observation...\n" if ($verbose);
+# Now create the map PSF if base image was created
+if ($image) {
+  # Set the PSF amplitude either from an existing value or a recipe
+  # parameter - otherwise use a default of 1 for no scaling
+  my $fakescale = 1;
+  my $fcf = $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM");
+  if ($Grp->uhdr("FAKESCALE")) {
+    $fakescale = $Grp->uhdr("FAKESCALE");
+  } elsif (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
+    # This value will be in Jy so divide by the FCF
+    $fakescale = $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
+    $fakescale /= $fcf;
+    $Grp->uhdr("FAKESCALE",$fakescale);
+  }
+  my $fakescalejy = sprintf "%.1f", ($fakescale * $fcf);
+  orac_print "\nCreating map-filtered PSF for this observation: using a gaussian with peak = $fakescalejy Jy/beam\n"
+    if ($verbose);
+
   # The user can provide a PSF image via a recipe parameter or let the
   # pipeline create one itself
   my $user_psf = $Frm->uhdr("RECPAR_FAKEMAP_MAP")
@@ -159,52 +149,19 @@ if ($map_psf) {
     # Need to make sure that the given PSF matches the pixel bounds of
     # the existing signal image
     $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$user_psf out=$psf like=$image");
+
+    # Set fakemap parameters to be picked up by the map-maker
+    $Frm->uhdr("FAKEMAP", $psf);
+    $Frm->uhdr("FAKESCALE", $fakescale);
   } else {
     # Create a gaussian of the telescope FWHM, using the existing
     # signal image as a template
-    _CREATE_PSF_IMAGE_ IN=$image LIKE=$image VERBOSE=0 PSF=$psf
+    _CREATE_FAKEMAP_FRAME_ LIKE=$image VERBOSE=0
   }
 
-  my $scale_psf = get_prim_arg($_PRIM_ARGS_,"KEEP_SN",1);
-  $scale_psf = $Frm->uhdr("RECPAR_FAKEMAP_CONSTSNR")
-    if (defined $Frm->uhdr("RECPAR_FAKEMAP_CONSTSNR"));
-
-  # Set the PSF amplitude either from existing value, or a recipe
-  # parameter
-  my $fakescale = 1;
-  if ($Grp->uhdr("FAKEMAP_SCALE")) {
-    $fakescale = $Grp->uhdr("FAKEMAP_SCALE");
-  } elsif (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
-    $fakescale = $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
-  } else {
-    # Set a base fakemap scale of 1/3 Jy/beam at 850/450 um
-    $fakescale = ($Frm->hdr("FILTER") =~ /850/) ? 10 : 50;
-    if ($scale_psf) {
-      # Now scale by the square-root of the number of observations in
-      # the project
-      my $nscale = sqrt($Grp->num + 1);
-      $fakescale /= $nscale;
-    }
-    # Convert fakescale from Jy/beam to pW using default FCF
-    $fakescale /= $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM");
-    $fakescale = sprintf "%.3e", $fakescale;
-    # Store in the Grp uhdr so it doesn't need to be calculated again
-    $Grp->uhdr("FAKEMAP_SCALE",$fakescale);
-  }
-  my $fakescalejy = $fakescale * $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM");
-  orac_print "Adding a gaussian with peak = ".(sprintf "%.1f", $fakescalejy)." Jy/beam to this observation\n" if ($verbose);
-
-  # Localize the Frame object and store the raw files in it
-  my @infiles = $Frm->raw;
-  my $uhdr = $Frm->uhdr;
-  my $Frm = $Frm->new();
-  $Frm->files(@infiles);
-  $Frm->uhdr(%{$uhdr});
-
-  # Set fakemap parameters to be picked up in the primitive below
-  $Frm->uhdr("FAKEMAP", $psf);
-  $Frm->uhdr("FAKESCALE", $fakescale);
-
+  # Store raw files and re-make map now with fake gaussian added to it
+  $Frm->files($Frm->raw);
+  $Frm->readhdr;
   _MAKEMAP_FRAME_ CONFIG_TYPE=$config_type
 
   # Retrieve the map psf if successful
@@ -213,7 +170,6 @@ if ($map_psf) {
     $map_psf = $Frm->inout("_mappsf");
     $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$fakedmap out=$map_psf");
   } else {
-    $map_psf = 0;
     # Otherwise issue an error - what else should happen here?
     orac_err "Creation of map PSF failed\n";
   }
@@ -221,7 +177,7 @@ if ($map_psf) {
 
 # If the map psf creation was successful, $map_psf will now contain
 # the name of the image. Store the image and map psf in the Frame.
-if ($image && $map_psf) {
+if ($image && $image_copy && $map_psf) {
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$image_copy out=$image");
   $Frm->push_intermediates($image_copy);
   $Frm->files($image, $map_psf);
