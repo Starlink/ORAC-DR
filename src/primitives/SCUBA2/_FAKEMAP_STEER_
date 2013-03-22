@@ -11,7 +11,20 @@ _FAKEMAP_STEER_ - store steering parameters for reducing SCAN-mode data with a f
 =head1 DESCRIPTION
 
 This primitive checks for the presence of recipe parameters and sets
-entries in the Frame uhdr accordingly.
+entries in the Frame uhdr accordingly. It is assumed that if this
+primitive is called it is because the user wants to add a fake source
+to the timeseries.
+
+Note that if no FAKEMAP parameters are specified, this primitive will
+set appropriate values for an artificial gaussian to be added to the
+timeseries at the map centre. The amplitude of this point source is 10
+or 50 Jy/beam at 850/450 um respectively. However, the amplitude may
+be scaled by the (square root of the) number of images that will be
+combined to create the final coadd in order to preserve the
+signal-to-noise ratio of the artificial source. This may be useful in
+ensuring that comparisons of the map-filtering are made with source of
+the same significance. If the map-maker is linear, it should not make
+a difference.
 
 =head1 ARGUMENTS
 
@@ -46,7 +59,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 University of British Columbia. All Rights Reserved.
+Copyright (C) 2011,2013 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -71,43 +85,41 @@ foreach my $par ( grep {"FAKEMAP"} keys %RECPARS ) {
   $Frm->uhdr($recpar, $RECPARS{$par}) if defined $RECPARS{$par};
 }
 
-# If no map was given, check for FWHM and/or AMP keywords
+# If no map was given, check for FWHM and/or SCALE keywords
 unless (defined $Frm->uhdr("RECPAR_FAKEMAP_MAP")) {
-  my $nomap = 1;
+  # Set a default FWHM if necessary
   if (defined $Frm->uhdr("RECPAR_FAKEMAP_FWHM")) {
     if ($Frm->uhdr("RECPAR_FAKEMAP_FWHM") =~ /beam/i) {
       $Frm->uhdr("RECPAR_FAKEMAP_FWHM", ($Cal->fwhm)[0]);
     }
+  } else {
+    $Frm->uhdr("RECPAR_FAKEMAP_FWHM", ($Cal->fwhm)[0]);
+  }
 
-    unless (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
-      # Define default amplitudes which correspond to 1 and 4 Jy at
-      # 850/450 um respectively
-      my $amp = ($Frm->hdr("FILTER") =~ /850/) ? 1 : 4;
-      $Frm->uhdr("RECPAR_FAKEMAP_SCALE", $amp);
-    }
-    $nomap = 0;
+  # Set a default amplitude if necessary
+  unless (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
+    # Set default amplitudes of 10/50 Jy at 850/450 um respectively
+    my $amp = ($Frm->hdr("FILTER") =~ /850/) ? 10 : 50;
+    # Now scale by the square-root of the number of observations in
+    # the project unless otherwise directed
+    my $scale_psf = (defined $Frm->uhdr("RECPAR_FAKEMAP_CONSTSNR")) ?
+      $Frm->uhdr("RECPAR_FAKEMAP_CONSTSNR") : 1;
+    $amp /= sqrt($Grp->num + 1) if ($scale_psf);
+    $Frm->uhdr("RECPAR_FAKEMAP_SCALE", $amp);
   }
-  if (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
-    # Define a default FWHM equal to the beam size if not given
-    $Frm->uhdr("RECPAR_FAKEMAP_FWHM", $Cal->fwhm)
-      unless (defined $Frm->uhdr("RECPAR_FAKEMAP_FWHM"));
-    $nomap = 0;
-  }
-  # If no FWHM or AMP then quit
-  orac_term "No base fakemap defined - will not proceed\n"
-    if ($nomap);
 }
 
 # Tell user the map name that's being used
-my $fakemap;
+my $fakemapname;
 if (defined $Frm->uhdr('RECPAR_FAKEMAP_MAP')) {
-  $fakemap = $Frm->uhdr('RECPAR_FAKEMAP_MAP');
+  $fakemapname = $Frm->uhdr('RECPAR_FAKEMAP_MAP');
 } else {
   my $fwhm = sprintf "%g", $Frm->uhdr("RECPAR_FAKEMAP_FWHM");
   my $amp = sprintf "%g", $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
-  $fakemap = "a gaussian with FWHM = $fwhm arcsec and amplitude $amp Jy/beam";
+  $fakemapname = "a $amp Jy/bm gaussian with FWHM = $fwhm arcsec";
 }
-orac_print(" Adding $fakemap to timeseries", "yellow");
+orac_print(" Adding $fakemapname to timeseries", "yellow");
+
 # And other details if appropriate
 if ( defined $Frm->uhdr('RECPAR_FAKEMAP_SCALE') &&
      defined $Frm->uhdr('RECPAR_FAKEMAP_MAP') ) {
@@ -126,6 +138,7 @@ if (defined $Frm->uhdr('RECPAR_FAKEMAP_OFFSET')) {
     $offset = [$offset,$offset];
     $Frm->uhdr('RECPAR_FAKEMAP_OFFSET', $offset);
   }
+  # Inform user of shift
   orac_print(", shifted by ".(join(",",@{$Frm->uhdr('RECPAR_FAKEMAP_OFFSET')}))." arcsec", "yellow");
 }
 orac_print "\n";
