@@ -11,28 +11,37 @@ _CREATE_FAKEMAP_FRAME_ - create a fake map to add to timeseries
 =head1 DESCRIPTION
 
 This primitive creates a suitable fake map to add to the timeseries
-data when making the data map. If no input map is specified the
+data when making the data map. The input map is obtained from the
+C<FAKEMAP_MAP> recipe parameter. If no input map is specified the
 primitive will create a Gaussian of unit height at the map centre in
 pixel coordinates (scaled by the C<FAKESCALE> parameter), provided the
-C<FWHM> parameter is given.
+C<FWHM> parameter is given. Alternatively, the gaussian will be
+centred at the position denoted by the C<FAKEMAP_OFFSET> ecipe
+parameter.
 
 The parameters are all derived from recipe parameters: see the
 documentation for the L<REDUCE_SCAN_FAKEMAP|REDUCE_SCAN_FAKEMAP>
 recipe for the list of supported parameters.
 
-SMURF C<makemap> is used to test the size of the output image, from
-which the required pixel bounds can be obtained. A blank template is
-created with these pixel bounds. The template will have WCS added if
-the fake map is to have the same pixel scale as the output map.
+The user may provide the name of a file from which to obtain the map
+bounds. If no input file is given, SMURF C<makemap> is used to test
+the size of the output image, from which the required pixel bounds can
+be obtained. A blank template is created with these pixel bounds. The
+template will have WCS added if the fake map is to have the same pixel
+scale as the output map.
 
 The name of the fake map is stored for retrieval at the map-making
 stage.
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 4
+
+=item B<LIKE>
+
+Name of a file from which to obtain map bounds. No default.
 
 =item B<VERBOSE>
 
@@ -55,7 +64,7 @@ MAKEMAP
 
 =item ORAC-DR PRIMITIVES
 
-_CREATE_REFERENCE_IMAGE_
+_ADD_WCS_TO_IMAGE, _CREATE_PSF_IMAGE_, _CREATE_REFERENCE_IMAGE_, _GET_PIXEL_SCALE_
 
 =back
 
@@ -75,7 +84,19 @@ the end of the recipe.
 
 =head1 NOTES
 
-None.
+=over 2
+
+=item *
+
+The gaussian will be shifted by an integer number of pixels to ensure
+the peak value remains unchanged.
+
+=item *
+
+If B<LIKE> is unspecified, the Frame must contain raw data from which
+a map can be made.
+
+=back
 
 =head1 AUTHOR
 
@@ -83,7 +104,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 University of British Columbia. All Rights
+Copyright (C) 2011,2013 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -118,7 +139,7 @@ if ($inputmap) {
   # If the input map is not defined, create a gaussian of the specified
   # properties
   $fwhm = $Frm->uhdr("RECPAR_FAKEMAP_FWHM");
-  orac_print "Creating gaussian fakemap:\n";
+  orac_print "Creating gaussian fakemap:";
 }
 my $fakescale = (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE"))
   ? $Frm->uhdr("RECPAR_FAKEMAP_SCALE") : 1.0;
@@ -129,23 +150,39 @@ $fakemap = $Frm->strip_subscan($fakemap);
 
 my $regrid = ($Frm->uhdr("RECPAR_FAKEMAP_REGRID")) ? $Frm->uhdr("RECPAR_FAKEMAP_REGRID") : 0;
 
+my $like = get_prim_arg($_PRIM_ARGS_, "LIKE", undef);
+
 # Obtain pixel bounds for output map
 orac_print " Deriving pixel bounds... ";
-my $inlist = write_file_list( $Frm->files );
-$Mon{smurf_mon}->obeyw("makemap","in=^$inlist out=! method=rebin");
-my ($ORAC_STATUS, @bounds) = $Mon{smurf_mon}->get("makemap","lbound");
-($ORAC_STATUS, my @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
-push(@bounds, @ubound);
-($ORAC_STATUS, my $reflon) = $Mon{smurf_mon}->get("makemap","reflon");
-($ORAC_STATUS, my $reflat) = $Mon{smurf_mon}->get("makemap","reflat");
-($ORAC_STATUS, my $pixsize) = $Mon{smurf_mon}->get("makemap","pixsize");
+my ($reflon, $reflat, $pixsize, @bounds);
+if ($like) {
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$like");
+  my ($ORAC_STATUS, @lbound) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+  push(@bounds, @lbound[0..1]);
+  ($ORAC_STATUS, my @ubound) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+  push(@bounds, @ubound[0..1]);
+  ($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+  $pixsize = 0.5 *($pixscale[0] + $pixscale[1]);
+  _GET_MAP_CENTRE_ IMAGE=$like
+  ($reflon, $reflat) = @{$_GET_MAP_CENTRE_{XYPOS}};
+} else {
+  my $inlist = write_file_list( $Frm->files );
+  $Mon{smurf_mon}->obeyw("makemap","in=^$inlist out=! method=rebin");
+  (my $ORAC_STATUS, @bounds) = $Mon{smurf_mon}->get("makemap","lbound");
+  ($ORAC_STATUS, my @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
+  push(@bounds, @ubound);
+  ($ORAC_STATUS, $reflon) = $Mon{smurf_mon}->get("makemap","reflon");
+  ($ORAC_STATUS, $reflat) = $Mon{smurf_mon}->get("makemap","reflat");
+  ($ORAC_STATUS, $pixsize) = $Mon{smurf_mon}->get("makemap","pixsize");
+}
 
 # Create a template image - maps are made using the tracking
 # coordinate system by default
 orac_print "creating template... ";
 my $system = $Frm->hdr("TRACKSYS");
 my $coords = new Astro::Coords( ra => $reflon, dec => $reflat,
-				units => 'sex', type => $system );
+				units => 'sex', type => $system )
+  if ($regrid);
 _CREATE_REFERENCE_IMAGE_ PIXEL_SCALE=$pixsize SYSTEM=$system COORDS=$coords BOUNDS=\@bounds VERBOSE=0 GROUP=0 ADDWCS=$regrid STORE=0
 my $template = $_CREATE_REFERENCE_IMAGE_{REFIMAGE};
 
@@ -161,21 +198,30 @@ unless ($inputmap) {
 
   # Create a Gaussian of unit height - let makemap scale it to the
   # desired peak using the fakescale parameter
-  _CREATE_PSF_IMAGE_ RADIUS=$fwhm PSF=$basemap PIXSIZE=$pixsize SMOOTH=0
+  _CREATE_PSF_IMAGE_ RADIUS=$fwhm PSF=$basemap PIXSIZE=$pixsize SMOOTH=0 VERBOSE=$verbose
 
   # Add WCS to the Gaussian if necessary
   if ( $Frm->uhdr("RECPAR_FAKEMAP_OFFSET") || $regrid ) {
     _ADD_WCS_TO_IMAGE_ IMAGE=$basemap PIXEL_SCALE=$pixsize COORDS=$coords GROUP=0 VERBOSE=0 SYSTEM=$system
   }
 
-  # Convert fakescale from Jy/beam to pW
-  $fakescale /= $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM");
+  # Convert given fakescale from Jy/beam to pW, or use a pre-defined value
+  if (defined $Grp->uhdr("FAKESCALE")) {
+    $fakescale = $Grp->uhdr("FAKESCALE");
+  } else {
+    $fakescale /= $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM");
+  }
 }
 
-# Shift the position of the original map if requested
+# Shift the position of the original map if requested - note that in
+# order to accurately assess the effect of filtering by the map-making
+# process, the gaussian must be shifted an integer number of pixels
 if (defined $Frm->uhdr("RECPAR_FAKEMAP_OFFSET")) {
-  orac_print "shifting input WCS... ";
-  my @offset = @{$Frm->uhdr("RECPAR_FAKEMAP_OFFSET")};
+  _GET_PIXEL_SCALE_ IMAGE=$basemap VERBOSE=0
+  my @offset_pix = map { int($_/$_GET_PIXEL_SCALE_{PIXSCALE}) } @{$Frm->uhdr("RECPAR_FAKEMAP_OFFSET")};
+  $Frm->uhdr("FAKEMAP_OFFSET_PIXELS", \@offset_pix);
+  my @offset = map { sprintf "%.0f", ($_ * $_GET_PIXEL_SCALE_{PIXSCALE}) } @offset_pix;
+  orac_print "\n  Shifting input WCS by ($offset[0],$offset[1]) arcsec, ";
   # The given offsets are how far the *source* should move - negate
   # these to turn them into offsets applied to the WCS
   my $args = "stype=absolute abs=[".(-$offset[0]).",".(-$offset[1])."] ndf=$basemap";
@@ -185,7 +231,7 @@ if (defined $Frm->uhdr("RECPAR_FAKEMAP_OFFSET")) {
 # Regrid the input image if necessary
 my $aligned = ORAC::TempFile->new();
 if ($regrid) {
-  orac_print "aligning image to output pixel bounds... ";
+  orac_print "aligning image to output pixel bounds - ";
   my $args = "method=bilinear out=$aligned lbnd=! ubnd=! in=$basemap ref=$template";
   $Mon{kappa_mon}->obeyw("wcsalign","$args");
   $basemap = $aligned;
