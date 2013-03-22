@@ -60,7 +60,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-CDIV, NDFCOPY, NOMAGIC, SETVAR
+CDIV, NDFCOPY, NOMAGIC, SETVAR, SLIDE
 
 =item ORAC-DR PRIMITIVES
 
@@ -143,37 +143,58 @@ if ($psf_image) {
   my $tempfile3 = ORAC::TempFile->new();
 
   # First, copy out the desired section from the original input image
-  my $in = $psf_image ."(0~$psf_box,0~$psf_box,)";
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$tempfile1");
+  my ($section, $recentre, @offcen);
+  if ($Frm->uhdr("RECPAR_FAKEMAP_OFFSET")) {
+    # If PSF is off-centre, need to copy the section with the PSF at
+    # the centre
+    @offcen = @{$Frm->uhdr("FAKEMAP_OFFSET_PIXELS")};
+    my $exten = ($psf_box % 2 == 0) ? $psf_box / 2 : ($psf_box+1) / 2;
+    # Negate the X values because RA/Glon increases in the opposite
+    # sense to pixel coordinates
+    $section = "(".(-$offcen[0]-$exten).":".(-$offcen[0]+$exten).
+      ",".($offcen[1]-$exten).":".($offcen[1]+$exten).",)";
+    $recentre = 1;
+  } else {
+    $section = "(0~$psf_box,0~$psf_box,)";
+    $recentre = 0;
+  }
+  my $in = $psf_image . $section;
+  if ($recentre) {
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$tempfile1");
+    # Recentre the PSF on 0,0 in pixel coordinates for the whitening step
+    my $args = "stype=absolute abs=[".($offcen[0]).",".(-$offcen[1]).",0] in=$tempfile1 method=linear out=$tempfile2";
+    $Mon{kappa_mon}->obeyw("slide","$args");
+  } else {
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$tempfile2");
+  }
+
   # Then pad to original image size
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1 out=$tempfile2 like=$psf_image");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile2 out=$tempfile1 like=$psf_image");
   # Set bad values to zero
-  $Mon{kappa_mon}->obeyw("nomagic","in=$tempfile2 out=$tempfile1 repval=0");
+  $Mon{kappa_mon}->obeyw("nomagic","in=$tempfile1 out=$tempfile2 repval=0");
   # And set the variance of these pixels to the mean in the psf coadd
   _FIND_IMAGE_STATISTICS_ IMAGE=$psf_image REGION=$psf_box VERBOSE=0 COMP=VAR
   my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
   my $zero_var = $results->{MEAN};
-  $Mon{kappa_mon}->obeyw("nomagic","in=$tempfile2 out=$tempfile3 repval=$zero_var comp=var");
-  $Mon{ndfpack_mon}->obeyw("setvar","ndf=$tempfile1 from=$tempfile3 comp=var");
+  $Mon{kappa_mon}->obeyw("nomagic","in=$tempfile1 out=$tempfile3 repval=$zero_var comp=var");
+  $Mon{ndfpack_mon}->obeyw("setvar","ndf=$tempfile2 from=$tempfile3 comp=var");
 
   # Now divide by the input fakescale to get the map filtered
   # normalized PSF. If the map has no effect on the input, then the
   # PSF should have an amplitude of 1. In practice, the amplitude is
-  # reduced by the map-making process. However, if FAKEMAP_SCALE is
-  # not defined, we have to assume the input PSF is already normalized
-  # to the correct amplitude.
-  my $fakescale = (defined $Obj->uhdr("FAKEMAP_SCALE")) ?
-    $Obj->uhdr("FAKEMAP_SCALE") : 1;
-  if (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE")) {
-     $fakescale = $Frm->uhdr("RECPAR_FAKEMAP_SCALE");
-     # If the user has set a value of -1, the amplitude should be
-     # used as the fakescale so the PSF amplitude ends up as unity below
-     if ($fakescale == -1) {
-       _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 REGION=20 VERBOSE=0
-       $fakescale = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-     }
+  # reduced by the map-making process. However, if FAKESCALE is not
+  # defined, we have to assume the input PSF is already normalized to
+  # the correct amplitude.
+  my $fakescale = (defined $Obj->uhdr("FAKESCALE")) ?
+    $Obj->uhdr("FAKESCALE") : 1;
+  if (defined $Frm->uhdr("RECPAR_FAKEMAP_SCALE") &&
+      $Frm->uhdr("RECPAR_FAKEMAP_SCALE") == -1) {
+    # If the user has set a value of -1, the amplitude should be
+    # used as the fakescale so the PSF amplitude ends up as unity below
+    _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 REGION=20 VERBOSE=0
+    $fakescale = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
   }
-  $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 out=$psf_image scalar=$fakescale");
+  $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile2 out=$psf_image scalar=$fakescale");
 
   # Now analyze the PSF image and compare with the input value
   my $extra = (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) ? "supplied" : "map-filtered";
@@ -187,6 +208,7 @@ if ($psf_image) {
     my $pkpc = int(100/$results->{MAX});
     orac_print "$peak - BEAM FCF should be scaled by $pkpc %\n", "green";
   } else {
+    orac_print "\n";
     orac_warn "Unable to determine FCF scaling factor - peak is 0!\n";
   }
   # Store the amplitude of the PSF
