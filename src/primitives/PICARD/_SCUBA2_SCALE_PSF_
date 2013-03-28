@@ -1,0 +1,124 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_SCALE_PSF_ - apply known scale factor to coadded effective PSF
+
+=head1 SYNOPSIS
+
+ _SCUBA2_SCALE_PSF_
+
+ _SCUBA2_SCALE_PSF_ GROUP=1
+
+=head1 DESCRIPTION
+
+This PICARD primitive will apply a scale factor to the current file in
+the Group or Frame object. This file should be a coadded effective PSF
+created by combining images with artificial gaussians added at the
+map-making stage.
+
+The scale factor is derived from the FITS header if possible,
+thereafter checking the current object uhdr for C<FAKESCALE> and
+C<RECPAR_FAKEMAP_SCALE>.
+
+Requires access to the SCUBA-2 calibration class.
+
+=head1 ARGUMENTS
+
+This primitive has the following arguments:
+
+=over 2
+
+=item B<GROUP>
+
+A flag to denote whether or not to process the current Frame or Group
+file. Default is 0 (use Frame). The primitive is a no-op if the file
+does not exist.
+
+=item B<SCALE>
+
+Scale factor to apply to the coadded PSF image. No default.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 2
+
+=item KAPPA:
+
+CMULT
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Writes a single output file with the suffix C<_effpsf>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Use Group or Frame?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 1);
+my $Obj = ($group) ? $Grp : $Frm;
+
+if ($Obj->file_exists) {
+  my $scale = get_prim_arg($_PRIM_ARGS_, "SCALE", undef);
+
+  # Look for scale factor in headers
+  unless ($scale) {
+    if ($Obj->hdr("FAKESCAL")) {
+      # Use as is
+      $scale = 1./$Obj->hdr("FAKESCAL");
+    } elsif ($Obj->uhdr("FAKESCALE")) {
+      # Use as is
+      $scale = 1./$Obj->uhdr("FAKESCALE");
+    } elsif ($Obj->uhdr("RECPAR_FAKEMAP_SCALE")) {
+      # This will be in Jy so take out default FCF
+      $scale = $Cal->gain($Obj->hdr("FILTER"), "BEAM") /
+	$Obj->uhdr("RECPAR_FAKEMAP_SCALE");
+      $scale *= sqrt($Grp->num + 1)
+	unless (defined $Frm->uhdr("RECPAR_FAKEMAP_CONSTSNR") &&
+		$Frm->uhdr("RECPAR_FAKEMAP_CONSTSNR") == 0);
+    }
+  }
+
+  if ($scale) {
+    orac_print "Scaling ".($Obj->file)." by ".(sprintf "%g", $scale)."\n";
+    my $out = $Obj->file . "_effpsf";
+    my $args = "in=".($Obj->file)." out=$out scalar=$scale";
+    $Mon{kappa_mon}->obeyw("cmult","$args");
+    orac_print "Created map-filtered PSF: $out\n";
+  } else {
+    orac_warn "Unable to scale PSF: scale factor not defined\n";
+  }
+}
