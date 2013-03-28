@@ -207,19 +207,28 @@ unless ($wait) {
     orac_print "in central $box pixels...";
     # Note - only specify *2* dimensions
     my $ref = $refimage . "(0~$box,0~$box)";
-    $Mon{smurf_mon}->obeyw("sc2filtermap","in=$image out=$out whiten whiterefmap=$ref");
+    my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("sc2filtermap","in=$image out=$out whiten whiterefmap=$ref");
+    if ($SMURF_STATUS == ORAC__OK) {
+      $Obj->files($out);
+      $Obj->tagset($outtag);
 
-    $Obj->files($out);
-    $Obj->tagset($outtag);
-
-    # Store the box size in the FITS header of the output file
-    my $fitshdr = new Astro::FITS::Header::NDF( File => $out );
-    my $newitem = new Astro::FITS::Header::Item( Keyword => "WHITEBOX",
-						 Value => $box,
-						 Comment => "Whitening region size (pixels)");
-    $fitshdr->insert(-1, $newitem);
-    $fitshdr->writehdr( File => $out );
-    orac_print " done\n";
+      # Store the box size in the FITS header of the output file
+      my $fitshdr = new Astro::FITS::Header::NDF( File => $out );
+      my $newitem = new Astro::FITS::Header::Item( Keyword => "WHITEBOX",
+						   Value => $box,
+						   Comment => "Whitening region size (pixels)");
+      $fitshdr->insert(-1, $newitem);
+      $fitshdr->writehdr( File => $out );
+      orac_print " done\n";
+    } else {
+      if ($SMURF_STATUS == 235176874) {
+	# SMF__BADFIT: fit failed: fit to 1/f component encountered rising spectrum
+	orac_err "sc2filtermap failed - perhaps map is filtered too harshly?\n";
+      } else {
+	orac_err "sc2filtermap failed for an unknown reason\n";
+      }
+      orac_err "Whitening step failed - output products will not be whitened\n"
+    }
   }
   # Restore object to input state if this is a PSF image
   $Obj->tagretrieve("whiten_image") if ($whiten eq "psf");
