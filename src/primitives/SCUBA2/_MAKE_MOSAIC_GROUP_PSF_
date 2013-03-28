@@ -141,6 +141,33 @@ if ($Grp->lastmember($Frm)) {
   # Reset Frame states
   $Grp->membertagretrieve("mosaic");
 
+  # Threshold coadd to get rid of noisy edges
+  if ($Frm->uhdr("RECPAR_THRESH")) {
+    my $thresh = $Frm->uhdr("RECPAR_THRESH");
+    my $coadd = $out{newimage};
+    my $texp = $coadd.".more.smurf.exp_time";
+    _FIND_IMAGE_STATISTICS_ IMAGE=$exptime VERBOSE=0
+    my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+    # Ignore all data where the exposure time is less than half of the
+    # median value
+    my $estimator = (defined $Frm->uhdr("RECPAR_STATS_ESTIMATOR")) ?
+      uc($Frm->uhdr("RECPAR_STATS_ESTIMATOR")) : "MEDIAN";
+    my $threshval = $thresh * $results->{$estimator};
+    my $thr = ORAC::TempFile->new();
+    my $thrargs = "in=$texp out=$thr thrlo=$threshval newlo=bad thrhi=1e9 newhi=1e9";
+    $Mon{kappa_mon}->obeyw("thresh","$thrargs");
+    my $newout = ORAC::TempFile->new();
+    $Mon{kappa_mon}->obeyw("copybad","in=$coadd out=$newout ref=$thr");
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$newout out=$coadd trimbad");
+    # Repeat for EXP_TIME and WEIGHTS
+    foreach my $comp (qw/exp_time weights/) {
+      my $in = $coadd.".more.smurf.".$comp;
+      my $tmp = ORAC::TempFile->new();
+      $Mon{kappa_mon}->obeyw("copybad","in=$in out=$tmp ref=$thr");
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmp out=$in trimbad");
+    }
+  }
+
   # Store the output coadd in the Group
   $Grp->files($out{newimage});
   if ($Grp->file_exists) {
