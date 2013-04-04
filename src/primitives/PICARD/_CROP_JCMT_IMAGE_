@@ -6,7 +6,9 @@ _CROP_JCMT_IMAGE_ - trim JCMT image to specified map size
 
 =head1 SYNOPSIS
 
-_CROP_JCMT_IMAGE_
+ _CROP_JCMT_IMAGE_
+
+ _CROP_JCMT_IMAGE_ GROUP=1
 
 =head1 DESCRIPTION
 
@@ -21,12 +23,20 @@ the smaller of the two sizes is used for the output image.
 
 =head1 ARGUMENTS
 
-This primitive has no arguments. All options are set via recipe
-parameters.
+This primitive supports the following argument.
+
+=over 2
+
+=item B<GROUP>
+
+If true, use the current Group file. Otherwise, use the current
+Frame. Default is 0 (false).
+
+=back
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 4
 
@@ -42,7 +52,8 @@ SCUBA2: _CROP_IMAGE_, _MASK_IMAGE_
 
 =head1 OUTPUT DATA
 
-None.
+The current object is updated with the cropped file and tagged
+C<crop>.
 
 =head1 OUTPUT FILES
 
@@ -68,7 +79,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010-2012 University of British Columbia. All Rights
+Copyright (C) 2010-2013 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -88,86 +99,93 @@ USA.
 
 =cut
 
-orac_print ("\nCalling _CROP_JCMT_IMAGE_: trim image to specified map size\n", "yellow");
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
 
-# If a map radius has been given the map is "cropped" to a circle
-my $mapradius = $Frm->uhdr("RECPAR_MAP_RADIUS")
-  if (defined $Frm->uhdr("RECPAR_MAP_RADIUS"));
+if ($Obj->file_exists) {
+  orac_print ("\nCalling _CROP_JCMT_IMAGE_: trim image to specified map size\n", "yellow");
 
-my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
-  $Frm->uhdr("RECPAR_VERBOSE") : 1;
+  my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
+    $Frm->uhdr("RECPAR_VERBOSE") : 1;
 
-# Trimmed file
-my $in = $Frm->file;
-my $out = (defined $Frm->uhdr("RECPAR_OUTPUT_NAME") && $Grp->num == 0)
-  ? $Frm->uhdr("RECPAR_OUTPUT_NAME") : $in . "_crop";
+  # Input file
+  my $in = $Obj->file;
+  # Output file name is taken from the recipe parameter iff a single
+  # file is to be processed
+  my $out = (defined $Frm->uhdr("RECPAR_OUTPUT_NAME") && $Grp->num == 0 && !$group)
+    ? $Frm->uhdr("RECPAR_OUTPUT_NAME") : $in . "_crop";
 
-$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
-my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
-($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
-my $mapwidth = 0.5*$pixscale[0]*$dims[0];
-my $maphght = 0.5*$pixscale[1]*$dims[1];
-my $mapsize = ($dims[0] < $dims[1]) ? $mapwidth : $maphght;
+  # Check the input map dimensions
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+  my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+  ($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+  my $mapwidth = 0.5*$pixscale[0]*$dims[0];
+  my $maphght = 0.5*$pixscale[1]*$dims[1];
+  my $mapsize = ($dims[0] < $dims[1]) ? $mapwidth : $maphght;
 
-# If a map radius has been given then use that to create a circular output map
-if ($mapradius) {
-  # Set a minimum size if an aperture radius is given
-  if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) {
-    my $minmapsize = 4.0 * $Frm->uhdr("RECPAR_APERTURE_RADIUS");
-    if ($mapradius < $minmapsize) {
-      orac_warn "Input radius ($mapradius arcsec) is smaller than minimum based on photometry aperture ($minmapsize arcsec)\n";
-      $mapradius = $minmapsize;
+  # If a map radius has been given then use that to create a circular output map
+  my $mapradius = $Frm->uhdr("RECPAR_MAP_RADIUS")
+    if (defined $Frm->uhdr("RECPAR_MAP_RADIUS"));
+  if ($mapradius) {
+    # Set a minimum size if an aperture radius is given
+    if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) {
+      my $minmapsize = 4.0 * $Frm->uhdr("RECPAR_APERTURE_RADIUS");
+      if ($mapradius < $minmapsize) {
+	orac_warn "Input radius ($mapradius arcsec) is smaller than minimum based on photometry aperture ($minmapsize arcsec)\n";
+	$mapradius = $minmapsize;
+      }
     }
-  }
-  # However, the circular region cannot extend beyond the existing map boundary.
-  if ($mapradius > $mapsize) {
-    $mapradius = $mapsize;
-    orac_warn "Output image radius cannot exceed input map size ($mapradius arcsec)\n"
-  }
-  orac_print "Output image will be a circle of radius $mapradius arcsec\n" if $verbose;
-  # Trim image to the specified radius
-  my $masked = ORAC::TempFile->new(0);
-  _MASK_IMAGE_ INVERT=1 IMAGE=$in MASKED=$masked RADIUS=$mapradius
-  # Shrink the image by eliminating bad pixels around the edge
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$masked out=$out trimbad");
-} else {
-  # Output image will be rectangular: check for recipe parameters
-  my $extraparams = "";
-  my $newwidth = $Frm->uhdr("RECPAR_MAP_WIDTH")
-    if (defined $Frm->uhdr("RECPAR_MAP_WIDTH"));
-  my $newheight = $Frm->uhdr("RECPAR_MAP_HEIGHT")
-    if (defined $Frm->uhdr("RECPAR_MAP_HEIGHT"));
-
-  # If the aperture radius is defined then ensure that the map height
-  # and width exceed twice the diameter of the aperture
-  if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) {
-    my $minmapsize = 4.0 * $Frm->uhdr("RECPAR_APERTURE_RADIUS");
-    if ($newwidth) {
-      $newwidth = $minmapsize if (defined $Frm->uhdr("RECPAR_MAP_WIDTH") &&
-				  $Frm->uhdr("RECPAR_MAP_WIDTH") < $minmapsize);
-    } else {
-      $newwidth = $minmapsize if ($mapwidth < $minmapsize);
+    # However, the circular region cannot extend beyond the existing map boundary.
+    if ($mapradius > $mapsize) {
+      $mapradius = $mapsize;
+      orac_warn "Output image radius cannot exceed input map size ($mapradius arcsec)\n"
     }
-    if ($newheight) {
-      $newheight = $minmapsize if (defined $Frm->uhdr("RECPAR_MAP_HEIGHT") &&
-				   $Frm->uhdr("RECPAR_MAP_HEIGHT") < $minmapsize);
-    } else {
-      $newheight = $minmapsize if ($maphght < $minmapsize);
-    }
-  }
-
-  $extraparams .= " WIDTH=$newwidth" if (defined $newwidth);
-  $extraparams .= " HEIGHT=$newheight" if (defined $newheight);
-
-  if ( $extraparams ne "" ) {
-    orac_print "Output image will have".$extraparams." arcsec\n" if $verbose;
+    orac_print "Output image will be a circle of radius $mapradius arcsec\n" if $verbose;
+    # Trim image to the specified radius
+    my $masked = ORAC::TempFile->new(0);
+    _MASK_IMAGE_ INVERT=1 IMAGE=$in MASKED=$masked RADIUS=$mapradius
+    # Shrink the image by eliminating bad pixels around the edge
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$masked out=$out trimbad");
   } else {
-    orac_print "Trimming $in...\n" if $verbose;
+    # Output image will be rectangular: check for recipe parameters
+    my $extraparams = "";
+    my $newwidth = $Frm->uhdr("RECPAR_MAP_WIDTH")
+      if (defined $Frm->uhdr("RECPAR_MAP_WIDTH"));
+    my $newheight = $Frm->uhdr("RECPAR_MAP_HEIGHT")
+      if (defined $Frm->uhdr("RECPAR_MAP_HEIGHT"));
+
+    # If the aperture radius is defined then ensure that the map height
+    # and width exceed twice the diameter of the aperture
+    if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) {
+      my $minmapsize = 4.0 * $Frm->uhdr("RECPAR_APERTURE_RADIUS");
+      if ($newwidth) {
+	$newwidth = $minmapsize if (defined $Frm->uhdr("RECPAR_MAP_WIDTH") &&
+				    $Frm->uhdr("RECPAR_MAP_WIDTH") < $minmapsize);
+      } else {
+	$newwidth = $minmapsize if ($mapwidth < $minmapsize);
+      }
+      if ($newheight) {
+	$newheight = $minmapsize if (defined $Frm->uhdr("RECPAR_MAP_HEIGHT") &&
+				     $Frm->uhdr("RECPAR_MAP_HEIGHT") < $minmapsize);
+      } else {
+	$newheight = $minmapsize if ($maphght < $minmapsize);
+      }
+    }
+
+    $extraparams .= " WIDTH=$newwidth" if (defined $newwidth);
+    $extraparams .= " HEIGHT=$newheight" if (defined $newheight);
+
+    if ( $extraparams ne "" ) {
+      orac_print "Output image will have".$extraparams." arcsec\n" if $verbose;
+    } else {
+      orac_print "Trimming $in...\n" if $verbose;
+    }
+
+    # Trim image to the specified size
+    _CROP_IMAGE_ IMAGE=$in OUT=$out $extraparams
   }
 
-  # Trim image to the specified size
-  _CROP_IMAGE_ IMAGE=$in OUT=$out $extraparams
+  # Store trimmed file
+  $Obj->files($out);
+  $Obj->tagset("crop");
 }
-
-# Store trimmed file
-$Frm->files($out);
