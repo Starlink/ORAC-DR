@@ -86,9 +86,8 @@ be used to obtain WCS information.
 
 The pixel scale for the reference image, in arcsec. It may also take
 the special value 0 to indicate that the pixel scale should be derived
-from the input image instead. If a value is given, the X and Y scales
-are set equal. Leave unset to use the internal default values (3.09
-arcsec at 450 um, 5.8 arcsec at 850 um).
+from the input image instead. If a single value is given, the X and Y
+scales are set equal. Default is 0 (derive from input image).
 
 =item B<STORE>
 
@@ -192,6 +191,7 @@ if ($bounds && ref($bounds) eq "ARRAY") {
 }
 
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 1);
+$group = 0 unless ($Grp->file_exists);
 my $Obj = ($group) ? $Grp : $Frm;
 
 # Tell the user what's going on
@@ -199,7 +199,7 @@ orac_print "Creating reference image: " if $verbose;
 
 # Create the blank reference NDF
 my $refimage = $Obj->inout("_ref");
-my $title = $Obj->hdr('OBJECT');
+my $title = ($Obj->hdr('OBJECT')) ? $Obj->hdr('OBJECT') : "Reference";
 my $imgargs = "lbound=\[$lbound\] ubound=\[$ubound\] out=$refimage mode=bl title='$title'";
 $Mon{kappa_mon}->obeyw("creframe","$imgargs");
 orac_print "create blank NDF, " if $verbose;
@@ -207,9 +207,8 @@ orac_print "create blank NDF, " if $verbose;
 my $add_wcs = get_prim_arg($_PRIM_ARGS_, "ADDWCS", 1);
 
 if ( $add_wcs ) {
-
   # Calculate the pixel scale. Use default values if not set.
-  my $pixelscale = get_prim_arg($_PRIM_ARGS_, "PIXEL_SCALE", $Cal->pixelscale);
+  my $pixelscale = get_prim_arg($_PRIM_ARGS_, "PIXEL_SCALE", 0);
 
   # Check for desired OUTPUT coordinate frame
   my $cosys_out = get_prim_arg($_PRIM_ARGS_, "SYSTEM", "");
@@ -218,7 +217,13 @@ if ( $add_wcs ) {
 
   _ADD_WCS_TO_IMAGE_ IMAGE=$refimage PIXEL_SCALE=$pixelscale COORDS=$coords SYSTEM=$cosys_out GROUP=$group
 
-  $pixelscale = sprintf "%4.1f", $pixelscale;
+  if ($pixelscale == 0) {
+    _GET_PIXEL_SCALE_ VERBOSE=0 IMAGE=$refimage
+    $pixelscale = $_GET_PIXEL_SCALE_{RESULTS};
+  }
+  $pixelscale = (ref($pixelscale)) ? "(".join(",",map{sprintf "%.2f", $_}@$pixelscale).")"
+    : sprintf "%.2f", $pixelscale;
+
   orac_print "done\nReference image created in $cosys_out coordinate system with pixel scale = $pixelscale arcsec\n" if $verbose;
 } else {
   # All done - let the user know
