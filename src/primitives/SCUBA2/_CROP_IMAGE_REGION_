@@ -2,27 +2,29 @@
 
 =head1 NAME
 
-_CROP_IMAGE_ - Trim image to a desired size
+_CROP_IMAGE_REGION_ - Trim image to a desired size using an AST region
 
 =head1 SYNOPSIS
 
- _CROP_IMAGE_
+ _CROP_IMAGE_REGION_
 
- _CROP_IMAGE_ IN=$infile
+ _CROP_IMAGE_REGION_ IN=$infile
 
- _CROP_IMAGE_ WIDTH=240 HEIGHT=400
+ _CROP_IMAGE_REGION_ GROUP=1
+
+ _CROP_IMAGE_REGION_ WIDTH=240 HEIGHT=400
 
 =head1 DESCRIPTION
 
-This primitive may be used to trim an image to a desired size. The
-default behaviour is to use the map parameters defined in the Frame or
-Group object header to define the size of the cropped image. The user
-may override the map width and height using the parameters described
-below.
+This primitive may be used to trim an image to a desired size using an
+AST region. The AST region is created from information in a hash
+reference containing various C<MAP_*> values, usually from the current
+Frame or Group hdr. The user may override the map width and height
+using the parameters described below.
 
-All NDFs within a file are trimmed including, e.g., the EXP_TIME and
-WEIGHTS components of SCUBA-2 images. There is no need to treat these
-separately.
+All NDFs within a file are trimmed automatically including, e.g., the
+C<EXP_TIME> and C<WEIGHTS> components of SCUBA-2 images. There is no
+need to treat these separately.
 
 =head1 ARGUMENTS
 
@@ -40,16 +42,14 @@ object. Default is 0 (use Frame).
 Output map height in arcsec. If not specified, the map height in the
 header will be used.
 
-=item B<IMAGE>
+=item B<IN>
 
-Name of input file. The primitive will use the current Frame file if
+Name of input file. The primitive will use the current object file if
 not specified.
 
 =item B<OUT>
 
-Optional parameter to specify the name of the trimmed output
-file. Default is to use the Frame inout method to derive the name, or
-just append C<_crop> if called from a PICARD recipe.
+Name of the trimmed output file. No default.
 
 =item B<WIDTH>
 
@@ -60,9 +60,13 @@ header will be used.
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 4
+
+=item KAPPA
+
+WCSATTRIB
 
 =item ORAC-DR PRIMITIVES
 
@@ -72,20 +76,34 @@ _MASK_AST_REGION_
 
 =head1 OUTPUT DATA
 
-None.
+The name of the output file is stored in the primitive hash as
+C<OUTFILE>.
 
 =head1 OUTPUT FILES
 
-Produces output files with the suffix C<_crop> if B<OUT> is not
+Produces an output file with the suffix C<_crop> if B<OUT> is not
 specified.
 
 =head1 NOTES
 
-This primitive will retrieve the header from the current Frame object
-to obtain the map width/height unless an input file is given. This may
-or may not yield the desired values.
+=over 2
+
+=item *
+
+This primitive will retrieve the header from the current Frame/Group
+object to obtain the map width/height unless an input file is
+given. This may or may not yield the desired values. If in doubt,
+supply the B<HEIGHT> and B<WIDTH> arguments.
+
+=item *
 
 It is up to the user to register the output file with the Frame/Group.
+
+=item *
+
+Requires the JCMT::MapArea Perl module.
+
+=back
 
 =head1 AUTHOR
 
@@ -113,8 +131,11 @@ USA.
 
 =cut
 
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
 # Input/output files
-my $infile = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
+my $infile = get_prim_arg($_PRIM_ARGS_, "IN", undef);
 
 # New map size parameters
 my $width  = get_prim_arg($_PRIM_ARGS_, "WIDTH", undef);
@@ -128,12 +149,9 @@ if ($infile && !$width && !$height) {
   tie my %hdr, ref($fitshdr), $fitshdr;
   $hdr = \%hdr;
 } else {
-  $hdr = $Frm->hdr;
+  $hdr = $Obj->hdr;
+  $infile = $Obj->file;
 }
-
-my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
-my $Obj = ($group) ? $Grp : $Frm;
-$infile = $Obj->file unless ($infile);
 
 my $outfile = get_prim_arg($_PRIM_ARGS_, "OUT", undef);
 $outfile = ($Frm->uhdr("PICARD") ? $infile."_crop" : $Obj->inout("_crop"))
@@ -146,10 +164,16 @@ my $set_size = sub {
   my ($typ, $size) = @_;
   my $mapkey = "MAP_".$typ;
   if (defined $size) {
+    if ($size < MINMAPSIZE) {
+      orac_warn "Input size ($size) too small: setting to ".(MINMAPSIZE)."\n";
+      $size = MINMAPSIZE;
+    }
     $hdr->{$mapkey} = $size;
   } else {
-    $hdr->{$mapkey} = MINMAPSIZE
-      if ($hdr->{$mapkey} < MINMAPSIZE);
+    if ($hdr->{$mapkey} < MINMAPSIZE) {
+      $hdr->{$mapkey} = MINMAPSIZE;
+      orac_warn "Input $mapkey (".($hdr->{$mapkey}).") too small: setting to ".(MINMAPSIZE)."\n";
+    }
   }
 };
 $set_size->("WDTH", $width);
@@ -173,7 +197,7 @@ my %TRACK2AST = ( 'J2000' => 'FK5',
                   'APP' => 'GAPPT',
                   'GALACTIC' => 'GALACTIC',
                   'GAL' => 'GALACTIC' );
-my $tracksys = $TRACK2AST{ uc( $Frm->hdr("TRACKSYS") ) };
+my $tracksys = $TRACK2AST{ uc( $Obj->hdr("TRACKSYS") ) };
 if ( $alignsys ne $tracksys ) {
   $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$infile mode=set name=alignsystem(1) newval=$tracksys");
 }
@@ -181,16 +205,16 @@ if ( $alignsys ne $tracksys ) {
 # Create an AST region with the given map parameters
 use JCMT::MapArea;
 my $astregion = &JCMT::MapArea::region( header => $hdr );
-# Store in Frm uhdr, regardless of object being used
-$Frm->uhdr("MAP_ASTREGION",$astregion);
+# Store in current object header
+$Obj->uhdr("MAP_ASTREGION",$astregion);
 
-# Trim the image
-_MASK_AST_REGION_ IN=$infile OUT=$outfile GROUP=0
+# Trim the image using the defined region
+_MASK_AST_REGION_ IN=$infile OUT=$outfile GROUP=$group
 
 # Restore AlignSystem to same as on entry
 if ( $alignsys ne $tracksys ) {
   $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$infile mode=set name=alignsystem(1) newval=$alignsys");
 }
 
-# Store output file
-$Obj->files($outfile);
+# Store output file in primitive hash
+$_CROP_IMAGE_REGION_{OUTFILE} = $outfile;
