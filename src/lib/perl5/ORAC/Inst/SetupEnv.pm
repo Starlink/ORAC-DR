@@ -396,6 +396,10 @@ sub orac_calc_instrument_settings {
         push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef);
 	$nobatch = 1;
       }
+    } else {
+      # If mode is not given then the pipeline is running offline so
+      # unset the istoday flag so the pipeline can run in batch mode
+      $istoday = 0 if ($inst eq 'SCUBA2' || $inst eq 'ACSIS');
     }
     if( ! $istoday && !$nobatch) {
       push( @rec, "-batch" => undef );
