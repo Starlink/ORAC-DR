@@ -53,7 +53,7 @@ The merged time-series cube with suffix _merge.
 
 =head1 TASKS
 
-KAPPA: COLLAPSE, MANIC, MATHS, NDFTRACE, WCSMOSAIC.
+KAPPA: CADD, SUB, STATS, WCSMOSAIC.
 
 =head1 REQUIRED PERL MODULES
 
@@ -89,11 +89,8 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
   my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
   my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
 
-  # Retrieve the units so we can set them back to whatever they are
-  # now.  MATHS trounces units.
-  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$last_dc_corrected" );
-  my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
-
+  # Record initial subband for mosaicking as we do not apply a DC offset to it.
+  push @outfiles, $last_dc_corrected;
   foreach my $nsubband ( 2 .. $Frm->nfiles ) {
 
     my $next_subband = $Frm->file( $nsubband );
@@ -116,67 +113,24 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
       orac_warn "No overlap between the input cubes.";
     }
 
-    # Use COLLAPSE to find the median for each spectrum.
     my $temp1file = new ORAC::TempFile( 0 );
     my $temp2file = new ORAC::TempFile( 0 );
 
-    $params = "in=$last_dc_corrected($range,,) out=$temp1file";
-    $params .= " estimator=median axis=spec variance wlim=0.0";
-    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-
-    $params = "in=$next_subband($range,,) out=$temp2file";
-    $params .= " estimator=median axis=spec variance wlim=0.0";
-    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-
-    # DC level adjustment is half the difference.
-    my $temp3file = new ORAC::TempFile( 0 );
-    $params = "exp=((ib-ia)/2) ia=$temp1file ib=$temp2file out=$temp3file";
-    $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
-
-    # Grow this DC adjustment into a cube and add it to the first file.
-    my $temp4file = new ORAC::TempFile( 0 );
-    $params = "in=$temp3file out=$temp4file axes=[0,1,2]";
-    $params .= "lbound=" . $lbounds1->[0] . " ubound=" . $ubounds1->[0];
-    $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
-
-    # Must avoid having the same input and output NDF names.  After the
-    # first pair the lower of the two for comparison will have the same
-    # suffix.
-    my $in = $last_dc_corrected;
-    if ( $nsubband > 2 ) {
-       my $temp5file = new ORAC::TempFile( 0 );
-       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$last_dc_corrected out=$temp5file" );
-       $in = $temp5file;
-    }
-
-    ( undef, my $out ) = $Frm->inout( "_dc", $nsubband - 1 );
-    $params = "in1=$in in2=$temp4file out=$out";
-    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
-
-    # Assume that the units are the same for all files.  If not, then
-    # the offsetting process makes not sense anyway.
-    $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
-
-    orac_print $last_dc_corrected . " to $out:\n";
-    orac_print " Removed DC-level offset.\n";
-
-    if ( $nsubband == 2 ) { push @outfiles, $out }
-
-    # Grow the DC adjustment into another cube and subtract it from
-    # the second file.
-    my $temp5file = new ORAC::TempFile( 0 );
-    $params = "in=$temp3file out=$temp5file axes=[0,1,2]";
-    $params .= "lbound=" . $lbounds2->[0] . " ubound=" . $ubounds2->[0];
-    $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
-
-    $out = $next_subband;
-    $out =~ s/_[a-z]+/_dc/;
-    $params = "in1=$next_subband in2=$temp5file out=$out";
+    # Compare the differences element by element in the overlap region.
+    $params = "in1=$last_dc_corrected($range,,) in2=$next_subband($range,,) ";
+    $params .= "out=$temp1file";
     $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
-    # Assume that the units are the same for all files.  If not, then
-    # the offsetting process makes not sense anyway.
-    $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file order" );
+    my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+    # Apply the DC level adjustment.  It is applied incrementally to the
+    # next sub band.  Thus the first subband level is unaltered and
+    # subsequent bands are corrected to its level.
+    ( undef, my $out ) = $Frm->inout( "_dc", $nsubband );
+    $params = "in=$next_subband out=$out scalar=$median";
+    $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
+    my $fs_median = sprintf( "%.4f", $median );
 
     orac_print "$next_subband to $out:\n";
     orac_print " Removed DC-level offset.\n";
