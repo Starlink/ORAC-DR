@@ -48,7 +48,7 @@ None.
 
 =head1 TASKS
 
-KAPPA: NDFTRACE.
+KAPPA: NDFTRACE, WCSFRAME.
 
 =head1 REQUIRED PERL MODULES
 
@@ -97,12 +97,41 @@ my $upper_vel = ( defined( $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY" ) ) ?
                 $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY" )              :
                 -1E30 );
 
+# Integer velocity must be made floating point so that NDF sectioning
+# does not regard it as pixels.
+if ( $lower_vel =~ /^[+-]?\d+$/ ) { $lower_vel = sprintf( "%.1f", $lower_vel ) }
+if ( $upper_vel =~ /^[+-]?\d+$/ ) { $upper_vel = sprintf( "%.1f", $upper_vel ) }
+
+# Ensure that the current WCS is what we need.
+# ============================================
+
+# We can only use the velocity limits if the appropriate WCS Domain and
+# first-axis units are correct.  Under normal recipe processing the WCS
+# should be DSBSPECTRUM-SPACEINDEX-TIME with km/s units.  So obtain the
+# index and units of the current WCS Frame, and the array of Domain names.
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+my ( $ORAC_STATUS, $current_wcs ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "current" );
+( $ORAC_STATUS, my @unit ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
+( $ORAC_STATUS, my @domain ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fdomain" );
+
+my $use_velocities = 1;
+if ( $domain[ $current_wcs - 1 ] ne uc( "DSBSPECTRUM-SPACEINDEX-TIME" ) ||
+     $unit[ 0 ] ne lc( "km/s" ) ) {
+   orac_warn "Possible programming error invoking _GET_SPECTRAL_LIMITS_.\n";
+   orac_warn "Current WCS is not DSBSPECTRUM-SPACEINDEX-TIME or first-axis units are not km/s.\n";
+   orac_warn "Recipe parameters FINAL_LOWER_VELOCITY and FINAL_UPPER_VELOCITY will be ignored.\n";
+   orac_warn "Returned bounds will be for the first axis in the current WCS Frame.\n";
+   $use_velocities = 0;
+}
+
 # Determine the trim limits.
 # ==========================
 
 # Find the trim fraction.
 my $frac = 0.5 * ( 100.0 - $trim_percent ) * 0.01;
 
+# We could use the earlier NDFTRACE to obtain the bounds, but this is
+# clearer.
 _GET_DIMENSIONS_  FILE=$file GROUP=0
 
 # Some surveys request spectral range slightly beyond the normal 85% cuts.
@@ -110,9 +139,14 @@ _GET_DIMENSIONS_  FILE=$file GROUP=0
 my $flbnd = $_GET_DIMENSIONS_{FLBOUND};
 my $fubnd = $_GET_DIMENSIONS_{FUBOUND};
 my $spec_range = $fubnd->[0] - $flbnd->[0];
-my $trim_lower = $flbnd->[0] + $frac * $spec_range;
-my $trim_upper = $fubnd->[0] - $frac * $spec_range;
+my $trim_lower = $flbnd->[0] + ( $frac * $spec_range );
+my $trim_upper = $fubnd->[0] - ( $frac * $spec_range );
 
-$_GET_SPECTRAL_LIMITS_{UBOUND} = max( $trim_upper, $upper_vel );
-$_GET_SPECTRAL_LIMITS_{LBOUND} = min( $trim_lower, $lower_vel );
-
+# Return the bounds.
+if ( $use_velocities ) {
+   $_GET_SPECTRAL_LIMITS_{UBOUND} = max( $trim_upper, $upper_vel );
+   $_GET_SPECTRAL_LIMITS_{LBOUND} = min( $trim_lower, $lower_vel );
+} else {
+   $_GET_SPECTRAL_LIMITS_{UBOUND} = $trim_upper;
+   $_GET_SPECTRAL_LIMITS_{LBOUND} = $trim_lower;
+}
