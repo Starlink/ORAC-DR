@@ -103,9 +103,9 @@ FCF per square arcsec
 
 FCF per nominal beam size
 
-=item * BEAMEQUIV
+=item * BEAMMATCH
 
-FCF per fitted or nominal beam size
+FCF per matched-filtered beam
 
 =back
 
@@ -210,39 +210,30 @@ if ( $proceed ) {
   my $mf_product = $Obj->product;
   $Obj->product($inproduct);
 
-  # Find the peak signal in the image
-  orac_print "  Finding map peak...\n";
   $Obj->tagretrieve("find_calibration_map_input");
-  _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1
-  my $mapfitpar = $_FIND_MAP_PEAK_{BEAM};
-
-  # Retrieve the position - if successful, proceed with deriving an FCF
-  my $posn = $_FIND_MAP_PEAK_{POSITION};
-
   # Set the aperture radius using a recipe parameter, otherwise
   # default to 30 arcsec to compare with standard FCFs
   use constant FCF_APERTURE_RADIUS => 30.0;
   my $radius = (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS")) ?
     $Frm->uhdr("RECPAR_APERTURE_RADIUS") : FCF_APERTURE_RADIUS;
 
-  # Find the integrated intensity within the given aperture. Note that
-  # the image should have a flat background in order to obtain an
-  # accurate result. Also, the peak position is not necessary as the
-  # photometry routine will perform centroiding before calculating the flux.
-  orac_print "  Determining total flux...\n";
-  _APERTURE_PHOTOMETRY_ RADIUS=$radius VERBOSE=0
-
-  my %results = ( ARCSEC => $_APERTURE_PHOTOMETRY_{TOTALFLUX} );
-  my %results_err = ( ARCSEC_ERR => $_APERTURE_PHOTOMETRY_{TOTALFLUXERR} );
-
-  if (@$posn) {
-    # Having gone to the trouble of fitting the peak, store it as it
-    # might be useful later
-    $Frm->uhdr("MAP_PEAK_POSITION", $posn);
-
+  orac_print " Finding map peak and total flux...\n";
+  my ($mapfitpar, $matchfitpar, %results, %results_err);
+  _FIND_FLUXES_ GROUP=$group RADIUS=$radius INITPOS=$initpos LOGFILE=0 VERBOSE=0
+  my $fluxresults = $_FIND_FLUXES_{RESULTS};
+  if ($fluxresults) {
     # Retrieve the results
-    $results{BEAM} = $_FIND_MAP_PEAK_{PEAK};
-    $results_err{BEAM_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
+    $results{BEAM} = $fluxresults->{PEAK};
+    $results_err{BEAM_ERR} = $fluxresults->{PEAKERR};
+    $results{ARCSEC} = $fluxresults->{TOTALFLUX};
+    $results_err{ARCSEC_ERR} = $fluxresults->{TOTALFLUXERR};
+
+    $mapfitpar = $fluxresults->{FITPAR};
+
+    # Now that a new position may have been determined, redefined
+    # initpos for the call to find the flux in the matched filtered
+    # map
+    $initpos = $fluxresults->{POSITION} if (defined $fluxresults->{POSITION});
   }
 
   # Now find the peak in the matched-filtered map - this can succeed
@@ -253,18 +244,20 @@ if ( $proceed ) {
 
   # Use a box of about 1.5x main-component FWHM because the beamfit
   # algorithm does not know how to fit the negative ring.
-  orac_print "  Finding peak in matched-filtered map...\n";
+  orac_print " Finding peak in matched-filtered map...\n";
   my $box = ($Cal->fwhm)[0] * 1.5 / $pixscale;
-  _FIND_MAP_PEAK_ VERBOSE=0 GROUP=$group GAUSSIAN=0 PLOTFIT=1 FITBOX=$box INITPOS=$initpos
-  $Obj->tagretrieve("find_calibration_map_input");
-  $Obj->product($inproduct);
-  my $matched_peak = $_FIND_MAP_PEAK_{PEAK};
-  my $matchfitpar = $_FIND_MAP_PEAK_{BEAM};
-  if ($matched_peak) {
-    $results{BEAMMATCH} = $matched_peak;
-    $results_err{BEAMMATCH_ERR} = $_FIND_MAP_PEAK_{PEAKERR};
+  _FIND_FLUXES_ GROUP=$group RADIUS=$radius FITBOX=$box INITPOS=$initpos LOGFILE=0 VERBOSE=0
+  $fluxresults = $_FIND_FLUXES_{RESULTS};
+  if ($fluxresults) {
+    # Retrieve the results
+    $results{BEAMMATCH} = $fluxresults->{PEAK};
+    $results_err{BEAMMATCH_ERR} = $fluxresults->{PEAKERR};
+
+    $matchfitpar = $fluxresults->{FITPAR};
   }
 
+  $Obj->tagretrieve("find_calibration_map_input");
+  $Obj->product($inproduct);
 
   # Now report on the results - looping over each FCF type in turn
   my $bad_results = 0;
