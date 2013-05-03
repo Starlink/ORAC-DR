@@ -1,0 +1,179 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MAKEMAP_FRAME_SUBSCAN_ - create a map using data from each subscan in the current Frame
+
+=head1 SYNOPSIS
+
+_MAKEMAP_FRAME_SUBSCAN_
+
+=head1 DESCRIPTION
+
+This primitive uses the iterative mapmaker to create maps from each
+subscan in the current Frame. The maps may be made for each subarray
+separately or for all subarrays.
+
+The statistics of each map are calculated within a specified region
+and stored in the primitive hash. Maps are only made from science data
+(i.e. C<SEQ_TYPE> = C<science>).
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<REGION>
+
+Size of region in pixels in which to calculate the statistics. Default
+is 90 pixels.
+
+=item B<SUBARRAY>
+
+Determine whether map should be made using data from each subarray
+separately (C<EACH>) or from all available subarrays (C<ALL>). Default
+is C<EACH>. Overridden by the recipe parameter C<SUBSCAN_MAPS>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_, _GET_MAKEMAP_CONFIG_
+
+=back
+
+=head1 NOTES
+
+None.
+
+=head1 OUTPUT DATA
+
+The noise results are stored in the primitive hash under the key
+C<RESULTS>. This is a hash reference indexed by file pointing to a
+hash reference containing the results of the noise calculations, with
+the following keys:
+
+=over 2
+
+=item MEAN
+
+Mean value in the error component.
+
+=item MEDIAN
+
+Median value in the error component.
+
+=item MAX
+
+Maximum value in the error component.
+
+=item MIN
+
+Minimum value in the error component.
+
+=item SIGMA
+
+Standard deviation of values in the map (spatial domain).
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# May be "all" or "each"
+my $subarray = lc(get_prim_arg($_PRIM_ARGS_,"SUBARRAY", "each"));
+$subarray = $Frm->uhdr("RECPAR_SUBSCAN_MAPS")
+  if (defined $Frm->uhdr("RECPAR_SUBSCAN_MAPS"));
+$subarray = "all" unless ($subarray eq "each");
+
+# Region within which to calculate statistics
+my $statregion = get_prim_arg($_PRIM_ARGS_, "REGION", 90);
+
+# Now sort the files according to subscan number and sequence type (to
+# enable science data to be easily selected)
+my @keys = ("SEQ_TYPE", "NSUBSCAN");
+push(@keys, "SUBARRAY") if ($subarray eq "each");
+my %files = $Frm->files_from_hdr( @keys );
+
+# Sorting by sequence type also allows fastflats to be identified
+my @fastflats = map { @{$files{$_}} } grep { $_ =~ /fastflat/i } keys %files;
+
+my (@goodfiles, @badfiles);
+
+# Retrieve the relevant makemap config file
+_GET_MAKEMAP_CONFIG_
+my $config = $_GET_MAKEMAP_CONFIG_{CONFIG};
+
+my %allresults;
+
+my $index = 0;
+foreach my $mapkey ( sort keys %files ) {
+  next if ($mapkey !~ /science/i);
+  $index++;
+
+  # Retrieve files from which the map will be made and add the fastflats
+  my @mapfiles = @{$files{$mapkey}};
+  push(@mapfiles, @fastflats);
+  my $inlist = write_file_list( @mapfiles );
+  # Use inout to define the output file but of course the output file
+  # *name* will not necessarily bear any relation to the
+  # subarray/subscan of the data in the map
+  my $outfile = $Frm->inout("_submap",$index);
+
+  my $args = "in=^$inlist out=$outfile method=iterate config=^$config";
+  $Mon{smurf_mon}->obeyw("makemap","$args");
+
+  # Perform various sanity checks on output map here...
+
+  # Stats for logging and checking on good/bad files
+  _FIND_IMAGE_STATISTICS_ IMAGE=$outfile REGION=$statregion COMP=ERR VERBOSE=0
+  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  my %mapresults = map { $_ => $results->{$_} } qw/MEAN MEDIAN MIN MAX/;
+
+  _FIND_IMAGE_STATISTICS_ IMAGE=$outfile REGION=$statregion COMP=DATA VERBOSE=0
+  $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  $mapresults{SIGMA} = $results->{SIGMA};
+
+  # Store the results for the input files - note if multiple files go
+  # into making a map then the same results are stored for each of
+  # those files
+  $allresults{$_} = \%mapresults foreach (@{$files{$mapkey}});
+
+  $Frm->push_intermediates($outfile);
+}
+
+$_MAKEMAP_FRAME_SUBSCAN_{RESULTS} = \%allresults;
