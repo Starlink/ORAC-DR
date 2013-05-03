@@ -1,0 +1,202 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+REDUCE_SONS - Process data for the SONS project
+
+=head1 DESCRIPTION
+
+This is the recipe for processing data taken for the SCUBA-2 Survey of
+Nearby Stars (SONS).
+
+This recipe processes SCAN data, making a map from files that meet a
+given noise criterion, and uses a jack-knife method to remove residual
+low-spatial frequency noise and create an optimal matched-filtered
+output map. The recipe proceeds as follows:
+
+=over 2
+
+=item *
+
+The noise properties for each 30-second subscan are calculated, and
+those files which exceed 1.5 times the mean are excluded from the
+map-making stage.
+
+=item *
+
+Each observation is processed twice using the specified parameters,
+the second time with an artificial point source added to the
+timeseries, to create a signal map and an effective PSF image.
+
+=item *
+
+These images are coadded (like with like) to produce a total signal
+map and a total effective PSF image. The amplitude of the source in
+the effective PSF image is compared with the input value to assess the
+effect the map-making process has on a point source. This ratio is
+used to scale the FCF later when calibrating the data.
+
+=item *
+
+The observations are divided into two groups which are coadded
+separately. These coadds are subtracted from one another to create the
+C<jack-knife> map.
+
+=item *
+
+The angular power spectrum of the jack-knife map (which should consist
+purely of noise) is calculated and used to remove residual low-spatial
+frequency noise from the signal map and the effective PSF. This is the
+so-called C<whitening> step (because it produces a map which has a
+noise power spectrum that is white).
+
+=item *
+
+The data are calibrated in mJy/beam using a corrected FCF.
+
+=item *
+
+The whitened signal map is processed with a matched filter using the
+whitened PSF image as the PSF.
+
+=item *
+
+The jack-knife map is also whitened and processed with the matched
+filter. This map should consist purely of noise.
+
+=item *
+
+Signal-to-noise ratio maps are created for the filtered versions of
+the signal map and the jack-knife map.
+
+=back
+
+The outcome (the match-filtered whitened signal map) should be the
+optimal map with white noise properties. This is the map to be used
+for science goals.
+
+This recipe generates a large number of output files. There will be
+two for each observation (the signal map and the effective PSF map), a
+total signal coadd, an effective PSF coadded from all the individual
+effective PSF maps, a jackknife map, a whitened signal map, a
+calibrated whitened signal map, a matched-filtered calibrated whitened
+signal map and a signal-to-noise ratio map created from it.
+
+=head1 NOTES
+
+=over 2
+
+=item *
+
+This recipe should only be given data for a single source, and a
+single field.
+
+=item *
+
+An even number of observations will be used to create the jack-knife
+map.
+
+=item *
+
+Alternative configuration parameters for the iterative map-maker may
+be specified using the recipe parameters outlined below.
+
+=item *
+
+This recipe may be called via the shorter name C<FAINT_POINT_SOURCES_JACKKNIFE>.
+
+=item *
+
+For large amounts of data this recipe will spend a long time not
+updating the ORAC-DR window. Check to see that C<makemap> is still
+processing by running C<top> or C<ps>. (Running with -log sf is
+recommended.)
+
+=back
+
+=head1 DISPLAY
+
+None.
+
+=head1 AVAILABLE PARAMETERS
+
+The following parameters can be set via the --recpars option:
+
+=over 2
+
+=item MAKEMAP_CONFIG
+
+Name of a config file for use with the SMURF makemap task. The file
+must exist in the current working directory, C<$MAKEMAP_CONFIG_DIR> or
+C<$ORAC_DATA_OUT>.
+
+=back
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Standard introduction
+_SCUBA2_HELLO_
+
+# Set steering parameters
+_REDUCE_SCAN_STEER_ FAKEMAP=1
+
+# Calculate noise properties for each subscan
+_ASSESS_SUBSCAN_NOISE_
+
+# Create maps using the lookup table create above
+_MAKEMAP_FRAME_ INFILES=LUT
+_MAKEMAP_FRAME_PSF_ INFILES=LUT
+
+# Create the group data and psf coadds
+_MAKE_MOSAIC_GROUP_PSF_
+
+# Calibrate the data
+_CALIBRATE_DATA_
+
+# Create jack-knife map and applying whitening filter
+_CREATE_JACKKNIFE_MAP_
+_WHITEN_IMAGE_ GROUP=1
+
+# Calculate source peak and total fluxes
+_FIND_FLUXES_ GROUP=1
+
+# Whiten the PSF
+_WHITEN_IMAGE_ GROUP=1 TAG=PSF
+
+# Apply matched filter to group coadd
+_APPLY_MATCHED_FILTER_ GROUP=1 SMOOTH=0
+
+# Calculate noise in matched-filtered image
+_CALC_IMAGE_NOISE_ GROUP=1 LOGFILE=0 METHOD=VAR
+
+# Calculate a S/N image from the matched-filtered map
+_CALC_SCUBA2_SNR_ GROUP=1 VERBOSE=1
+
+# Check the noise properties of the whitened jack-knife map
+_CHECK_JACKKNIFE_NOISE_
+
+_DELETE_TEMP_FILES_ KEEP=_fmos,_mappsf,_wmos,_wpsf,_cal,_mf,_snr,_whiten ALSOGRP=1
