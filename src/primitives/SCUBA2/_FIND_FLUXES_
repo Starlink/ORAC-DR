@@ -2,35 +2,41 @@
 
 =head1 NAME
 
-_FIND_FLUXES_ - Determine the peak and integrated flux of sources in image
+_FIND_FLUXES_ - Determine the peak and integrated flux of a source
 
 =head1 SYNOPSIS
 
-_FIND_FLUXES_ RADIUS=30
+ _FIND_FLUXES_ RADIUS=30
+
+ _FIND_FLUXES_ TAG=matchfilt
 
 =head1 DESCRIPTION
 
-Finds the peak and total flux of all sources in an image either by
-fitting or aperture photometry.
+Finds the peak and total flux of source in an image by fitting and
+aperture photometry.
 
-The total flux can be determined by fitting a Sersic profile to the
-source and integrating underneath that profile using a standard
-integral solution. If the fit is poor (defined by the axis ratio
-falling outside a pre-defined range) then the default aperture
-photometry method is used instead.
-
-The frame object is not updated.
+The current object is not updated.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
-=over 4
+=over 2
+
+=item B<FITBOX>
+
+Size of region to use in fitting the source in pixels. No default so
+the relevant primitives can determine their own.
 
 =item B<GROUP>
 
 If true, use the current Group file as input, otherwise use the
 current Frame. Default is 0 (false: use current Frame).
+
+=item B<IMAGE>
+
+Name of an image to use in calculations. Overrides all other methods
+of obtaining the image (B<GROUP> and B<TAG>).
 
 =item B<LOGFILE>
 
@@ -39,16 +45,14 @@ results of the flux and noise calculations. Default is true.
 
 =item B<RADIUS>
 
-Radius of apertures to use for aperture photometry (if USEPSF is 0)
-and/or noise estimates. Default is 20 arcsec. A special value of -1
-may be specified in which case the aperture is set by the major and
-minor axes of the object.
+Radius of aperture to use for aperture photometry. Default is 30
+arcsec.
 
-=item B<USEPSF>
+=item B<TAG>
 
-A flag to indicate whether to calculate the source flux from either a
-fit the source using the Kappa PSF function or using an aperture
-photometry method. Default is to use aperture photometry (USEPSF = 0).
+The image with the given tag will be retrieved and used if the tag
+exists in the current object. Default is C<undef> which will use the
+current file in the object.
 
 =item B<VERBOSE>
 
@@ -61,23 +65,18 @@ given to the user. Default is true.
 
 The following external tasks are used:
 
-=over 4
-
-=item KAPPA
-
-WCSATTRIB
+=over 2
 
 =item ORAC-DR PRIMITIVES
 
-_FIND_INTEGRATED_INTENSITY_, _FIT_SOURCE_, _FIND_SOURCES_,
-_GET_PIXEL_SCALE_, _GET_LOG_PARAMETERS_
+_ADD_LOG_ENTRY_, _APERTURE_PHOTOMETRY_, _FIND_MAP_PEAK_
 
 =back
 
 =head1 NOTES
 
 This primitive is designed to work on a single image and will abort if
-the current Frame object contains more than one file.
+the current object contains more than one file.
 
 Data should be calibrated before calling this primitive so that
 meaningful values are logged.
@@ -102,25 +101,13 @@ Reference to array of peak fluxes. Undef if no sources found.
 
 =head1 OUTPUT FILES
 
-The following log files are created:
-
-=over 4
-
-=item C<log.peak>
-
-Log of peak flux values.
-
-=item C<log.integrated>
-
-Log of integrated flux values.
-
-=back
+The results are written to a log file called C<log.flux>.
 
 =head1 LOGFILE FORMAT
 
-The logfiles have the following columns:
+The logfile has the following columns:
 
-=over 4
+=over 2
 
 =item UT
 
@@ -148,7 +135,7 @@ The filter associated with the current result.
 
 =item Elevation
 
-The elevation of the observation.
+The elevation of the observation (deg).
 
 =item CSO
 
@@ -157,36 +144,32 @@ the observation.
 
 =item Tau
 
-The tau value used for the reduction.
+The mean optical depth at the observing wavelength.
 
-=item Seeing
+=item Name
 
-The seeing value as stored in the header.
+Name of file.
 
-=item ID
+=item Peak
 
-Source ID.
+Peak flux in current units.
 
-=item RA
+=item ErrPk
 
-J2000 Right Ascension of source in sexagesimal format.
+Uncertainty in peak flux (in same units).
 
-=item Dec
+=item Total
 
-J2000 Declination of source in sexagesimal format.
+Total flux in current units * area. Will be C<NaN> if flux could not
+be determined.
 
-=item Peak / Flux
+=item Err
 
-Peak or total flux (for C<log.peak> and C<log.integrated>
-respectively).
+Uncertainty in total flux (in same units).
 
-=item FWHM
+=item Radius
 
-FWHM in arcsec. Not written for C<log.integrated>.
-
-=item Units
-
-Units of flux measurement.
+Radius of aperture used in aperture photometry.
 
 =back
 
@@ -196,7 +179,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2008 the University of British Columbia.  All
+Copyright (C) 2007-2008,2013 the University of British Columbia. All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -216,185 +199,80 @@ USA.
 
 =cut
 
-# Write logfiles (default to yes)
-my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
+# Determine if the user wants to use the current Grp or Frm image
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ( $group ) ? $Grp : $Frm;
+my $image_default = $Obj->file if ($Obj->nfiles == 1 && $Obj->file_exists);
 
-# Should I be verbose? (Default to yes)
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+my $image_tag = get_prim_arg($_PRIM_ARGS_, "TAG", undef);
+if ($image_tag && $Obj->tagexists($image_tag)) {
+  $Obj->tagset("find_fluxes");
+  $Obj->tagretrieve($image_tag);
+  $image_default = $Obj->file;
+}
 
-# Check the desired flux calculation method.
-my $usepsf = get_prim_arg($_PRIM_ARGS_, "USEPSF", 0);
-
-# Set aperture radius - default is 20 arcsec
-my $radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 20);
+my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", $image_default);
+my $proceed = (defined $image) ? 1 : 0;
 
 # Initialize the log files if necessary
 my ($pklog, $intlog);
 
-# Determine if the user wants to use the current Grp or Frm image
-my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
-my $in;
-my $Obj = ( $group ) ? $Grp : $Frm;
-if ( $Obj->nfiles == 1 ) {
-  $in = $Obj->file;
-} else {
-  orac_throw "Error: _FIND_FLUXES_ must be run after images have been combined\n";
-}
+if ($proceed) {
+  # Write logfiles (default to yes)
+  my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 
-# What if the Group file does not exist yet?
-if ( $group  && $Grp->file_exists ) {
-  my (@intfluxes, @pkfluxes);
+  # Should I be verbose? (Default to yes)
+  my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-  # Are the data calibrated?
-  # If we are observing a standard source then just find the centroid.
+  # Set aperture radius - default is 30 arcsec
+  my $radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 30);
 
-  # Find all of the sources in the current frame
-  _FIND_SOURCES_ IMAGE=$in
-  # Retrieve catalogue
-  my $catalogue = $_FIND_SOURCES_{CATALOGUE};
+  # Initial guess at source position
+  my $initpos = get_prim_arg($_PRIM_ARGS_, "INITPOS", undef);
 
-  # Extractor does not understand offset coordinate systems, so we
-  # must check and ensure we are working in an absolute system. In
-  # practice, this means setting SkyRefIs = Ignored, AlignOffset = 0
-  # and System = ICRS. These attributes are reset on successful exit.
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system(1)");
-  my ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
-  ($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  my $offset = ( lc($skyrefis) eq "origin" ) ? 1 : 0;
-  if ( $offset ) {
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='system(1)=icrs,skyrefis=ignored,alignoffset=0'");
-  }
+  # Leave the default undef so _FIND_MAP_PEAK_ will work its dynamic
+  # default magic
+  my $fitbox = get_prim_arg($_PRIM_ARGS_, "FITBOX", undef);
 
-  # Check that the catalogue has sources in it
-  if ( $catalogue->sizeof > 0 ) {
-    # Check if installed version of Kappa has a PSF task we can use
-    if ( $usepsf && starversion_lt('kappa', 'V0.15-0')) {
-      # warn
-      orac_warn "Your kappa version is too old to use PSF. Using stats to find total flux\n";
-      $usepsf = 0;
+  # Find the peak signal in the image
+  _FIND_MAP_PEAK_ GROUP=$group FITPEAK=1 INITPOS=$initpos PLOTFIT=1 FITBOX=$fitbox
+
+  # Find the integrated intensity within the given aperture. Note that
+  # the image should have a flat background in order to obtain an
+  # accurate result. Also, the peak position is not necessary as the
+  # photometry routine will perform centroiding before calculating the flux.
+  _APERTURE_PHOTOMETRY_ RADIUS=$radius VERBOSE=0
+
+  my %results = ( TOTALFLUX => $_APERTURE_PHOTOMETRY_{TOTALFLUX},
+		  TOTALFLUXERR => $_APERTURE_PHOTOMETRY_{TOTALFLUXERR},
+		  PEAK => $_FIND_MAP_PEAK_{PEAK},
+		  PEAKERR => $_FIND_MAP_PEAK_{PEAKERR},
+		  POSITION => $_FIND_MAP_PEAK_{POSITION},
+		  FITPAR => $_FIND_MAP_PEAK_{BEAM}
+	       );
+
+  # Now provide feedback to user - print to screen and/or write to log file
+  if ($verbose || $uselog) {
+    my $peak = (defined $results{PEAK}) ? (sprintf "%.2f", $results{PEAK}) : "NaN";
+    my $peakerr = (defined $results{PEAKERR}) ? (sprintf "%.2f", $results{PEAKERR})
+      : 0.0;
+    my $totalflux = ( defined $results{TOTALFLUX}) ? (sprintf "%.2f", $results{TOTALFLUX}) : "NaN";
+    my $totalfluxerr = ( defined $results{TOTALFLUXERR}) ? (sprintf "%.2f", $results{TOTALFLUXERR}) : 0.0;
+    if ($verbose) {
+      orac_print "Fluxes for ".($Obj->hdr("OBJECT"))." ($image):\n";
+      orac_print " Peak  = $peak +/- $peakerr\n";
+      orac_print " Total = $totalflux +/- $totalfluxerr\n";
     }
-
-    # Define a flux conversion which allows the calculated `flux' to be
-    # converted into a real value depending on whether the data are
-    # calibrated in `per beam' or `per square arcsec' units (or even
-    # uncalibrated).
-    my $fluxcorr;
-    # Determine Pixel scale in arcsec
-    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
-    my $pixelarea = $_GET_PIXEL_SCALE_{AREA};
-    my $units = $Obj->uhdr("ORAC_DATA_UNITS");
-    if ($units =~ /beam/) {
-      $fluxcorr = ($usepsf) ? $Cal->beamarea : $Cal->beamarea/$pixelarea ;
-    } elsif ($units =~ /arcsec/) {
-      $fluxcorr = ($usepsf) ? 1.0 : 1.0/$pixelarea;
-    } elsif ($units =~ /pW/) { # pW is effectively pW/pixel
-      $fluxcorr = ($usepsf) ? $pixelarea : 1.0;
-    } else {
-      orac_throw "Error: unknown units, $units \n";
-    }
-    # The flux units will be data_units * area (for calibrated data), so
-    # strip off the per beam or per arcsec**2 portion of the units
-    # string. Uncalibrated data will be unchanged
-    my @fluxunits = split(/\//, $units, 2);
-
-    my $ORAC_STATUS;
-
-    # Inform user what's going on if desired...
-    if ( $verbose ) {
-      my $fitmethod;
-      if ($usepsf) {
-	$fitmethod = "fitting a PSF";
-      } else {
-	$fitmethod = "aperture photometry";
-      }
-      orac_print "Calculating fluxes by $fitmethod\n";
-    }
-
-    # Define all the parameters we might need
-    my ($amp, $fwhm, $axisr, $totalflux);
-
-    # Set up log file entries - these will be the same for all sources in the field
     if ($uselog) {
-      my $time = gmtime();
-      # Peak fluxes
-      $pklog = new ORAC::LogFile("log.peak");
-      $pklog->header("#Peak flux log file - created on $time UT",
-		     "#\n# UT                HST   Obs Source       Mode         Filter  El CSO    Tau  Seeing ID    RA          Dec       Peak       FWHM Units",
-		     "#----------------------------------------------------------------------------------------------------------------------------------------");
-      # Integrated fluxes
-      $intlog = new ORAC::LogFile("log.integrated");
-      $intlog->header("#Integrated flux log file - created on $time UT",
-		      "#\n# UT                HST   Obs Source       Mode         Filter El CSO    Tau  Seeing ID    RA          Dec       Flux Units",
-		      "#---------------------------------------------------------------------------------------------------------------------------");
+      # Write a log file
+      orac_print "Storing results in log.flux\n";
+      my $logtype = "flux";
+      my @names = ("Name", "Peak", "ErrPk", "Total", "Err", "Radius");
+      my @values = ( $image, $peak, $peakerr, $totalflux, $totalfluxerr, $radius );
+      _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names
     }
-    # Retrieve logging parameters anyway
-    _GET_LOG_PARAMETERS_ GROUP=$group
-    my ( $uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see )
-      = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
-
-    # Loop over all sources in the catalogue and run desired
-    # flux-calculation method
-    for my $i ( 1 .. $catalogue->sizeof ) {
-      my $source = $catalogue->starbyindex( $i - 1 ); # Catalogue is 0-indexed
-      # Retrieve Astro::Coords object associated with current source
-      my $coords = $source->coords;
-      my @xy = ($coords->ra, $coords->dec);
-
-      if ( $usepsf ) {
-	# Fit the source
-	_FIT_SOURCE_ METHOD=PSF IMAGE=$in XYPOS=\@xy VERBOSE=0
-	my $amplitude = $_FIT_SOURCE_{AMPLITUDE};
-	$amp = $amplitude->[0];
-	my $flux = $_FIT_SOURCE_{TOTALFLUX};
-	$totalflux = $flux->[0];
-	my $minfwhm = $_FIT_SOURCE_{MINFWHM};
-	$fwhm = $minfwhm->[0];
-	$axisr = $_FIT_SOURCE_{AXISR};
-	# Calculate geometric mean FWHM for logging
-	$fwhm *= sqrt($axisr);
-      } else {
-	# Use an aperture photometry method
-	_FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
-	$totalflux = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
-	$amp = $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX};
-	$fwhm = $Cal->fwhm_eff;
-      }
-
-      # Convert flux to meaningful units
-      $totalflux /= $fluxcorr;
-
-      # Write info to log file if requested
-      if ( $uselog ) {
-	# Format for printing
-	$totalflux = sprintf "%6.3f", $totalflux;
-	$amp = sprintf "%6.3f", $amp;
-	$fwhm = sprintf "%6.2f", $fwhm;
-	# Set source ID - assumes there will be <100 objects in image
-	my $srcnum = sprintf "%02d", $i;
-
-	# Write the entry:
-	$pklog->addentry( "$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $xy[0] $xy[1]  $amp  $fwhm $fluxunits[0]");
-	$intlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $xy[0] $xy[1]  $totalflux $fluxunits[0]");
-      } else {
-	push (@intfluxes, $totalflux);
-	push (@pkfluxes, $amp);
-      }
-    }
-  } else {
-    # Issue an error and skip the rest
-    orac_warn "Unable to determine fluxes, no sources found\n";
   }
 
-  # Reset WCS to input
-  if ( $offset ) {
-    my $args = "ndf=$in mode=mset setting='system(1)=".$cosys_in.",skyrefis=origin,alignoffset=1'";
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-  }
-
-  unless ($uselog) {
-    $_FIND_FLUXES_{INTFLUX} = ($catalogue->sizeof) ? \@intfluxes : undef;
-    $_FIND_FLUXES_{PEAKFLUX} = ($catalogue->sizeof) ? \@pkfluxes : undef;
-  }
-
+  $_FIND_FLUXES_{RESULTS} = \%results;
 }
+$Obj->tagretrieve("find_fluxes") if (defined $image_tag && $Obj->tagexists($image_tag));
