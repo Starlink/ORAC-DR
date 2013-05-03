@@ -116,9 +116,22 @@ my $method = uc(get_prim_arg($_PRIM_ARGS_, "METHOD", "MAP"));
 $method = $Frm->uhdr("RECPAR_SUBSCAN_METHOD")
   if (defined $Frm->uhdr("RECPAR_SUBSCAN_METHOD"));
 
+my $default_estimator = ($method eq "MAP") ? "SIGMA" : "MEDIAN";
+my $estimator = uc(get_prim_arg($_PRIM_ARGS_, "ESTIMATOR", $default_estimator));
+$estimator = $Frm->uhdr("RECPAR_SUBSCAN_ESTIMATOR")
+  if (defined $Frm->uhdr("RECPAR_SUBSCAN_ESTIMATOR"));
+
+# What if we have an incompatible method/estimator combination?
+if (($method eq "MAP" && $estimator eq "WTNEP") ||
+    ($method =~ /^FREQ/ && $estimator eq "SIGMA")) {
+  orac_warn "Incompatible method and estimator for assessing subscan noise ($method/$estimator) - falling back on defaults\n";
+  $method = "MAP";
+  $estimator = "SIGMA";
+}
+
 my %fastflats = map { $_ => 1 } $Frm->get_fastramp_flats;
 
-my (%noisedata, $statdata, $estimator);
+my (%noisedata, $statdata);
 my %estimators = ( WTNEP => "weighted NEP",
 		   MEAN => "mean",
 		   MEDIAN => "median",
@@ -126,7 +139,8 @@ my %estimators = ( WTNEP => "weighted NEP",
 		 );
 if ($method =~ /^FREQ/) {
   # Use NEP instead of noise for analysis?
-  my $nep = get_prim_arg($_PRIM_ARGS_, "USENEP", 0);
+  my $usenep = get_prim_arg($_PRIM_ARGS_, "USENEP", 0);
+  $estimator = "WTNEP" if ($usenep);
 
   orac_print "Calculating noise properties from time series...";
 
@@ -136,17 +150,19 @@ if ($method =~ /^FREQ/) {
   $Frm->readhdr;
   _PROCESS_DATA_AS_NOISE_FRAME_ LOGFILE=0 NOISE_CALC=EACH VERBOSE=0 DISPLAY=0
   $statdata = $_PROCESS_DATA_AS_NOISE_FRAME_{RESULTS};
+  # Tidy up immediately to avoid a long list of file deletions that
+  # the user doesn't need to see
   _DELETE_TEMP_FILES_ KEEP=none VERBOSE=0
   orac_print " done\n";
-
-  $estimator = "WTNEP";
 } elsif ($method eq "MAP") {
   orac_print "Calculating noise properties from subscan maps...";
 
   _MAKEMAP_FRAME_SUBSCAN_ SUBARRAY=EACH
   $statdata = $_MAKEMAP_FRAME_SUBSCAN_{RESULTS};
+  # Tidy up immediately to avoid a long list of file deletions that
+  # the user doesn't need to see
+  _DELETE_TEMP_FILES_ KEEP=none VERBOSE=0
   orac_print " done\n";
-  $estimator = "SIGMA";
 }
 if ($statdata) {
   my %statdata = %{$statdata};
