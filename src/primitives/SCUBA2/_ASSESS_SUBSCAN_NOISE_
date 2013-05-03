@@ -1,0 +1,184 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_ASSESS_SUBSCAN_NOISE_ - assess the noise properties of each subscan in current Frame
+
+=head1 SYNOPSIS
+
+_ASSESS_SUBSCAN_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive calculates the noise for each subscan in the current
+Frame using one of three possible methods:
+
+=over 2
+
+=item FREQHI
+
+Calculate the timestream noise in the range 2-10 Hz;
+
+=item FREQLO
+
+Calculate the timestream noise in the range 1-2 Hz;
+
+=item MAP
+
+Calculate the noise in a map made from the scubascan data.
+
+=back
+
+The noise results for each subscan (and each subarray) are collected
+and subscans with a noise exceeding 1.5 times the mean are
+excluded. The results are stored in a lookup table (LUT) which is a
+hash reference stored in the Frame uhdr as C<SUBSCAN_LUT>.
+
+In the cases of C<FREQHI> and C<FREQLO>, the NEP may be used to assess
+the noise properties.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 2
+
+=item B<METHOD>
+
+Method to use for calculating noise. Valid options are C<FREQHI>,
+C<FREQLO> or C<MAP>. Default is C<MAP>.
+
+=item B<USENEP>
+
+Flag to denote whether to calculate the NEP instead of the
+noise. Default is 0 (no). Ignored if B<METHOD> = C<MAP>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 2
+
+=item ORAC-DR PRIMITIVES:
+
+_DELETE_TEMP_FILES_, _MAKEMAP_FRAME_SUBSCAN_,
+_PROCESS_DATA_AS_NOISE_FRAME_
+
+=back
+
+=head1 NOTES
+
+In the case of a map made using data from all available subarrays, the
+LUT contains the same value for each file going into the map, so if
+the map fails the noise test, the files for all the subarrays are
+marked as bad (i.e. 0 in the LUT).
+
+=head1 OUTPUT DATA
+
+The Frame uhdr entry C<SUBSCAN_LUT> contains a hash reference with
+keys corresponding to filenames and values of 1 or 0 depending on
+whether or not the noise for that file is below the threshold.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Possible methods: FREQLO, FREQHI, MAP
+my $method = uc(get_prim_arg($_PRIM_ARGS_, "METHOD", "MAP"));
+$method = $Frm->uhdr("RECPAR_SUBSCAN_METHOD")
+  if (defined $Frm->uhdr("RECPAR_SUBSCAN_METHOD"));
+
+my %fastflats = map { $_ => 1 } $Frm->get_fastramp_flats;
+
+my (%noisedata, $statdata, $estimator);
+if ($method =~ /^FREQ/) {
+  # Use NEP instead of noise for analysis?
+  my $nep = get_prim_arg($_PRIM_ARGS_, "USENEP", 0);
+
+  my @rawfiles = $Frm->raw;
+  my $Frm = $Frm->new();
+  $Frm->files(@rawfiles);
+  $Frm->readhdr;
+  _PROCESS_DATA_AS_NOISE_FRAME_ LOGFILE=0 NOISE_CALC=EACH VERBOSE=0 DISPLAY=0
+  $statdata = $_PROCESS_DATA_AS_NOISE_FRAME_{RESULTS};
+  _DELETE_TEMP_FILES_ KEEP=none VERBOSE=0
+
+    $estimator = "WTNEP";
+} elsif ($method eq "MAP") {
+  _MAKEMAP_FRAME_SUBSCAN_ SUBARRAY=EACH
+  $statdata = $_MAKEMAP_FRAME_SUBSCAN_{RESULTS};
+  $estimator = "SIGMA";
+}
+if ($statdata) {
+  my %statdata = %{$statdata};
+  %noisedata = map { $_ => $statdata{$_}->{$estimator} } keys %statdata;
+}
+
+# The noisedata hash is indexed by filename with the noise as the value
+use Statistics::Descriptive;
+my $noisestats = Statistics::Descriptive::Full->new();
+$noisestats->add_data([values %noisedata]);
+my $mean_noise = $noisestats->mean;
+
+# Now normalize noise data to the mean and calc stats on that array
+my %noisedata_norm = map { $_ => $noisedata{$_}/$mean_noise } keys %noisedata;
+my $normstats = Statistics::Descriptive::Full->new();
+$normstats->add_data([values %noisedata_norm]);
+$mean_noise = $normstats->mean;
+my $min = sprintf "%.2f", $normstats->min;
+my $max = sprintf "%.2f", $normstats->max;
+my $sigma = sprintf "%.2f", $normstats->standard_deviation;
+
+# MAX_NOISE is the fraction above which data will be excluded
+use constant MAX_NOISE => 1.5;
+my %subscan_lut = map { $_ => ($noisedata_norm{$_} < MAX_NOISE) ? 1 : 0 } keys %noisedata_norm;
+
+# Report
+my $ngood = scalar( map {$_} grep {$subscan_lut{$_} == 1} keys %subscan_lut);
+my $ntotal = scalar(keys %noisedata_norm);
+orac_print "Normalized noise stats: range $min -> $max, sigma = $sigma\n";
+if ($ngood == $ntotal) {
+  orac_print "All subscans pass noise assessment\n";
+} else {
+  my $npc = sprintf "%.1f", (100*$ngood/$ntotal);
+  orac_print "$ngood out of $ntotal subscan files pass noise assessment ($npc %)\n";
+  if ($npc < 10) {
+    orac_err "Most data rejected on noise grounds - only $npc data to be used in making map\n";
+  } elsif ($npc < 50) {
+    orac_warn "At least half the data rejected on noise grounds - $npc of data to be used in making map\n";
+  }
+}
+
+# Add fastflats too
+@subscan_lut{keys %fastflats} = values %fastflats;
+
+# Store in uhdr
+$Frm->uhdr("SUBSCAN_LUT",\%subscan_lut);
