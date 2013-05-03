@@ -40,6 +40,11 @@ The following arguments are supported:
 
 =over 2
 
+=item B<DISPLAY>
+
+Flag to indicate whether or the results should be displayed. Default
+is 1 (yes).
+
 =item B<LOGFILE>
 
 Flag to indicate whether or not a log file should be written. Default
@@ -50,11 +55,16 @@ is 1 (yes).
 Amount of data to use in noise calculation. May be C<quick>, C<each>
 or C<full>. Default is C<each>.
 
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 1
+(yes).
+
 =back
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 2
 
@@ -109,11 +119,15 @@ USA.
 
 =cut
 
-my $noisecalc = get_prim_arg($_PRIM_ARGS_, "NOISE_CALC", "each");
+my $noisecalc = lc(get_prim_arg($_PRIM_ARGS_, "NOISE_CALC", "each"));
 $noisecalc = $Frm->uhdr("RECPAR_NOISE_CALC")
   if (defined $Frm->uhdr("RECPAR_NOISE_CALC"));
 
 my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
+
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+my $display_noise = get_prim_arg($_PRIM_ARGS_, "DISPLAY", 1);
 
 # If the Frame contains multiple subscans, pick out the first
 # on-sky that is not the fast-flat if doing a "quick" noise
@@ -127,21 +141,12 @@ my %related_subarray = $Frm->files_from_hdr( @related_keys );
 
 my %fastflats = map { $_ => $related_subarray{$_} } grep { $_ =~ /fastflat/i}
   keys %related_subarray;
-my %ffsub;
-foreach my $ffkey (keys %fastflats) {
-  my $subarray = substr($ffkey, 0, 3);
-  $ffsub{$subarray} = $fastflats{$ffkey};
-}
+my @fastflats = map {@{$_}} values %fastflats;
 
-my %related;
+my (%related, %filesub_lut);
 if ($noisecalc eq "full") {
-  # In this case we just retrieve every file recorded with the shutter
-  # open
-  my @files;
-  foreach my $key (keys %related_subarray) {
-    push(@files, @{$related_subarray{$key}}) if ($key =~ /1.0/);
-  }
-  $related{full} = \@files;
+  # In this case we just retrieve every science file - fastflats will be added later
+  $related{full} = [map { @{$related_subarray{$_}} } grep { $_ =~ /science/ } keys %related_subarray];
 } else {
   # Retrieve the list of subscan numbers and subarrays
   my @subscans = $Frm->hdrvals("NSUBSCAN");
@@ -153,11 +158,11 @@ if ($noisecalc eq "full") {
     my @scanfiles;
     foreach my $subarray (@subarrays) {
       my $testkey = $subarray . "1.0science". $nsubscan;
-      # Store the data files and corresponding fastflat if science
-      # data exists for the current subarray/subscan
+      # Store the data files if science data exists for the current
+      # subarray/subscan
       if ($related_subarray{$testkey}) {
-	push(@scanfiles, @{$related_subarray{$testkey}});
-	push(@scanfiles, @{$ffsub{$subarray}});
+	push(@scanfiles, $related_subarray{$testkey}->[0]);
+	$filesub_lut{$related_subarray{$testkey}->[0]} = $subarray;
       }
     }
 
@@ -170,6 +175,7 @@ if ($noisecalc eq "full") {
 }
 
 orac_print "\n";
+my %allresults;
 # Now calculate noise properties for each group of files
 my @subarrays = $Frm->subarrays;
 my @logparams = qw/ UT Obs Nsubscan /;
@@ -183,10 +189,10 @@ foreach my $key (sort keys %related) {
     ($noisecalc eq "quick") ? "first 30-sec of data" : "full time stream";
   orac_print "Calculating noise properties of $data\n";
 
-  # Store the files in the current Frame
-  $Frm->files(@{$related{$key}});
+  # Store the files in the current Frame along with the fastflats
+  $Frm->files(@{$related{$key}}, @fastflats);
   $Frm->readhdr;
-  _PROCESS_DATA_AS_NOISE_
+  _PROCESS_DATA_AS_NOISE_ VERBOSE=$verbose DISPLAY=$display_noise LOGFILE=$uselog
 
   # Store all the mosaics for stacking later
   push(my @noifiles, $Frm->file);
@@ -198,8 +204,8 @@ foreach my $key (sort keys %related) {
   $Frm->tagset("scinoi");
 
   # Add an entry to the log file if desired
+  my $qa_results = $Frm->uhdr("QA_REPORT_INFO");
   if ($uselog) {
-    my $qa_results = $Frm->uhdr("QA_REPORT_INFO");
     my @entries = ( $Frm->hdr("DATE-OBS"), $Frm->hdr("OBSNUM"),
 		    (sprintf "%d", $key) );
     my @vars = qw/NBOLO MEDIAN WTNEP/;
@@ -211,5 +217,12 @@ foreach my $key (sort keys %related) {
 	   : ("nan", "nan", "nan") );
     }
     _ADD_LOG_ENTRY_ LOGFILE=$datanoiselog ENTRIES=\@entries PARAMS=\@logparams PARLIST=NONE
+  } else {
+    foreach my $file (@{$related{$key}}) {
+      my $subarray = $filesub_lut{$file};
+      $allresults{$file} = $qa_results->{$subarray};
+    }
   }
 }
+
+$_PROCESS_DATA_AS_NOISE_FRAME_{RESULTS} = \%allresults if (%allresults);
