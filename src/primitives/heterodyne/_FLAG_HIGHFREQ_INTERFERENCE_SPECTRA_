@@ -238,6 +238,11 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $nel = $ubnd->[0] - $lbnd->[0] + 1;
    my $ntimes = $ubnd->[2] - $lbnd->[2] + 1;
 
+# We need at least twice the number of elements in the filtering boxes
+# for FIXSTEPS and FINDBACK.
+   my $boxsize = 50;
+   next if $ntimes < 2 * $boxsize;
+
 # Form arrays of bad detectors.
 # =============================
 
@@ -327,15 +332,13 @@ orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @
 # before thresholding. FIXSTEPS needs double-precision data.
       my $rejected = 1;
       my $ORAC_STATUS;
-      if ( $ntimes > 100 ) {
-         orac_say( "    Correcting for glitches or drift in the edginess profile." );
-         $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp3file type=_DOUBLE" );
-         $params = "in=$temp3file out=$temp11file";
-         $params .= " meanshift=no dcfitbox=50";
-         my $FIXSTEPS_STATUS = $Mon{'smurf_mon'}->obeyw( "fixsteps", "$params" );
-         if ( $FIXSTEPS_STATUS == 0 ) {
-            ( $ORAC_STATUS, $rejected ) = $Mon{'smurf_mon'}->get( "fixsteps", "nrejected" );
-         }
+      orac_say( "    Correcting for glitches or drift in the edginess profile." );
+      $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp3file type=_DOUBLE" );
+      $params = "in=$temp3file out=$temp11file";
+      $params .= " meanshift=no dcfitbox=$boxsize";
+      my $FIXSTEPS_STATUS = $Mon{'smurf_mon'}->obeyw( "fixsteps", "$params" );
+      if ( $FIXSTEPS_STATUS == 0 ) {
+         ( $ORAC_STATUS, $rejected ) = $Mon{'smurf_mon'}->get( "fixsteps", "nrejected" );
       }
 
 # Check that FIXSTEPS has not rejected the receptor.  This seems to
@@ -350,7 +353,8 @@ orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @
       $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp11file type=_REAL" );
 
 # Estimate and subtract the 'continuum' level.
-      $params = "in=$temp11file out=$temp12file box=51 sub accept";
+      my $oddboxsize = $boxsize + ( $boxsize + 1 ) % 2;
+      $params = "in=$temp11file out=$temp12file box=$oddboxsize sub accept";
       $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # Identify anomalous spectra.
