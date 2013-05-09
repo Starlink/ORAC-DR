@@ -49,10 +49,20 @@ QA_REPORT_INFO uhder. [0]
 
 =item SURVEY = STRING (Given)
 
-If supplied, run QA using the given survey's QA parameters. If 'all'
-is given, then run QA using every survey's QA parameters. If left
-undefined, then use the survey as supplied in the SURVEY FITS
-header. ['']
+Behaviour depends whether or not the instrument (obtained from the
+ORAC_INSTRUMENT internal header) is HARP.
+
+For HARP this argument behaves as follows.  If a value is supplied,
+it requests that QA tests use the given survey's QA parameters. If
+'all' is given, then run QA using every survey's QA parameters
+If left undefined, then use the survey as supplied in the SURVEY
+FITS header.
+
+For non-HARP instruments the SURVEY argument is ignored and QA tests
+against the instrument as if it were a survey and the special Telescope
+category.
+
+[undef']
 
 =back
 
@@ -66,7 +76,8 @@ This primitive is suitable for reduced ACSIS cubes.
 
 =item *
 
-The survey name is obtained from the SURVEY FITS header. If this
+The survey name is obtained from the SURVEY FITS header, or
+from the ORAC_INSTRUMENT header if the instrument is not HARP. If this
 header is blank, then the special pseudo-survey "Telescope" is used.
 
 =back
@@ -93,10 +104,11 @@ JSA::QA.
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 Science and Technology Facilities Council.  All
+Copyright (C) 2008, 2013 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
@@ -114,14 +126,21 @@ my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
 
 my @surveys = qw/ GBS NGS SLS Telescope /;
 
+my $instrument = uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) );
+
 # Set up a list of surveys to analyse.
 my @analyse_surveys;
-if( defined( $survey ) ) {
+if ( $instrument ne "HARP" ) {
+  push @analyse_surveys, $instrument;
+  push @analyse_surveys, "Telescope";
+
+} elsif ( defined( $survey ) ) {
   if( uc( $survey ) eq 'ALL' ) {
     @analyse_surveys = @surveys;
   } else {
     push @analyse_surveys, $survey;
   }
+
 } else {
   push @analyse_surveys, ( defined( $Frm->uhdr( "ORAC_SURVEY" ) ) ?
                            $Frm->uhdr( "ORAC_SURVEY" )            :
@@ -264,8 +283,20 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       # Do QA tests.
       _SETUP_QA_OPTIONS_
       my %opts = %{$_SETUP_QA_OPTIONS_{'OPTS'}};
+
+      # Retrieve the QA parameters file and set up a new JSA::QA object.
       my $qaparamfile = $Cal->qaparams;
-      my $qa = new JSA::QA( file => $qaparamfile );
+
+      # Set up new QA object using this file.  Treat non-HARP instruments
+      # as a survey as these older instruments either pre-date ACSIS or are
+      # not used by the surveys.  This is to avoid messy syntax additions
+      # to qaparams.ini and the header translations of ORAC_SURVEY.
+      my $qa;
+      if ( $instrument ne "HARP" ) {
+        $qa = new JSA::QA( file => $qaparamfile, survey => $instrument );
+      } else {
+        $qa = new JSA::QA( file => $qaparamfile );
+      }
 
       # Retrieve QA report info from the Obs.
       my %qa_info;

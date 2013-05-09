@@ -33,8 +33,20 @@ out. ['AUTO']
 
 =item SURVEY = CHARACTER (Given)
 
-The specific survey to analyse. If no survey is given, then all
-surveys (and the default 'Telescope') survey will be tested.
+Behaviour depends whether or not the instrument (obtained from the
+ORAC_INSTRUMENT internal header) is HARP.
+
+For HARP this argument behaves as follows.  If a value is supplied,
+it requests that QA tests use the given survey's QA parameters. If
+'all' is given, then run QA using every survey's QA parameters
+If left undefined, then use the survey as supplied in the SURVEY
+FITS header.
+
+For non-HARP instruments the SURVEY argument is ignored and QA tests
+against the instrument as if it were a survey and the special Telescope
+category.
+
+[undef']
 
 =back
 
@@ -63,11 +75,12 @@ primitive.
 =item *
 
 The QA tests are performed using various constants which are defined
-according to survey, molecule transition, and frequency. If a
-molecular transition is defined (i.e. the MOLECULE and TRANSITI FITS
-headers are defined) then these are used in preference to the
-frequency (obtained from the LOFREQS FITS header). See the qa.ini file
-in the ACSIS calibration file directory for these constants.
+according to survey or non-HARP frontend like RXB, molecule
+transition, and frequency. If a molecular transition is defined (i.e.
+the MOLECULE and TRANSITI FITS headers are defined) then these are
+used in preference to the frequency (obtained from the LOFREQS FITS
+header). See the qa.ini file in the ACSIS calibration file directory
+for these constants.
 
 =item *
 
@@ -96,10 +109,11 @@ _SETUP_QA_OPTIONS_, _SORT_TIMESERIES_.
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 Science and Technology Facilities Council.  All
+Copyright (C) 2008, 2013 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
@@ -119,10 +133,20 @@ if( ! $isok ) {
   my $tsys_values_href = $Frm->uhdr( "QA_TSYS_VALUES" );
   my $rms_values_href = $Frm->uhdr( "QA_RMS_VALUES" );
 
+  # Retrieve the QA parameters file and set up a new JSA::QA object.
   my $qaparamfile = $Cal->qaparams;
 
-  # Set up new QA object using this file.
-  my $qa = new JSA::QA( file => $qaparamfile );
+  # Set up new QA object using this file.  Treat non-HARP instruments
+  # as a survey as these older instruments either pre-date ACSIS or are
+  # not used by the surveys.  This is to avoid messy syntax additions
+  # to qaparams.ini and the header translations of ORAC_SURVEY.
+  my $qa;
+  my $instrument = uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) );
+  if ( $instrument ne "HARP" ) {
+    $qa = new JSA::QA( file => $qaparamfile, survey => $instrument );
+  } else {
+    $qa = new JSA::QA( file => $qaparamfile );
+  }
 
   foreach my $file ( sort keys %$tsys_values_href ) {
 
@@ -149,12 +173,17 @@ if( ! $isok ) {
 
     # Set up a list of surveys to analyse.
     my @analyse_surveys;
-    if( defined( $survey ) ) {
+    if ( $instrument ne "HARP" ) {
+      push @analyse_surveys, $instrument;
+      push @analyse_surveys, "Telescope";
+
+    } elsif ( defined( $survey ) ) {
       if( uc( $survey ) eq 'ALL' ) {
         @analyse_surveys = @surveys;
       } else {
         push @analyse_surveys, $survey;
       }
+
     } else {
       push @analyse_surveys, ( defined( $Frm->uhdr( "ORAC_SURVEY" ) ) ?
                                $Frm->uhdr( "ORAC_SURVEY" )            :
