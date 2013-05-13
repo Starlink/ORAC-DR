@@ -51,11 +51,13 @@ The following arguments are supported:
 
 =item B<FRAME>
 
-An ORAC-DR Frame object containing the images to shift. No default.
+An ORAC-DR Frame object containing the images to shift. Default is the
+current Frm.
 
 =item B<IMAGES>
 
-Reference to an array of file names. No default.
+Reference to an array of file names. No default. Overrides the use of
+B<FRAME>.
 
 =item B<INPLACE>
 
@@ -77,17 +79,18 @@ The following external tasks are used:
 
 =item KAPPA
 
-WCSSLIDE
+NDFCOPY, WCSSLIDE
 
 =item ORAC-DR PRIMITIVES:
 
-_APPLY_MATCHED_FILTER_, _FIND_MAP_PEAK_
+_ADD_LOG_ENTRY_, _FIND_MAP_PEAK_
 
 =back
 
 =head1 OUTPUT DATA
 
-None.
+The given Frame object is updated with the shifted files provided the
+shift could be determined for multiple files.
 
 =head1 OUTPUT FILES
 
@@ -99,15 +102,31 @@ shifted (registered) files will have the suffix C<_reg>.
 
 =head1 NOTES
 
+=over 2
+
+=item *
+
 The list of files should be of the same source and all should be in
 the same coordinate system. The WCS info for the first file in the
 list is used to obtain the reference position.
 
+=item *
+
 If used C<blind> (i.e. with B<INITPOS> unset) then the brightest
-object in each image must be the same source.
+object in each image must be the same source. B<INITPOS> must be given
+if this cannot be guaranteed.
+
+=item *
 
 The B<INPLACE> parameter should be true for the pipeline, false for
-PICARD.
+PICARD to preserve the original input files.
+
+=item *
+
+If both B<IMAGES> and B<FRAME> are given, the images will be stored in
+the given Frame object.
+
+=back
 
 =head1 AUTHOR
 
@@ -115,8 +134,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010-2011 University of British Columbia. All Rights
-Reserved.
+Copyright (C) 2010-2011,2013 University of British Columbia. All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -135,41 +154,45 @@ USA.
 
 =cut
 
-# Input Frame object
-my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", undef);
+# List of input images
+my $imageref = get_prim_arg($_PRIM_ARGS_, "IMAGES", undef);
 
+# Input Frame object
+my $Frmobj = get_prim_arg($_PRIM_ARGS_, "FRAME", $Frm);
+
+# Are the images to be shifted `in place' or are copies to be made?
+my $modify_in_place = get_prim_arg($_PRIM_ARGS_, "INPLACE", 0);
+
+# Sanity check for inputs
 my $have_data = 0;
-if ($Frmobj) {
-  # Are the images to be shifted `in place' or are copies to be made?
-  my $modify_in_place = get_prim_arg($_PRIM_ARGS_, "INPLACE", 0);
-  $have_data = 1 if ($Frmobj->isa("ORAC::Frame"));
-  # Make a copy of the input files if the user does not want to
-  # shift the originals
-  unless ( $modify_in_place ) {
-    my @out;
-    foreach my $i (1 .. $Frmobj->nfiles) {
-      my ($in, $out) = $Frmobj->inout("_reg", $i);
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
-      push(@out, $out);
-    }
-    $Frmobj->files(@out);
+if ($imageref) {
+  if (ref($imageref) eq "ARRAY") {
+    $have_data = 1;
+    $Frmobj->files(@$imageref); # Avoid calling configure() method
+  } else {
+    orac_err "IMAGES given a reference but not of an array\n";
   }
 } else {
-  # Alternatively, get reference to array of images
-  my $imageref = get_prim_arg($_PRIM_ARGS_, "IMAGES", undef);
-  if ( $imageref && (ref($imageref) eq "ARRAY") ) {
-    # Define a new Frame object
-    $Frmobj = $Frm->new();
-    $Frmobj->files(@$imageref); # Avoid calling configure() method
-    $have_data = 1;
-  } else {
-    # Just warn the user that nothing happened - the rest of the
-    # primitive will be a no-op
-    orac_warn "No images given or input not an array reference\n";
-  }
+  $have_data = 1 if ($Frmobj->isa("ORAC::Frame"));
 }
 
-return ORAC__OK unless ($have_data);
+# Quit if there are no images to shift
+unless ($have_data) {
+  orac_warn "No images to shift - returning to caller\n";
+  return ORAC__OK;
+}
+
+# Make a copy of each input file if INPLACE is false
+unless ( $modify_in_place ) {
+  my @out;
+  foreach my $i (1 .. $Frmobj->nfiles) {
+    my ($in, $out) = $Frmobj->inout("_reg", $i);
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+    push(@out, $out);
+  }
+  $Frmobj->files(@out);
+}
+
 
 # Verbosity flag - default to false
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
