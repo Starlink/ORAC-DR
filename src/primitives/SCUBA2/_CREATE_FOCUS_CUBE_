@@ -272,7 +272,7 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
   }
 
   # Loop over each Frame to create a Frame mosaic
-  my @planes;
+  my %planes;
   my $args;
   my $i = 0;
   my $obsnum = $Frm->hdr("OBSNUM");
@@ -284,23 +284,6 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
     orac_print "Processing focus position $axis = ".(sprintf "%5.2f", $focposn)." mm (offset #$i)\n"
       if $verbose;
 
-    # Define output file based on Group file name
-    my $planeimage = $Grp->inout( $focposidx{$focposn} );
-    # Set the NDF title string
-    my $title = $focposidx{$focposn};
-    $title =~ s/\_foc//;	# remove underscores
-    my $obs = $obsnum;
-    if ($i == 1) {
-      my $wave = ($Frm->hdr("FILTER") =~ /850/) ? "850 um" : "450 um";
-      if ($Frm->uhdr("QUICKLOOK")) {
-	$obs .= " ($wave QL)";
-      } elsif ($Frm->uhdr("SUMMIT")) {
-	$obs .= " ($wave summit)";
-      }
-    }
-
-    $title = "'Foc".$title." $axis=$focposn mm / Obs $obs'";
-
     # Create single image for the current focus plane
     my $focfile;
     if ( @focfiles > 1 ) {
@@ -311,21 +294,77 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
     } else {
       $focfile = $focfiles[0];
     }
-    # Trim to 90x90 arcsec
-    $Frm->file($focfile);
-    $Frm->tagset($focposidx{$focposn});
-    _CROP_IMAGE_ALL_ HEIGHT=120 WIDTH=120 VERBOSE=0
-
-    # Strip frequency axis so we can add an SMU axis later
-    my $cpargs = "in=".$Frm->file." out=$planeimage title=$title";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs trim=true trimwcs=true");
-
-    # Set to offset coordinate system
-    $args = "ndf=$planeimage mode=mset setting='skyrefis=origin,alignoffset=1'";
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 
     # Store output file in current subgrp
-    $subgrp->files( $planeimage );
+    $subgrp->files( $focfile );
+
+    # Store image name for pasting into the cube
+    $planes{$focposn} = $focfile;
+  }
+
+  # Find the peak position of the centre focus step (presumed to be
+  # nearest the actual focus). Nfoc should be odd but make it an int
+  # just in case...
+  my $midplane = int((scalar(@focposns) + 1) / 2) - 1;
+  $Frm->files($planes{$focposns[$midplane]});
+  $Frm->tagset("midplane");
+  $Frm->product("midplane");
+  # Find the peak position just in case the source is way off centre -
+  # adjust the WCS if so
+  my $initpos = [0,0];
+  _FIND_MAP_PEAK_ PLOTFIT=0 FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
+  # If the peak could be determined, and had a S/N exceeding 3 then proceed with shift
+  my $SNR_MIN = 3.0;
+  my @newpos;
+  if (defined $_FIND_MAP_PEAK_{PEAK} &&
+      (defined $_FIND_MAP_PEAK_{SNR} && $_FIND_MAP_PEAK_{SNR} > $SNR_MIN)) {
+    @newpos = ($_FIND_MAP_PEAK_{POSITION}->[0], $_FIND_MAP_PEAK_{POSITION}->[1]);
+  } else {
+    orac_warn "Unable to locate a significant maximum - WCS will not be adjusted\n";
+  }
+
+  orac_print "Adjusting WCS to put source at image centre...\n"
+    if ($verbose && @newpos);
+  my @crop_planes;
+  my $plane_index = 0;
+  # Now shift each plane to a new (0,0) if necessary and set them up
+  # with an SMU axis to add to the cube
+  foreach my $focposn (@focposns) {
+    $plane_index++;
+    my $plane = $planes{$focposn};
+    # Set to offset coordinate system
+    $args = "ndf=$plane mode=mset setting='skyrefis=origin,alignoffset=1'";
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+
+    if (@newpos && ($newpos[0] ne "0" || $newpos[1] ne "0") ) {
+      my $args = "stype=relative fid='0.0,0.0,0' obj='".
+	$newpos[0].",".$newpos[1].",0' ndf=$plane";
+      $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    }
+    $Frm->files($plane);
+    $Frm->readhdr;
+
+    _CROP_IMAGE_ALL_ HEIGHT=120 WIDTH=120 VERBOSE=0
+    # Set the NDF title string
+    my $title = $focposidx{$focposn};
+    $title =~ s/\_foc//;	# remove underscores
+    my $obs = $obsnum;
+    if ($plane_index == 1) {
+      my $wave = ($Frm->hdr("FILTER") =~ /850/) ? "850 um" : "450 um";
+      if ($Frm->uhdr("QUICKLOOK")) {
+	$obs .= " ($wave QL)";
+      } elsif ($Frm->uhdr("SUMMIT")) {
+	$obs .= " ($wave summit)";
+      }
+    }
+
+    $title = "'Foc".$title." $axis=$focposn mm / Obs $obs'";
+
+    # Define output file based on Group file name
+    my $planeimage = $Grp->inout( $focposidx{$focposn} );
+
+    my $cpargs = "in=".$Frm->file." out=$planeimage title=$title";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs trim=true trimwcs=true");
 
     # Derive sky mapping and frame and store for later use
     unless ($Grp->uhdr("MAPPING")) {
@@ -343,23 +382,22 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
     $args = "ndf=$planeimage(,,1:1)";
     $Mon{ndfpack_mon}->obeyw("setbound","$args");
     # Set the origin accordingly
-    $args = "ndf=$planeimage origin=[$xy[0],$xy[1],$i]";
+    $args = "ndf=$planeimage origin=[$xy[0],$xy[1],$plane_index]";
     $Mon{ndfpack_mon}->obeyw("setorigin","$args");
-
-    # Store image name in array for pasting into the cube
-    push ( @planes, $planeimage );
 
     # Set the format to display arcsec offsets
     my $newformat = "s.0";
     my $args = "ndf=$planeimage mode=mset setting='Format(1)=$newformat,Format(2)=$newformat'";
     $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 
+    push(@crop_planes, $planeimage);
+
     # Restore current Frame to original state since we have been
     # storing files in it
     $Frm->tagretrieve("create_focus_cube");
   }
 
-  $Grp->files(@planes);
+  $Grp->files(@crop_planes);
   $Grp->tagset("focus_images");
 
   # Check that we can make at least 3 planes on a cube to fit a quadratic
@@ -371,7 +409,7 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
 
   # Combine individual FOCPOSN mosaics into a 3-D cube
   orac_print "Creating FOCUS cube..." if $verbose;
-  my $inlist = write_file_list( @planes );
+  my $inlist = write_file_list( @crop_planes );
   $args = "in=^".$inlist." p1=! out=$cubename title='FOCUS cube'";
   $Mon{kappa_mon}->obeyw("paste","$args");
   undef $inlist;
@@ -406,35 +444,6 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
 
   # Remove all of the .ast text files with the mapping/frame info
   unlink glob( "*$$.ast" );
-
-  # Find the peak position of the centre focus step (presumed to be
-  # nearest the actual focus). Nfoc should be odd but make it an int
-  # just in case...
-  my $midplane = int(($nfoc + 1) / 2);
-  # Take a copy of the relevant plane in the cube
-  my $midfile = $Frm->inout("_midplane");
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$cubename(,,$midplane) out=$midfile trimwcs trim");
-  $Frm->file($midfile);
-  $Frm->tagset("midplane");
-  $Frm->product("midplane");
-  # Find the peak position just in case the source is way off centre -
-  # adjust the WCS if so
-  orac_print "adjusting WCS to put source at image centre...\n" if $verbose;
-  my $initpos = [0,0];
-  _FIND_MAP_PEAK_ PLOTFIT=0 FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
-  # If the peak could be determined, and had a S/N exceeding 10 then proceed with shift
-  my $SNR_MIN = 10.0;
-  if (defined $_FIND_MAP_PEAK_{PEAK} &&
-     (defined $_FIND_MAP_PEAK_{SNR} && $_FIND_MAP_PEAK_{SNR} > $SNR_MIN)) {
-    my @newpos = ($_FIND_MAP_PEAK_{POSITION}->[0], $_FIND_MAP_PEAK_{POSITION}->[1]);
-    if ( $newpos[0] ne "0" || $newpos[1] ne "0" ) {
-      my $args = "stype=relative fid='0.0,0.0,0' obj='".
-	$newpos[0].",".$newpos[1].",0' ndf=$cubename";
-      $Mon{kappa_mon}->obeyw("wcsslide","$args");
-    }
-  } else {
-    orac_warn "Unable to locate a significant maximum - cube will not be adjusted\n";
-  }
 
   # Store the cube name as the Grp file and update product and tags
   $Grp->force_product_update($product, $cubename);
