@@ -79,6 +79,29 @@ sub new {
 
 =over 4
 
+=item B<can_append_suffix>
+
+Check if the current instrument supports appending of suffices. The
+optional suffix can be used to test against a list of known suffices.
+
+  my $can_append = $self->can_append_suffix($suffix);
+
+This method should be expanded for other instruments.
+
+=cut
+
+sub can_append_suffix {
+  my $self = shift;
+  my $suffix = shift;
+
+  my $append = 0;
+  # Add further append tests here, for example on a per-suffix basis
+  if ($self->hdr("INSTRUME") eq "SCUBA-2") {
+    $append = 1;
+  }
+  return $append;
+}
+
 =item B<findrecipe>
 
 PICARD frames are all processed using the supplied command-line recipe.
@@ -123,6 +146,35 @@ sub framegroupkeys {
   return ();
 }
 
+=item B<inout>
+
+For PICARD the suffix may be appended if the current instrument
+supports it, otherwise the method in the base class is called. The
+interface is the same as the base class and may be used to return the
+input and output file names.
+
+See also L<ORAC::BaseFile|ORAC::BaseFile>.
+
+=cut
+
+sub inout {
+  my $self = shift;
+  my $suffix = shift;
+  my $num = 1;
+  if (@_ && $self->nfiles > 1) {
+    $num = shift if ($_[0] =~ /\d+/);
+  }
+
+  my ($infile, $outfile);
+  if ($self->can_append_suffix($suffix)) {
+    $infile = $self->file($num);
+    $outfile = $infile . $suffix;
+  } else {
+    ($infile, $outfile) = $self->SUPER::inout($suffix, $num);
+  }
+  return (wantarray) ? ($infile, $outfile) : $outfile;
+}
+
 =back
 
 =head1 SEE ALSO
@@ -132,12 +184,14 @@ L<ORAC::Group::PICARD>
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 $Id$
 
 =head1 COPYRIGHT
 
 Copyright (C) 2007 Science and Technology Facilities Council.
+Copyright (C) 2013 University of British Columbia.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
