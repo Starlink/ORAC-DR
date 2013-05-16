@@ -196,7 +196,6 @@ unless ( $Frmobj->tagexists("aligned") ) {
     my $moving = $Grp->uhdr("MOVING");
     # Start with exp_time - add more as necessary. Note that there is NO
     # checking to see if the component exists before attempting to align.
-    my @comp = ("EXP_TIME", "WEIGHTS");
     my %known_comps = ( EXP_TIME => "exposure times",
 			WEIGHTS => "weights",
 		      );
@@ -204,22 +203,28 @@ unless ( $Frmobj->tagexists("aligned") ) {
       orac_print "Aligning $known_comps{$ndfcomp}... " if $verbose;
       orac_print "Setting attributes for moving sources... "
 	if ($moving && $verbose);
-      my @in = map { $_.".more.smurf.$ndfcomp"} $Frmobj->files;
-      # Set SkyRefIs and AlignOffset attributes for moving sources.
-      # Note that the EXP_TIME and WEIGHTS components have separate
-      # WCS and must therefore be modified separately for moving sources
-      for my $i (0..$#in) {
-	if ( $moving ) {
-	  my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
-	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+      my $fullcomp = "more.smurf.$ndfcomp";
+      my $infiles = [$Frmobj->files];
+      _COMPONENT_EXISTS_FILES_ COMPONENT=$fullcomp FILES=$infiles
+      if ($_COMPONENT_EXISTS_FILES_{COMPFILES}) {
+	my @alignfiles = @{$_COMPONENT_EXISTS_FILES_{COMPFILES}};
+	my @in = map { $_.".$fullcomp"} @alignfiles;
+	# Set SkyRefIs and AlignOffset attributes for moving sources.
+	# Note that the EXP_TIME and WEIGHTS components have separate
+	# WCS and must therefore be modified separately for moving sources
+	for my $i (0..$#in) {
+	  if ( $moving ) {
+	    my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
+	    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+	  }
 	}
-      }
-      $inlist = write_file_list( @in );
-      $outlist = write_file_list( map { $_.".more.smurf.$ndfcomp"} @out );
+	$inlist = write_file_list( @in );
+	$outlist = write_file_list( map { $_.".$fullcomp"} @out );
 
-      $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^$outlist in=^$inlist";
-      $args .= " params=$parstring" if ($params);
-      $Mon{kappa_mon}->obeyw("wcsalign","$args");
+	$args = "ref=$refimage lbnd=! ubnd=! method=$method out=^$outlist in=^$inlist";
+	$args .= " params=$parstring" if ($params);
+	$Mon{kappa_mon}->obeyw("wcsalign","$args");
+      }
     }
   }
 
