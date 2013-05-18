@@ -339,9 +339,9 @@ if ($calib && $dofit) {
 	      @{ $_CENTROID_IMAGE_{RESULTS} } : ();
     # If a source could be located then proceed with fit
     if ( defined $xy[0] && defined $xy[1] ) {
-      orac_print "Deriving the beam in the $fitcosys coordinate system using $method\n";
+      orac_print "\nDeriving the beam in the $fitcosys coordinate system using $method\n";
 
-      my (@amp, @majfwhm, @minfwhm, $axisr, @orient, @totalflux, @posn, $goodbeam);
+      my (@amp, @majfwhm, @minfwhm, $axisr, @orient, @totalflux, @posn, $goodbeam, $snr);
 
       # Are we forcing a gaussian fit?
       my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
@@ -368,6 +368,7 @@ if ($calib && $dofit) {
 	@orient = @{ $_FIT_SOURCE_{ORIENT} };
 	@posn = @{ $_FIT_SOURCE_{POSITION} };
 	@totalflux = @{ $_FIT_SOURCE_{TOTALFLUX} };
+	$snr = $_FIT_SOURCE_{SNR};
       }
       $goodbeam = $_FIT_SOURCE_{FIT};
 
@@ -379,6 +380,7 @@ if ($calib && $dofit) {
 
       my ($beama, $beamb, $pa, $errfrac);
       # If the fit was good, proceed with estimate of error beam
+      my $colour = "green";
       if ( $goodbeam ) {
 	$errfrac = 0.0;
 	# Store beam parameters
@@ -390,6 +392,21 @@ if ($calib && $dofit) {
 	$beama = sprintf "%5.2f", $majfwhm[0];
 	$beamb = sprintf "%5.2f", $minfwhm[0];
 	$pa = sprintf "%6.2f", $orient[0];
+	$snr = sprintf "%.1f", $snr;
+
+	# And compare the fitted FWHM with the telescope beam
+	my $fit_fwhm = sqrt($beama*$beamb);
+	my @tel_fwhm = $Cal->fwhm;
+	my $fwhm_ratio = $fit_fwhm / $tel_fwhm[0];
+	if ($fwhm_ratio > 1.1) {
+	  if ($fwhm_ratio > 1.2) {
+	    $colour = "red";
+	  } else {
+	    $colour = "yellow";
+	  }
+	  my $pcratio = sprintf "%.1f", (100 * ($fwhm_ratio - 1));
+	  orac_warn "Fitted beam size (".(sprintf "%.2f",$fit_fwhm)."\") exceeds telescope ($tel_fwhm[0]\") by $pcratio %\n";
+	}
       } else {
 	# Don't bother logging result if the fit was poor
 	$uselog = 0;
@@ -405,7 +422,8 @@ if ($calib && $dofit) {
 	my @values = ($beama, $da, $beamb, $db, $pa, $dpa, $errfrac);
 	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names GROUP=$group
       }
-      orac_print "Beam size: $beama x $beamb arcsec^2 at a PA of $pa deg E of N\n", "green"
+
+      orac_print "Beam size: $beama x $beamb arcsec^2 at a PA of $pa deg E of N (S/N = $snr)\n\n", "$colour"
 	if ($verbose && $goodbeam);
     } else {
       orac_warn "Unable to locate a source near the centre of the image\n";
