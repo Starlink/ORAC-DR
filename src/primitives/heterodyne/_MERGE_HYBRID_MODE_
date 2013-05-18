@@ -81,8 +81,24 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
   my @outfiles;
   my $params;
 
+  # Retrieve WCS lower bounds for the files.
+  my @lbounds;
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+    my $file = $Frm->file( $i );
+    _GET_DIMENSIONS_ FILE=$file
+    my $flb = $_GET_DIMENSIONS_{FLBOUND};
+    push @lbounds, $flb->[0];
+  }
+
+  # The files may not be in increasing bounds order, so provide an index
+  # to the bounds-sorted order to merge adjacent sub-bands.  Frm file
+  # indexing starts from 1, so increment the index by one.
+  my @bounds_order = map{ $_ + 1 }
+                     sort { $lbounds[$a] <=> $lbounds[$b] }
+                     0 .. scalar( @lbounds ) - 1;
+
   # Previous subband is the initially the first.
-  my $last_dc_corrected = $Frm->file( 1 );
+  my $last_dc_corrected = $Frm->file( $bounds_order[0] );
 
   # Retrieve bounds for the first file.
   _GET_DIMENSIONS_ FILE=$last_dc_corrected
@@ -91,10 +107,11 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
 
   # Record initial subband for mosaicking as we do not apply a DC offset to it.
   push @outfiles, $last_dc_corrected;
-  foreach my $nsubband ( 2 .. $Frm->nfiles ) {
+  foreach my $nsubband ( 1 .. $Frm->nfiles - 1 ) {
 
-    my $next_subband = $Frm->file( $nsubband );
+    my $next_subband = $Frm->file( $bounds_order[$nsubband] );
     orac_say " Calculating overlap for subband $nsubband.";
+    orac_say " Comparing $next_subband with $last_dc_corrected";
 
     # Get the overlap range.
     _CALCULATE_HYBRID_OVERLAP_ FILE1=$last_dc_corrected FILE2=$next_subband
@@ -125,9 +142,9 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
     my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
 
     # Apply the DC level adjustment.  It is applied incrementally to the
-    # next sub band.  Thus the first subband level is unaltered and
+    # next subband.  Thus the first subband level is unaltered and
     # subsequent bands are corrected to its level.
-    ( undef, my $out ) = $Frm->inout( "_dc", $nsubband );
+    ( undef, my $out ) = $Frm->inout( "_dc", $bounds_order[$nsubband] );
     $params = "in=$next_subband out=$out scalar=$median";
     $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
     my $fs_median = sprintf( "%.4f", $median );
