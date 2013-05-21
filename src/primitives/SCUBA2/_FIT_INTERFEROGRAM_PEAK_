@@ -138,6 +138,7 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   if (($subarray =~ /^s8/) ? ($shutter ne $beam)
                            : ($shutter eq $beam)) {
     orac_say("Shutter in $shutter beam so inverting $subarray interferogram.");
+    $Frm->push_intermediates($neg);
     $Mon{'kappa_mon'}->obeyw('cmult', "$in -1.0 $neg");
     $in = $neg;
   }
@@ -145,7 +146,7 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   # Threshold interferogram (to remove negative fringes).
 
   my (undef, $thr) = $Frm->inout('_thr', $i);
-  #$Frm->push_intermediates($thr);
+  $Frm->push_intermediates($thr);
   $Mon{'kappa_mon'}->obeyw('thresh', "$in $thr thrlo=0 newlo=0 thrhi=1000 newhi=bad");
 
   my $fitshdr = new ORAC::TempFile(OPEN => 0, SUFFIX => '.lis');
@@ -179,17 +180,22 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
     # into FIT1D to fit the central fringe.
 
     my (undef, $bak) = $Frm->inout('_bak', $i);
+    $Frm->push_intermediates($bak);
     $Mon{'cupid_mon'}->obeyw('findback', "$in $bak box=[1,1,$boxwidth_findback] rms=!");
     my (undef, $abs) = $Frm->inout('_abs', $i);
+    $Frm->push_intermediates($abs);
     $Mon{'kappa_mon'}->obeyw('sub', "$in $bak $abs");
 
     my (undef, $smo) = $Frm->inout('_smo', $i);
+    $Frm->push_intermediates($smo);
     $Mon{'kappa_mon'}->obeyw('block', "$abs $smo box=[1,1,$boxwidth_block]");
 
     (undef, $parndf) = $Frm->inout('_sft', $i);
+    $Frm->push_intermediates($parndf);
     $Mon{'smurf_mon'}->obeyw('fit1d', "in=$smo out=$parndf parndf=! rms=$rms config=^$cfg userval=\"comp1.c=$wid\"");
 
     my (undef, $sps) = $Frm->inout('_sps', $i);
+    $Frm->push_intermediates($sps);
     $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$parndf.MORE.SMURF_FIT1D.COMP_1\(,,2\) $sps trim=false");
 
     _FIND_IMAGE_STATISTICS_ IMAGE=$sps COMP=data VERBOSE=0
@@ -199,6 +205,7 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
     my $min = $sps_median - $tol;
     my $max = $sps_median + $tol;
     my (undef, $sps_thr) = $Frm->inout('_spsthr', $i);
+    $Frm->push_intermediates($sps_thr);
     $Mon{'kappa_mon'}->obeyw('thresh', "$sps $sps_thr $min $max bad bad");
 
     # Copy across FITS headers to stop ORAC-DR complaining.
@@ -207,9 +214,11 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
     push @intermediate_display, $sps_thr;
 
     my (undef, $sps_fil) = $Frm->inout('_spsfil', $i);
+    $Frm->push_intermediates($sps_fil);
     $Mon{'kappa_mon'}->obeyw('fillbad', "$sps_thr $sps_fil niter=2 size=[2,2]");
 
     my (undef, $sps_pas) = $Frm->inout('_sftpas', $i);
+    $Frm->push_intermediates($sps_pas);
     $Mon{'kappa_mon'}->obeyw('paste', "$parndf.MORE.SMURF_FIT1D.COMP_1 $sps_fil out=$sps_pas");
 
     $Mon{'hdstools_mon'}->obeyw('hcopy', "$sps_pas $parndf.MORE.SMURF_FIT1D.COMP_1");
@@ -231,7 +240,7 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
   # Perform fit.
 
   my (undef, $fit) = $Frm->inout('_fit', $i);
-  #$Frm->push_intermediates($fit);
+  $Frm->push_intermediates($fit);
   $Mon{'smurf_mon'}->obeyw('fit1d', "in=$thr out=$fit parndf=$parndf rms=$rms config=^$cfg userval=^$val");
 
   my (undef, $pos) = $Frm->inout('_pos', $i);
