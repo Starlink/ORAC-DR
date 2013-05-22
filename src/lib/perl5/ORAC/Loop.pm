@@ -579,6 +579,14 @@ sub orac_loop_flag {
     if ($npauses >= $dot) {
       orac_print ".";
       $npauses = 0;
+
+      # If we have a list of flag files for the next observations
+      # refresh it now.  (In the case of SCUBA-2 this will cause the
+      # meta file to be re-read.)
+      if (@$prev) {
+        @nnames = $TemplateFrm->flag_from_bits($utdate, $obsno + 1);
+        @nactual = _to_abs_path(@nnames);
+      }
     }
 
   }
