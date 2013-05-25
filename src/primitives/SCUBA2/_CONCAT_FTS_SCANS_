@@ -57,61 +57,11 @@ USA.
 
 =cut
 
-my @files = sort $Frm->files();
-my %scanin = ();
-my %scanout = ();
-my %scanff = ();
-my %flatfield = ();
-my @output = ();
+my $in = write_file_list($Frm->files());
+my $out = new ORAC::TempFile(0);
+unlink $out;
 
-# Build list of files which should be concatenated,
-# identified by observation ID and sequence count.
+$Mon{'smurf_mon'}->obeyw('sc2concat', "in=^$in out=*_con outfiles=$out flat=true");
 
-foreach (my $i = 0; $i < scalar @files; $i ++) {
-  # Identify flat field files so that they can be passed to sc2concat.
-  my $ffid = $Frm->hdrval('OBSIDSS', $i) . '_' .
-             $Frm->subarray($files[$i]);
-
-  if (lc($Frm->hdrval('SEQ_TYPE', $i)) eq 'fastflat') {
-    unless (exists($flatfield{$ffid})) {
-      $flatfield{$ffid} = [$files[$i]];
-    }
-    else {
-      push @{$flatfield{$ffid}}, $files[$i];
-    }
-    next;
-  }
-
-  # Skip any other file types except 'science'.
-  next unless lc($Frm->hdrval('SEQ_TYPE', $i)) eq 'science';
-
-  my $id = $ffid . '_' . $Frm->hdrval('SEQCOUNT', $i);
-
-  unless (exists($scanin{$id})) {
-    my ($in, $out) = $Frm->inout('con', $i + 1);
-    $scanin{$id} = [$in];
-    $scanout{$id} = $out;
-    $scanff{$id} = $ffid;
-  }
-  else {
-    push @{$scanin{$id}}, $files[$i];
-  }
-}
-
-# Apply sc2concat to the files.
-
-foreach my $id (keys %scanin) {
-  my @ff = ();
-  @ff = @{$flatfield{$scanff{$id}}} if exists $flatfield{$scanff{$id}};
-  my $in = write_file_list(@ff, @{$scanin{$id}});
-  my $out = $scanout{$id};
-
-  $Mon{'smurf_mon'}->obeyw('sc2concat', "in=^$in out=$out flat=true");
-
-  push @output, $out;
-}
-
-# Return list of concatenated files.
-
-$Frm->files(@output);
+$Frm->files(read_file_list("$out"));
 $Frm->readhdr();
