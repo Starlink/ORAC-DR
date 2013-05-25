@@ -1,0 +1,202 @@
+=head1 NAME
+
+_ESTIMATE_LINEFOREST_BASELINE_OFFSET_
+
+=head1 DESCRIPTION
+
+This primitive attempts to correct the baseline DC level for hybrid
+spectra comprising several emission lines extending across more
+frequencies than the regions of baseline.  Such data can be
+problematic for MFITTREND.
+
+It uses a smoothed histogram of data values and determines the first
+peak, which should be the mode, and subtracts it.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+Defines how group handling is done. 0 means the current Frame object
+is used, 1 means the current Group object is used, and 2 means every
+Frame member in the current Group is used. [0]
+
+=item SKEWNESS = REAL (Given)
+
+The minimum skewness before a correction to the baseline is made.
+It should be positive and generally at least 1.0.  This can be 
+overridden by the RECPAR_BASELINE_SKEWNESS recipe parameter.  [1.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for hybrid heterodyne spectra.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The output baseline corrected baseline with suffix _bldc.
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDCLUMPS;
+KAPPA: CSUB, GAUSMOOTH, HISTOGRAM, STATS.
+
+=head1 REQUIRED PERL MODULES
+
+POSIX.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+use POSIX qw(ceil floor);
+
+if ( $Frm->uhdr( "ISHYBRID" ) ) {
+   my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+   my $min_skewness = get_prim_arg( $_PRIM_ARGS_, "SKEWNESS", 1.0 );
+
+# Override order if we've been given a recipe parameter.
+   $min_skewness = ( defined( $Frm->uhdr( "RECPAR_BASELINE_SKEWNESS" ) ) ?
+                     $Frm->uhdr( "RECPAR_BASELINE_SKEWNESS" )            :
+                     $min_skewness );
+
+# Select the files to process.
+   my @objs;
+   if ( $group == 0 ) {
+      push @objs, $Frm;
+   } elsif ( $group == 1 ) {
+      push @objs, $Grp;
+   } elsif ( $group == 2 ) {
+      @objs = $Grp->members;
+   }
+
+# Create configuration-parameter file for FINDCLUMPS.  The main three are
+# ClumpFind.MaxBad, ClumpFind.MinPix (although double the default it could
+# be set larger to weed out peaks from lines), and ClumpFind.FwhmBeam.
+# ClumpFind.VeloRes could be set to 1 channel.
+   my $fc_param = new ORAC::TempFile( 1 );
+   open my $fc_fh, ">", $fc_param;
+   print $fc_fh "ClumpFind.Minpix=6\n";
+   print $fc_fh "ClumpFind.AllowEdge=1\n";
+   print $fc_fh "ClumpFind.FwhmBeam=0.0\n";
+   print $fc_fh "ClumpFind.MaxBad=1\n";
+   print $fc_fh "ClumpFind.VeloRes=0\n";
+   close $fc_fh;
+
+   my $ORAC_STATUS;
+   my $resolution = 0.05;
+   foreach my $Obj ( @objs ) {
+      my ( $in, $out ) = $Obj->inout( "_bldc" );
+
+# First decide if this step is necessary.  If there are many spectral
+# emission lines the skewness will be strongly positive.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in" );
+      ( $ORAC_STATUS, my $skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+      if ( $skewness > $min_skewness ) {
+
+# Now perform statistics trimming off much of the signal from the spectral lines
+# causing positive skewness.
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=[2.0,2.0,2.5,3.0]" );
+         ( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+         ( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+      
+# Round up or down the histogram range to the bin resolution, and hence
+# determine the number of histogram bins, allowing numerical rounding.
+# Append an extra bin at the lower end so that the first peak does not
+# cut touch the array lower bound.
+         $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
+         $maximum = floor( $maximum / $resolution ) * $resolution;
+         my $numbin = int( $maximum - $minimum + 0.01 * $resolution ) / $resolution;
+
+# Create histogram at the resolution, covering the range of relevant data.
+         my $histfile = new ORAC::TempFile( 0 );
+         my $params = "in=$in out=$histfile ";
+         $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
+         $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+
+# A gentle smooth should generate a well defined rounded peak.
+         my $smooth_hist = new ORAC::TempFile( 0 );
+         $params = "in=$histfile out=$smooth_hist fwhm=3";
+         $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+
+# Identify the peaks in the histogram, storing the results table to a Starlink STL file.
+# Since the quanta are integers ensure the RMS level is at least that.
+         my $outmap = new ORAC::TempFile( 0 );
+         my $outcat = new ORAC::TempFile( 0 );
+         $outcat .= ".TXT";
+         $params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=1.001 ";
+         $params .= "config=^$fc_param accept";
+         $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+
+         my $peak = 0; 
+
+# Check number of clumps using NCLUMPS.
+         ( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+         if ( $nclumps > 0 ) {
+
+# Since I'm not allowed to use STILTS, here is a not terribly pretty
+# means to access the required datum in the file.  It searchs the STL
+# format for the start of the table and given by the BEGINTABLE, and
+# there is no development of this format so this should be robust.
+# Then we assume that the first row is the lowest co-ordinate; there
+# should not be a peak below the baseline.
+            open( TABLE, "< $outcat" ) or
+              die "Could not find catalogue $outcat specifying the peak baseline: $!\n";
+            my @lines = <TABLE>;
+            my $i = 0;
+            my $row;
+            while ( $i < scalar( @lines ) ) {
+               chomp $lines[$i];
+               if ( $lines[$i] =~ /BEGINTABLE/ ) {
+                  $row = $lines[$i+1];
+                  last;
+               }
+               $i++;
+            }
+
+# Extract the Peak1 value for the first (baseline peak).  Convert from
+# scientific notion with a D exponent to E so that Perl recognises it.
+            my @fields = split( ' ', $row );
+            $peak = $fields[1];
+            $peak =~ s/D/e/;
+         }
+
+# Apply the DC offset.
+         my $dc_offset = $minimum + $peak * $resolution;
+         $params = "in=$in out=$out scalar=$dc_offset";
+         $Mon{'kappa_mon'}->obeyw( "csub", "$params" );
+
+         orac_print "$in to $out:\n";
+         orac_print " Removed DC offset.\n";
+
+         $Obj->file( $out );
+      }
+   }
+
+# Remove the FINDCLUMPS configuration file.
+   unlink( $fc_param );
+
+# Tidy-up output.
+   orac_print "\n";
+}
