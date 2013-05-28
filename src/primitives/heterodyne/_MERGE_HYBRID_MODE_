@@ -35,6 +35,10 @@ This primitive is suitable for ACSIS data taken in hybrid mode.
 This primitive only operates if the ISHYBRID user header is set for
 the current Frame object.
 
+=item *
+
+A mean of the Tsys value is calculated for the merged product.
+
 =back
 
 =head1 OUTPUT DATA
@@ -47,13 +51,14 @@ The DC-corrected time-series cubes with suffix _dc.
 
 =item *
 
-The merged time-series cube with suffix _merge.
+The merged time-series cubes with suffix _merge.
 
 =back
 
 =head1 TASKS
 
-KAPPA: CADD, SUB, STATS, WCSMOSAIC.
+HDSTOOLS: HCOPY, HCREATE;
+KAPPA: CADD, MSTATS, SUB, STATS, WCSMOSAIC.
 
 =head1 REQUIRED PERL MODULES
 
@@ -99,6 +104,33 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
 
   # Previous subband is the initially the first.
   my $last_dc_corrected = $Frm->file( $bounds_order[0] );
+
+  my @tiles_tsys;
+  my $tsys_prop = 0;
+  my $tsys_present;
+
+  # Convert the first subband's Tsys array to an NDF.  First make
+  # the container file, then the individual NDF I1 containing the
+  # first data array.  Having just one container file makes tidying
+  # easier.
+  my $tsys_container = new ORAC::TempFile( 0 );
+  $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_container type=tsys_set" );
+
+  my $tsys_ndf = $tsys_container . ".I1";
+  $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_ndf type=ndf" );
+
+  chomp( $last_dc_corrected );
+  my $tsys_comp = $last_dc_corrected . ".MORE.ACSIS.TSYS";
+  my $HCOPY_STATUS = $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$tsys_comp out=$tsys_ndf.DATA_ARRAY" );
+
+  # Add any Tsys arrays to a list for combination later.
+  if ( $HCOPY_STATUS == ORAC__OK ) {
+    push @tiles_tsys, $tsys_ndf;
+    $tsys_present = 1;
+
+    # The output NDF will inherit from the first sub-band.
+    $tsys_prop = 1;
+  }
 
   # Retrieve bounds for the first file.
   _GET_DIMENSIONS_ FILE=$last_dc_corrected
@@ -161,6 +193,21 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
     # Record the DC-corrected spectra for mosaicking.
     push @outfiles, $out;
 
+    # Convert the Tsys array to an NDF.
+    my $comp_no = $nsubband + 1;
+    $tsys_ndf = $tsys_container . ".I$comp_no";
+    $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_ndf type=ndf" );
+
+    chomp( $next_subband );
+    my $tsys_comp = $next_subband . ".MORE.ACSIS.TSYS";
+    $HCOPY_STATUS = $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$tsys_comp out=$tsys_ndf.DATA_ARRAY" );
+
+    # Add any Tsys arrays to a list for combination later.
+    if ( $HCOPY_STATUS == ORAC__OK ) {
+      push @tiles_tsys, $tsys_ndf;
+      $tsys_present = 1;
+    }
+
     # Want to offset against the already corrected nth subband.
     $last_dc_corrected = $out;
 
@@ -177,6 +224,31 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
   $params = "in='^$mos_filename' out=$out method=nearest";
   $params .= " lbnd=! ubnd=! ref=! variance genvar=false wlim=0";
   $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+
+  # Since we used equal weights for combining the data, we just determine the
+  # mean TSYS for the merged spectrum.
+  my $tsys_out = $out . ".MORE.ACSIS.TSYS";
+
+  # Delete the existing version of the extension NDF in the output file.
+  $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$tsys_out ok" ) if ( $tsys_prop );
+
+  if ( $tsys_present ) {
+
+    # Form text file listing the subbands contributing TSYS chunks to average.
+    my $mslist = write_file_list( @tiles_tsys );
+
+    # Average the TSYS arrays.
+    my $temp_tsys = new ORAC::TempFile( 0 );
+    $params = "wlim=0 variance=f trim estimator=mean single=false";
+    $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$mslist out=$temp_tsys $params" );
+
+    # Copy the mean Tsys array back into the merged spectra.
+    $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$temp_tsys.data_array out=$tsys_out" );
+    orac_print "Averaging system temperatures for merged spectrum.\n";
+
+    undef $temp_tsys;
+    undef $mslist;
+  }
 
   orac_print join ',', @outfiles;
   orac_print " to $out:\n";
