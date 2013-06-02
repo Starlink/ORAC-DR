@@ -2,7 +2,7 @@ package ORAC::Display::KAPVIEW;
 
 =head1 NAME
 
-ORAC::Display::KAPVIEW - ORACDR interface to Kapview (Kappa)
+ORAC::Display::KAPVIEW - ORAC-DR interface to Kapview (KAPPA)
 
 =head1 SYNOPSIS
 
@@ -13,7 +13,7 @@ ORAC::Display::KAPVIEW - ORACDR interface to Kapview (Kappa)
 
 =head1 DESCRIPTION
 
-ORAC interface to Kappa Kapview. Provides methods for displaying images
+ORAC interface to KAPPA Kapview. Provides methods for displaying images
 and spectrum with Kapview.
 
 Available options are:
@@ -37,7 +37,7 @@ use Sys::Hostname;
 use Cwd;
 
 use NDF;  # To read image bounds
-use Starlink::Versions qw/ :Funcs /; # Need to know which kappa version
+use Starlink::Versions qw/ :Funcs /; # Need to know which KAPPA version
 
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
@@ -68,7 +68,7 @@ starts a GWM window and displays the startup logo.
 The program aborts if there is an error launching kapview.
 
 The message system must be running so that Kapview can be configured.
-(AMS is started if needed)
+(AMS is started if needed.)
 
 =cut
 
@@ -85,7 +85,7 @@ sub new {
 				Regions => {},
 			       );
 
-  # Split the launching and configuration into separate subroutines
+  # Split the launching and configuration into separate subroutines.
   $disp->launch;
   my $status = $disp->configure;
 
@@ -101,7 +101,7 @@ sub new {
   # a new one. When you then try to contact anything you get a segmentation
   # fault because of the screwed message system.
   if ($status != ORAC__OK) {
-    die "Error launching Kapview. It is unlikely that this can be fixed by retrying from within ORACDR. Please rerun either with the display switched off or with a different display device selected.";
+    die "Error launching Kapview. It is unlikely that this can be fixed by retrying from within ORAC-DR. Please rerun either with the display switched off or with a different display device selected.";
   }
 
   return $disp;
@@ -133,12 +133,12 @@ sub engine_launch_object {
 
 Messaging object associated with the kappa_mon monolith.
 This is used by some of the modes in order to determine
-display related values (eg statistics to determine plotting
+display related values (e.g. statistics to determine plotting
 ranges for SIGMA, dimension compression with COMPAVE).
 
-A kappa messaging object is created if the object is undefined.
+A KAPPA messaging object is created if the object is undefined.
 
-Note also that the HISTOGRAM task is present in the kappa monolith
+Note also that the HISTOGRAM task is present in the KAPPA monolith
 rather than in the KAPVIEW monolith.
 
 =cut
@@ -146,14 +146,15 @@ rather than in the KAPVIEW monolith.
 sub kappa {
   my $self = shift;
   return $self->engine_launch_object->engine("kappa_mon");
+
 }
 
 =item B<ndfpack>
 
 Messaging object associated with the ndfpack_mon monolith.
 This is used by some of the modes in order to reshape
-date arrays (eg in SIGMA mode - reshape is run to convert
-to 1-d)
+date arrays (e.g. in SIGMA mode - reshape is run to convert
+to 1-d).
 
 A NdfPack messaging object is created if the object is undefined.
 
@@ -339,50 +340,49 @@ sub create_dev {
 
   # Get the device - this would enter an infinite loop if
   # window_dev failed to return an existing device name
-  # - since window_dev calls create_dev
+  # - since window_dev calls create_dev.
   my $device = $self->window_dev($window);
 
   # If I want to start GWM myself I have to do the following
 #  my $gwm = new Proc::Simple;
 #  $gwm->start("gwm -colours 128 -gwmname $device -name \'ORACDR:P4 (${device}xwin)\'");
-  # Pause so that GWM window can be contacted immediately
+  # Pause so that GWM window can be contacted immediately.
   # sleep 2;
 
   # The problem here is that if 'gwmname' matches an existing gwm
   # window then the gwm command crashes. This should be okay if  I
   # can hide the error message. Otherwise I need to check to see whether
-  # the window is there beforehand (eg with the ps command)
+  # the window is there beforehand (e.g. with the ps command).
 
 
   # Now every time we open a new device we need to configure
   # lookup table.
   # in general this means that the monolith must have started
-  # and contact made
-  # Load the colour table
+  # and contact made.
+  # Load the colour table.
 
   my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/bgyrw_lut";
   my $status = $self->obj->obeyw("lutable","$args device=$device");
   if ($status != ORAC__OK) {
     orac_err("Error configuring default LUT\n");
-    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORAC-DR. Aborting...";
 #    return $status;
   }
 
-  # try a paldef
+  # Try a default palette.
   $status = $self->obj->obeyw("paldef","device=$device");
   if ($status != ORAC__OK) {
-    orac_err("Error setting default pallette\n");
-    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
+    orac_err("Error setting default palette\n");
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORAC-DR. Aborting...";
 #    return $status;
   }
 
-  # If this all works we should now configure the display regions
+  # If this all works we should now configure the display regions.
   $status = $self->config_regions($window);
   if ($status != ORAC__OK) {
     orac_err "Error configuring regions\n";
-    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORAC-DR. Aborting...";
   }
-
 
   return ORAC__OK;
 
@@ -432,8 +432,7 @@ sub configure {
     return $status;
   }
 
-  # open the GWM window
-  # and configure the lookup table
+  # Open the GWM window and configure the lookup table.
 #  $status = $self->create_dev('default');
 #  return $status unless $status == ORAC__OK;
 
@@ -441,21 +440,21 @@ sub configure {
 
   # Set the device for port_0 for our default display
   # This will automatically launch the device and configure the
-  # display regions
+  # display regions.
   my $device = $self->window_dev('default');
 
   # Replace $ with \$ for eval during obeyw()
   my $data = $startup;
   $data =~ s/\$/\\\$/g;
 
-  # Configure region 0
+  # Configure Region 0.
   $device = $self->select_region( WINDOW=>'default',REGION=>0);
   unless (defined $device) {
     orac_err("Error configuring display. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
-  # Ask Kapview to display
+  # Ask Kapview to display.
   $status = $self->obj->resetpars;
   $status = $self->obj->obeyw("display", "in=$data mode=sc device=$device noaxes accept");
   if ($status != ORAC__OK) {
@@ -504,8 +503,8 @@ sub config_regions {
   my ($status, %piclabels);
 
   # First, we can create the regions that are setup
-  # one-by-one (ie not on a grid)
-  # Store the definitions in a hash, the key is the region label
+  # one-by-one (i.e. not on a grid).
+  # Store the definitions in a hash, the key is the region label.
 
   my %regions = (
 		 0 => "cc [1,1]",
@@ -515,13 +514,13 @@ sub config_regions {
 		 8 => "bl [1.0,0.5]",
 		);
 
-  # Loop over the regions, running picdef and piclabel
+  # Loop over the regions, running PICDEF and PICLABEL.
   foreach my $region (keys %regions) {
     my $string = $regions{$region};
 
     orac_print("Configuring AGI region $region with $string\n",'cyan') if $DEBUG;
 
-    # Configure with PICDEF
+    # Configure with PICDEF.
     $status = $self->obj->obeyw("picdef","device=$device nocurrent nooutline $string");
 
     last unless $status == ORAC__OK;
@@ -532,12 +531,12 @@ sub config_regions {
     $status = $self->obj->obeyw("piclabel","device=$device label=$label");
     last unless $status == ORAC__OK;
 
-    # Store the label
+    # Store the label.
     $piclabels{$region} = $label;
 
   }
 
-  # Now we can create the 2x2, 4x2 and 4x4 grids
+  # Now we can create the 2x2, 4x2 and 4x4 grids.
   foreach my $n (2,3,4) {
     my $nx = ($n % 2 == 0) ? $n : $n+1;
     my $ny = ($n % 2 == 0) ? $n : $n-1;
@@ -550,30 +549,29 @@ sub config_regions {
 
     next unless $status == ORAC__OK;
 
-    # Successfully created the regions
-    # now need to store the labels in %piclabels remembering that
-    # the numbering starts at bottom-left for kappa but top-left
-    # for ORAC-DR
+    # Successfully created the regions now need to store the
+    # labels in %piclabels remembering that the numbering starts
+    #at bottom-left for KAPPA but top-left for ORAC-DR.
 
-    # The region number must be relative to some offset
+    # The region number must be relative to some offset.
     # For 2x2 the numbering should start at 1, for 4x2 the numbering
-    # should start at 9 and for 4x4 numbering should start at 17
+    # should start at 9 and for 4x4 numbering should start at 17.
     my $offset = ($n == 2 ? 0 : ($n == 3 ? 8 : 16));
 
     for my $i (1..$ntot) {
       orac_print("Looping $i..." ,'cyan') if $DEBUG;
       # To map from bottom-left-corner to top-left you need
-      # ( N = number starting from top left)
+      # ( N = number starting from top left).
 
       # KappaN = N - Ntotal - Nx +
       #                        2 * Nx * (Ny +1 - int( (N + Nx - 1) / Nx ))
 
       my $kappan = $i - $ntot - $nx + ( 2 * $nx * ($ny + 1 - int(($i + $nx - 1)/ $nx)));
 
-      # Calculate the actual region number
+      # Calculate the actual region number.
       my $region = $i + $offset;
 
-      # Store the label
+      # Store the label.
       $piclabels{$region} = "ORAC${n}_$kappan";
 
       orac_print("Region $region : $piclabels{$region}\n",'cyan')
@@ -583,7 +581,7 @@ sub config_regions {
 
   }
 
-  # Store the labels (probably do not want to do this afresh for each window)
+  # Store the labels (probably do not want to do this afresh for each window).
   $self->regions(%piclabels);
 
   # Status warning
@@ -627,38 +625,38 @@ sub select_region {
     return;
   }
 
-  # Port must be an integer
+  # Port must be an integer.
   if ($region !~ /^\d+$/) {
     orac_err "Supplied region specification ($region) not a positive integer\n";
     return;
   }
 
-  # Find the Window name
+  # Find the Window name...
   my $window = 'default';
   if (exists $options{WINDOW}) {
     $window = $options{WINDOW};
   }
-  # and convert it into a device id
+  # and convert it into a device id.
   my $device = $self->window_dev($window);
 
-  # Now need to select the requested region
+  # Now need to select the requested region.
 
-  # Check that the requested region is defined
+  # Check that the requested region is defined.
   unless (exists $self->regions->{$region} && defined $self->regions->{$region}) {
     orac_err "Supplied region specification ($region) does not correspond to a defined region on the device\n";
     return;
   }
 
   # The mapping of region number to picture name is stored in
-  # the region() array
+  # the region() array.
 
   my $picname = $self->regions->{$region};
 
 
-  # Now run PICSEL to select the picture
+  # Now run PICSEL to select the picture.
   my $status = $self->obj->obeyw("picsel","$picname device=$device");
 
-  # Check status
+  # Check the status.
   if ($status != ORAC__OK) {
     orac_err("Error selecting picture $picname (Region $region)\n");
     return;
@@ -678,19 +676,19 @@ a filename with an attached NDF section.
 
 An optional 3rd argument can be used to specify the required
 dimensionality. If the number of dimensions in the data file is
-greater than that requested, sections in higher dimensions
-are set to 1 by compressing the undesired dimension
-(with the assumption that KAPPA will discard axes
-with 1 pixel). The desired dimension is specified with the CUT
-option. For example, a graph can be displayed from a 2-D image
-by displaying a cut in the X direction (averaging over the Ys).
+greater than that requested, sections in higher dimensions are set to
+1 by compressing the undesired dimension (with the assumption that
+KAPPA will discard axes with 1 pixel). The desired dimension is
+specified with the CUT option. For example, a graph can be displayed
+from a 2-D image by displaying a cut in the X direction (averaging
+over the Ys).
 
-If the number of dimensions in the data file
-is fewer than that requested, a warning message is printed
-but we continue in the hope that KAPPA will work something out....
+If the number of dimensions in the data file is fewer than that
+requested, a warning message is printed but we continue in the hope
+that KAPPA will work something out....
 
-The return value is the original filename with the
-NDF section attached.
+The return value is the original filename with the NDF section
+attached.
 
 Relevant keywords in options hash:
 
@@ -705,12 +703,12 @@ Relevant keywords in options hash:
   YAUTOSCALE - Use autoscaling for Y?
 
 If Xautoscale and Yautoscale are true, no section command is appended.
-If the XAUTOSCALE/YAUTOSCALE/nAUTOSCALE keywords can not be found they are
-assumed to be true. If CUT is not specified  the first slice is
-selected (eg a NDF section of N,1,1,1)
+If the XAUTOSCALE/YAUTOSCALE/nAUTOSCALE keywords can not be found they
+are assumed to be true. If CUT is not specified the first slice is
+selected (e.g. a NDF section of N,1,1,1).
 
 For data arrays with NE<gt>2, the leading letter is dropped and replaced
-by the dimension number. eg:
+by the dimension number. For example,
 
   3MIN/3MAX - pixel range of the 3rd dimension
   4AUTOSCALE - autoscale the 4th dimension?
@@ -726,25 +724,25 @@ The unmodified file name is returned if no options hash can be found.
 
 Returns the following:
 
-  No CUT requested + auto-scaling:
-    returns the original filename
+  No CUT requested + auto-scaling
+    returns the original filename.
   No CUT requested + some dimension ranges specified
-    returns the original filename with an NDF section
+    returns the original filename with an NDF section.
     Dimensions above the requested dimensionality are set to the
     min value in the section (1 if not specified)
   CUT requested but dimensionality of data matches requested
     dimensionality.
     Just return the file + any relevant section
   CUT + auto-scaling + image too large
-    data file is collapsed down to required size keeping the specified
+    Data file is collapsed down to required size keeping the specified
     dimensions and averaging over the rest. A new temporary filename
-    is returned
+    is returned.
   CUT + some ranges specified + image too large
     NDF section constructed and then the data file is collapsed
     down to the required size. A new temporary file is generated.
   CUT + range + image + one pixel selected
     If the non-cut dimensions have min=max a section is
-    sufficient and no averaging required
+    sufficient and no averaging required.
 
 The temporary files themselves are added to a global class
 array and removed by the destructor.
@@ -764,32 +762,32 @@ sub select_section {
 
   return $file if ref($options) ne 'HASH';
 
-  # Maximum number of allowed dimensions for an NDF
+  # Maximum number of allowed dimensions for an NDF.
   my $maxdim = 7;
 
   # Read the dimensionality (default to 7)
   my $max_requested = $maxdim;
   $max_requested = shift if @_;
 
-  # Take a copy of the options hash
+  # Take a copy of the options hash.
   my %options = %{$options};
 
-  # Define lookup table of prefix (allow up to 7 dimensions)
+  # Define lookup table of prefix (allow up to 7 dimensions).
   my @lookup = ( "X", "Y", 3..$maxdim);
   my @autosc = ();  # Autoscale flags
   my $auto_all = 1; # Flag to keep track of global autoscale
 
-  # Read the autoscale flags from the hash
-  # Assumes autoscale unless told otherwise
-  # Must be explicitly set and does not assume that the presnce
-  # of ?MAX and ?MIN will imply ?AUTOSCALE=0
+  # Read the autoscale flags from the hash.
+  # Assumes autoscale unless told otherwise.
+  # Must be explicitly set and does not assume that the presence
+  # of ?MAX and ?MIN will imply ?AUTOSCALE=0.
   for my $dim (@lookup) {
     my $autosc = 1;
     my $key = $dim . "AUTOSCALE";
     $autosc = $options{$key} if exists $options{$key};
     push (@autosc, $autosc);
 
-    # Set flag to 0 if any of the autoscale flags are false
+    # Set flag to 0 if any of the autoscale flags are false.
     $auto_all = 0 unless $autosc;
   }
 
@@ -797,7 +795,7 @@ sub select_section {
   # index bounds supplied to not exceed the bounds of the file
   # Could do this by opening the file using NDF or by using the
   # KAPPA ndftrace command. Doing it myself has less overhead
-  # (and will use fewer lines!!)
+  # (and will use fewer lines!!).
 
   my $status = &NDF::SAI__OK;
   my ($indf, @lbnd, @ubnd, $ndim);
@@ -812,30 +810,30 @@ sub select_section {
 
   # Return the filename if all the autoscale flags are true
   # and the dimensionality does not exceed to maximum requested
-  # (Else we will have to generate a section
+  # (else we will have to generate a section).
   return $file if ($auto_all && $ndim <= $max_requested);
 
-  # If we are going to CUT the image two things need to be true
-  # 1, the requested CUT dimensions (the significant dimension)
-  #    needs to be present in NDIMS (ie no use cutting on dim 3
-  #    if only a 2-D image requesting a 1-D slice
-  # 2. NDIMS must be greater than requested dims
+  # If we are going to CUT the image two things need to be true.
+  # 1. The requested CUT dimensions (the significant dimension)
+  #    needs to be present in NDIMS (i.e. no use cutting on dim 3
+  #    if only a 2-D image requesting a 1-D slice.
+  # 2. NDIMS must be greater than requested dims.
   # 3. The number of supplied cut dimensions has to equal the
   #    number of requested dimensions. If too few cuts are specified
-  #    (eg a 3-d to 2-d requires 2 cut axes - ie two axes that
+  #    (e.g. a 3-d to 2-d requires 2 cut axes - i.e. two axes that
   #    are unaffected, the 3rd dimension is averaged), say
   #    only Y is specified for a 3-d to 2-d conversion, the
-  #    X dimension will also be retained. The signifcant (ie retained)
-  #    dimensions are counted lowest to highest - X,Y,3,4,5...)
+  #    X dimension will also be retained. The signifcant (i.e. retained)
+  #    dimensions are counted lowest to highest - X,Y,3,4,5...).
 
-  # If $cutting  is not true then we will simply return a slice of the
+  # If $cutting is not true then we will simply return a slice of the
   # correct dimensions but assuming 1 dim is most significant
   # and no averaging.
 
   my $cutting = 0; # Assume no cuts
   my (@cuts); #initialise
 
-  # None of this is significant if the dimensions already match
+  # None of this is significant if the dimensions already match.
 
   if ($ndim > $max_requested) {
 
@@ -844,25 +842,27 @@ sub select_section {
 
     my @initial_cuts;
     if (exists $options{CUT} && defined $options{CUT}) {
-      # First create a cut array by splitting on comma
+
+      # First create a cut array by splitting on comma.
       @initial_cuts = split(",",$options{CUT});
     } else {
+
       # If no CUT has been specified we assume that a simple
-      # that a CUT of N-1 dimensions starting at X
+      # that a CUT of N-1 dimensions starting at X.
       @initial_cuts = map { $lookup[$_] } 0..$ndim-2;
     }
 
     # Strip out dimensions that are not in @lookup[0..$ndim-1]
-    # If @cuts contains only 0 then we are not doing a cut
+    # If @cuts contains only 0 then we are not doing a cut.
 
     foreach my $cut (@initial_cuts) {
-      # Compute $cut with each member of @lookup.
-      # if there is a match set cuts[index] to 1 (ie significant)
-      # else set it to 0.
+
+      # Compute $cut with each member of @lookup.  If there is a match,
+      # set cuts[index] to 1 (i.e. significant), else set it to 0.
       foreach my $index (0..$ndim-1) {
         if ($cut =~ /$lookup[$index]/i) {
           $cuts[$index] = 1;
-          $cutting = 1;   # We are doing a cut since one matches
+          $cutting = 1;   # We are doing a cut since one matches.
           last;
         }
       }
@@ -871,30 +871,30 @@ sub select_section {
   }
   # print "CUTS now contains: ",join("::",@cuts) ,"\n";
 
-  # This is an array describing the section for each dimension
+  # This is an array describing the section for each dimension.
   my @sects = ();
 
   # These arrays containing the actual bounds of each dimension
   # in the section - they are modified in the loop to relfect
-  # the sectioning information
+  # the sectioning information.
   my @min   = @lbnd; # Lower bounds of section for each dim
   my @max   = @ubnd; # upper bounds of section for each dim
 
-  # Loop over all valid dimensions
+  # Loop over all valid dimensions.
   for my $dim (1..$ndim) {
     my $index = $dim-1;
 
-    # Check that this dim is mentioned in the lookup table
+    # Check that this dim is mentioned in the lookup table.
     if (defined $lookup[$index]) {
 
-      # Check the autoscale flag for this dim
+      # Check the autoscale flag for this dimension.
       unless ($autosc[$index]) {
 
-        # Read the bounds from the hash
+        # Read the bounds from the hash.
         my $pre = $lookup[$index];
 
-        # Lower bound is maximum of $lbnd[$dim-1] and
-        # and the minimum of $options{?MIN} and the upper bound
+        # Lower bound is maximum of $lbnd[$dim-1] and the minimum
+        # of $options{?MIN} and the upper bound.
         my $lower = max($lbnd[$index],min($options{"${pre}MIN"},$ubnd[$index]));
         my $upper = min($ubnd[$index],max($options{"${pre}MAX"},$lbnd[$index]));
 
@@ -913,14 +913,14 @@ sub select_section {
 
     }
 
-    # Now we have read the MIN and MAX values from the hash
-    # We now need to modify the section a little to cover the
+    # Now we have read the MIN and MAX values from the hash.
+    # We next need to modify the section a little to cover the
     # case where we are reducing dimensionality without averaging.
     # In that case we want sections that are higher than the requested
-    # dimensionality to be set to the min value (ie 1 pixel
+    # dimensionality to be set to the min value (i.e. 1 pixel
     # wide). If we are reducing dimensiona by averaging the section
     # can stay as is and we will reduce the dims later on by using
-    # COMPAVE
+    # COMPAVE.
 
     if ($dim > $max_requested && !$cutting) {
       $sects[$index] = $min[$index];
@@ -931,7 +931,7 @@ sub select_section {
   # Construct the section [undef are converted to '']
   my $section = '('. join(",", map { defined $_ ? $_ : ''  } @sects) . ')';
 
-  # Set the input file name (no section if $auto_all and $cutting
+  # Set the input file name (no section if $auto_all and $cutting).
   my $input;
   if ($auto_all && $cutting) {
     $input = $file;
@@ -939,23 +939,23 @@ sub select_section {
     $input = "$file$section";
   }
 
-  # If we are averaging we need to do that now
+  # If we are averaging we need to do that now.
   if ($cutting) {
 
     # @cuts is an array containing a set of 1 and 0 corresponding
-    # to whether a dimension should be kept (1) or averaged over (0)
+    # to whether a dimension should be kept (1) or averaged over (0).
 
-    # If the number of 1's does not equal the max_requested we have
-    # to assume that some of the early dimensions are really significant
+    # If the number of 1's does not equal the max_requested we have to
+    # assume that some of the early dimensions are really significant.
 
-    # count the 1's [we know that $#cuts matches $ndim-1]
+    # Count the 1's [we know that $#cuts matches $ndim-1].
     my $count=0;
     foreach my $i (@cuts) {
       $count++ if $i;
     }
 
-    # If count is too small - correct for it
-    # Assume lowest dimension is most significant
+    # If count is too small, correct for it.  Assume that the lowest
+    # dimension is the most significant.
     if ($count < $max_requested) {
       foreach (@cuts) {
         if ($_ == 0) {
@@ -965,9 +965,10 @@ sub select_section {
         }
       }
     } elsif ($count > $max_requested) {
+
       # If count is TOO high we need to start from the high end
       # and start setting values to zero - assume highest dimension
-      # is least significant.
+      # is the least significant.
 
       for (my $i=$ndim-1; $i>=0; $i--) {
 
@@ -980,18 +981,17 @@ sub select_section {
 
     }
 
-    # need to construct a string for compave
-    # Takes the form of
+    # Need to construct a string for COMPAVE.  It takes the form of
     #   [ factor1, factor2, factor3...factorN] for Ndims
     # where the factors are the compression factors.
-    # for significant dimensions the factor is 1, for all other
+    # For significant dimensions the factor is 1, for all other
     # dimensions the factor is the number of pixels in the dimension
-    # (or section) [ie max-min+1]
+    # (or section) [i.e. max-min+1].
 
     # This means that the number of significant dimensions must
     # equal the final required dimensionality.
 
-    # Loop over $ndim constructing COMPRESS key
+    # Loop over $ndim constructing COMPRESS key.
     my @compress;
     for my $index (0..$ndim-1) {
 
@@ -1006,8 +1006,8 @@ sub select_section {
     }
 
     # If the compression ratios are 1 for all dimensions then
-    # we dont actually need to run compave. We can just return
-    # the section as stored in $input
+    # we don't actually need to run COMPAVE. We can just return
+    # the section as stored in $input.
 
     # Check @compress
     my $use_compave = 0;
@@ -1018,7 +1018,7 @@ sub select_section {
       }
     }
 
-    # If we need to run compave...
+    # If we need to run COMPAVE...
 
     if ($use_compave) {
       my $compress = '[' . join(",",@compress) . ']';
@@ -1035,13 +1035,13 @@ sub select_section {
         return;
       }
 
-      # Now reset $input to be the output of compave
+      # Now reset $input to be the output of compave.
       $input = $out;
     }
 
   }
 
-  # Return the filename
+  # Return the filename.
   return $input;
 
 }
@@ -1100,7 +1100,7 @@ sub image {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for IMAGE. Possible invalid region designation\n");
     return ORAC__ERROR;
@@ -1108,34 +1108,36 @@ sub image {
 
 
   # Options handling can not be taken out into a sub since every
-  # kapview command has subtly different parameter names,
+  # kapview command has subtly different parameter names.
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Calculate NDF section
+  # Calculate NDF section.
   $file = $self->select_section($file,\%options,2);
 
-  # Construct the parameter string for DISPLAY
+  # Construct the parameter string for DISPLAY.
   my $optstring = " ";
 
-  # Set default scaling
+  # Set default scaling.
   $optstring .= " mode=scale ";
   # Autoscaling is a special case
   if (exists $options{ZAUTOSCALE}) {
-    # Kappa display can autoscale if required
-    # Using MODE=SCALE
+
+    # KAPPA DISPLAY can autoscale if required.
+    # Using MODE=SCALE.
 
     if ($options{ZAUTOSCALE} == 0) {
+
       # We are specifying a min and max (check with defined rather
-      # than exists since ZMIN=undef is still not helpful)
+      # than exists since ZMIN=undef is still not helpful).
       $optstring .= " low=$options{ZMIN} " if defined $options{ZMIN};
       $optstring .= " high=$options{ZMAX} " if defined $options{ZMAX};
 
     }
   }
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $optstring .= " COMP=$options{COMP}";
   }
@@ -1144,6 +1146,7 @@ sub image {
   if (exists $options{KEY} && defined $options{KEY} ) {
     $optstring .= " KEY=" . ( $options{KEY} ? 'TRUE' : 'FALSE' );
   } else {
+
     # This default is needed because otherwise KAPPA/DISPLAY will
     # use whatever the previous value was.
     $optstring .= " KEY=FALSE";
@@ -1157,7 +1160,7 @@ sub image {
   #!  DAT__LOCIN, Locator invalid
   #MODE -- Method to define the scaling limits / 'sc' / >
 
-  # A resetpars also seems to be necessary to instruct kappa to
+  # A resetpars also seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
 
@@ -1180,7 +1183,7 @@ sub image {
 Display a 1-D plot.
 
 If the data are not 1-D, a section is taken that assures
-1-D (eg NDF section= :,1,1,1 for 4D data)
+1-D (e.g. NDF section= :,1,1,1 for 4D data).
 
 Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
@@ -1209,8 +1212,8 @@ For example:
 
    XMIN=5 XMAX=5 YAUTOSCALE=YES
 
-would display column 5 (ie the whole of Y for X=5).
-[CUT is irrelevant since the resulting image section is 1-D]
+would display column 5 (i.e. the whole of Y for X=5).
+[CUT is irrelevant since the resulting image section is 1-D], and
 
    XAUTOSCALE=YES YMIN=20 YMAX=30 CUT=X
 
@@ -1241,19 +1244,19 @@ sub graph {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for GRAPH. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Calculate the NDF section
+  # Calculate the NDF section.
   $file = $self->select_section($file,\%options,1);
 
-  # A resetpars also seems to be necessary to instruct kappa to
+  # A resetpars also seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
 
@@ -1261,9 +1264,9 @@ sub graph {
   return $status if $status != ORAC__OK;
 
 
-  # Should probably set the options
+  # Should probably set the options.
   # If we are autoscaling then we dont need any axis setting
-  # default is not to send any axis control information
+  # default is not to send any axis control information.
   my $range = ' ';
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
@@ -1273,16 +1276,19 @@ sub graph {
         $range = ' ';
       }
     } else {
-      # Set the Y range
+
+      # Set the Y range.
       my $min = 0;
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
       if (starversion_lt('kappa','0.13-0')) {
-        # Kappa 0.12 and older used this to specify range
+
+        # KAPPA 0.12 and older used this to specify range
         $range = "axlim=true abslim=! ordlim=[$min,$max]";
       } else {
-        # New form to specify range of Y axis
+
+        # New form to specify range of Y axis.
         $range = "ytop=$max ybot=$min";
       }
     }
@@ -1301,25 +1307,26 @@ sub graph {
   }
   my $mode = "line";
   if( exists( $options{MODE} ) ) {
-    # Linplot supports minimum match, first letter is good enough
+
+    # LINPLOT supports minimum match, first letter is good enough.
     my $optmode = lc(substr($options{MODE},0,1));
     $mode = $optmode if ($optmode =~ /[l|g|h|p]/);
   }
 
-  # Construct string for linplot options
+  # Construct string for LINPLOT options.
   my $args = "clear mode=$mode $range $errbar $lmode";
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
   }
 
-  # Logarithmic y axis
+  # Set a logarithmic y axis.
   if (exists $options{YLOG} && defined $options{YLOG}) {
     $args .= " ymap=log" if ($options{YLOG});
   }
 
-  # Run linplot
+  # Run LINPLOT.
   orac_print "LINPLOT ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args reset");
   if ($status != ORAC__OK) {
@@ -1490,7 +1497,7 @@ sub contour {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for CONTOUR. Possible invalid region designation\n");
     return ORAC__ERROR;
@@ -1498,33 +1505,34 @@ sub contour {
 
 
   # Options handling can not be taken out into a sub since every
-  # kapview command has subtly different parameter names,
+  # kapview command has subtly different parameter names.
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Calculate NDF section
+  # Calculate NDF section.
   $file = $self->select_section($file,\%options,2);
 
-  # Construct the parameter string for DISPLAY
+  # Construct the parameter string for DISPLAY.
   my $optstring = " axes clear";
 
-  # Autoscaling is a special case
+  # Autoscaling is a special case.
   my $ncont = $options{NCONT};
   $ncont = 6 if $ncont < 1;
 
   if (exists $options{ZAUTOSCALE}) {
-    # Kappa contour can autoscale if required
-    # Using MODE=AU
+
+    # KAPPA/CONTOUR can autoscale if required.
+    # Using automatic mode to set contour levels.
 
     if ($options{ZAUTOSCALE}) {
+
       # Set default scaling
       $optstring .= " mode=au ";
     } else {
 
-      # Need to calculate the first contour (ZMIN) +
-      # the spacing between contours
-      # Use mode=linear
+      # Need to calculate the first contour (ZMIN) + the
+      # spacing between contours for linearly spaced contours.
       $optstring .= " mode=lin ";
 
       if (defined $options{ZMIN}) {
@@ -1533,7 +1541,7 @@ sub contour {
         $optstring .= " firstcnt=0 ";
       }
 
-      # Calculate the increment (stepcnt)
+      # Calculate the increment (stepcnt).
       my $inc = ($options{ZMAX} - $options{ZMIN}) / $ncont;
       $optstring .= " stepcnt=$inc ";
     }
@@ -1543,21 +1551,21 @@ sub contour {
   }
   $optstring .= " ncont=$ncont ";
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $optstring .= " COMP=$options{COMP}";
   }
 
   my $status;
 
-  # A resetpars seems to be necessary to instruct kappa to
+  # A resetpars seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
 
   $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
-  # Do the obeyw
+  # Do the obeyw.
   $status = $self->obj->obeyw("contour", "device=$device ndf=$file $optstring accept ");
   if ($status != ORAC__OK) {
     orac_err("Error displaying contour\n");
@@ -1584,8 +1592,7 @@ Note that currently it does not take a format argument
 and NDF is assumed.
 
 If we are running KAPPA 0.13, the NDF is converted
-to 1-DIM with the kappa RESHAPE command before
-displaying.
+to 1-DIM with the KAPPA/RESHAPE command before displaying.
 
 ORAC status is returned.
 
@@ -1610,18 +1617,18 @@ sub sigma {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for SIGMA. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
-  my $tempfile; # Temp file if we reshape
+  my $tempfile; # Temp file if we reshape.
 
-  # Convert to 1-D using kappa RESHAPE (if we are using KAPPA0.13 or above)
-  # First find out the number of dimensions
+  # Convert to 1-D using kappa RESHAPE (if we are using KAPPA 0.13 or above).
+  # First find out the number of dimensions.
   if (starversion_gt('kappa','0.12-99')) { # really need ge 0.13-0
     my ($indf, $ndimx, $ndim, @dim);
     my $status = &NDF::SAI__OK;
@@ -1633,7 +1640,8 @@ sub sigma {
       return;
     }
     if ($ndim > 1) {
-      # Reshape the NDF
+
+      # Reshape the NDF.
       if ($self->ndfpack->contactw) {
 	$tempfile = "dr_reshape$$";
 
@@ -1642,7 +1650,8 @@ sub sigma {
 	  orac_err("Error reshaping data file to 1D\n");
 	  return $status;
 	}
-	# Copy to $file
+
+	# Copy to $file.
 	$file = $tempfile;
 
       } else {
@@ -1654,10 +1663,9 @@ sub sigma {
   }
 
   # First thing to do is calculate the relevant statistics of the
-  # input file.
-  # Use kappa STATS
+  # input file.  Use KAPPA/STATS.
 
-  # Select component
+  # Select the array component.
   my $args = '';
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
@@ -1671,35 +1679,35 @@ sub sigma {
       return $status;
     }
   } else {
-    orac_err("Error contacting Kappa_mon\n");
+    orac_err("Error contacting kappa_mon\n");
     return ORAC__ERROR
   }
 
-  # Now retrieve the answer
+  # Now retrieve the answer.
   my ($mean, $sigma);
   ($status,  $mean) = $self->kappa->get("stats","mean");
   if ($status != ORAC__OK) {
     orac_err "Error in ORAC::Display::KAPVIEW::sigma\n";
-    orac_err("Error retrieving value of parameter MEAN from Kappa task STATS\n");
+    orac_err("Error retrieving value of parameter MEAN from KAPPA task STATS\n");
     return $status;
   }
 
   ($status, $sigma) = $self->kappa->get("stats","sigma");
   if ($status != ORAC__OK) {
     orac_err "Error in ORAC::Display::KAPVIEW::sigma\n";
-    orac_err("Error retrieving value of parameter SIGMA from Kappa task STATS\n");
+    orac_err("Error retrieving value of parameter SIGMA from KAPPA task STATS\n");
     return $status;
   }
 
 
-  # Now need to check the options string
+  # Now need to check the options string.
   my $range = 5.0;
   my $dashed = 3.0;
 
   $range = $options{RANGE} if (exists $options{RANGE});
   $dashed = $options{DASHED} if (exists $options{DASHED});
 
-  # Now calculate the range of the plot
+  # Now calculate the range of the plot.
   my $max = $mean + ($range * $sigma);
   my $min = $mean - ($range * $sigma);
 
@@ -1707,23 +1715,22 @@ sub sigma {
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly. This may be fixed when
   # running as an A-task rather than an I-task.
-
   $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
-  # Construct string for linplot options
+  # Construct string for LINPLOT options.
   if (starversion_lt('kappa','0.13-0')) {
     $args = "clear mode=2 axlim=true ordlim=[$min,$max] abslim=!";
   } else {
     $args = "clear mode=mark marker=2 ytop=$max ybot=$min";
   }
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
   }
 
-  # Run linplot
+  # Run LINPLOT.
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying sigma plot\n");
@@ -1731,7 +1738,7 @@ sub sigma {
     return $status;
   }
 
-  # create args
+  # Create parameter list.
   if (starversion_lt('kappa','0.14-0')) {
     $args = "linestyle=2 sigcol=red";
   } else {
@@ -1740,12 +1747,12 @@ sub sigma {
   $args .= " nsigma=[0,$dashed] ";
 
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
   }
 
-  # run drawsig
+  # Run DRAWSIG.
   $status = $self->obj->obeyw("drawsig","device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error overlaying lines\n");
@@ -1753,7 +1760,7 @@ sub sigma {
     return $status;
   }
 
-  # unlink the tempfile
+  # Unlink the temporary file.
   unlink $tempfile .".sdf" if defined $tempfile;
 
   return $status;
@@ -1767,7 +1774,7 @@ points and a model is overlaid as a solid line. This can be used
 to determine the goodness of fit of data and model.
 
 The model filename is derived from the input filename (a _model
-extension is expected). The data is displayed if the model
+extension is expected). The data are displayed if the model
 file can not be found.
 
 Takes a file name and arguments stored in a hash.
@@ -1786,7 +1793,7 @@ Default is to autoscale on the data (the model may not be visible).
 
 If the input file is greater than 1-D, the section is automatically
 converted to 1-D by selecting the ?MIN slice from each of the
-higher axes (eg the value specified in YMIN, 3min...)
+higher axes (e.g. the value specified in YMIN, 3min...).
 
 ORAC status is returned.
 
@@ -1811,16 +1818,16 @@ sub datamodel {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for datamodel. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Calculate NDF section - including compression of dimensions
+  # Calculate NDF section, including compression of dimensions.
   my $secfile = $self->select_section($file,\%options,1);
   unless (defined $file) {
     orac_err("Error sectioning file $file\n");
@@ -1828,14 +1835,14 @@ sub datamodel {
   }
   $file = $secfile;
 
-  # A resetpars also seems to be necessary to instruct kappa to
+  # A resetpars also seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
 
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
-  # Calculate the range setting parameters
+  # Calculate the range setting parameters.
   my $range = ' ';
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
@@ -1845,23 +1852,26 @@ sub datamodel {
 	$range = ' ';
       }
     } else {
-      # Set the Y range
+
+      # Set the Y range.
       my $min = 0;
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
       if (starversion_lt('kappa','0.13-0')) {
-	# Kappa 0.12 and older used this to specify range
+
+        # KAPPA 0.12 and older used this to specify range
 	$range = "axlim=true abslim=! ordlim=[$min,$max]";
       } else {
-	# New form to specify range of Y axis
+
+        # New form to specify range of Y axis
 	$range = "ytop=$max ybot=$min";
       }
     }
   }
 
 
-  # Construct args
+  # Construct the parameter list.
   my $args;
   if (starversion_lt('kappa','0.13-0')) {
     $args = "cosys=data mode=2 symcol=white";
@@ -1870,12 +1880,12 @@ sub datamodel {
   }
   $args .= " clear $range";
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
   }
 
-  # Now plot the data
+  # Now plot the data.
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying data file\n");
@@ -1891,7 +1901,7 @@ sub datamodel {
 
   if (-e $model . ".sdf") {  # Assume .sdf extension!!!!
 
-    # Construct the arguments
+    # Construct the parameters.
     if (starversion_lt('kappa','0.14-0')) {
       $args = "cosys=data mode=line lincol=red pltitl='' ordlab=''";
     } else {
@@ -1899,12 +1909,12 @@ sub datamodel {
     }
     $args .= " noclear";
 
-    # Select component
+    # Select the array component.
     if (exists $options{COMP} && defined $options{COMP}) {
       $args .= " COMP=$options{COMP}";
     }
 
-    # Run linplot
+    # Run LINPLOT.
     $status = $self->obj->obeyw("linplot","ndf=$model device=$device $args");
     if ($status != ORAC__OK) {
       orac_err("Error overlaying model\n");
@@ -1963,34 +1973,33 @@ sub histogram {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for histogram.\n Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Calculate NDF section
+  # Calculate the NDF section.
   $file = $self->select_section($file,\%options);
 
-  # A resetpars also seems to be necessary to instruct kappa to
+  # A resetpars also seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
-  # May not be necessary if KAPVIEW is an A-task
+  # May not be necessary if KAPVIEW is an A-task.
 
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
-  # THIS IS THE HISTOGRAM SPECIFIC STUFF
+  # THIS IS THE HISTOGRAM-SPECIFIC STUFF.
 
-  # Should probably set the options
-  # If we are autoscaling then we dont need any axis setting
-  # default is not to send any axis control information
-  # Just do Z-range for now
+  # Should probably set the options.  If we are autoscaling then
+  # we don't need any axis setting default is not to send any
+  # axis0-control information. Just do the Z-range for now.
 
-  # Set default range
+  # Set the default range.
   my $range;
   if (starversion_gt('kappa','0.15-3')) {
     $range = "range=range";
@@ -2019,22 +2028,22 @@ sub histogram {
   my $nbins = " NUMBIN=20";
   $nbins = " NUMBIN=$options{NBINS}" if exists $options{NBINS};
 
-  # Construct string for linplot options
+  # Construct string for HISTOGRAM options.
   my $args = "$range $nbins";
 
-  # Select component
+  # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
   }
 
-  # If a title has been specified
+  # If a title has been specified, set it.
   if (exists $options{TITLE} && defined $options{TITLE}) {
     $args .= " style='title=$options{TITLE},label(1)=Data value'";
   } else {
     $args .= " style='label(1)=Data value'";
   }
 
-  # Run histogram
+  # Run HISTOGRAM.
   $status = $self->kappa->obeyw("histogram","in=$file device=$device $args accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying histogram\n");
@@ -2090,16 +2099,16 @@ sub vector {
   # Return undef if something went wrong.
   my $device = $self->select_region(%options);
 
-  # If device is now undef we have a problem
+  # If device is now undef we have a problem.
   unless (defined $device) {
     orac_err("Error configuring display for VECTORS. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
-  # Set the data file name
+  # Set the data file name.
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Run the image method with all arguments
+  # Run the image method with all arguments.
   my $status = $self->image($file, \%options);
   if ($status != ORAC__OK) {
     orac_err "Error displaying I image\n";
@@ -2107,10 +2116,11 @@ sub vector {
   }
 
   my ( $command, $param );
-  # Look for a catalogue of the same name with a .FIT extension
+
+  # Look for a catalogue of the same name with a .FIT extension.
   if (-e "$file.FIT" && defined $self->polpack) {
 
-    # Using POLPLOT
+    # Using POLPLOT.
 
     my $args = "clear=no axes=no ";
     if (exists $options{ANGROT} && defined $options{ANGROT}) {
@@ -2144,21 +2154,24 @@ sub vector {
     }
 
   } else {
-    # Using VECPLOT
 
-    # Select component
+    # Using VECPLOT.
+
+    # Select the array component.
     my $args;
     if (starversion_lt('kappa','0.14-0')) {
       $args = "clear=no veccol=red step=2 vscale=10 pltitl=' '";
     } else {
-      # need drawtitle=no so that it doesnt overwrite previous title
+
+      # We need drawtitle=no so that VECPLOT doesn't overwrite the
+      # previous title.
       $args = "clear=no vscale=10 style='colour(vectors)=red,drawtitle=0'";
     }
     if (exists $options{ANGROT} && defined $options{ANGROT}) {
       $args .= " ANGROT=$options{ANGROT}";
     }
 
-    # Now run VECPLOT
+    # Now run VECPLOT.
     $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args");
 
     $command = "vecplot ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args";
