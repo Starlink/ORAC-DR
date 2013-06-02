@@ -91,10 +91,11 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
       @objs = $Grp->members;
    }
 
-# Create configuration-parameter file for FINDCLUMPS.  The main three are
+# Create configuration-parameter file for FINDCLUMPS.  The main ones are
 # ClumpFind.MaxBad, ClumpFind.MinPix (although double the default it could
-# be set larger to weed out peaks from lines), and ClumpFind.FwhmBeam.
-# ClumpFind.VeloRes could be set to 1 channel.
+# be set larger to weed out peaks from lines), ClumpFind.FwhmBeam, and
+# the dynamic ClumpFind.Tlow added on the command line.  ClumpFind.VeloRes
+# could be set to 1 channel.
    my $fc_param = new ORAC::TempFile( 1 );
    open my $fc_fh, ">", $fc_param;
    print $fc_fh "ClumpFind.Minpix=6\n";
@@ -140,13 +141,23 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
          $params = "in=$histfile out=$smooth_hist fwhm=3";
          $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
 
+# Find the minimum count in the histogram for the clump finding and
+# ensure that the first threshold for clump finding is above this.
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$smooth_hist " );
+         ( $ORAC_STATUS, my $mincount ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+         $mincount++;
+
+# Set a representative rms for clump finding.
+         ( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+         my $rms = max( 1.001, sqrt( $total / $numbin ) );
+
 # Identify the peaks in the histogram, storing the results table to a Starlink STL file.
 # Since the quanta are integers ensure the RMS level is at least that.
          my $outmap = new ORAC::TempFile( 0 );
          my $outcat = new ORAC::TempFile( 0 );
          $outcat .= ".TXT";
-         $params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=1.001 ";
-         $params .= "config=^$fc_param accept";
+         $params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=$rms ";
+         $params .= "config='^$fc_param,ClumpFind.Tlow=$mincount' accept";
          $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
 
          my $peak = 0; 
