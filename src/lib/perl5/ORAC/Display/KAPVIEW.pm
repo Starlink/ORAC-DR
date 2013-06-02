@@ -1024,7 +1024,7 @@ sub select_section {
       my $compress = '[' . join(",",@compress) . ']';
 
       my $out = "secave$$";
-      my $compargs = "WLIM=0.1 in=$input out=$out compress=$compress";
+      my $compargs = "wlim=0.0 in=$input out=$out compress=$compress";
       orac_print "COMPAVE $compargs\n","cyan" if $DEBUG;
 
       # Run compave
