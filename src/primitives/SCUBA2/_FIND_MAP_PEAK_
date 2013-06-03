@@ -249,6 +249,8 @@ my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr, $posn);
 # Choose a S/N cutoff of 3, which will correspond to a peak S/N of ~6
 # in the matched-filtered map
 if ( $peaksn > 3 ) {
+  orac_warn "Peak S/N is only ".(sprintf "%.1f", $peaksn).": source may not be located accurately\n"
+    if ($peaksn < 6);
   # User can supply a matched-filtered image to save some time
   my $image_mf;
   unless ($Obj->tagretrieve("matchfilt")) {
@@ -256,10 +258,12 @@ if ( $peaksn > 3 ) {
   }
   $image_mf = $Obj->file;
 
+  my $point_focus = ($Obj->hdr("OBS_TYPE") =~ /focus|pointing/) ? 1 : 0;
   # Find position of max value - restrict search to a 11-pixel box for
   # calibrators. Might be worth using the map size as defined in
   # header to avoid picking up edge pixels for other targets.
-  my $ndf = ($Cal->iscalsource($Obj->hdr("OBJECT"))) ? $image_mf."(0~11,0~11,)" : $image_mf;
+  my $ndf = ($Cal->iscalsource($Obj->hdr("OBJECT")) || $point_focus)
+    ? $image_mf."(0~11,0~11,)" : $image_mf;
   $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
   my ($ORAC_STATUS, $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
   # Split into coordinates
@@ -271,6 +275,18 @@ if ( $peaksn > 3 ) {
   ($ORAC_STATUS, $peakval) = $Mon{kappa_mon}->get("stats", "maximum");
   $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=err");
   ($ORAC_STATUS, $peakerr) = $Mon{kappa_mon}->get("stats", "maximum");
+
+  # For pointing and focus observations, check to see if the peak lies
+  # within 30" of the centre
+  if ($point_focus) {
+    # x, y offsets will be in degrees so this is safe
+    my $dr = sprintf "%.1f", (3600 * sqrt($xy[0]*$xy[0] + $xy[1]*$xy[1]));
+    if ($dr > 30) {
+      orac_warn "S/N peak is far from centre ($dr arcsec) - source is probably not detected\n";
+      @xy = ();
+      $fitpeak = 0;
+    }
+  }
 } else {
   orac_warn "Image $in has no significant maximum\n";
   @xy = ();
