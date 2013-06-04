@@ -1009,22 +1009,28 @@ sub select_section {
     # we don't actually need to run COMPAVE. We can just return
     # the section as stored in $input.
 
-    # Check @compress
+    # Check @compress and also find the total numbber of elements
+    # potentially to average.
     my $use_compave = 0;
+    my $numpix = 1;
     foreach (@compress) {
+      $numpix = $numpix * $_;
       if ($_ != 1) {
         $use_compave = 1;
-        last;
       }
     }
 
     # If we need to run COMPAVE...
 
     if ($use_compave) {
+
+      # Ensure that there is at least one good set of data adjusting
+      # the limit.
+      my $wlim = 0.99 / $numpix;
       my $compress = '[' . join(",",@compress) . ']';
 
       my $out = "secave$$";
-      my $compargs = "wlim=0.0 in=$input out=$out compress=$compress";
+      my $compargs = "wlim=$wlim in=$input out=$out compress=$compress";
       orac_print "COMPAVE $compargs\n","cyan" if $DEBUG;
 
       # Run compave
