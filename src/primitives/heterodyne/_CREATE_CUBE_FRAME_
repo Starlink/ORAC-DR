@@ -123,6 +123,14 @@ add edge effects. [0]
 
 This primitive is suitable for ACSIS.
 
+=item *
+
+If MAKECUBE cannot create a VARIANCE component, say because of nonsense
+Tsys values, the primitive creates one using the noise in the spectra.
+It first removes the slowly varying signal, filters noise spikes,
+leaving the noise, which is then copied back into the created spectral
+cube.
+
 =back
 
 =head1 OUTPUT DATA
@@ -144,7 +152,7 @@ are JSA products.
 
 =head1 TASKS
 
-KAPPA: NDFTRACE, SETVAR, STATS;
+KAPPA: BLOCK, MATHS, NDFTRACE, SETVAR, STATS;
 SMURF: MAKECUBE.
 
 =head1 REQUIRED PERL MODULES
@@ -157,9 +165,9 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2010, 2012 Science and Technology Facilities Council.
-Copyright (C) 2006-2007 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+Copyright (C) 2008, 2010, 2012-2013 Science and Technology Facilities Council.
+Copyright (C) 2006-2007 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -407,16 +415,55 @@ $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=$out" );
 # See if MAKECUBE created a VARIANCE component.  CADC demands that one be
 # present in reduced products.  Create one if variance is absent and fill
 # it with bad values.
-$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out" );
-( $ORAC_STATUS, my$var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
-if ( uc( $var ) eq 'FALSE' ) {
-   $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$out variance=sqrt(-1)" );
-   orac_print( " Creating VARIANCE component of undefined values in $out." );
-}
+
 orac_print( "done.\n" );
 
 # Retrieve the number of tiles created.
 ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+
+# Look for and handle missing a VARIANCE component, say from nonsense
+# Tsys values.
+foreach my $j ( 1 .. $ntile ) {
+   my $makecube_outfile = ( $ntile == 1 ) ? $out : "${out}_$j";
+   if ( -e "${makecube_outfile}.sdf" ) {
+
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$makecube_outfile" );
+      ( $ORAC_STATUS, my $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
+      if ( uc( $var ) eq 'FALSE' ) {
+
+         # Supply the VARIANCE component based upon the detrended spectra.
+         my $smoothed = new ORAC::TempFile( 0 );
+         my $flattened = new ORAC::TempFile( 0 );
+         my $filtered = new ORAC::TempFile( 0 );
+
+         # Remove most if not all of the trends.  MFITTREND does not do too
+         # well for particularly wobbly spectra associated with nonsense Tsys,
+         # even a spline fit with plenty of knots.  However, subtracting a
+         # broadly smoothed version seems to work moderately well.  This
+         # step assumes that there are a good deal more than 51 elements
+         # in each spectrum.
+         $params = "in=$makecube_outfile out=$smoothed box=[1,1,51]";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+         $params = "ia=$makecube_outfile ib=$smoothed out=$flattened ";
+         $params .= "exp=abs(ia-ib)";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+         # Reduce the effect of noise spikes and random fluctuations that 
+         # will give rise to overestimates and underestimates respectively
+         # of the errors
+         $params = "in=$smoothed out=$filtered box=[1,1,11] estimator=median";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+         # Transfer the detrended and filtered data to a new VARIANCE component
+         # in the original cube. 
+         $params = "ndf=$makecube_outfile from=$filtered comp=Data";
+         $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+         orac_say( " Creating VARIANCE component in $makecube_outfile." );
+      }
+   }
+}
+
 if( $ntile > 1 ) {
 
   # We need to rename the output cubes, as MAKECUBE creates _cube_N
