@@ -7,17 +7,29 @@ _REMOVE_FLAT_FIELD_ITERATE_ - Remove flat-field effects iteratively.
 =head1 DESCRIPTION
 
 This primitive removes a global flat-field from a baselined
-time-series cube. It collapses the cube along the frequency and time
-axes, and selects signal above the median plus four standard
-deviations. This offers a simple means to exclude the noisy baseline
-and reduce the uncertainty in the relative data values in each
-receptor. It then normalizes the flux in the receptors to the tracking
-receptor's flux. It then uses this multiplicative factor to normalize
-the input time-series data.
+time-series cube.  It generates spectral cubes for each receptor
+individually, then collapses each cube along the frequency and time
+axes to form a compite spectrum for each receptor.  Then it has a
+choice of methods to analyse them (see Argument METHOD).
 
-Since there are differences in the baselines and relative signal
-between receptors, the  thresholding introduces a bias.  This
-primitive employs an iterative method, first applying the initial
+The first sums the flux over a velocity range for each individual
+receptor (Curtis, Richer & Buckle 2009) integrating over all the
+spectra.  This assumes that all receptors see the same flux which in
+general will not be true, but in practice this does a decent job
+provided the velocity range just spans the emission.  One case where
+it din't work so well is where there appeared to be non-linearity in
+the data and the flat field for the bright parts seemed not to be the
+same as near the background.
+
+The second selects signal above the median plus four standard
+deviations, particurlarly when there are multiple lines.  This offers
+a simple means to exclude the noisy baseline and reduce the
+uncertainty in the relative data values in each receptor.  It then
+normalizes the flux in the receptors to the tracking receptor's flux.
+It then uses this multiplicative factor to normalize the input
+time-series data.  Since there are differences in the baselines and
+relative signal between receptors, the thresholding introduces a bias.
+This primitive employs an iterative method, first applying the initial
 corrections, which raise or lower the mean spectrum of a receptor so
 that the thresholding is more consistent with other receptors.  It
 then recalculates the correction factors and folds these in with the
@@ -35,14 +47,37 @@ How to process group files. 0 means use the current Frame object. 1
 means use the current Group object. 2 means use each Frame member of
 the current Group object. [0]
 
+=item LOWER_VELOCITY = REAL (Given)
+
+The requested lower velocity for the flat-field estimations.
+This argument can be overridden by the RECPAR_FLAT_LOWER_VELOCITY uhdr
+via the recipe parameter system.  [undef]
+
 =item MAX_ITERATIONS = INTEGER (Given)
 
-The maximum number of iterations to seek convergence.  [5]
+The maximum number of iterations to seek convergence for METHOD set to
+'itersum'.  This will be ignored (effectively set to 1) if the
+METHOD is 'sum'.  [5]
+
+=item METHOD = STRING (Given)
+
+This selects the method used to derive the relative gains of the
+receptors.  The allowed selection comprises 'sum' which finds the
+integrated flux in a velocity window, or 'itersum' which uses
+thresholiding to define the contributing signal.  This argument can be
+overridden by the RECPAR_FLAT_METHOD uhdr via the recipe parameter
+system.  ['sum']
 
 =item REFERENCE_RECEPTOR = STRING (Given)
 
 Which receptor is the reference receptor to which the others are
 normalized. ['H05']
+
+=item UPPER_VELOCITY = REAL (Given)
+
+The requested upper velocity for the flat-field estimations.
+This argument can be overridden by the RECPAR_FLAT_UPPER_VELOCITY uhdr
+via the recipe parameter system.  [undef]
 
 =back
 
@@ -100,7 +135,41 @@ Rights Reserved.
 
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
+my $flatmethod = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'sum' );
 my $maxiter = get_prim_arg( $_PRIM_ARGS_, "MAX_ITERATIONS", 5 );
+my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
+my $upper_vel = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
+
+$flatmethod = ( defined( $Frm->uhdr( "RECPAR_FLAT_METHOD" ) ) ?
+                $Frm->uhdr( "RECPAR_FLAT_METHOD" )            :
+                $flatmethod );
+$lower_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
+             $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
+             $lower_vel );
+$upper_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" ) ) ?
+             $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" )              :
+             $upper_vel );
+
+# Integer velocity must be made floating point so that NDF sectioning
+# does not regard it as pixels.
+if ( $lower_vel =~ /^[+-]?\d+$/ ) { $lower_vel = sprintf( "%.1f", $lower_vel ) }
+if ( $upper_vel =~ /^[+-]?\d+$/ ) { $upper_vel = sprintf( "%.1f", $upper_vel ) }
+
+my $flat_range = "";
+if ( defined( $lower_vel ) && defined( $upper_vel ) ) {
+   $flat_range = "$lower_vel" . ":" . "$upper_vel";
+} else {
+   orac_warn "Flat fielding selected without specifying the velocity range to perform \n";
+   orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the analysis \n";
+   orac_warn "may be affected by noise. \n";
+   orac_warn "Set FLAT_LOWER_VELOCITY and FLAT_UPPER_VELOCITY to span the astronomical signal.\n";
+}
+
+# Provide a shorthand for the selecting the method.
+my $sum = lc( $flatmethod ) eq 'sum' ? 1 : 0;
+
+# For the sum method there is no iteration.
+$maxiter = 1 if ( $sum );
 
 my $isok = eval { require JCMT::ACSIS::Array; 1; };
 if ( ! $isok ) {
@@ -124,7 +193,6 @@ if ( ! $isok ) {
       my $params;
 
       orac_say "Detector gain correction";
-      my $maxiter = 5;
 
 # Obtain required attributes of each object
 # =========================================
@@ -314,39 +382,53 @@ if ( ! $isok ) {
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
             }
 
+# Section to select the astronomical signal.
+# ------------------------------------------
+
+# It is possible to use more-sophisticated clump finding... but it is unclear
+# whether this is justified given we assume that all receptors are receiving
+# the same flux, which we know is incorrect.
+
+# First the non-iterative simple approach, summing over the line.
+            if ( $sum ) {
+
+# Collapse along the velocity axis giving the mean emission.
+               $params = "in=$spectfile($flat_range,,) out=$temp6file estimator=mean wlim=0.0 axis=1";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+            } else {
+
 # Calculate clipped statistics on the array.
-            $params = "ndf=$spectfile clip=[2,2.0,2.5,3.0] order";
-            $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-            ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
-            ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+               $params = "ndf=$spectfile clip=[2,2.0,2.5,3.0] order";
+               $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+               ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+               ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
 
-# Threshold to select the astronomical signal.  It is possible to use
-# more-sophisticated clump finding... but it is unclear whether this is
-# justified given we assume that all receptors are receiving the same flux, 
-# which we know is incorrect.
-            my $clip = 4.0;
-            my $thresh = $median + $clip * $sigma;
-            my $fs_thresh = sprintf( "%.4f", $thresh );
-            orac_print " Set threshold to $fs_thresh.\n";
-            $params = "in=$spectfile out=$temp5file thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
-            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+# Threshold to select the astronomical signal.
+               my $clip = 4.0;
+               my $thresh = $median + $clip * $sigma;
+               my $fs_thresh = sprintf( "%.4f", $thresh );
+               orac_print " Set threshold to $fs_thresh.\n";
+               $params = "in=$spectfile out=$temp5file thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
+               $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
-            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file" );
-            ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file" );
+               ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
 # Want to avoid having too few and especially no good values that will
 # cause problems later.  The number is somehat arbitrary.
-            ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
-            if ( $numgood < 10 * $nreceptor ) {
-               orac_warn "Unable to calculate the flat field.  There are too few data data values\n";
-               orac_warn "either because the scan is small or lacks tangible astronomical signal.\n";
-               $derive_flat = 0;
-               last;
-            }
+               ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+               if ( $numgood < 10 * $nreceptor ) {
+                  orac_warn "Unable to calculate the flat field.  There are too few data data values\n";
+                  orac_warn "either because the scan is small or lacks tangible astronomical signal.\n";
+                  $derive_flat = 0;
+                  last;
+               }
 
 # Collapse along the velocity axis giving the mean emission.
-            $params = "in=$temp5file out=$temp6file estimator=mean wlim=0.0 axis=1";
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+               $params = "in=$temp5file out=$temp6file estimator=mean wlim=0.0 axis=1";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            }
 
 # Normalize to the value in the reference receptor.
             my $array = new JCMT::ACSIS::Array( File => $temp6file );
