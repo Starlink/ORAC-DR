@@ -78,10 +78,11 @@ Number::Interval.
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009 Science and Technology Facilities Council.  All
+Copyright (C) 2009, 2013 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
@@ -173,7 +174,15 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     my $params = "in='$temp2file,$temp4file' out='$temp5file,$temp6file' insitu=false lbnd=! ubnd=! ref=! method=nearest";
     $Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
 
-    # Run MFITTREND.
+    # Retrieve bounds for each aligned file.
+    _GET_DIMENSIONS_ FILE=$temp5file
+    my $al_lbounds1 = $_GET_DIMENSIONS_{LBOUND};
+    my $al_ubounds1 = $_GET_DIMENSIONS_{UBOUND};
+    _GET_DIMENSIONS_ FILE=$temp6file
+    my $al_lbounds2 = $_GET_DIMENSIONS_{LBOUND};
+    my $al_ubounds2 = $_GET_DIMENSIONS_{UBOUND};
+
+    # Run MFITTREND to obtain the baseline regions.
     my $numbin1 = int( ( $ubounds1->[0] - $lbounds1->[0] + 1 ) / 4 );
     $params = "in=$temp5file out=$temp7file axis=1 method=region auto=true";
     $params .= " order=0 numbin=$numbin1";
@@ -236,13 +245,37 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
         orac_say "$files->[1] to $inout{$files->[1]}:";
         orac_say " Removed high-noise ends from frequency range.";
         orac_say " Trimmed dimensions: [$aranges2[0]:$aranges2[-1]]";
-
       }
+
+    # There is a special case, not recommended, but which some observers
+    # adopted where there is sufficient overlap but a spectral line is
+    # present.  This range is excluded by MFITTREND as it filters lines
+    # to match on the baselines.
+    } elsif ( $al_ubounds2->[0] - $al_lbounds1->[0] >= $min_overlap ) {
+
+      # Calculate the maximum percentage and retain the minimum overlap.
+      my $trim_percent = ( $al_ubounds2->[0] - $al_lbounds1->[0] - $min_overlap ) /
+                         ( $al_ubounds1->[0] - $al_lbounds1->[0] + 2 +
+                           $al_ubounds2->[0] - $al_lbounds2->[0] ) * 100.0;
+
+      # Set the revised lower and upper percentages symmetrically.  The paring
+      # the trims could be done pro rata, creating two new values, but is
+      # probably an unnecessary complication.
+      my $align_lower = min( $lower, $trim_percent );
+      my $align_upper = min( $upper, $trim_percent );
+      if ( $align_lower < $lower || $align_upper < $upper ) {
+        orac_say "  There is insufficient overlap between $files->[0] and $files->[1]";
+        orac_say "  using the requested trim percentages while maintaining the minimum $min_overlap common pixels.";
+        orac_say "  Derived baseline offsets may be poorly determined.";
+      }
+      $lower = int( 100.0 * $align_lower ) * 0.01;
+      $upper = int( 100.0 * $align_upper ) * 0.01;
+
+    } else {
+      orac_say "Not enough overlap between $files->[0] and $files->[1] after calculated noise trim.";
     }
 
     if ( ! $trimmed ) {
-
-      orac_say "Not enough overlap between $files->[0] and $files->[1] after calculated noise trim.";
       orac_say "Removing $lower\% from lower velocity end.";
       orac_say "Removing $upper\% from upper velocity end.";
 
@@ -273,7 +306,6 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
       orac_say " Trimmed dimensions: [$lower_extent1:$upper_extent1]";
 
     }
-
 
   }
 
