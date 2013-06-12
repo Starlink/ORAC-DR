@@ -1307,6 +1307,19 @@ sub _convert_and_link_nofrm {
     orac_print "Converting $file from $infmt to $outfmt...\n"
       if $infmt ne $outfmt;
 
+    # If the file is missing but not expected to be gzipped,
+    # check whether a gzipped copy is present.  This allows
+    # ORAC-DR to be run on data which has been gzipped without
+    # having to edit the OK files.  Unfortunately this requires
+    # using -e just before convert() does so again, because
+    # it's this module which currently handles ungzipping.
+    # Should there be a switch required to enable this check?
+    if ($file !~ /\.gz$/ and ! grep {$_ eq $file . '.gz'} @names
+            and  ! -e $file and -e $file . '.gz') {
+        orac_warn("$file is unexpectedly gzipped!\n");
+        $file .= '.gz';
+    }
+
     # The input file might be gzipped, so copy it over and unzip it.
     if( $file =~ /\.gz$/ ) {
       orac_print "Unzipping $file...";
