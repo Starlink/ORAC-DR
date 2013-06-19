@@ -223,6 +223,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       }
 
       # Collapse each of the files making up the current object.
+      # ========================================================
       my @collapsed;
       my %paste_inputs;
       my @smoothed;
@@ -235,7 +236,6 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       foreach my $i ( 1 .. $Obj->nfiles ) {
 
         if( $Obj->uhdr( "SPARSE" ) ) {
-
           orac_warn $Obj->file( $i ) . " is a sparse cube. Cannot create moments map for a sparse cube.\n";
 
         } else {
@@ -345,12 +345,23 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
         }
       }
 
+      # Get the RMS for the smoothed files.
+      # ===================================
       if( ! $nomap ) {
-
-        # Get the RMS for the smoothed files.
         _CALCULATE_RMS_ FILES=\@masked BOX=1
         my $medianrms = $_CALCULATE_RMS_{RMS};
-        orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $medianrms );
+        orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $medianrms ) . ".";
+
+        # Allow for pathological values from junk data or invalid processing.
+        if ( $medianrms =~ /nan/ || $medianrms =~ /inf/ ) {
+          orac_say "therefore unable to define clumps.";
+          $nomap = 1;
+        }
+      }
+
+      # Make moment maps.
+      # =================
+      if ( ! $nomap ) {
 
         # Find bounds for each identified line, if requested.
         if( $per_line ) {
@@ -360,6 +371,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             my $bounds = $_IDENTIFY_SPECBOUNDS_{'BOUNDS'};
             push @bounds, $bounds;
           }
+
           # Check to see if we have Number::Range. If we don't, we
           # can't do the linteg range determination (and print a
           # warning saying such.
@@ -381,10 +393,9 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             # Stringify the range.
             my $str = $range->range;
 
-            # At this point the range is of the form
-            # "32..183,317..324", so split it by commas into
-            # individual ranges, then split it be two periods to get
-            # the min and the max.
+            # At this point the range is of the form "32..183,317..324",
+            # so split it by commas into individual ranges, then split
+            # it by two periods to get the minimum and the maximum.
             my @ranges = split ',', $str;
             my @frmranges;
             foreach my $range ( @ranges ) {
@@ -406,11 +417,12 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
           my $colin = new ORAC::TempFile(0);
 
-          # Do the emission selection and collapse for each moment
+          # Do the emission selection and collapse for each moment.
+          # =======================================================
           my $mom = 0;
           foreach my $moment ( @moments ) {
 
-            # Select appropriate threshold from user specification
+            # Select appropriate threshold from user specification.
             my $rms_thresh;
             if($mom <= $#rms_thrhlds) {
               $rms_thresh = $rms_thrhlds[$mom];
@@ -419,10 +431,10 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
               orac_say " Warning: no threshold level for this moment, using previous: $rms_thresh*RMS";
             }
 
-            # Only repeat if different threshold needed
+            # Only repeat if different threshold needed.
             if( $mom == 0 || $rms_thresh != $rms_thrhlds[$mom-1] ) {
 
-              # Initialize output file for masks
+              # Initialize output file for masks.
               my $temp4 = new ORAC::TempFile(0);
               my $temp4file = $temp4->file;
               my $nclumps = 0;
@@ -433,7 +445,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
               # RPT: this section could go into a _FIND_EMISSION_ primitive
               # if there is an elegant way to handle the temp output file.
 
-              # Method is Thresholding: run kappa::thresh
+              # Method is Thresholding: run KAPPA::THRESH.
               if( $method eq 'thresh' ) {
 
                 orac_say " Finding emission higher than $rms_thresh-sigma using $method.";
@@ -444,11 +456,11 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
                 ( $ORAC_STATUS, $nclumps ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
-              # Else use cupid::findclumps
+              # Else use CUPID::FINDCLUMPS.
               } else {
 
                 # Create parameter file for FINDCLUMPS with both
-                # parameters for clumpfind and fellwalker
+                # parameters for Clumpfind and Fellwalker.
                 my $fc_param = "findclumps$$.param";
                 open my $fc_fh, ">", $fc_param;
                 print $fc_fh "ClumpFind.Minpix=50\n";
@@ -468,17 +480,19 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 close $fc_fh;
 
 
-                # calculate statistics on the array to decide if we want to run clumpfind
+                # Calculate statistics of the array to decide if we want to run Clumpfind.
                 $Mon{'kappa_mon'}->obeyw( "stats","ndf=$file" );
                 ( $ORAC_STATUS, my $min_fault) = $Mon{'kappa_mon'}->get("stats","minimum");
                 ( $ORAC_STATUS, my $max_fault) = $Mon{'kappa_mon'}->get("stats","maximum");
                 ( $ORAC_STATUS, my $sigma_fault) = $Mon{'kappa_mon'}->get("stats","sigma");
 
-                # run find clumps only if the stats are ok!
+                # Run FINDCLUMPS only if the statistics are ok!
                 if ( $max_fault-($rms_thresh*$medianrms)<(2*$medianrms) ||
                      $min_fault < 1E-10 ) {
-                  orac_say("Image does not seem to contain features, will not run clumpfind.");
-                  $nclumps=0; # setting nclump to 0 prevents the rest of the primitive from using clumpfind results
+                  orac_say("Image does not seem to contain features, will not run Clumpfind.");
+                  # Setting nclumps to zero prevents the rest of the primitive from using
+                  # Clumpfind results.
+                  $nclumps = 0;
                 }
 
               else {
@@ -496,7 +510,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                   $file = $temp5file;
                 }
 
-                # Run findclumps with clumpfind or fellwalker
+                # Run FINDCLUMPS with Clumpfind or Fellwalker.
                 orac_say " Finding clumps higher than $rms_thresh-sigma using $method.";
                 $params = "in=$file rms=$medianrms config='^$fc_param' method=$method ";
                 $params .= "out=$temp4file outcat=\! deconv=no";
@@ -504,11 +518,13 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
                 unlink( $fc_param );
 
-                # Check number of clumps using NCLUMPS.
+                # Check the number of clumps using NCLUMPS parameter.
                 ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
                 }
               }
-              # --------------------
+
+              # Create a clump mask.
+              # ====================
 
               # If we have no clumps, we can't make a clump mask, so skip
               # the masking and just go straight to the moment map
@@ -525,7 +541,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 $params = "in=$temp6 out=$temp7 repval=0";
                 $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
 
-                # Multiply clump mask by input cube.
+                # Multiply clump mask by the input cube.
                 orac_say " Masking non-clump data.";
                 $params = "in1=$in in2=$temp7 out=$colin";
                 $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
@@ -538,6 +554,9 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
               }
             }
 
+            # Collapse to form moment map.
+            # ============================
+
             # For the moment collapse the masked cube into a temporary
             # file.
             if( ! exists( $paste_inputs{$moment} ) ) {
@@ -549,7 +568,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
 
             # Copy the variance across from the input cube, but only if
-            # the input cube has a variance.
+            # the input cube has variance.
             $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
             my ( $ORAC_STATUS, $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
             if ( uc( $var ) eq 'TRUE' ) {
@@ -628,6 +647,9 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
         }
 
         orac_say;
+
+        # Paste the collapsed moments files into a single file.
+        # =====================================================
 
         # Paste together the files in @collapsed into $out.
         foreach my $moment ( @moments ) {
@@ -728,6 +750,9 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 }
               }
 
+              # Extract peak's spectrum.
+              # ========================
+
               # Find the position of the peak, then extract a spectrum
               # from that position, but only if the moment is 'integ'.
               if( $moment eq 'integ' && $region == 0 ) {
@@ -766,5 +791,4 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
     }
   }
 }
-
 
