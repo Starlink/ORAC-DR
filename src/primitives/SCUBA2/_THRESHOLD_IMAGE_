@@ -1,0 +1,226 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_THRESHOLD_IMAGE_ - threshold an image on statistical criteria
+
+=head1 SYNOPSIS
+
+ _THRESHOLD_IMAGE_
+
+ _THRESHOLD_IMAGE_ IMAGE=$image OUT=$thresh
+
+ _THRESHOLD_IMAGE_ THRESH=2 ESTIMATOR=MIN COMP=ERR
+
+=head1 DESCRIPTION
+
+This primitive thresholds an image based on specified statistical
+criteria. The default behaviour is to discard data points with an
+exposure time less than half the median value. Alternative estimators
+based on the variance may be specified (variance or error). In these
+cases, the threshold is applied such that data with a variance or
+error greater than the cutoff will be set to bad.
+
+The threshold is determined by the product of the B<THRESH> and
+B<ESTIMATOR> parameters below.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<COMP>
+
+Name of the NDF component to use to determine the threshold. Accepted
+values are C<texp>, C<err> or C<var>. Default is C<texp>. Overridden
+by the recipe parameter C<STATS_COMP>.
+
+=item B<ESTIMATOR>
+
+Statistical estimator to use. May be C<max>, C<mean>, C<median>, or
+C<min>. Default is C<median>. Overridden by the recipe parameter
+C<STATS_ESTIMATOR>.
+
+=item B<GROUP>
+
+Flag to denote whether or not to use the Group object. Default is 0 (use Frm).
+
+=item B<IMAGE>
+
+Name of the image to threshold. The estimator is also derived from
+this file. Default is the current file in the object specified by
+B<GROUP>.
+
+=item B<OUT>
+
+Name of output thresholded file. Default has the suffix C<_thresh>.
+
+=item B<THRESH>
+
+Threshold multiplier - the threshold will be this value multiplied by
+the estimator. Default is 0.5 if using the exposure time, 1
+otherwise. Overridden by the recipe parameter C<STATS_THRESH>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+COPYBAD, NDFCOPY, THRESH
+
+=item ORAC-DR PRIMITIVES
+
+_COMPONENT_EXISTS_, _FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+=over 2
+
+=item *
+
+This method works best if the distribution of values is spatially
+smooth as in CV DAISYs. Results may be poor for maps with uneven
+coverage, such as short CV DAISYs or large PONG maps.
+
+=item *
+
+Thresholding based on the error or variance may produce spurious
+results for maps with bright sources.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates an output file with a C<_thresh> suffix unless an output file
+is specified. Other files with suffices C<_thrsrc>, C<_thrbad> and
+C<_throut> will be created but are pushed onto the intermediates array
+so they can be deleted.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Component from which the threshold is to be derived
+my $comp = lc(get_prim_arg($_PRIM_ARGS_, "COMP", "texp"));
+$comp = $Frm->uhdr("RECPAR_STATS_COMP")
+  if (defined $Frm->uhdr("RECPAR_STATS_COMP"));
+if ($comp !~ /^[texp|var|err]/) {
+  orac_warn "Unknown component, $comp, specified: falling back on default\n";
+  $comp = "texp";
+}
+
+# Estimator for the threshold
+my $estimator = uc(get_prim_arg($_PRIM_ARGS_, "ESTIMATOR", "MEDIAN"));
+$estimator = $Frm->uhdr("RECPAR_STATS_ESTIMATOR")
+  if (defined $Frm->uhdr("RECPAR_STATS_ESTIMATOR"));
+
+# Threshold multiplier
+my $thresh_default = ($comp eq "texp") ? 0.5 : 1;
+my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", $thresh_default);
+$thresh = $Frm->uhdr("RECPAR_STATS_THRESH")
+  if (defined $Frm->uhdr("RECPAR_STATS_THRESH"));
+
+# Use the current Group or Frm?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Input and output files
+my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
+my $threshout = get_prim_arg($_PRIM_ARGS_, "OUT", scalar($Obj->inout("_thresh")));
+
+my %thresh_comps;
+foreach my $ndfcomp (qw/exp_time weights/) {
+  my $fullcomp = "more.smurf.".$ndfcomp;
+  _COMPONENT_EXISTS_ COMPONENT=$fullcomp FILE=$in
+  $thresh_comps{$ndfcomp} = 1 if ($_COMPONENT_EXISTS_{EXISTS});
+}
+
+if ($comp eq "texp" && !defined $thresh_comps{exp_time}) {
+  orac_err "Unable to threshold image using exposure time - component does not exist\n";
+  return ORAC__OK;
+}
+
+my %stat = ( texp => "exposure time",
+	     var => "variance component",
+	     err => "error component"
+	   );
+orac_print "Thresholding image using $thresh * ".lc($estimator)." of $stat{$comp}\n";
+
+my $compfile = $Obj->inout("_thrsrc");
+my $template = $in;
+my $extra = "";
+my ($thrlo, $newlo, $thrhi, $newhi);
+if ($comp eq "texp") {
+  $template .= ".more.smurf.exp_time";
+  $newlo = "bad";
+  $thrhi = 1.0e9;
+  $newhi = $thrhi;
+} elsif ($comp = "var" || $comp eq "err") {
+  $extra = "comp=$comp";
+  $thrlo = -1.0e9;
+  $newlo = $thrlo;
+  $newhi = "bad";
+}
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$template out=$compfile $extra");
+_FIND_IMAGE_STATISTICS_ IMAGE=$compfile VERBOSE=0
+my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+
+# Ignore all data where the exposure time is less than half of the
+# median value
+my $threshval = $thresh * $results->{$estimator};
+if (defined $thrhi) {
+  $thrlo = $threshval;
+} else {
+  $thrhi = $threshval;
+}
+
+my $thrfile = $Obj->inout("_throut");
+my $thrargs = "in=$compfile out=$thrfile thrlo=$thrlo newlo=$newlo thrhi=$thrhi newhi=$newhi";
+$Mon{kappa_mon}->obeyw("thresh","$thrargs");
+
+my $newout = $Obj->inout("_thrbad");
+$Mon{kappa_mon}->obeyw("copybad","in=$in out=$newout ref=$thrfile");
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$newout out=$threshout trimbad");
+
+# Repeat for EXP_TIME and WEIGHTS
+foreach my $comp (keys %thresh_comps) {
+  my $in = $threshout.".more.smurf.".$comp;
+  my $tmp = ORAC::TempFile->new();
+  $Mon{kappa_mon}->obeyw("copybad","in=$in out=$tmp ref=$thrfile");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmp out=$in trimbad");
+}
+
+$Obj->push_intermediates($newout, $thrfile, $compfile);
