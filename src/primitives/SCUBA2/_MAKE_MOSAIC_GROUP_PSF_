@@ -108,9 +108,11 @@ if ($Grp->lastmember($Frm)) {
   # Should I be verbose (default to yes)
   my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
+  my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", 0);
+  my $pre = ($thresh) ? "g" : "w";
   # Name of the output coadds for the signal map and the map-filtered psf
-  my %out = ( newimage => scalar($Grp->inout("_wmos")),
-	      mappsf => scalar($Grp->inout("_wpsf")) );
+  my %out = ( newimage => scalar($Grp->inout("_".$pre."mos")),
+	      mappsf => scalar($Grp->inout("_".$pre."psf")) );
 
   if ($verbose) {
     my $extra = (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) ? "coadd" : "and psf coadds";
@@ -142,38 +144,10 @@ if ($Grp->lastmember($Frm)) {
   $Grp->membertagretrieve("mosaic");
 
   # Threshold coadd to get rid of noisy edges
-  if ($Frm->uhdr("RECPAR_THRESH")) {
-    my $thresh = $Frm->uhdr("RECPAR_THRESH");
-    my $coadd = $out{newimage};
-    my %thresh_comps;
-    foreach my $ndfcomp (qw/exp_time weights/) {
-      my $fullcomp = "more.smurf.".$ndfcomp;
-      _COMPONENT_EXISTS_ COMPONENT=$fullcomp FILE=$coadd
-      $thresh_comps{$ndfcomp} = 1 if ($_COMPONENT_EXISTS_{EXISTS});
-    }
-    if ($thresh_comps{exp_time}) {
-      my $texp = $coadd.".more.smurf.exp_time";
-      _FIND_IMAGE_STATISTICS_ IMAGE=$texp VERBOSE=0
-      my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
-      # Ignore all data where the exposure time is less than half of the
-      # median value
-      my $estimator = (defined $Frm->uhdr("RECPAR_STATS_ESTIMATOR")) ?
-	uc($Frm->uhdr("RECPAR_STATS_ESTIMATOR")) : "MEDIAN";
-      my $threshval = $thresh * $results->{$estimator};
-      my $thr = ORAC::TempFile->new();
-      my $thrargs = "in=$texp out=$thr thrlo=$threshval newlo=bad thrhi=1e9 newhi=1e9";
-      $Mon{kappa_mon}->obeyw("thresh","$thrargs");
-      my $newout = ORAC::TempFile->new();
-      $Mon{kappa_mon}->obeyw("copybad","in=$coadd out=$newout ref=$thr");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$newout out=$coadd trimbad");
-      # Repeat for EXP_TIME and WEIGHTS
-      foreach my $comp (keys %thresh_comps) {
-	my $in = $coadd.".more.smurf.".$comp;
-	my $tmp = ORAC::TempFile->new();
-	$Mon{kappa_mon}->obeyw("copybad","in=$in out=$tmp ref=$thr");
-	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmp out=$in trimbad");
-      }
-    }
+  if ($thresh) {
+    my $thresh = $Grp->inout("_wmos");
+    _THRESHOLD_IMAGE_ IMAGE=$out{newimage} OUT=$thresh GROUP=1
+    $out{newimage} = $thresh;
   }
 
   # Store the output coadd in the Group
@@ -185,10 +159,12 @@ if ($Grp->lastmember($Frm)) {
 
     # Now if the user has given a PSF image, we need to make sure it has
     # the same dimensions as the map
-    if (@tags == 1) {
-      my $inpsf = $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
-      my $args = "in=$inpsf out=".($out{mappsf})." like=".($Grp->file);
+    if (@tags == 1 || $thresh) {
+      my $inpsf = ($thresh) ? $out{mappsf} : $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
+      my $outpsf = ($thresh) ? $Grp->inout("_wpsf") : $out{mappsf};
+      my $args = "in=$inpsf out=$outpsf like=".($Grp->file);
       $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+      $out{mappsf} = $outpsf;
     }
     # Store it in the Group for later retrieval
     $Grp->files($out{mappsf});
