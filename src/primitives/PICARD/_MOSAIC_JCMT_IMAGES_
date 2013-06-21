@@ -157,92 +157,111 @@ my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 1);
 
 # Only proceed for the last member of the Group
 if ($Grp->lastmember($Frm)) {
-  $Frm->tagset("mosaic_jcmt_images");
+  my $srcmos = (defined $Frm->uhdr("RECPAR_MOSAIC_EACH"))
+    ? $Frm->uhdr("RECPAR_MOSAIC_EACH") : 0;
 
-  # Define output file name - derive from current Frame file if not specified
-  my $out = (defined $Frm->uhdr("RECPAR_OUTPUT_NAME"))
-    ? $Frm->uhdr("RECPAR_OUTPUT_NAME")
-    : $Frm->inout("_mos");
+  # Determine sub-groups based on OBJECT
+  my @subgroups = ($srcmos) ? $Grp->subgrps("OBJECT") : ($Grp);
+  # Aligned intermediate files to be deleted at the end of processing
+  my @aligned;
 
-  # Store the files from all the members of the group if desired
-  # (otherwise use all files in current Frame)
-  $Frm->files(map { $_->files } $Grp->members) if ($group);
-  # If the files in each Frame are the originals, blank the
-  # intermediates array so these are not deleted at the end of the
-  # recipe. Test against the raw file for the current Frame.
-  $Frm->intermediates([]) if ($Frm->file($Frm->nfiles) eq $Frm->raw);
+  # Loop over sub-groups
+  foreach my $subgrp (@subgroups) {
+    $Frm->tagset("mosaic_jcmt_images");
 
-  # If processing SCUBA-2 data, shift the images to a common origin if
-  # requested. Always do this for SCUBA-2 calibration sources as the
-  # position is known.
-  my $info = "images";
-  if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" &&
-       ( $Frm->uhdr("RECPAR_REGISTER_IMAGES") ||
-	 $Cal->iscalsource($Frm->hdr("OBJECT")) ) ) {
-    $Frm->uhdr("NSHIFT", 0);
-    _SHIFT_IMAGES_ VERBOSE=1
-    $info = "shifted images" if ($Frm->uhdr("NSHIFT") > 1);
-  }
+    if (@subgroups > 1) {
+      orac_print "Processing ".($subgrp->frame(0)->hdr("OBJECT")).": ";
+    } else {
+      orac_print "Reached last Group member: ";
+    }
 
-  # Combine images
-  if ($Frm->nfiles > 1) {
-    orac_print "Reached last Group member: mosaicking ".($Frm->nfiles)." $info...\n";
+    # Define output file name - derive from current Frame file if not specified
+    my $out = (scalar(@subgroups) == 1 && defined $Frm->uhdr("RECPAR_OUTPUT_NAME"))
+      ? $Frm->uhdr("RECPAR_OUTPUT_NAME")
+	: $subgrp->frame(-1)->inout("_mos");
 
-    # Write input list for wcsmosaic here to avoid realigning aligned
-    # files
-    my $inlist = write_file_list( $Frm->files ) if ($wcsmos);
+    # Store the files from all the members of the group if desired
+    # (otherwise use all files in current Frame)
+    $Frm->files(map { $_->files } $subgrp->members) if ($group);
+    # If the files in each Frame are the originals, blank the
+    # intermediates array so these are not deleted at the end of the
+    # recipe. Test against the raw file for the current Frame.
+    $Frm->intermediates([]) if ($Frm->file($Frm->nfiles) eq $Frm->raw);
 
-    # Align components to same pixel grid, using the first image as
-    # the reference.
-    if ($Frm->tagexists("snr")) {
-      # Only align SNR images if not using wcsmosaic
-      unless ($wcsmos) {
-	orac_print "Aligning images...\n";
-	_ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=0 PARAMS=$params
+    # If processing SCUBA-2 data, shift the images to a common origin if
+    # requested. Always do this for SCUBA-2 calibration sources as the
+    # position is known.
+    my $info = "images";
+    if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" &&
+	 ( $Frm->uhdr("RECPAR_REGISTER_IMAGES") ||
+	   $Cal->iscalsource($Frm->hdr("OBJECT")) ) ) {
+      $Frm->uhdr("NSHIFT", 0);
+      _SHIFT_IMAGES_ VERBOSE=1
+      $info = "shifted images" if ($Frm->uhdr("NSHIFT") > 1);
+    }
+
+    # Combine images
+    if ($Frm->nfiles > 1) {
+      orac_print "mosaicking ".($Frm->nfiles)." $info...\n";
+
+      # Write input list for wcsmosaic here to avoid realigning aligned
+      # files
+      my $inlist = write_file_list( $Frm->files ) if ($wcsmos);
+
+      # Align components to same pixel grid, using the first image as
+      # the reference.
+      if ($Frm->tagexists("snr")) {
+	# Only align SNR images if not using wcsmosaic
+	unless ($wcsmos) {
+	  orac_print "Aligning images...\n";
+	  _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=0 PARAMS=$params
+	}
+      } else {
+	orac_print "Aligning images and other components...\n";
+	_ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=1 PARAMS=$params
       }
+
+      # Mosaic the given images
+      if ( $wcsmos ) {
+	my $args = "ref=! variance genvar=! method=$method out=$out "
+	  ."in=^$inlist lbnd=! ubnd=!";
+	$args .= " params=$parstring" if (defined $params);
+	$Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+      } else {
+	# Input list now contains aligned files
+	$inlist = write_file_list( $Frm->files );
+	my $args = "in=^$inlist method=$makemos_method ref=! "
+	  ."nozero noscale out=$out usevar genvar logto=neither";
+	$args .= " sigmas=$sigmas" if ($sigmas);
+	$Mon{ccdpack_reg}->obeyw("makemos","$args");
+      }
+      # Add up exposure times and other NDF components if present: Frm
+      # contains the aligned files
+      unless ($Frm->tagexists("snr")) {
+	my $comps = "EXP_TIME,";
+	$comps .= ($Frm->hdr("INSTRUME") eq "SCUBA-2") ? "WEIGHTS" : "EFF_TIME";
+	_ADD_IMAGES_ OUT=$out COMPS=$comps
+      }
+      push(@aligned, $Frm->files);
     } else {
-      orac_print "Aligning images and other components...\n";
-      _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=1 PARAMS=$params
+      # Copy (shifted) input to output
+      orac_print "1 file, copying to output...\n";
+      my $args = "in=".($subgrp->frame(0)->file)." out=$out";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
     }
 
-    # Mosaic the given images
-    if ( $wcsmos ) {
-      my $args = "ref=! variance genvar=! method=$method out=$out "
-	."in=^$inlist lbnd=! ubnd=!";
-      $args .= " params=$parstring" if (defined $params);
-      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
-    } else {
-      # Input list now contains aligned files
-      $inlist = write_file_list( $Frm->files );
-      my $args = "in=^$inlist method=$makemos_method ref=! "
-	."nozero noscale out=$out usevar genvar logto=neither";
-      $args .= " sigmas=$sigmas" if ($sigmas);
-      $Mon{ccdpack_reg}->obeyw("makemos","$args");
-    }
-    # Add up exposure times and other NDF components if present
-    unless ($Frm->tagexists("snr")) {
-      my $comps = "EXP_TIME,";
-      $comps .= ($Frm->hdr("INSTRUME") eq "SCUBA-2") ? "WEIGHTS" : "EFF_TIME";
-      _ADD_IMAGES_ OUT=$out COMPS=$comps
-    }
+    # Store the output coadd, read the header and tag it
+    $subgrp->files($out);
+    $subgrp->tagset("coadd");
+    $subgrp->readhdr;
+    $subgrp->tagset("newimage");
+    $subgrp->product("newimage");
 
-  } else {
-    # Copy (shifted) input to output
-    orac_print "copying...\n";
-    my $args = "in=".($Frm->file)." out=$out";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+    # Return current Frame to original state
+    $Frm->tagretrieve("mosaic_jcmt_images");
   }
-
-  # Store the output coadd, read the header and tag it
-  $Grp->files($out);
-  $Grp->tagset("coadd");
-  $Grp->readhdr;
-  $Grp->tagset("newimage");
-  $Grp->product("newimage");
-
-  # Return Frame to original state
-  $Frm->tagretrieve("mosaic_jcmt_images");
-
+  # Store the aligned files so they can deleted
+  $Frm->push_intermediates(@aligned) if @aligned;
 } else {
   orac_print "Delaying processing until the last Group member\n";
 }
