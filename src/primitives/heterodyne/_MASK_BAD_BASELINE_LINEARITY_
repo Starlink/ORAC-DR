@@ -24,10 +24,14 @@ large variations that would swamp the non-linearity signal the
 primitive is attempting to detect.  The mean rms residual per detector
 is printed.
 
-The primitive then evaluates the median and standard deviation of the
-distribution of mean rms residuals from the entire observation, and
-performs iterative sigma clipping above the median to reject those
-detectors whose deviations from linearity are anomalous.
+The primitive then rejects receptors by one of two methods:
+kappa-sigma clipping or a fixed threshold set by the RMS_THRESHOLD
+argument.  For the former the primitive then evaluates the median and
+standard deviation of the distribution of mean rms residuals from the
+entire observation, and performs iterative sigma clipping above the
+median to reject those detectors whose deviations from linearity are
+anomalous, subjected to a minimum rejection threshold given by the
+MINRMS argument.
 
 The rejected receptors are then marked bad in the output cube, and
 recorded in the bad_receptors_qa calibration.
@@ -69,6 +73,15 @@ slighlty more uneven than most or just have some transient baseline
 issues.  This argument sets an absolute limit, not just rejection
 based upon an intercomparison.  Values between 0.05 and 0.2 are normal.
 Most good receptors will be in 0.02 to 0.05 range.  [0.1]
+
+=item RMS_THRESHOLD = REAL (Given)
+
+Instead of iteratively clipping outliers, reject all receptors who rms
+deviation from linearity exceeds this value.  The minimum allowed
+value is 0.02.  If it is undefined, the kappa-sigma clipping is used
+to reject outlying receptors.  This argument can be overridden by the
+RECPAR_BASELINE_LINEARITY_RMS_THRESHOLD uhdr via the recipe parameter
+system.  [undef]
 
 =item SCALELENGTH = INTEGER (Given)
 
@@ -184,6 +197,7 @@ my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 1 );
 my $central_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "25.0" );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 my $min_rms = get_prim_arg( $_PRIM_ARGS_, "MINRMS", 0.1 );
+my $thr_rms = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", 0.1 );
 
 # Handle recipe parameter overrides.
 
@@ -205,6 +219,10 @@ $smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" )
 $min_rms = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS" ) ) ?
              $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS" )       :
              $min_rms );
+
+$thr_rms = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_RMS_THRESHOLD" ) ) ?
+             $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_RMS_THRESHOLD" )       :
+             $thr_rms );
 
 # Convert list of standard-deviation clip levels to an array.
 my @clips = split( ',', $linear_clip );
@@ -238,6 +256,9 @@ my $last = 2.0;
 foreach ( @clips ) {
    push @clip_sigma, max( $last, $_ );
 }
+
+my $sigma_clip = ( defined( $thr_rms ) ) ? 0 : 1;
+$thr_rms = max( 0.02, $thr_rms ) if ( ! $sigma_clip );
 
 # Specify output and temporary filenames.
 # =======================================
@@ -457,18 +478,25 @@ while ( $i <= $#clip_sigma && $loop ) {
 # object.
    $stat->add_data( @values );
 
-   if ( $stat->count != 0 ) {
-      $sigma = $stat->standard_deviation();
-      $median = $stat->median();
-   }
+   my $threshold;
+   if ( $sigma_clip ) {
+      if ( $stat->count != 0 ) {
+         $sigma = $stat->standard_deviation();
+         $median = $stat->median();
+      }
 
 # Flag those detectors whose rms deviation from the linear trend exceeds
 # median plus the current sigma-clipping level.  This may cut too much
 # if all the baselines are excellent, but one is a little worse yet
 # otherwise fine.  Thus impose an absolute cutoff.
-   my $threshold = max( $min_rms, $median + $clip_sigma[$i] * $sigma );
-   orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
-   orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations." );
+      $threshold = max( $min_rms, $median + $clip_sigma[$i] * $sigma );
+      orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) );
+      orac_say( " corresponding to the median plus $clip_sigma[$i] standard deviations." );
+
+   } else {
+      $threshold = $thr_rms;
+      orac_say( " Turning off detectors with spectral rms from the trend above " . sprintf( "%.3f", $threshold ) . "." );
+   }
 
 # This would be cleaner if there were a remove_data method in
 # Statistics::Descriptive::Full.
@@ -479,8 +507,8 @@ while ( $i <= $#clip_sigma && $loop ) {
             $receptor_rms{$k} = 'bad';
 
 # Continue iteratively clipping as a detector has been flagged for
-# removal.
-            $loop = 1;
+# removal, unless a single threshold is being used.
+            $loop = $sigma_clip;
          }
       }
    }
