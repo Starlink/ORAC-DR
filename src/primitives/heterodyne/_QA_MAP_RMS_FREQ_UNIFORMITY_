@@ -276,9 +276,18 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       orac_say ( ( $gotmedian ? " Median" : " Mean" ) . sprintf( " RMS in lower 10%%: %.4fK", $rmslo ) );
       orac_say ( ( $gotmedian ? " Median" : " Mean" ) . sprintf( " RMS in upper 10%%: %.4fK", $rmshi ) );
 
-      my $perc = 100 * abs( $rmslo - $rmshi ) / ( ( $rmslo < $rmshi ) ? $rmslo : $rmshi );
+      # Protect against zero rms values.
+      my $denominator = ( $rmslo < $rmshi ) ? $rmslo : $rmshi;
+      my $perc;
+      if ( $denominator > 0.0 ) {
+         $perc = 100 * abs( $rmslo - $rmshi ) / $denominator;
+         orac_say sprintf( " Percentage difference: %.2f%%", $perc );
+      } else {
+         orac_say " Percentage difference is undefined.";
 
-      orac_say sprintf( " Percentage difference: %.2f%%", $perc );
+         # Ensure that a normal QA test fails.
+         $perc = undef;
+      }
 
       # Do QA tests.
       _SETUP_QA_OPTIONS_
@@ -321,7 +330,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
         my $RMSVAR_SPEC = $qa->get_data( key => 'RMSVAR_SPEC', %opts );
         orac_print " Frequency RMS uniformity ";
-        if( $perc < $RMSVAR_SPEC * 100 ) {
+        if( $defined( $perc ) && $perc < $RMSVAR_SPEC * 100 ) {
           orac_print( " passed ", "bold white on_green" );
           push @entries, "Frequency RMS uniformity\t passed";
         } else {
@@ -339,7 +348,11 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
           push @entries, sprintf( "Mean RMS lower 10%%\t %.4fK", $rmshi );
         }
 
-        push @entries, sprintf( "Percentage difference\t %.2f%%", $perc );
+        if ( defined( $perc ) ) {
+           push @entries, sprintf( "Percentage difference\t %.2f%%", $perc );
+        } else {
+           push @entries, sprintf( "Percentage difference\t undefined );
+        }
         push @entries, sprintf( "Requested difference\t %.2f%%", $RMSVAR_SPEC * 100 );
 
         if( $storeqa ) {
