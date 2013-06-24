@@ -71,7 +71,12 @@ system.  ['sum']
 =item REFERENCE_RECEPTOR = STRING (Given)
 
 Which receptor is the reference receptor to which the others are
-normalized. ['H05']
+normalized.  The default comes from the REFRECEP header.  []
+
+=item RESERVE_REFERENCE = STRING (Given)
+
+A second receptor to be used when the reference receptor is defective, say
+suffering from bad baselines.  ['H10']
 
 =item UPPER_VELOCITY = REAL (Given)
 
@@ -138,6 +143,7 @@ Rights Reserved.
 
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
+my $reserve_ref = get_prim_arg( $_PRIM_ARGS_, "RESERVE_REFERENCE", 'H10' );
 my $flatmethod = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'sum' );
 my $maxiter = get_prim_arg( $_PRIM_ARGS_, "MAX_ITERATIONS", 5 );
 my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
@@ -204,7 +210,7 @@ if ( ! $isok ) {
 # =========================================
 
 # Each object (group or observation) may comprise more than one file.
-      foreach my $Obj ( @Objs ) {
+      OBJECT: foreach my $Obj ( @Objs ) {
          my $in = $Obj->file;
          orac_say "Processing observation: $in.";
          my $nval;
@@ -436,14 +442,37 @@ if ( ! $isok ) {
                $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
             }
 
-# Normalize to the value in the reference receptor.
-            my $array = new JCMT::ACSIS::Array( File => $temp6file );
-            my $pixel = $array->pixel( $ref );
+# Obtain the number of good receptors.
             $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file" );
             ( $ORAC_STATUS, $nval ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
-            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file($pixel)" );
 
+# Extract the smean value for the reference receptor.
+            my $array = new JCMT::ACSIS::Array( File => $temp6file );
+            my $pixel = $array->pixel( $ref );
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file($pixel)" );
+            ( $ORAC_STATUS, my $ref_numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Try the reserve receptor if the designated reference receptor is bad.
+            if ( $ref_numgood == 0 ) {
+               $pixel = $array->pixel( $reserve_ref );
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file($pixel)" );
+               ( $ORAC_STATUS, my $res_numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Since neither receptor has valid values the means cannot be
+# normalised.  The choice here is either to try a good (central) receptor
+# to normalise the good receptors but the flux may be affected, or to
+# fail to apply a flat field.  Do the latter.
+               if ( $res_numgood == 0 ) {
+                  orac_warn "Unable to flat field $in as both $ref and $reserve_ref are bad.\n";
+                  next OBJECT;
+               }
+               orac_say "  Using the reserve reference receptor: $reserve_ref.";
+            }
+
+# Obtain the mean value for the reference receptor or its reserve.
             ( $ORAC_STATUS, my $refvalue ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+# Normalize to the value in the reference receptor.
             $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp6file out=$temp7file scalar=$refvalue" );
 
 # Initialise the vector of ratios.
