@@ -1187,14 +1187,23 @@ The following pages describe the current \picard\ recipes in detail.
    Trim images to the defined map area
 }{
    \sstdescription{
-      A simple PICARD recipe to trim images from SCUBA-2 or ACSIS to the
-      same size as defined by the map parameters in the FITS header. The
-      map width and height may be overridden with recipe parameters.
-      Note that if a map radius is given, in order to produce a circular
-      output image, the height and width are ignored.
+      A simple PICARD recipe to trim images from SCUBA-2 or ACSIS. The
+      image may be trimmed using given spatial dimensions or a
+      statistical estimator to threshold the image. In the former case,
+      the output map is rectangular or circular; in the latter the shape
+      is determined by the values in the image itself.
+
+      By default the method employs the map parameters in the FITS
+      header. The map width and height may be overridden with recipe
+      parameters. Note that if a map radius is given, in order to
+      produce a circular output image, the height and width are ignored.
 
       Uses the JCMT::MapArea Perl module to define a (rectangular) AST
       Region using the map parameters in the FITS header.
+
+      For the statistical estimator, the default is to trim the map
+      excluding data where the exposure time is less than half of the
+      median value.
    }
    \sstnotes{
       \sstitemlist{
@@ -1209,6 +1218,13 @@ The following pages describe the current \picard\ recipes in detail.
       \sstsubsection{
          The following parameters can be set via the -recpars option:
       }{
+      }
+      \sstsubsection{
+         CROP\_METHOD
+      }{
+         Method to use for cropping image. May be statistical or
+         spatial, each of which may be abbreviated to the first four
+         characters.
       }
       \sstsubsection{
          MAP\_HEIGHT
@@ -1226,6 +1242,25 @@ The following pages describe the current \picard\ recipes in detail.
       }{
          Width of output image in arcsec.
       }
+      \sstsubsection{
+         STATS\_COMP
+      }{
+         NDF component to use to define the threshold. May be texp to
+         use the exposure time image, or var or err to use the variance
+         or error components.
+      }
+      \sstsubsection{
+         STATS\_ESTIMATOR
+      }{
+         Statistical estimator for thresholding the image. May be MEAN,
+         MEDIAN, MODE, MAX, MIN.
+      }
+      \sstsubsection{
+         STATS\_THRESH
+      }{
+         Multiplier for STATS\_ESTIMATOR above. Default is 1 if not
+         specified.
+      }
    }
    \sstdiytopic{
       Display
@@ -1240,19 +1275,18 @@ The following pages describe the current \picard\ recipes in detail.
    Coadd images produced by JCMT instruments
 }{
    \sstdescription{
-      A simple PICARD recipe combine SCUBA-2 or ACSIS images taking into
-      account the EXP\_TIME NDF component.
+     A simple PICARD recipe combine SCUBA-2 or ACSIS images taking into
+     account the EXP\_TIME NDF component. Default behaviour is to
+     combine all images into a single coadd/mosaic. However this can be
+     overridden using the MOSAIC\_EACH recipe parameter which will
+     combine images based on the OBJECT in the FITS header.
+
+     Creates one or more output files with suffix \_mos, using the name
+     of the last file in the list as its base.
    }
    \sstnotes{
-      \sstitemlist{
-
-         \sstitem
-         All the input images should be of the same source as defined by
-         the OBJECT FITS header.
-
-         \sstitem
-         Creates a single output file with suffix \_mos.
-      }
+      When combining all given images (default behaviour), the user
+      should check that their positions do not differ by a large amount.
    }
    \sstdiylist{
       Available Parameters
@@ -1260,6 +1294,13 @@ The following pages describe the current \picard\ recipes in detail.
       \sstsubsection{
          The following parameters can be set via the -recpars option:
       }{
+      }
+      \sstsubsection{
+         MOSAIC\_EACH
+      }{
+         Flag to indicate whether the data should be mosaicked by
+         individual object or combined into a single output file.
+         Default is to create a single output file.
       }
       \sstsubsection{
          MOSAIC\_TASK
@@ -1694,8 +1735,12 @@ The following pages describe the current \picard\ recipes in detail.
       }{
          Flag to indicate which files should be kept on disk. Default is
          1 which keeps the PCA amplitude, component and power spectrum
-         files on disk. A value of 0 deletes all files, while a value
-         of 1 indicates that all files should be kept on disk.
+         files on disk. A value of 0 deletes all files, while a value of
+         \sstitemlist{
+
+            \sstitem
+            1 indicates that all files should be kept on disk.
+         }
       }
       \sstsubsection{
          PCA\_REUSE
@@ -1719,7 +1764,7 @@ The following pages describe the current \picard\ recipes in detail.
 \sstroutine{
    SCUBA2\_JACKKNIFE
 }{
-   Calculate optimal map using jack-knife noise estimator
+   calculate optimal map using jack-knife noise estimator
 }{
    \sstdescription{
       This recipe uses a jack-knife method to remove residual
@@ -1805,6 +1850,11 @@ The following pages describe the current \picard\ recipes in detail.
          dependent (4 arcsec at 850 um, 2 arcsec at 450 um).
       }
       \sstsubsection{
+         PSF\_BOX
+      }{
+         Size of box (in pixels) use to define effective PSF.
+      }
+      \sstsubsection{
          PSF\_MATCHFILTER
       }{
          Name of a file to use as the map-filtered PSF.
@@ -1816,6 +1866,72 @@ The following pages describe the current \picard\ recipes in detail.
          for removing residual low-frequency noise in the data. Default
          is a square region bounded by the noise being less than twice
          the minimum value.
+      }
+   }
+   \sstdiytopic{
+      Display
+   }{
+      None.
+   }
+}
+\newpage
+\sstroutine{
+   SCUBA2\_JACKKNIFE\_PSF
+}{
+   create a scaled PSF from maps with fake sources added
+}{
+   \sstdescription{
+      This recipe combines a series of maps that have had artificial
+      gaussians added in and scales the coadd using information about
+      the original scaling to enable the FCF to be corrected for
+      filtering in the map-maker.
+
+      The input files should be those created by a call to
+      REDUCE\_SCAN\_FAINT\_POINT\_SOURCES\_JACKKNIFE (or one of its aliases)
+      that have had the artificial gaussian added at the map-making
+      stage (most likely ending \_mappsf.
+
+      The PSF is scaled using a factor read from the FITS headers of the
+      input files if available, or from a recipe parameter (see below).
+
+      This PSF may then be given to SCUBA2\_JACKKNIFE via the recipe
+      parameter PSF\_MATCHFILTER.
+   }
+   \sstnotes{
+      \sstitemlist{
+
+         \sstitem
+         Care should be taken to use the (\_mappsf) files that correspond
+         to the signal maps.
+
+         \sstitem
+         The output PSF has suffix \_effpsf.
+      }
+   }
+   \sstdiylist{
+      Available Parameters
+   }{
+      \sstsubsection{
+         The following recipe parameters can be set via the --recpars
+      }{
+      }
+      \sstsubsection{
+         option:
+      }{
+      }
+      \sstsubsection{
+         FAKEMAP\_CONSTSNR
+      }{
+         A flag to indicate whether the scale factor below should be
+         scaled by the square-root of the number of files. Should be
+         left unset unless it was also specified when the ORAC-DR recipe
+         was originally run.
+      }
+      \sstsubsection{
+         FAKEMAP\_SCALE
+      }{
+         Amplitude of the fake source (in Jy) added to the timeseries to
+         assess the map-making response to a point source.
       }
    }
    \sstdiytopic{
@@ -2053,7 +2169,7 @@ The following pages describe the current \picard\ recipes in detail.
 \sstroutine{
    SCUBA2\_SASSY
 }{
-   Analyze a single SASSy field
+   analyze a single SASSy field
 }{
    \sstdescription{
       A PICARD recipe to analyze individual maps of SASSy fields,
@@ -2108,7 +2224,7 @@ The following pages describe the current \picard\ recipes in detail.
 \sstroutine{
    STACK\_JCMT\_FRAMES
 }{
-   Stack images produced by JCMT instruments
+   stack images produced by JCMT instruments
 }{
    \sstdescription{
       A simple PICARD recipe to stack SCUBA-2 or ACSIS images into a 3-d
@@ -2174,12 +2290,16 @@ The following pages describe the current \picard\ recipes in detail.
       The units of the input data are checked and the appropriate
       default FCF chosen. The output files have a suffix of \_uncal.
    }
-   \sstnotes{
-      \sstitemlist{
-
-         \sstitem
-         Creates an output file for each calibrated input file with
+   \sstdiylist{
+      Available Parameters
+   }{
+      \sstsubsection{
+         -  Creates an output file for each calibrated input file with
+      }{
+      }
+      \sstsubsection{
          suffix \_uncal.
+      }{
       }
    }
    \sstdiytopic{
@@ -2190,4 +2310,3 @@ The following pages describe the current \picard\ recipes in detail.
 }
 
 \end{document}
-
