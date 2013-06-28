@@ -1,0 +1,95 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_CREATE_QU_IMAGES_ - creates Q and U images
+
+=head1 SYNOPSIS
+
+_CREATE_QU_IMAGES_
+
+=head1 DESCRIPTION
+
+Creates Q and U images.
+
+=head1 OUTPUT FILES
+
+Creates output files with a C<_q> or C<_u> extension.
+The frame is updated with the output files.
+
+=head1 NOTES
+
+This primitive operates on time series data files.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013, Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Determine names for Q and U output files.  Since inout() only
+# works by file number we have to do this in a loop first.
+
+my %q_names = ();
+my %u_names = ();
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+  do {
+    my ($in, $out) = $Frm->inout('_q', $i + 1);
+    $q_names{$in} = $Frm->strip_subscan($out);
+  };
+
+  do {
+    my ($in, $out) = $Frm->inout('_u', $i + 1);
+    $u_names{$in} = $Frm->strip_subscan($out);
+  };
+}
+
+# Loop over subarrays and record the output files
+# in an array.
+
+my @out_files = ();
+
+my %files = $Frm->get_files_by_subarray();
+
+foreach my $subarray (keys %files) {
+  my $files = $files{$subarray};
+  next unless ref $files and $#$files > -1;
+
+  orac_say('Creating Q and U images for ' . $Frm->subarray($files->[0]));
+  my $q = $q_names{$files->[0]};
+  my $u = $u_names{$files->[0]};
+
+  my $in = write_file_list(@$files);
+
+  $Mon{'smurf_mon'}->obeyw('calcqu',"in=^$in outq=$q outu=$u config=!");
+
+  push(@out_files, $q);
+  push(@out_files, $u);
+}
+
+# Set the files in the frame, disabling header sync as these
+# are container files rather than NDFs.
+
+$Frm->allow_header_sync(0);
+$Frm->files(@out_files);
