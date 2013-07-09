@@ -1,0 +1,88 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_SUBTRACT_QU_BACKGROUND_ - subtracts background from Q and U images
+
+=head1 SYNOPSIS
+
+_SUBTRACT_QU_BACKGROUND_
+
+=head1 DESCRIPTION
+
+Subtracts background from Q and U images.
+
+=head1 OUTPUT FILES
+
+Creates output files with a C<_qsbg> or C<_usbg> extension.
+The frame is updated with the output files.
+
+=head1 NOTES
+
+This primitive operates on Q and U images in separate
+NDF files.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013, Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Act on files by subarray and Q/U parameter.
+my %files = $Frm->files_from_hdr('SUBARRAY', 'POLSTKSP');
+my @out_files = ();
+
+while (my ($qu, $files) = each %files) {
+  my $in = write_file_list(@$files);
+  $qu = $qu =~ /q$/i ? 'q' : 'u';
+  # We can't use inout() with files_from_hdr, so prepare to generate
+  # the file names manually.
+  my $outbase = $files->[0];
+  $outbase =~ s/_[a-z]+$/_$qu/;
+
+  # Use makemos to generate the average Q or U value
+  # in each pixel.  Should be aligned in PIXEL
+  # (bolometer) coordinates.
+
+  my $com = $outbase . 'com';
+  # TODO: use masked data if a mask is available, and then take mean.
+  my $args = "in=^$in out=$com method=median";
+  $Mon{'ccdpack_reg'}->obeyw('makemos', $args);
+  $Frm->push_intermediates($com);
+
+  foreach my $file (@$files) {
+    my $outbase = $file;
+    $outbase =~ s/_[a-z]+$/_$qu/;
+    my $nm = $outbase . 'nm';
+    # TODO: use masked data if a mask is available
+    $Mon{'kappa_mon'}->obeyw('normalize', "in1=$com in2=$file out=$nm device=!");
+    $Frm->push_intermediates($nm);
+
+    my $sub = $outbase . 'sbg';
+    $Mon{'kappa_mon'}->obeyw('sub', "in1=$file in2=$nm out=$sub");
+    push(@out_files, $sub);
+  }
+}
+
+$Frm->files(@out_files);
+$Frm->readhdr(); # due to file order changing.
