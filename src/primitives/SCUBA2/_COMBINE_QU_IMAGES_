@@ -1,0 +1,138 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_COMBINE_QU_IMAGES - combines Q and U images
+
+=head1 SYNOPSIS
+
+_COMBINE_QU_IMAGES_
+
+=head1 DESCRIPTION
+
+Combines all of the Q and U images into a single cube
+aligned with the reference image, also including an I
+image.
+
+=head1 OUTPUT FILES
+
+Creates an output file with a C<_qui> extension.
+The frame is updated to contain this file.
+
+=head1 NOTES
+
+This primitive operates on Q and U images in separate
+NDF files.
+
+It requires a reference image in a frame tagged as
+POL_REFERENCE.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013, Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Act on files by Q/U parameter.
+my %files = $Frm->files_from_hdr('POLSTKSP');
+orac_termerr('Did not find both Q and U images to combine.')
+  unless 2 == scalar keys %files;
+my $outbase = $Frm->strip_subscan($Frm->file(0 + 1));
+$outbase =~ s/(?<=_)[a-z]+$//;
+
+# Retrieve the tagged reference image.
+_RETRIEVE_TAG_ TAG=POL_REFERENCE
+orac_termerr('Wrong number of files in retrieve reference image.')
+  unless 1 == $Frm->nfiles();
+my $ref = $Frm->file(0 + 1);
+
+my %image = ();
+while (my ($key, $files) = each %files) {
+  my $in = write_file_list(@$files);
+  my $qu = $key =~ /q$/i ? 'q' : 'u';
+
+  # Align the individual Q/U images.
+  my @alnfiles = map {$_ . 'aln'} @$files;
+  my $aln = write_file_list(@alnfiles);
+
+  my $args = "method=bilin rebin=true in=^$in ref=$ref out=^$aln lbnd=!";
+  $Mon{'kappa_mon'}->obeyw('wcsalign', $args);
+  $Frm->push_intermediates(@alnfiles);
+
+  my $tot = $outbase . $qu . 'tot';
+  $args = "method=broad in=^$aln out=$tot";
+  $Mon{'ccdpack_reg'}->obeyw('makemos', $args);
+  $Frm->push_intermediates($tot);
+  $image{$qu} = $tot;
+}
+
+# Generate artificial I image.
+# TODO: use a real intensity map if one is available.
+
+my ($q, $u) = @image{qw/q u/};
+my $i = $outbase . 'iafl';
+my $args = "exp='sqrt(ia**2+ib**2)' ia=$q ib=$u out=$i";
+$Mon{'kappa_mon'}->obeyw('maths', $args);
+$Frm->push_intermediates($i);
+$image{'i'} = $i;
+
+# Adjust the images to have the same bounds by first adding
+# them to create the overlap map...
+
+my $tmp = $outbase . 'tmpaln';
+$args = "exp='ia+ib+ic' ia=$q ib=$u ic=$i out=$tmp";
+$Mon{'kappa_mon'}->obeyw('maths', $args);
+$Frm->push_intermediates($tmp);
+
+# ... and then copying them to be like that overlap map.
+
+my @planes = ();
+foreach my $par (qw/q u i/) {
+  my $file = $image{$par};
+  my $out = $outbase . $par . 'trm';
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$file like=$tmp out=$out");
+  $Frm->push_intermediates($out);
+  push(@planes, $out);
+}
+
+# Finally insert the images into a Q,U,I cube, in that
+# order.
+
+my $planes = write_file_list(@planes);
+my $cube = $outbase . 'qui';
+
+$Mon{'kappa_mon'}->obeyw('paste', "in=^$planes out=$cube shift=[0,0,1]");
+
+# Fix the name of the POLANAL frame broken by paste.
+# TODO: allow the final domain to be configured.
+
+$Mon{'ndfpack_mon'}->obeyw('wcsframe', "$cube POLANAL-");
+$Mon{'ndfpack_mon'}->obeyw('wcsattrib', "$cube set domain POLANAL");
+$Mon{'ndfpack_mon'}->obeyw('wcsframe', "$cube SKY");
+
+# Label the planes for POLPACK.
+
+$Mon{'polpack_mon'}->obeyw('polext', "$cube stokes=qui");
+
+$Frm->files($cube);
+$Frm->readhdr(); # due to number of files changing.
