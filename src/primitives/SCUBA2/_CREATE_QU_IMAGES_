@@ -14,9 +14,15 @@ Creates Q and U images.
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 4
+
+=item B<EXPLODE>
+
+Explode the HDS container file written by CALCQU into individual
+NDFs.  Necessary for further processing by primitives
+expecting individual NDFs. [1]
 
 =item B<HARMONIC>
 
@@ -63,9 +69,12 @@ USA
 
 # Read the HARMONIC parameter.
 
-my $harmonic = int(get_prim_arg($_PRIM_ARGS_, "HARMONIC", 4));
-
+my $harmonic = int(get_prim_arg($_PRIM_ARGS_, 'HARMONIC', 4));
 my $harmonic_suffix = ($harmonic == 4) ? '' : $harmonic;
+
+# Read the EXPLODE parameter.
+
+my $explode = int(get_prim_arg($_PRIM_ARGS_, 'EXPLODE', 1));
 
 # Get makemap configuration file name.
 
@@ -95,14 +104,38 @@ foreach my $subarray (keys %files) {
 
   my $in = write_file_list(@$files);
 
-  $Mon{'smurf_mon'}->obeyw('calcqu',"in=^$in outq=$q outu=$u harmonic=$harmonic config=^$config");
+  $Mon{'smurf_mon'}->obeyw('calcqu',"in=^$in outq=$q outu=$u harmonic=$harmonic config=^$config fix");
 
-  push(@out_files, $q);
-  push(@out_files, $u);
+  if ($explode) {
+    my %stokes_parameter = (q => $q, u => $u);
+    while (my ($parname, $parfile) = each %stokes_parameter) {
+      my $ndflist = new ORAC::TempFile(0);
+      unlink $ndflist;
+
+      $Mon{'ndfpack_mon'}->obeyw('ndfecho', "ndf=$parfile logfile=$ndflist");
+
+      my $i = 0;
+      foreach my $component (read_file_list("$ndflist")) {
+        my $outfile = sprintf('%s_%04d_%s%s', $outbase, ++$i, $parname, $harmonic_suffix);
+
+        $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "$component $outfile");
+        $Mon{'ndfpack_mon'}->obeyw('fitsmod', "$outfile polstksp write value=$parname comment=! position=!");
+
+        push(@out_files, $outfile);
+      }
+
+      $Frm->push_intermediates($parfile);
+    }
+  }
+  else {
+    push(@out_files, $q);
+    push(@out_files, $u);
+  }
 }
 
-# Set the files in the frame, disabling header sync as these
+# Set the files in the frame, disabling header sync if these
 # are container files rather than NDFs.
 
-$Frm->allow_header_sync(0);
+$Frm->allow_header_sync(0) unless $explode;
 $Frm->files(@out_files);
+$Frm->readhdr() if $explode;
