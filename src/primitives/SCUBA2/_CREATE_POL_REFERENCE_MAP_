@@ -1,0 +1,130 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_CREATE_POL_REFERENCE_MAP_ - creates a reference map for POL-2 data
+
+=head1 SYNOPSIS
+
+_CREATE_POL_REFERENCE_MAP_
+
+=head1 DESCRIPTION
+
+Creates a reference map for POL-2 data and modifies the Q and U
+images so that they refer to the common reference direction.
+
+=head1 OUTPUT FILES
+
+Creates a reference map with a C<_ref> extension, and applies
+the tag POL_REFERENCE to it.  The Q and U output files have a
+C<_qrot> or C<_urot> extension. The frame is updated with these
+output files.
+
+=head1 NOTES
+
+This primitive operates on Q and U images in separate
+NDF files.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013, Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# TODO allow domain to be configured.
+my $domain = 'SKY';
+
+# Find the first Q image.
+my %files = $Frm->files_from_hdr('POLSTKSP');
+my $in = undef;
+
+if (exists $files{'q'}) {
+  $in = $files{'q'}->[0];
+}
+elsif (exists $files{'Q'}) {
+  $in = $files{'q'}->[0];
+}
+
+orac_termerr('No Q image found from which to create a reference image.')
+  unless defined $in;
+
+my $ref = $in;
+$ref =~ s/_[a-z]+$//;
+$ref .= '_ref';
+
+$Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$ref trim=true");
+
+# Add a WCS frame with domain "POLANAL", created by rotating the
+# PIXEL frame 90 degrees.
+
+$Mon{'ndfpack_mon'}->obeyw('wcsremove', "ndf=$ref frames=POLANAL");
+my $args = "ndf=$ref frame=PIXEL domain=POLANAL " .
+           "maptype=linear attrs=! tr=[0,0,1,0,-1,0]";
+$Mon{'ndfpack_mon'}->obeyw('wcsadd', $args);
+$Mon{'ndfpack_mon'}->obeyw('wcsframe', "ndf=$ref frame=$domain");
+
+# Determine which files are Q and which are U images.
+my %qu = ();
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+  $qu{$Frm->file($i + 1)} = lc($Frm->hdrval('POLSTKSP', $i));
+}
+
+# Modify each pair of Q and U images so that they refer to the
+# common reference direction.
+
+%files = $Frm->files_from_hdr('SUBARRAY', 'POLBLOCK', 'POLCHUNK');
+my @out_files = ();
+
+foreach my $pair (values %files) {
+  orac_termerr('Wrong number of files in QU image pair!  ' .
+    'Got: ' . join(', ', @$pair))
+    unless 2 == scalar @$pair;
+  my ($q, $u);
+  if ($qu{$pair->[0]} eq 'q' and $qu{$pair->[1]} eq 'u') {
+    ($q, $u) = ($pair->[0], $pair->[1]);
+  }
+  elsif ($qu{$pair->[1]} eq 'q' and $qu{$pair->[0]} eq 'u') {
+    ($q, $u) = ($pair->[1], $pair->[0]);
+  }
+  else {
+    orac_termerr('QU image pair doesn\'t contain a Q and a U image!');
+  }
+
+  my $qrot = $q; $qrot =~ s/_[a-z]+$//; $qrot .= '_qrot';
+  my $urot = $u; $urot =~ s/_[a-z]+$//; $urot .= '_urot';
+
+  my $args = "qin=$q uin=$u like=$ref qout=$qrot uout=$urot";
+  $Mon{'polpack_mon'}->obeyw('polrotref', $args);
+
+  push(@out_files, $qrot, $urot);
+}
+
+# Tag the image for future reference.
+
+$Frm->files($ref);
+_SET_TAG_ TAG=POL_REFERENCE
+
+# Leave the modified QU images in the frame.
+
+$Frm->files(@out_files);
+$Frm->readhdr(); # due to file order changing.
