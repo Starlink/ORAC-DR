@@ -1,0 +1,113 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_SUBTRACT_QU_DRIFT_ - subtracts drift from Q and U images
+
+=head1 SYNOPSIS
+
+_SUBTRACT_QU_DRIFT_
+
+=head1 DESCRIPTION
+
+Removes low frequency drift for each bolometer
+from Q and U images.
+
+=head1 OUTPUT FILES
+
+Creates output files with a C<_qsdr> or C<_usdr> extension.
+The frame is updated with the output files.
+
+=head1 NOTES
+
+This primitive operates on Q and U images in separate
+NDF files.
+
+=head1 AUTHOR
+
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013, Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Act on files by subarray and Q/U parameter.
+my %files = $Frm->files_from_hdr('SUBARRAY', 'POLSTKSP');
+my @out_files = ();
+
+while (my ($key, $files) = each %files) {
+  my $in = write_file_list(@$files);
+  my $qu = $key =~ /q$/i ? 'q' : 'u';
+  # We can't use inout() with files_from_hdr, so prepare to generate
+  # the file names manually.
+  my $outbase = $files->[0];
+  $outbase =~ s/_[a-z]+$/_$qu/;
+
+  # Paste the Q/U images into a cube.
+
+  my $cub = $outbase . 'cub';
+  $Mon{'kappa_mon'}->obeyw('paste', "in=^$in out=$cub shift=[0,0,1]");
+  $Frm->push_intermediates($cub);
+
+  # TODO: apply mask to cube if available.
+
+  # Smooth the cube along the Z axis (stare position).
+
+  my $cubbxi = $outbase . 'cubbxi';
+  my $args = "in=$cub out=$cubbxi estimator=median wlim=0.1 box=[1,1,5]";
+  $Mon{'kappa_mon'}->obeyw('block', $args);
+  $Frm->push_intermediates($cubbxi);
+
+  my $cubbx = $outbase . 'cubbx';
+  $args = "in=$cubbxi out=$cubbx estimator=mean wlim=0.1 box=[1,1,3]";
+  $Mon{'kappa_mon'}->obeyw('block', $args);
+  $Frm->push_intermediates($cubbx);
+
+  # Subtract the smoothed data from the original files.
+
+  my $sub = $outbase . 'cubsub';
+  $Mon{'kappa_mon'}->obeyw('sub', "in1=$cub in2=$cubbx out=$sub");
+  $Frm->push_intermediates($sub);
+
+  # Split the cube back into the original planes and copy the WCS
+  # information back in.
+
+  my $i = 0;
+  foreach my $file (@$files) {
+    my $outbase = $file;
+    $outbase =~ s/_[a-z]+$/_$qu/;
+
+    my $sdr = $outbase . 'sdr';
+    my $section = '(,,' . (++$i) . ')';
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$sub$section out=$sdr trim=true");
+
+    # Copy across WCS information...
+    $Mon{'ndfpack_mon'}->obeyw('wcscopy', "ndf=$sdr like=$file ok=true");
+
+    # ... and FITS headers.
+    $Mon{'hdstools_mon'}->obeyw('hcopy', "$file.MORE.FITS $sdr.MORE.FITS");
+
+    push(@out_files, $sdr);
+  }
+}
+
+$Frm->files(@out_files);
+$Frm->readhdr(); # due to file order changing.
