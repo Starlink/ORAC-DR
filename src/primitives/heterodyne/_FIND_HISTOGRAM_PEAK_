@@ -1,0 +1,284 @@
+=head1 NAME
+
+_FIND_HISTOGRAM_PEAK_
+ 
+=head1 DESCRIPTION
+
+This primitive uses a smoothed histogram of data values to estimate
+the mode from the most populous peak, or the first or last significant
+peak for positive or negative skewness respectively.
+
+It bins the values such that seven pixels cover the clipped standard
+deviation to give approximately Nyquist sampling.
+
+The peak is found using Clumpfind.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLIP = STRING (Given)
+
+The standard deviation to clip the data values to exclude extreme
+outliers, thereby being more efficient define the range of interest
+and its standard deviation more accurately.  A comma-separated list
+will perform iterative sigma clipping of outliers, but standard
+deviations in the list should not decrease.  ["2.0,2.0,2.5,3.0"]
+
+=item CENTROID = BOOLEAN (Given)
+
+If true (1) obtain the centroid of the chosen clump.  If false
+obtain the modal value at the binning resolution.  [1]
+
+=item EXTREME = BOOLEAN (Given)
+
+Whether to obtain the peak of the first (or last if skewness is negative),
+or the most populous peak.  [1]
+
+=item PEAK = REAL (Returned)
+
+The chosen peak of distribution of the values in the current Frame. 
+
+=item SMOOTH = BOOLEAN (Given)
+
+Whether or to apply Gaussian smooth of 3-pixels FWHM to the histogram.
+The recommenation is to only enble smoothing if only the peak value is
+required and not the width of the peak.  [0]
+
+=item WIDTH = REAL (Returned)
+
+The width of the chosen peak of the distribution of values in the
+current Frame. 
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDCLUMPS;
+KAPPA: GAUSMOOTH, HISTOGRAM, NDFCOPY, STATS.
+
+=head1 REQUIRED PERL MODULES
+
+POSIX.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+use POSIX qw(ceil floor);
+
+# Handle arguments.
+# =================
+my $peak = undef;
+my $width = undef;
+my $outlier_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
+my $centroid = get_prim_arg( $_PRIM_ARGS_, "CENTROID", 1 );
+my $extreme = get_prim_arg( $_PRIM_ARGS_, "EXTREME", 1 );
+my $smooth = get_prim_arg( $_PRIM_ARGS_, "SMOOTH", 1 );
+
+# Convert list of standard-deviation clip levels to an array.
+my @clips = split( ',', $outlier_clip );
+
+# Constrain parameters to allowed values.
+# ---------------------------------------
+
+# Sigma clipping levels should not decrease. Do not set the initial
+# threshold too low lest we exclude acceptable but slightly deviant
+# spectra in an otherwise good set.
+my @clip_sigma = ();
+my $last = 2.0;
+foreach ( @clips ) {
+   push @clip_sigma, max( $last, $_ );
+}
+
+$outlier_clip = "[" . join( ",", @clip_sigma ) . "]";
+
+my $in = $Frm->file;
+
+# Create configuration-parameter file for FINDCLUMPS.
+# ===================================================
+
+# The main ones are ClumpFind.MaxBad, ClumpFind.MinPix (although double the
+# default it could be set larger to weed out peaks from lines),
+# ClumpFind.FwhmBeam, and the dynamic ClumpFind.Tlow added on the command
+# line.  ClumpFind.VeloRes could be set to 1 channel.
+my $fc_param = new ORAC::TempFile( 1 );
+open my $fc_fh, ">", $fc_param;
+print $fc_fh "ClumpFind.Minpix=6\n";
+print $fc_fh "ClumpFind.AllowEdge=1\n";
+print $fc_fh "ClumpFind.FwhmBeam=0.0\n";
+print $fc_fh "ClumpFind.MaxBad=1\n";
+print $fc_fh "ClumpFind.VeloRes=0\n";
+close $fc_fh;
+
+# Evaluate and smooth the histogram.
+# ==================================
+my $ORAC_STATUS;
+
+# Perform statistics trimming off much of the signal from the signal
+# causing positive skewness.  Set the resolution to give seven bins across
+# the FWHM.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip" );
+( $ORAC_STATUS, my $skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+my $resolution = $sigma / 3;
+
+# Round up or down the histogram range to the bin resolution, and hence
+# determine the number of histogram bins, allowing numerical rounding.
+# Append an extra bin at the lower end so that the first peak does not
+# cut touch the array lower bound.
+$minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
+$maximum = floor( $maximum / $resolution ) * $resolution;
+my $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
+
+# Create histogram at the resolution, covering the range of relevant data.
+my $histfile = new ORAC::TempFile( 0 );
+$histfile .= "_hist";
+my $params = "in=$in out=$histfile ";
+$params .= "device=! numbin=$numbin range='$minimum,$maximum'";
+$Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+
+# A gentle smooth should generate a well-defined rounded peak.
+my $smooth_hist = new ORAC::TempFile( 0 );
+if ( $smooth ) {
+   $params = "in=$histfile out=$smooth_hist fwhm=3";
+   $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+} else {
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$histfile out=$smooth_hist" );
+}
+
+
+# Set data-driven parameters for clump finding.
+# =============================================
+
+# Find the minimum count in the histogram for the clump finding and
+# ensure that the first threshold for clump finding is above this.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$smooth_hist" );
+( $ORAC_STATUS, my $mincount ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+$mincount++;
+
+# Set a representative rms for clump finding.
+( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+my $rms = max( 1.001, sqrt( $total / $numbin ) );
+
+# Measure the properties of peaks in the histogram.
+# =================================================
+
+# Identify the peaks in the histogram, storing the results table to a
+# Starlink STL file.  Since the quanta are integers ensure the RMS level
+# is at least that.
+my $outmap = new ORAC::TempFile( 0 );
+my $outcat = new ORAC::TempFile( 0 );
+$outcat .= ".TXT";
+
+$params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=$rms ";
+$params .= "config='^$fc_param,ClumpFind.Tlow=$mincount' accept";
+$Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+
+# Check number of clumps using NCLUMPS output parameter.
+( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+if ( $nclumps > 0 ) {
+
+# Extract the desired information from the output table.
+# ======================================================
+
+# Since I'm not allowed to use STILTS, here is a not terribly pretty
+# means to access the required data in the file.  It searches the STL
+# format for the start of the table and given by the BEGINTABLE, and
+# there is no development of this format so this should be robust.
+# Then we assume that the first row is the lowest co-ordinate; there
+# should not be a peak below the baseline.
+   open( TABLE, "< $outcat" ) or
+         die "Could not find catalogue $outcat specifying the histogram peaks: $!\n";
+   unlink $outcat;
+   my @lines = <TABLE>;
+   my $i = 0;
+   my $row;
+   my $nlines = scalar( @lines );
+   if ( $skewness >= 0.0 && $extreme ) {
+      while ( $i < $nlines ) {
+         chomp $lines[$i];
+         if ( $lines[$i] =~ /BEGINTABLE/ ) {
+            $row = $lines[$i+1];
+            last;
+         }
+         $i++;
+      }
+
+# The final clump is specified in the last line of the file, although
+# this is not particularly robust to external change, albeit unlikely.
+   } elsif ( $extreme ) {
+      $i = $nlines - 1;
+      $row = $lines[$i];
+
+# Find the most-populous clump.  First reach the table itself.
+   } else {
+      while ( $i < $nlines ) {
+         chomp $lines[$i];
+         if ( $lines[$i] =~ /BEGINTABLE/ ) {
+            last;
+         }
+         $i++;
+      }
+      
+# The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  So search to find the
+# row with the biggest Sum.
+      my $pop = -1;
+      my $popindex = $i;
+      my $sumindex = 4;
+      while ( $i < $nlines ) {
+         my @fields = split( ' ', chomp $lines[$i] );
+	 if ( $fields[$sumindex] > $pop ) {
+            $pop = $fields[$sumindex];
+	    $popindex = $i;
+	 }
+         $i++;
+      }
+      $row = $lines[$popindex];
+   }
+ 
+# Extract the centroid value for the first or last peak depending on the skewness. 
+# Convert from scientific notion with a D exponent to E so that Perl recognises it.
+   my @fields = split( ' ', $row );
+   $peak = $centroid ? $fields[2] : $fields[1];
+   $peak =~ s/D/e/;
+   $peak = $peak * $resolution + $minimum;
+
+   $width = $fields[3];
+   $width =~ s/D/e/;
+   $width *= $resolution;
+
+} else {
+   orac_warn "No clumps found\n";
+}
+
+# Export the required statistics.
+$_FIND_HISTOGRAM_PEAK_{PEAK} = $peak;
+$_FIND_HISTOGRAM_PEAK_{WIDTH} = $width;
+
