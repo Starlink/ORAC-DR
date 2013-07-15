@@ -1,0 +1,193 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALCULATE_MAP_POWERSPECTRUM_ - calculate the noise power spectrum for an image
+
+=head1 SYNOPSIS
+
+ _CALCULATE_MAP_POWERSPECTRUM_
+
+ _CALCULATE_MAP_POWERSPECTRUM_ GROUP=1
+
+=head1 DESCRIPTION
+
+This primitive calculates and reports on the properties of the
+azimuthally-averaged power spectrum for a given input image. The input
+map should have had noisy edges trimmed and source emission masked (if
+desired) before calculating the spatial noise power spectrum.
+
+Following the calculation of the azimuthally-averaged power spectrum,
+the spectrum is smoothed with a 5-pixel boxcar. The position of the
+peak power and the half-power scales are determined from this smoothed
+spectrum. These are reported to the user in terms of the corresponding
+angular scale on the sky.
+
+The mean power on a number of different length scales is calculated
+and printed to the screen, up to a scale corresponding to the value of
+the spatial filter used in the map maker (and a maximum value of 900
+arcsec). This scale is taken from the C<filt_edge_largescale> SMURF
+MAKEMAP configuration parameter.
+
+=head1 ARGUMENTS
+
+This primitive supports the following argument:
+
+=over 2
+
+=item B<GROUP>
+
+If true, use the current Group file. Otherwise, use the current
+Frame. Default is 0 (false).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+BLOCK, CONFIGECHO, NDFCOPY, NDFTRACE, STATS, THRESH
+
+=item SMURF
+
+SC2MAPFFT
+
+=item ORAC-DR primitives:
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates a single 1-dimensional output file with the suffix C<_pspec>.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Input image
+my $image = $Obj->file;
+
+# Determine the largest scale expected in the data
+my $args = "ndf=$image application=makemap name=filt_edge_largescale config=!";
+$Mon{kappa_mon}->obeyw("configecho","$args");
+my ($ORAC_STATUS, $filtscale) = $Mon{kappa_mon}->get("configecho","value");
+orac_print "Input image has large-scale filter at ".(sprintf "%d", $filtscale)." arcsec\n";
+
+# Calculate the azimuthally-averaged power spectrum
+my $fullpspec = $Obj->inout("_pspec");
+$args = "in=$image out=$fullpspec azavpspec=true";
+$Mon{smurf_mon}->obeyw("sc2mapfft","$args");
+
+# Smooth the power spectrum with a 5-pixel boxcar function
+my $smooth_pspec = $Obj->inout("_smpspec");
+my $title = "'".$Obj->hdr("OBJECT")."'";
+$args = "in=$fullpspec out=$smooth_pspec box=5 title=$title";
+$Mon{kappa_mon}->obeyw("block","$args");
+
+# Find peak power and scale
+_FIND_IMAGE_STATISTICS_ IMAGE=$smooth_pspec COMP=data REGION=0 VERBOSE=0
+my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+
+my $maxpower = $results->{MAX};
+my $peak_scale = 1. / $results->{PEAKWCS} if ($results->{PEAKWCS} != 0);
+
+# Find the half-power scales
+my $fwhm_thresh = $maxpower / 2;
+my $thresh_pspec = ORAC::TempFile->new();
+$args = "in=$smooth_pspec out=$thresh_pspec thrlo=$fwhm_thresh newlo=bad"
+  ." thrhi=1e10 newhi=1e10";
+$Mon{kappa_mon}->obeyw("thresh","$args");
+
+my $fwhm_pspec = ORAC::TempFile->new();
+$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$thresh_pspec out=$fwhm_pspec trim trimbad");
+
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$fwhm_pspec");
+($ORAC_STATUS, my $klo) = $Mon{ndfpack_mon}->get("ndftrace","flbnd");
+($ORAC_STATUS, my $khi) = $Mon{ndfpack_mon}->get("ndftrace","fubnd");
+($ORAC_STATUS, my $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+
+# Report the peak/half-power length scales to the user
+if ($peak_scale) {
+  my $dhi = 1./$klo if ($klo != 0);
+  my $dlo = 1./$khi if ($khi != 0);
+
+  orac_print "Peak of power spectrum occurs at ".(sprintf "%d", $peak_scale)." arcsec\n";
+  orac_print "Peak power = ".(sprintf "%d",$maxpower)." $units\n";
+  if ($dlo && $dhi) {
+    orac_print "Half-power points at ".(sprintf "%d", $dlo)." and "
+      .(sprintf "%d", $dhi)." arcsec\n";
+  } else {
+    orac_err "Unable to compute half-power points of spectrum\n";
+  }
+} else {
+  orac_err "Unable to determine size scale corresponding to peak in power spectrum\n";
+}
+
+# Now calculate mean power on various size scales up to the filtering scale
+my $meanpower = sub {
+  my ($spec, $lo, $hi) = @_;
+  my $klo = 1./$hi;
+  my $khi = 1./$lo;
+  my $args = "ndf=$spec($klo:$khi)";
+  $Mon{kappa_mon}->obeyw("stats","$args");
+  my ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
+  return sprintf "%8d", $mean;
+};
+
+my $beam = $Cal->fwhm->[0];
+my @scales = ([$beam/2,$beam+$beam/2]);
+foreach my $scalesize (30, 60, 120, 180, 240, 300, 450, 600, 750, 900) {
+  last if ($scalesize > $filtscale);
+  my $delta = ($scalesize <= 120) ? 20 : ($scalesize <= 450 ? 30 : 50);
+  push(@scales, [$scalesize-$delta, $scalesize+$delta]);
+}
+
+orac_print "\nScale   Mean power\n";
+orac_print "--------------------\n";
+foreach my $scale (@scales) {
+  my @range = @{$scale};
+  my $size = sprintf "%5.1f", (0.5*($range[0]+$range[1]));
+  # Only calculate up to the filter-scale
+  last if ($size > $filtscale);
+  my $power = $meanpower->($smooth_pspec, @range);
+  orac_print "$size  $power\n";
+}
