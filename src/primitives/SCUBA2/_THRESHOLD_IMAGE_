@@ -137,7 +137,7 @@ USA.
 my $comp = lc(get_prim_arg($_PRIM_ARGS_, "COMP", "texp"));
 $comp = $Frm->uhdr("RECPAR_STATS_COMP")
   if (defined $Frm->uhdr("RECPAR_STATS_COMP"));
-if ($comp !~ /^[texp|var|err]/) {
+if ($comp !~ /^[texp|var|err|snr]/) {
   orac_warn "Unknown component, $comp, specified: falling back on default\n";
   $comp = "texp";
 }
@@ -175,7 +175,8 @@ if ($comp eq "texp" && !defined $thresh_comps{exp_time}) {
 
 my %stat = ( texp => "exposure time",
 	     var => "variance component",
-	     err => "error component"
+	     err => "error component",
+	     snr => "signal-to-noise ratio"
 	   );
 orac_print "Thresholding image using $thresh * ".lc($estimator)." of $stat{$comp}\n";
 
@@ -183,28 +184,38 @@ my $compfile = $Obj->inout("_thrsrc");
 my $template = $in;
 my $extra = "";
 my ($thrlo, $newlo, $thrhi, $newhi);
-if ($comp eq "texp") {
-  $template .= ".more.smurf.exp_time";
-  $newlo = "bad";
-  $thrhi = 1.0e9;
-  $newhi = $thrhi;
-} elsif ($comp = "var" || $comp eq "err") {
-  $extra = "comp=$comp";
-  $thrlo = -1.0e9;
-  $newlo = $thrlo;
+my $estimator_value;
+if ($comp eq "snr") {
+  $Mon{kappa_mon}->obeyw("makesnr","in=$in out=$compfile minvar=0");
+  $estimator_value = 1;
   $newhi = "bad";
+  $newlo = "bad";
+} else {
+  if ($comp eq "texp") {
+    $template .= ".more.smurf.exp_time";
+    $newlo = "bad";
+    $thrhi = 1.0e9;
+    $newhi = $thrhi;
+  } elsif ($comp = "var" || $comp eq "err") {
+    $extra = "comp=$comp";
+    $thrlo = -1.0e9;
+    $newlo = $thrlo;
+    $newhi = "bad";
+  }
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$template out=$compfile $extra");
+  _FIND_IMAGE_STATISTICS_ IMAGE=$compfile VERBOSE=0
+  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  $estimator_value = $results->{$estimator};
 }
-$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$template out=$compfile $extra");
-_FIND_IMAGE_STATISTICS_ IMAGE=$compfile VERBOSE=0
-my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
 
 # Ignore all data where the exposure time is less than half of the
 # median value
-my $threshval = $thresh * $results->{$estimator};
+my $threshval = $thresh * $estimator_value;
 if (defined $thrhi) {
   $thrlo = $threshval;
 } else {
   $thrhi = $threshval;
+  $thrlo = -$threshval unless (defined $thrlo);
 }
 
 my $thrfile = $Obj->inout("_throut");
