@@ -1,0 +1,138 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MASK_SOURCE_EMISSION_ - mask regions of known emission from image
+
+=head1 SYNOPSIS
+
+ _MASK_SOURCE_EMISSION_
+
+ _MASK_SOURCE_EMISSION_ SNRCUT=2
+
+ _MASK_SOURCE_EMISSION_ METHOD=aperture APERTURE=45
+
+ _MASK_SOURCE_EMISSION_ GROUP=1
+
+=head1 DESCRIPTION
+
+This primitive is designed to mask an input image using one of two
+possible criteria, either a signal-to-noise ratio threshold or an
+aperture of given size.
+
+In the former method, all pixels with an absolute signal-to-noise
+ratio exceeding the given cutoff are set to C<bad>.
+
+In the latter method, all pixels within a circular aperture defined at
+the map centre are set to C<bad>.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments.
+
+=over 2
+
+=item B<APERTURE>
+
+Radius of aperture to use for masking out source. Default is 30
+arcsec. May be overridden by C<APERTURE_RADIUS> recipe parameter. Only
+accessed if B<METHOD>=C<aperture>.
+
+=item B<GROUP>
+
+If true, use the current Group file. Otherwise, use the current
+Frame. Default is 0 (false).
+
+=item B<METHOD>
+
+Method to use for masking source emission. Supported options are
+C<snr> to use a signal-to-noise ratio threshold, and C<aperture>
+
+=item B<SNRCUT>
+
+Signal-to-noise ratio threshold for masking emission. Default is
+3. May be overridden by C<SNRCUT> recipe parameter. Only accessed if
+B<METHOD>=C<snr>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+_MASK_IMAGE_, _THRESHOLD_IMAGE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The current object is updated with the masked file and tagged C<mask>.
+
+=head1 OUTPUT FILES
+
+Creates output file with the suffix C<_mask>.
+
+=head1 NOTES
+
+A future upgrade would be to mask based on a CUPID catalogue.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $method = lc(get_prim_arg($_PRIM_ARGS_, "METHOD", "snr"));
+if ($method ne "snr" && $method !~ /^aper/ ) {
+  orac_warn "Unsupported method, $method: falling back on default (snr)\n";
+  $method = "snr";
+}
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+
+if ($method eq "snr") {
+  my $snrcut = get_prim_arg($_PRIM_ARGS_, "SNRCUT", 3);
+  $snrcut = $Frm->uhdr("RECPAR_SNRCUT")
+    if (defined $Frm->uhdr("RECPAR_SNRCUT"));
+
+  my $Obj = ($group) ? $Grp : $Frm;
+  my $out = $Obj->inout("_mask");
+
+  # Threshold SNR image & apply copybad
+  _THRESHOLD_IMAGE_ GROUP=$group OUT=$out ESTIMATOR=SIGMA COMP=$method THRESH=$snrcut
+
+  $Obj->files($out);
+  $Obj->tagset("mask");
+
+} elsif ($method =~ /^aper/) {
+  my $aper_radius = get_prim_arg($_PRIM_ARGS_, "APERTURE", 30.0);
+  $aper_radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
+    if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS"));
+
+  _MASK_IMAGE_ GROUP=$group INVERT=0 RADIUS=$aper_radius
+
+}
