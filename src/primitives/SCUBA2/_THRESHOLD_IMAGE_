@@ -56,6 +56,11 @@ B<GROUP>.
 
 Name of output thresholded file. Default has the suffix C<_thresh>.
 
+=item B<TAG>
+
+Name of tag to label output file, also used to define output file
+suffix. Default is C<thresh>.
+
 =item B<THRESH>
 
 Threshold multiplier - the threshold will be this value multiplied by
@@ -103,10 +108,20 @@ None.
 
 =head1 OUTPUT FILES
 
+=over 4
+
+=item *
+
 Creates an output file with a C<_thresh> suffix unless an output file
-is specified. Other files with suffices C<_thrsrc>, C<_thrbad> and
-C<_throut> will be created but are pushed onto the intermediates array
-so they can be deleted.
+is specified or a different suffix (via the B<TAG> argument).
+
+=item *
+
+Other files with suffices C<_thrsrc>, C<_thrbad> and C<_throut> will
+be created but are pushed onto the intermediates array so they can be
+deleted.
+
+=back
 
 =head1 AUTHOR
 
@@ -153,13 +168,16 @@ my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", $thresh_default);
 $thresh = $Frm->uhdr("RECPAR_STATS_THRESH")
   if (defined $Frm->uhdr("RECPAR_STATS_THRESH"));
 
+# Alternative tag for output image
+my $out_tag = get_prim_arg($_PRIM_ARGS_, "TAG", "thresh");
+
 # Use the current Group or Frm?
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 my $Obj = ($group) ? $Grp : $Frm;
 
 # Input and output files
 my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
-my $threshout = get_prim_arg($_PRIM_ARGS_, "OUT", scalar($Obj->inout("_thresh")));
+my $threshout = get_prim_arg($_PRIM_ARGS_, "OUT", scalar($Obj->inout("_".$out_tag)));
 
 my %thresh_comps;
 foreach my $ndfcomp (qw/exp_time weights/) {
@@ -226,12 +244,14 @@ my $newout = $Obj->inout("_thrbad");
 $Mon{kappa_mon}->obeyw("copybad","in=$in out=$newout ref=$thrfile");
 $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$newout out=$threshout trimbad");
 
-# Repeat for EXP_TIME and WEIGHTS
+# Repeat for SMURF components
 foreach my $comp (keys %thresh_comps) {
-  my $in = $threshout.".more.smurf.".$comp;
+  my $incomp = $threshout.".more.smurf.".$comp;
   my $tmp = ORAC::TempFile->new();
-  $Mon{kappa_mon}->obeyw("copybad","in=$in out=$tmp ref=$thrfile");
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmp out=$in trimbad");
+  $Mon{kappa_mon}->obeyw("copybad","in=$incomp out=$tmp ref=$thrfile");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmp out=$incomp trimbad");
 }
 
 $Obj->push_intermediates($newout, $thrfile, $compfile);
+$Obj->files($threshout);
+$Obj->tagset($out_tag);
