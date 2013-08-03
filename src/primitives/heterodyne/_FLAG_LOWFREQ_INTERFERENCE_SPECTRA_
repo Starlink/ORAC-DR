@@ -501,43 +501,74 @@ foreach my $receptor ( @receptors ) {
    my $temp8file = new ORAC::TempFile( 0 );
    my $temp9file = new ORAC::TempFile( 0 );
    my $temp10file = new ORAC::TempFile( 0 );
+   my $temp11file = new ORAC::TempFile( 0 );
 
 # Identify anomalous spectra.
 # ---------------------------
 
 # First greatly reduce the effect of noise, provided there are
 # sufficient spectra (arbitrarily twice the box size).
-   if ( $no_times > 50 ) {
-      $params = "in=$linearity_profiles($pixel,) out=$temp8file box=25 sub=false accept";
-      my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
-
-# FINDBACK can fall over, but this should not be fatal.
-      if ( $FINDBACK_STATUS != ORAC__OK ) {
-         if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
-            orac_say "Unable to find the linearity profile's background level due to insufficient good data.";
-         }
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$linearity_profiles($pixel,) out=$temp8file" );
-      }
+   if ( $no_times > 22 ) {
+      $params = "in=$linearity_profiles($pixel,) out=$temp8file box=11 estimator=mean";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
 
    } else {
       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$linearity_profiles($pixel,) out=$temp8file" );
    }
 
+# To obtain the desired binning resolution for the histogram peak cut off
+# definitely non-linear spectra.
+   $params = "in=$temp8file out=$temp11file thrlo=0 thrhi=0.012 newlo=0.0 newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
 # significant compared with the non-linearity.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file clip=$edge_clip order" );
-   my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-   ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp11file clip=$edge_clip order" );
+   my ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+# Estimate the normal level, and standard deviation excluding anomalous spectra.
+   my ( $mode, $sigma, $threshold );
+   {
+
+# FINDCLUMPS can give off-centre centroids weighted by the outliers we
+# want to exclude and the width is enlarged by outliers.  So just use the
+# histogram peak.  Smooth to define the peak better.  One could do
+# Gaussian fits to derive the sigma or combine the central few to derive
+# a more-precise peak.  For the moment this seems adequate.
+      my $Frm = $Frm->new;
+      $Frm->file( $temp11file );
+      _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 CENTROID=0
+      if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} ) {
+         $mode = $_FIND_HISTOGRAM_PEAK_{PEAK};
+
+      } else {
+         $mode = $mean;
+      }
+
+# Find the percentile of the peak.
+      $params = "in=$temp11file above=no value=$mode";
+      $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
+      ( $ORAC_STATUS, my $number_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
+      my $percentile_peak = 100.0 * ( $number_below + 1 ) / $numgood;
+
+# Set the percentile for two-sigma below the mode.  For a normal
+# distribution the mean, mode, and median are the same.  As there are
+# positive outliers from non-linear spectra the peak shift the two-sigma
+# percentile down accordingly.
+      my $two_sigma_percentile = 2.23 * $percentile_peak / 50.0;
 
 # The distribution is skew to higher values.  We would like the mode
 # and width of the normal curve around that.  The mode is approximated by
 # the heavily clipped mean.  Now obtain the two-sigma level below
 # the mode without clipping.
-   $params = "ndf=$temp8file percentiles=2.23 order";
-   $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-   ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
-   my $sigma = 0.5 * ( $mean - $perval );
+      $params = "ndf=$temp11file percentiles=$two_sigma_percentile order";
+      $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+      ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+      $sigma = 0.5 * ( $mode - $perval );
+      $threshold = max( 0.003, min( 0.01, $mode + $thresh_clip * $sigma ) );
+   }
 
 # Threshold spectra whose mean rms non-linearity exceeds an outlier limit.
 # The median will give a reliable normal signal on which there are
@@ -548,7 +579,6 @@ foreach my $receptor ( @receptors ) {
 # noise, so protect against drift and signal variations in the timeseries
 # causing the dispersion; these should be small compared with the signal
 # being detected.
-   my $threshold = $mean + $thresh_clip * $sigma;
    if ( $numgood > 0 &&
         ! ( lc( $threshold ) =~ /inf/ || lc( $threshold ) =~ /nan/ ) ) {
       orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
