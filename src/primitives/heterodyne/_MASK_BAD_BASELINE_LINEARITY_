@@ -274,10 +274,32 @@ foreach ( @clips ) {
 my $sigma_clip = ( defined( $thr_rms ) ) ? 0 : 1;
 $thr_rms = max( 0.02, $thr_rms ) if ( ! $sigma_clip );
 
+# Form arrays of bad detectors.
+# =============================
+
+# The default argument of $Cal->bad_receptors is "INDEXORMASTER".  However,
+# the master index is far too underpopulated and can lead to picking an
+# entry that is months before or after the date of the observation being
+# processed.  Valid receptors can then be rejected and bad ones included.
+# While this could be circumvented, such as making a private
+# $ORAC_DATA_CAL/index.bad_receptors and enter a null (H14) entry if
+# a night has no bad receptors.  A better technique is to use the
+# -calib bad_receptors command-line option, through which one can also
+# supply a list of bad receptors directly.  Here we specify INDEX to only
+# use the pipeline-generated bad receptors.
+#
+# The reading of INDEX also sets up the survey (survey_br).
+$Cal->bad_receptors( "INDEX" );
+my @baddets = $Cal->bad_receptors_list;
+orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
+
+my @bad_receptors;
+my @bad_receptors_local;
+my @bad_receptors_uniq;
+
 # Specify output and temporary filenames.
 # =======================================
 my $params;
-my @bad_receptors;
 
 # Store the name of the first file in the list for the index.qa file.
 my $osuffix = "_bllmasked";
@@ -337,29 +359,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Now we have the weighted mean spectra by receptor.
 $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$sum_over_time scalar=$no_times out=$mean_over_time" );
 
-# Form arrays of bad detectors.
-# =============================
-
-# The default argument of $Cal->bad_receptors is "INDEXORMASTER".  However,
-# the master index is far too underpopulated and can lead to picking an
-# entry that is months before or after the date of the observation being
-# processed.  Valid receptors can then be rejected and bad ones included.
-# While this could be circumvented, such as making a private
-# $ORAC_DATA_CAL/index.bad_receptors and enter a null (H14) entry if
-# a night has no bad receptors.  A better technique is to use the
-# -calib bad_receptors command-line option, through which one can also
-# supply a list of bad receptors directly.  Here we specify INDEX to only
-# use the pipeline-generated bad receptors.
-#
-# The reading of INDEX also sets up the survey (survey_br).
-$Cal->bad_receptors( "INDEX" );
-my @baddets = $Cal->bad_receptors_list;
-orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @baddets ) );
 
 # Form residuals from linear baseline.
 # ====================================
 
-my @bad_receptors_local;
 ( $in, my $in_th ) = $Frm->inout( "_desp1", 1 );
 
 _GET_DIMENSIONS_ FILE=$mean_over_time
@@ -581,7 +584,7 @@ foreach my $receptor ( @bad_receptors_local ) { push ( @bad_receptors, $receptor
 
 # Make sure each bad detector is mentioned only once.
 my %seen = ();
-my @bad_receptors_uniq = ();
+@bad_receptors_uniq = ();
 
 foreach my $item ( @bad_receptors ) {
    push( @bad_receptors_uniq, $item ) unless $seen{$item}++;
