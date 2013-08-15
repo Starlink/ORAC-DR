@@ -68,13 +68,16 @@ uhdr via the recipe parameter system.  ["2.0,2.0,2.5,3.0"]
 
 =item LINEWIDTH = STRING (Given)
 
-The extent(s) of the source spectral line(s) measured in km/s supplied
-in a comma-separated list.  Each range may be given as bounds separated
-by a colon; or as a single value being the width about zero.  For
-instance "-20:50" would excise the region -20 to +50 km/s, and "30"
-would exclude the -15 to +15 km/s range.  This argument can be
-overridden by the RECPAR_BASELINE_LINEARITY_LINEWIDTH uhdr via the
-recipe parameter system.  ["25.0"]
+This specifies the location of spectral-line emission.  It can be
+either "auto", which requests that the emission be found
+automatically; or it is the extent(s) of the source spectral line(s)
+measured in km/s, supplied in a comma-separated list.  For the latter
+each range may be given as bounds separated by a colon; or as a single
+value being the width about zero.  For instance "-20:50" would excise
+the region -20 to +50 km/s, and "30" would exclude the -15 to +15 km/s
+range. This argument can be overridden by the
+RECPAR_BASELINE_LINEARITY_LINEWIDTH uhdr via the recipe parameter
+system.  ["auto"]
 
 =item MIN_SPECTRA = INTEGER (Given)
 
@@ -129,6 +132,13 @@ QA primitives.
 The primitive excludes analysis of the bad receptors, defaulting to
 those listed in either the master (F<$ORAC_DATA_CAL/index.bad_receptors>)
 or the local index F<$ORAC_DATA_OUT/index.bad_receptors_qa>).
+
+=item *
+
+If automatic emission detection is selected through LINEWIDTH the
+one-dimensional spectral mask generated is tagged
+APPROX_EMISSION_E<lt>iE<gt> for possible later reuse, where E<lt>iE<gt>
+is the subsystem number.
 
 =back
 
@@ -195,14 +205,12 @@ if ( ! $apply ) { goto RETURN }
 
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
-my $emission_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "25.0" );
+my $emission_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "auto" );
 my $min_spec = get_prim_arg( $_PRIM_ARGS_, "MIN_SPECTRA", "50" );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 
 # Handle recipe parameter overrides.
 
-# Generate a comma-separated list if this has been turned into a stringified
-# ARRAY reference.
 $emission_mask = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" ) ) ?
                 $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" )         :
                 $emission_mask );
@@ -230,30 +238,36 @@ my @clips = split( ',', $edge_clip );
 # Constrain parameters to allowed values.
 # ---------------------------------------
 
-# Ensure that a round number like the default of 25 km/s is interpreted
-# by the NDF section as a velocity not pixels by giving it a decimal
-# place.
-if ( ref( $emission_mask ) eq 'ARRAY' ) {
+# Deal with the various options specifying the emission regions.
+my $auto_emission = 0;
+my $emission_count = 0;
+my ( @allbounds, @emission_bounds );
+
+if ( lc( $emission_mask ) eq 'auto' ) {
+   $auto_emission = 1;
+
+# Generate a comma-separated list if this has been turned into a stringified
+# ARRAY reference.
+} elsif ( ref( $emission_mask ) eq 'ARRAY' ) {
    $emission_mask = join ",", @$emission_mask;
-}
+   @allbounds = split( /,/, $emission_mask );
+   $emission_count = scalar( @allbounds );
 
-my @allbounds = split( /,/, $emission_mask );
-my $emission_count = scalar( @allbounds );
+   foreach ( @allbounds ) {
+      my @e_bounds = split( /:/, $_ );
 
-my @emission_bounds;
-
-foreach ( @allbounds ) {
-   my @e_bounds = split( /:/, $_ );
-
-# A single value means use this width symmetric about zero.
-   if ( scalar( @e_bounds ) == 1 ) {
-      my $halfwidth = sprintf( "%.1f", 0.5 * $e_bounds[0] );
-      push @emission_bounds, -$halfwidth;
-      push @emission_bounds, $halfwidth;
-   } else {
-      foreach ( @e_bounds ) {
-         if ( /^[+-]?\d+$/ ) { $_ = sprintf( "%.1f", $_ ) }
-         push @emission_bounds, $_;
+# A single value means use this width symmetric about zero.  Ensure
+# that a round number like 25 km/s is interpreted by the NDF section as
+# a velocity not pixels by giving it a decimal place.
+      if ( scalar( @e_bounds ) == 1 ) {
+         my $halfwidth = sprintf( "%.1f", 0.5 * $e_bounds[0] );
+         push @emission_bounds, -$halfwidth;
+         push @emission_bounds, $halfwidth;
+      } else {
+         foreach ( @e_bounds ) {
+            if ( /^[+-]?\d+$/ ) { $_ = sprintf( "%.1f", $_ ) }
+            push @emission_bounds, $_;
+         }
       }
    }
 }
@@ -377,18 +391,53 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    $params = "in=$in($spec_bounds,,) out=$in_th thrlo=$thr_low newlo=bad thrhi=$thr_high newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
-# Exclude emission regions from analysis.
-# ---------------------------------------
-# Mask the emission regions to exclude narrow astronomical lines, but
+# Record the current Frame.
+   _SET_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
+
+   if ( $auto_emission ) {
+
+# Use a pre-calculated mask indicating approximately the velocities where
+# emission exists, if one exists.
+      _RETRIEVE_TAG_ GROUP=0 TAG=APPROX_EMISSION_$i
+      my $tag_status = $_RETRIEVE_TAG_{STATUS};
+      if ( $tag_status ) {
+         my $maskspectrum = $Frm->file;
+
+# Grow the spectrum mask to the original time series cube's bounds along
+# the second and third dimensions.
+         my $maskcube = new ORAC::TempFile( 0 );
+         $params = "in=$maskspectrum out=$maskcube axes=[1,0,0] ";
+         $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
+         $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
+         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Apply the mask.
+         $params = "in1=$in_th in2=$maskcube out=$temp2file";
+         $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+      } else {
+
+# Switch this off, as presumably the recipe has not called
+# _LOCATE_SPECTRUM_EMISSION_APPROX and use the default range.  Since
+# emission bounds were chosen for a reason extend the normal default
+# range.
+         $auto_emission = 0;
+         $emission_count = 1;
+         @emission_bounds = ( "-50.0", "50.0" );
+         orac_warn "The approximate emission mask has not been calculated " .
+                   "(possible programming error).  Using the default range.";
+      }
+   }
+
+# Mask out the central region to exclude narrow astronomical line, but
 # even that has wings.  Allow for variable spectral range by using a
 # velocity range.
-   if ( $emission_count == 1 ) {
+   if ( $emission_count == 1 && ! $auto_emission ) {
       orac_say( "  Masking the velocity range $emission_bounds[0] to $emission_bounds[1] km/s to exclude astronomical lines." );
       my $chpix_section = "$emission_bounds[0]:$emission_bounds[1],,";
       $params = "in=$in_th out=$temp2file section='$chpix_section' newval=bad";
       $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-   } else {
+   } elsif ( ! $auto_emission ) {
       orac_say( "  Masking the following velocity ranges to exclude astronomical lines:" );
       orac_say "  " . join ",", ( grep { defined } map { $_ % 2 ? undef : join ":",
                $emission_bounds[$_], $emission_bounds[$_+1]}0..$#emission_bounds );
@@ -420,6 +469,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       $temp2file = $Frm->file;
       $Frm->push_intermediates( $temp2file );
    }
+
+# Reset to the Frame present as we entered this primitive.
+   _RETRIEVE_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
 
 # Find the trends in the background.
 # ----------------------------------
