@@ -1,0 +1,253 @@
+=head1 NAME
+
+_LOCATE_APPOX_EMISSION_IN_CUBE
+
+=head1 DESCRIPTION
+
+This primitive attempts to locate approximately the astronomical
+emission in a time-series cube.
+
+It collapses the cube to form a single representative spectrum, which
+is analysed by L<_LOCATE_SPECTRUM_EMISSION_APPROX_> tagging the
+spectral mask.
+
+On exit the input Frame is restored.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EDGE_CLIP = STRING (Given)
+
+The standard deviation to clip iteratively the collapsed cube in order to
+estimate threshold limits for its histogram not affected by outliers.
+A comma-separated list will perform iterative sigma clipping of
+outliers, but standard deviations in the list should not decrease.
+["2.0,2.0,2.5,3.0"]
+
+
+=item INITIAL_FACTOR = INTEGER (Given)
+
+Initial binary factor to set the boxsize for FINDBACK smoothing of the
+baseline.  The boxsize is a power of two fraction of the number of
+elements in the spectrum.  Thus a factor of 3 gives a smoothing filter
+box width one eighth (1/2**3) of the spectral range.  It is
+constrained to the range 2 to 4.  [3]
+
+=item FINAL_FACTOR = INTEGER (Given)
+
+Initial binary factor to set the boxsize for FINDBACK smoothing of the
+baseline.  The boxsize is a power of two fraction of the number of
+elements in the spectrum.  Thus a factor of 4 gives a smoothing filter
+box gives one sixteenth (1/2**4) of the spectral range.  It is 
+constrained to the range INITIAL_FACTOR to 5.  Normally one pass
+is sufficient.  The default is the maximum of 3 and INITIAL_FACTOR.  []
+
+=item THRESH_CLIP = REAL (Given)
+
+The number of standard deviations at which to threshold the histogram
+of the collapsed cube's values above the mean level.  [4.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS time-series cubes.
+
+=item *
+
+The spectral mask is tagged APPROX_EMISSION_E<lt>iE<gt>, where i is the subsystem
+number.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, MATHS, NDFTRACE.
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science & Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Only create an emission mask if it is going to be used later.
+my $apply_lf = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" ) ) ?
+            $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" )              :
+            1 );
+my $apply_lin = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY" ) ) ?
+            $Frm->uhdr( "RECPAR_BASELINE_LINEARITY" )              :
+            1 );
+if ( ! ( $apply_lf || $apply_lin ) ) { goto RETURN }
+
+# Deal with arguments.
+# ====================
+
+# Do no more than obtain their values are they are passed to another
+# primitive which actually uses them to analyse the spectrum for
+# emission.
+my $minfactor = get_prim_arg( $_PRIM_ARGS_, "INITIAL_FACTOR", 3 );
+my $maxfactor = get_prim_arg( $_PRIM_ARGS_, "MAX_FACTOR", max( $minfactor, 4 ) );
+my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
+my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
+
+$minfactor = min( 4, max( 2, $minfactor ) );
+$maxfactor = min( 5, max( $minfactor, $maxfactor ) );
+
+# Obtain and validate data characteristics.
+# =========================================
+
+my $temp1file = new ORAC::TempFile( 0 );
+my $temp2file = new ORAC::TempFile( 0 );
+my $temp3file = new ORAC::TempFile( 0 );
+
+my @meanspectrum;
+
+_SET_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
+
+# Form separate Frames each with a common SUBSYSNR (subband index)
+# value.
+my @subband_key = ( 'SUBSYSNR' );
+my @subband_Frms = $Frm->subfrms( @subband_key );
+my $nsubsys = scalar( @subband_Frms );
+
+# Loop through all subsystems forming a representative spectrum for each.
+# Normally there will be just one band.
+foreach my $subsys ( 0 .. $nsubsys - 1  ) {
+   my $sum_times = 0;
+   my $first = 1;
+
+# Process each subband independently.
+   my $Frm = $subband_Frms[$subsys];
+
+# Trim the noisy ends.
+# --------------------
+   _REMOVE_FREQUENCY_ENDS_ADVANCED_ AXIS=1
+
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my ( $in, $spectrum ) = $Frm->inout( "spave", $i );
+
+# Validate that the data is suitable for this primitive.
+      $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$in" );
+      my ( $ORAC_STATUS, @flabel ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flabel" );
+      ( $ORAC_STATUS, my $ndim ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ndim" );
+
+      if ( $ndim != 3 ) {
+         orac_err( "_LOCATE_SPECTRUM_EMISSION_APPROX_: $in is not " .
+                   "three-dimensional (probable programming error)." );
+      }
+
+      if ( lc( $flabel[2] ) ne 'date/time' ) {
+         orac_err( "_LOCATE_SPECTRUM_EMISSION_APPROX_: $in does not have a time " .
+                   "axis along the third dimension (probable programming error)." );
+      }
+
+      my $band_index = $subsys + 1;
+
+# Need to know how many times are being added to weight subscans
+# appropriately.
+      ( $ORAC_STATUS, my @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+      my $ntime = $dims[2];
+
+# Form representative spectrum.
+# =============================
+
+# Collapse to form the mean spectrum.  This will give the extent of the
+# emission and reduce the effect of any non-linear baselines.  Use
+# median for the collapse over the receptors to reduce the effect of strong
+# non-linear baselines in one or two receptors.
+      my $params;
+      if ( $first ) {
+         $first = 0;
+         push @meanspectrum, $spectrum;
+
+         $params = "in=$in out=$temp1file estimator=mean wlim=0.0 axis=time";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         $params = "in=$temp1file out=$meanspectrum[$subsys] estimator=cmean clip=2.0 wlim=0.0 axis=2";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+      } else {
+         $params = "in=$in out=$temp1file estimator=mean wlim=0.0 axis=time";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         $params = "in=$temp1file out=$temp2file estimator=median wlim=0.0 axis=2";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# If there are subscans weight the spectra by the respective numbers of 
+# spectra in the current subscan and the sum thus far.  It's not perfect
+# if there are bad pixels but should be quite adequate in practice.
+         $params = "exp='(IA*PA+IB*PB)/(PA+PB)' pa=$sum_times pb=$ntime ";
+         $params .= "ia=$meanspectrum[$subsys] ib=$temp2file out=$temp3file";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+      }
+      $sum_times += $ntime;
+   }
+}
+
+orac_say "$nsubsys subbands averaged into representative spectra.";
+
+# Find and create masks of the emission.
+# ======================================
+
+# Start a new Frame context.
+my @maskfile;
+{
+   my $Frm = new $Frm;
+   for my $subsys ( 0 .. $nsubsys - 1 ) {
+      $Frm->file( $meanspectrum[$subsys] );
+      _LOCATE_SPECTRUM_EMISSION_APPROX_ FINAL_FACTOR=$maxfactor INITIAL_FACTOR=$minfactor EDGE_CLIP=$edge_clip THRESH_CLIP=$thresh_clip
+
+# Retrieve the mask.
+      $maskfile[$subsys] = $Frm->file;
+   }
+}
+
+# Update the current Frame with the mask.
+for my $subsys ( 0 .. $nsubsys - 1 ) {
+   $Frm->file( $maskfile[$subsys], $subsys );
+
+# Tag the mask for reuse.
+   my $i = $subsys + 1;
+   _SET_TAG_ GROUP=0 TAG=APPROX_EMISSION_$i
+}
+
+# Restore the Frame to its input state.
+_RETRIEVE_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
+
