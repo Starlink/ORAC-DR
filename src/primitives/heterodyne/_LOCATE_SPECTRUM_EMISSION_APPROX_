@@ -1,0 +1,437 @@
+=head1 NAME
+
+_LOCATE_SPECTRUM_EMISSION_APPROX_
+
+=head1 DESCRIPTION
+
+This primitive attempts to locate the astronomical emission in a spectrum.
+
+It achieves this through the following steps.
+
+- An initial 51-pixel kernel Gaussian smooth of the spectrum to reduce
+the noise and make emission stand out.
+
+- For each scalelength:
+  o Determine reasonable histogram limits using EDGE_CLIP clipped
+  statistics.
+  o Use the lowest histogram peak to reject outlying elements that bias
+  baseline fitting.  This is aimed at cases where the emission region
+  extends over more elements than the baseline.  After estimating the
+  baseline noise elements THRESH_CLIP standard deviations above the mode
+  of the smoothed histogram are masked.
+  o Estimate the noise in the spectrum.
+  o Remove the background on the current scale using FINDBACK or BLOCK.
+  o Fit a linear baseline in MFITTREND automatic mode to mask more
+    emission.
+  o The steps are repeated for the baseline-subtracted spectrum.
+
+For most data a single cycle is sufficient.  An extra cycle may be
+needed to exclude non-linear baselines.
+
+The current file is updated to be the mask, where the emission regions
+are bad and other elements set to zero.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EDGE_CLIP = STRING (Given)
+
+The standard deviation to clip iteratively the spectrum in order to
+estimate threshold limits for its histogram not affected by outliers.
+A comma-separated list will perform iterative sigma clipping of
+outliers, but standard deviations in the list should not decrease.
+["2.0,2.0,2.5,3.0"]
+
+=item INITIAL_FACTOR = INTEGER (Given)
+
+Initial binary factor to set the boxsize for FINDBACK smoothing of the
+baseline.  The boxsize is a power of two fraction of the number of
+elements in the spectrum.  Thus a factor of 3 gives a smoothing filter
+box width one eighth (1/2**3) of the spectral range.  It is
+constrained to the range 2 to 4.  [3]
+
+=item FINAL_FACTOR = INTEGER (Given)
+
+Initial binary factor to set the boxsize for FINDBACK smoothing of the
+baseline.  The boxsize is a power of two fraction of the number of
+elements in the spectrum.  Thus a factor of 4 gives a smoothing filter
+box gives one sixteenth (1/2**4) of the spectral range.  It is 
+constrained to the range INITIAL_FACTOR to 5.  Normally one pass
+is sufficient.  The default is the maximum of 3 and INITIAL_FACTOR.  []
+
+=item THRESH_CLIP = REAL (Given)
+
+The number of standard deviations at which to threshold the histogram
+of the spectrum's values above the mean level.  [4.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The current Frame should be one-dimensional.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+A mask for the spectrum in the Frame with suffix "_spem".
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDBACK;
+KAPPA: ADD, BLOCK, CMULT, GAUSMOOTH, MFITTREND, NDFCOPY,
+       NUMB, STATS, SUB, THRESH, WCSTRAN.
+
+=head1 REQUIRED PERL MODULES
+
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science & Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Deal with arguments.
+# ====================
+
+my $minfactor = get_prim_arg( $_PRIM_ARGS_, "INITIAL_FACTOR", 3 );
+my $maxfactor = get_prim_arg( $_PRIM_ARGS_, "MAX_FACTOR", max( $minfactor, 3 ) );
+my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
+my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
+
+# Convert list of standard-deviation clip levels to an array.
+if ( ref( $edge_clip ) eq 'ARRAY' ) { $edge_clip = join( ",", @{ $edge_clip } ) }
+my @clips = split( ',', $edge_clip );
+
+# Sigma clipping levels should not decrease. Do not set the initial
+# threshold too low lest we exclude acceptable but slightly deviant
+# spectra in an otherwise good set.
+my @clip_sigma = ();
+my $last = 2.0;
+foreach ( @clips ) {
+   push @clip_sigma, max( $last, $_ );
+}
+
+$edge_clip = "[" . join( ",", @clip_sigma ) . "]";
+$minfactor = min( 4, max( 2, $minfactor ) );
+$maxfactor = min( 5, max( $minfactor, $maxfactor ) );
+
+
+# Validate data.
+# ==============
+my $in = $Frm->file;
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+my ( $ORAC_STATUS, $ndim ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ndim" );
+if ( $ndim != 1 ) {
+   orac_err( "_LOCATE_SPECTRUM_EMISSION_APPROX_: Current Frame is not " .
+             "one dimensional (probable programming error)." );
+}
+( $ORAC_STATUS, my $dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+( $ORAC_STATUS, my $lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+( $ORAC_STATUS, my $ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+
+# Specify output and temporary filenames.
+# =======================================
+
+# Suffix is short for spectrum emission.
+( undef, my $maskfile ) = $Frm->inout( "spem" );
+( undef, my $rectum ) = $Frm->inout( "arse" );
+
+my $temp1file = new ORAC::TempFile( 0 );
+my $temp2file = new ORAC::TempFile( 0 );
+my $temp3file = new ORAC::TempFile( 0 );
+my $temp4file = new ORAC::TempFile( 0 );
+my $temp5file = new ORAC::TempFile( 0 );
+my $temp6file = new ORAC::TempFile( 0 );
+my $temp7file = new ORAC::TempFile( 0 );
+my $temp8file = new ORAC::TempFile( 0 );
+my $temp9file = new ORAC::TempFile( 0 );
+my $spectrum = new ORAC::TempFile( 0 );
+
+my $masked_spectrum = "masked_spectrum";
+#my $masked_spectrum = new ORAC::TempFile( 0 );
+my $tempmask =  new ORAC::TempFile( 0 );
+
+orac_say "\n  Determine location of emission automatically:";
+
+
+# Adopt an iterative approach.
+# ============================
+
+# Set an initial scalelength.
+my $boxsize = int( $dims / 2**$minfactor );
+
+# Start with the largest scale to exclude emission.  Mask it then if
+# some emission remains in the line wings it will have an event shorter
+# scale length.  The small smoothing scale gives a better subtraction
+# and hence finds the residual emission, well that's the theory.
+my @nranges;
+my $params;
+my $loop = 1;
+my $first = 1;
+
+# Smooth the spectrum.
+# ====================
+
+# Smooth and subtract to estimate the noise.
+$params = "in=$in out=$spectrum box=51 fwhm=25";
+$Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+
+my $iteration = 0;
+my $scalefactor = $minfactor;
+
+while ( $loop ) {
+
+# Attempt to handle broad emission.
+# =================================
+
+# If it is sufficiently extended MFITTREND will have a problem
+# differentiating between baseline and emission.  This step aims to
+# give it a hand, by try to find a base level and hence reject outliers
+# from the emission.  For a relatively flat baseline with strong
+# extended emission there should be a strong peak in the histogram even
+# when there are more emission pixels than baseline values, and it will
+# flag most emission.  If the baseline is sloping the dispersion will
+# result in fewer outlying values being flagged.  An iterative
+# approach permits slope removal and a reassessment of the outliers.
+# There is a case for incorporating this histogram technique in
+# MFITTREND.
+
+# Find statistics to later exclude outliers than could lead to overly
+# broad histogram bins.
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$spectrum clip=3" );
+   ( $ORAC_STATUS, my $fullmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+   ( $ORAC_STATUS, my $fullsigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+# To obtain the desired binning resolution for the histogram peak cut off
+# outliers.  Allow more room to the non-emission side.
+   my $thresh_max = $fullmean + 3.0 * $fullsigma;
+   my $thresh_min = $fullmean - 4.0 * $fullsigma;
+   $params = "in=$spectrum out=$temp8file ";
+   $params .= "thrlo=$thresh_min thrhi=$thresh_max newlo=bad newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Estimate the normal level, and standard deviation excluding emission.
+# This assumes that most of the spectrum is baseline and the drift is not
+# significant compared with the emission.
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file clip=$edge_clip order" );
+   ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+# Estimate the normal level, and standard deviation excluding anomalous spectra.
+   my ( $mode, $threshold );
+   {
+
+# FINDCLUMPS can give off-centre centroids weighted by the outliers we
+# want to exclude and the width is enlarged by outliers.  So just use the
+# histogram peak.  Smooth to define the peak better.  One could do
+# Gaussian fits to derive the sigma or combine the central few to derive
+# a more-precise peak.  For the moment this seems adequate.
+      my $Frm = $Frm->new;
+      $Frm->file( $temp8file );
+      _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 CENTROID=0
+      if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} ) {
+         $mode = $_FIND_HISTOGRAM_PEAK_{PEAK};
+
+      } else {
+         $mode = $mean;
+      }
+
+# Find the percentile of the peak.
+      $params = "in=$temp8file above=no value=$mode";
+      $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
+      ( $ORAC_STATUS, my $number_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
+      my $percentile_peak = 100.0 * ( $number_below + 1 ) / $numgood;
+
+# Set the percentile for two-sigma below the mode.  For a normal
+# distribution the mean, mode, and median are the same.  As there are
+# positive outliers from non-linear spectra the peak shift the two-sigma
+# percentile down accordingly.
+      my $two_sigma_percentile = 2.23 * $percentile_peak / 50.0;
+
+# The distribution is skew to higher values.  We would like the mode
+# and width of the normal curve around that.  The mode is approximated by
+# the heavily clipped mean.  Now obtain the two-sigma level below
+# the mode without clipping.
+      $params = "ndf=$temp8file percentiles=$two_sigma_percentile order";
+      $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+      ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+      my $sigma = 0.5 * ( $mode - $perval );
+      $threshold = $mode + $thresh_clip * $sigma;
+   }
+
+# Threshold elements whose signal exceeds an outlier limit.
+# The median will give a reliable normal signal on which there are
+# spikes or broader mountains caused by the oscillating noise in the
+# time series for the detector.  On the other hand the mean does give
+# a lower and better estimate in the presence of several blocks of
+# non-linear spectra.  In most cases there is no interference
+# noise, so protect against drift and signal variations in the timeseries
+# causing the dispersion; these should be small compared with the signal
+# being detected.
+   if ( $numgood > 0 &&
+        ! ( lc( $threshold ) =~ /inf/ || lc( $threshold ) =~ /nan/ ) ) {
+      orac_say "   Masking regions of the spectrum above " . sprintf( "%.5f", $threshold );
+      $params = "in=$temp8file out=$masked_spectrum ";
+      $params .= "thrlo=$thresh_min newlo=bad thrhi=$threshold newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
+      ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
+      my $total = $eject + $kept;
+
+   } else {
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$masked_spectrum" );
+   }
+
+# Create a mask from the thresholded spectrum.
+   $params = "in=$masked_spectrum out=$maskfile scalar=0";
+   $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+# Estimate the noise in the spectrum.
+# ===================================
+
+# Make a copy of the spectrum.
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$spectrum out=$temp1file" );
+
+# Smooth and subtract to estimate the noise.
+   $params = "in=$temp1file out=$temp2file fwhm=11";
+   $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+   $params = "in1=$temp1file in2=$temp2file out=$temp3file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file clip=3" );
+   ( $ORAC_STATUS, my $noise ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+# Remove the background on multiple scales.
+# =========================================
+
+# Find background but with a box size that it only has a marginal
+# effect at best on emission feature.
+   my $oddboxsize = $boxsize + ( $boxsize + 1 ) % 2;
+   $params = "in=$masked_spectrum out=$temp4file box=$oddboxsize rms=$noise accept";
+   my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# FINDBACK can fall over, but this should not be fatal.
+   if ( $FINDBACK_STATUS != ORAC__OK ) {
+      if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+           orac_say "   Unable to find the background level in the spectra due to insufficient good data.";
+      }
+      orac_say "   Attempting to continue using block smoothing.";
+      $params = "in=$masked_spectrum out=$temp4file box=$oddboxsize estimator=median";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   }
+
+   $params = "in1=$masked_spectrum in2=$temp4file out=$temp5file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   orac_say "   Subtract the baseline.";
+
+# Find the outlying emission.
+# ===========================
+
+# At this point we should have a flatish baseline.  Now use MFITTREND to
+# locate the spectral emission with some borders.  First create the
+# maskfile...
+   $params = "in=$temp5file out=$temp6file subtract auto mask=$tempmask ";
+   $params .= "order=1 axis=spec method=single numbin=32 out=$spectrum";
+   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+# then in order to report the ranges repeat but in Region mode.
+   $params = "in=$temp5file out=$temp6file subtract=f auto ";
+   $params .= "order=1 axis=spec method=region numbin=64";
+   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+   ( $ORAC_STATUS, my @aranges ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+
+# The returned ranges are where the baseline is located.  From these
+# determine the masked regions.
+   my $prev = $lbnd - 1;
+   my $last = $ubnd;
+   my @mranges;
+   for ( my $j = 0; $j < scalar( @aranges ); $j += 2 ) {
+      if ( $aranges[$j] > $prev && $prev < $last ) {
+         push @mranges, $prev + 1;
+         push @mranges, $aranges[$j] - 1;
+         $prev = $aranges[$j+1];
+      }
+   }
+   if ( $prev < $last ) {
+      push @mranges, $prev + 1;
+      push @mranges, $last;
+   }
+
+# Report the masked ranges in the current WCS and pixels.
+   if ( scalar( @mranges ) > 0 ) {
+      $params = "framein=pixel frameout=! ndf=$tempmask ";
+      orac_say "   Smoothing scale $oddboxsize pixels:";
+      for ( my $j = 0; $j < scalar( @mranges ); $j += 2 ) {
+         $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$mranges[$j]" );
+         ( $ORAC_STATUS, my $posout1 ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
+         $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$mranges[$j+1]" );
+         ( $ORAC_STATUS, my $posout2 ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
+
+         orac_say sprintf( "     %.3f : %.3f (%d:%d)",
+                           $posout1, $posout2, $mranges[$j], $mranges[$j+1] );
+      }
+   }
+
+# Increment and apply the mask.
+# =============================
+
+# Add current mask to the full mask.
+   $params = "in1=$maskfile in2=$tempmask out=$temp7file";
+   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp7file out=$maskfile" );
+
+# Apply current mask to the current spectrum.
+   $params = "in1=$spectrum in2=$maskfile out=$temp9file";
+   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp9file out=$spectrum" );
+
+# Reduce the scale length for the next iteration.
+   if ( $iteration % 2 == 1 ) {
+      $scalefactor++;
+      $boxsize = int( $boxsize / 2 );
+   }
+   $iteration++;
+   $loop = $scalefactor <= $maxfactor;
+   orac_say "" if $loop;
+}
+
+orac_say "Created a mask of emission in $maskfile.";
+
+# Update the current Frame with the mask.
+$Frm->file( $maskfile );
+
+orac_say "";
