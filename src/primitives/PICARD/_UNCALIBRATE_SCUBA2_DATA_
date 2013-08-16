@@ -11,10 +11,8 @@ _UNCALIBRATE_SCUBA2_DATA_
 =head1 DESCRIPTION
 
 Undo the default calibration of SCUBA-2 data. This primitive checks
-the input units and divides by the appropriate default FCF to return
-the data to units of pW.
-
-Uncalibrated input files are copied to output files.
+the input units and divides by the appropriate default FCF (derived
+from the FITS header if possible) to return the data to units of pW.
 
 =head1 ARGUMENTS
 
@@ -72,33 +70,39 @@ USA.
 
 =cut
 
+my $uncalunits = "pW";
+my $uncal = $Frm->inout("_uncal");
+
 # Obtain the current units for the input file to determine the FCF
 # calibration type
 my $in = $Frm->file;
-my $uncal = $in . "_uncal";
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
 my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
-if ($units eq "pW") {
+if ($units eq $uncalunits) {
   # Print a message and exit
   orac_print "File $in already contains uncalibrated data\n";
   $uncal = $in;
 } else {
-  my $fcf_units = ($units =~ /beam/) ? "BEAM" : "ARCSEC";
   # Assume units of Jy if not mJy
   my $mult = ($units =~ /^mJy/) ? 1000.0 : 1.0;
 
-  # Undo the calibration of SCUBA-2 data files - assume default
-  # calibration and that data are in mJy/beam
-  my $fcf = $mult * $Cal->gain($Frm->uhdr("ORAC_FILTER"), $fcf_units);
+  # Undo the calibration of SCUBA-2 data files - use the FCF in the
+  # header if present, otherwise assume default calibration and that
+  # data are in mJy/beam
+  my $fcf_units = ($units =~ /beam/) ? "BEAM" : "ARCSEC";
+  my $fcf = ($Frm->hdr("FCF")) ? $Frm->hdr("FCF") :
+    $mult * $Cal->gain($Frm->uhdr("ORAC_FILTER"), $fcf_units);
 
   my $args = "in=$in out=$uncal scalar=$fcf";
   $Mon{kappa_mon}->obeyw("cdiv","$args");
 
-  orac_print "Undoing default calibration of $fcf $units/pW - output units are pW\n";
+  my $calibration = ($Frm->hdr("FCF")) ? "calibration" : "default calibration";
+  orac_print "Undoing $calibration of $fcf $units/pW - output units are pW\n";
 
   # Change units to pW
-  $args = "ndf=$uncal units=pW";
+  $args = "ndf=$uncal units=$uncalunits";
   $Mon{ndfpack_mon}->obeyw("setunits","$args");
+  $Frm->uhdr("DATA_UNITS", $uncalunits);
 }
 
 # Store in the current Frame object
