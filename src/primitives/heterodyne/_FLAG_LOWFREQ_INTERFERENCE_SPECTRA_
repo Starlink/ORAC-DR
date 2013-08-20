@@ -574,19 +574,25 @@ foreach my $receptor ( @receptors ) {
 
 # To obtain the desired binning resolution for the histogram peak cut off
 # definitely non-linear spectra.
-   $params = "in=$temp8file out=$temp11file thrlo=0 thrhi=0.012 newlo=0.0 newhi=bad";
+   my $threshold = 0.08;
+   $params = "in=$temp8file out=$temp11file thrlo=0 thrhi=$threshold newlo=0.0 newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
 # significant compared with the non-linearity.
    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp11file clip=$edge_clip order" );
-   my ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   my ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
    ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
-   my ( $mode, $sigma, $threshold );
-   {
+# The minimum number is arbitrary.  It's based on needing around ten
+# bins and at least 50 values in the peak bins.  Its aim is to catch those cases
+# where most of the spectra are non-linear and exceed the 0.08 threshold.
+   my ( $mode, $sigma );
+   my $apply_thresh = 0;
+   if ( $numgood > 200 && $numgood > 0.1 * $numpix ) {
 
 # FINDCLUMPS can give off-centre centroids weighted by the outliers we
 # want to exclude and the width is enlarged by outliers.  So just use the
@@ -624,9 +630,13 @@ foreach my $receptor ( @receptors ) {
       ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
       $sigma = 0.5 * ( $mode - $perval );
       $threshold = max( 0.003, min( 0.01, $mode + $thresh_clip * $sigma ) );
+      $apply_thresh = 1;
    }
 
 # Threshold spectra whose mean rms non-linearity exceeds an outlier limit.
+# Only exclude values when a new threshold has been set.  The statistics
+# from the default threshold should still be in the output parameters.
+#
 # The median will give a reliable normal signal on which there are
 # spikes or broader mountains caused by the oscillating noise in the
 # time series for the detector.  On the other hand the mean does give
@@ -638,8 +648,12 @@ foreach my $receptor ( @receptors ) {
    if ( $numgood > 0 &&
         ! ( lc( $threshold ) =~ /inf/ || lc( $threshold ) =~ /nan/ ) ) {
       orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
-      $params = "in=$temp8file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
-      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      if ( $apply_thresh ) {
+         $params = "in=$temp8file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+         $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      } else {
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$temp9file" );
+      }
       ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
       ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
       my $total = $eject + $kept;
