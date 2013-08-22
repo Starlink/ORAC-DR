@@ -176,14 +176,12 @@ my $temp3file = new ORAC::TempFile( 0 );
 my $temp4file = new ORAC::TempFile( 0 );
 my $temp5file = new ORAC::TempFile( 0 );
 my $temp6file = new ORAC::TempFile( 0 );
-my $temp7file = new ORAC::TempFile( 0 );
-my $temp8file = new ORAC::TempFile( 0 );
-my $temp9file = new ORAC::TempFile( 0 );
+my $tempmask = new ORAC::TempFile( 0 );
+my $thresh_spectrum = new ORAC::TempFile( 0 );
+my $temp_spectrum = new ORAC::TempFile( 0 );
 my $spectrum = new ORAC::TempFile( 0 );
-
-my $masked_spectrum = "masked_spectrum";
-#my $masked_spectrum = new ORAC::TempFile( 0 );
-my $tempmask =  new ORAC::TempFile( 0 );
+my $masked_spectrum = new ORAC::TempFile( 0 );
+my $current_mask =  new ORAC::TempFile( 0 );
 
 orac_say "\n  Determine location of emission automatically:";
 
@@ -240,14 +238,14 @@ while ( $loop ) {
 # outliers.  Allow more room to the non-emission side.
    my $thresh_max = $fullmean + 3.0 * $fullsigma;
    my $thresh_min = $fullmean - 4.0 * $fullsigma;
-   $params = "in=$spectrum out=$temp8file ";
+   $params = "in=$spectrum out=$thresh_spectrum ";
    $params .= "thrlo=$thresh_min thrhi=$thresh_max newlo=bad newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Estimate the normal level, and standard deviation excluding emission.
 # This assumes that most of the spectrum is baseline and the drift is not
 # significant compared with the emission.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file clip=$edge_clip order" );
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$thresh_spectrum clip=$edge_clip order" );
    ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
    ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
@@ -261,7 +259,7 @@ while ( $loop ) {
 # Gaussian fits to derive the sigma or combine the central few to derive
 # a more-precise peak.  For the moment this seems adequate.
       my $Frm = $Frm->new;
-      $Frm->file( $temp8file );
+      $Frm->file( $thresh_spectrum );
       _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 CENTROID=0
       if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} ) {
          $mode = $_FIND_HISTOGRAM_PEAK_{PEAK};
@@ -271,7 +269,7 @@ while ( $loop ) {
       }
 
 # Find the percentile of the peak.
-      $params = "in=$temp8file above=no value=$mode";
+      $params = "in=$thresh_spectrum above=no value=$mode";
       $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
       ( $ORAC_STATUS, my $number_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
       my $percentile_peak = 100.0 * ( $number_below + 1 ) / $numgood;
@@ -286,7 +284,7 @@ while ( $loop ) {
 # and width of the normal curve around that.  The mode is approximated by
 # the heavily clipped mean.  Now obtain the two-sigma level below
 # the mode without clipping.
-      $params = "ndf=$temp8file percentiles=$two_sigma_percentile order";
+      $params = "ndf=$thresh_spectrum percentiles=$two_sigma_percentile order";
       $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
       ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
       my $sigma = 0.5 * ( $mode - $perval );
@@ -305,7 +303,7 @@ while ( $loop ) {
    if ( $numgood > 0 &&
         ! ( lc( $threshold ) =~ /inf/ || lc( $threshold ) =~ /nan/ ) ) {
       orac_say "   Masking regions of the spectrum above " . sprintf( "%.5f", $threshold );
-      $params = "in=$temp8file out=$masked_spectrum ";
+      $params = "in=$thresh_spectrum out=$masked_spectrum ";
       $params .= "thrlo=$thresh_min newlo=bad thrhi=$threshold newhi=bad";
       $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
       ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
@@ -313,11 +311,11 @@ while ( $loop ) {
       my $total = $eject + $kept;
 
    } else {
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$masked_spectrum" );
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$thresh_spectrum out=$masked_spectrum" );
    }
 
 # Create a mask from the thresholded spectrum.
-   $params = "in=$masked_spectrum out=$maskfile scalar=0";
+   $params = "in=$masked_spectrum out=$current_mask scalar=0";
    $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
 # Estimate the noise in the spectrum.
@@ -364,7 +362,7 @@ while ( $loop ) {
 # At this point we should have a flatish baseline.  Now use MFITTREND to
 # locate the spectral emission with some borders.  First create the
 # maskfile...
-   $params = "in=$temp5file out=$temp6file subtract auto mask=$tempmask ";
+   $params = "in=$temp5file out=$temp6file subtract auto mask=$current_mask ";
    $params .= "order=1 axis=spec method=single numbin=32 out=$spectrum";
    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
@@ -393,7 +391,7 @@ while ( $loop ) {
 
 # Report the masked ranges in the current WCS and pixels.
    if ( scalar( @mranges ) > 0 ) {
-      $params = "framein=pixel frameout=! ndf=$tempmask ";
+      $params = "framein=pixel frameout=! ndf=$current_mask ";
       orac_say "   Smoothing scale $oddboxsize pixels:";
       for ( my $j = 0; $j < scalar( @mranges ); $j += 2 ) {
          $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$mranges[$j]" );
@@ -410,14 +408,14 @@ while ( $loop ) {
 # =============================
 
 # Add current mask to the full mask.
-   $params = "in1=$maskfile in2=$tempmask out=$temp7file";
+   $params = "in1=$maskfile in2=$current_mask out=$tempmask";
    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
-   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp7file out=$maskfile" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tempmask out=$maskfile" );
 
 # Apply current mask to the current spectrum.
-   $params = "in1=$spectrum in2=$maskfile out=$temp9file";
+   $params = "in1=$spectrum in2=$maskfile out=$temp_spectrum";
    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
-   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp9file out=$spectrum" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_spectrum out=$spectrum" );
 
 # Reduce the scale length for the next iteration.
    if ( $iteration % 2 == 1 ) {
