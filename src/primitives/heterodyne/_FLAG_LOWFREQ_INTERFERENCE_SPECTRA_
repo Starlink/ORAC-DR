@@ -315,8 +315,45 @@ my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->rece
 @receptors = sort @receptors;
 my $no_receptor = scalar( @receptors );
 
+
+# Obtain the emission mask for each subband.
+# ==========================================
+
+# First form separate Frames each with a common SUBSYSNR (subband index)
+# value.
+my @subband_key = ( 'SUBSYSNR' );
+my @subband_Frms = $Frm->subfrms( @subband_key );
+my $nsubsys = scalar( @subband_Frms );
+
+# Make an array of the masks for each subband.
+my @maskspectrum;
+if ( $auto_emission ) {
+
+# Record the current Frame.
+   _SET_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
+
+   foreach my $i ( 1 .. $nsubsys ) {
+
+# Use a pre-calculated mask indicating approximately the velocities where
+# emission exists, if one exists.
+      _RETRIEVE_TAG_ GROUP=0 TAG=APPROX_EMISSION_$i
+      my $tag_status = $_RETRIEVE_TAG_{STATUS};
+      if ( $tag_status ) {
+         my $spectral_mask = $Frm->file;
+         push @maskspectrum, $spectral_mask;
+
+      } else {
+         push @maskspectrum, "null";
+      }
+   }
+
+# Reset to the Frame present as we entered this primitive.
+   _RETRIEVE_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
+}
+
 # Specify output and temporary filenames, and their bounds.
 # =========================================================
+
 my $params;
 my $osuffix = "_lfimasked";
 
@@ -338,78 +375,78 @@ if ( $no_spec < $min_spec ) {
    goto RETURN;
 }
 
-my $no_times = 0;
-my @time_bounds;
+# Loop through all subsystems forming a representative spectrum for each.
+# Normally there will be just one band.
+foreach my $subsys ( 0 .. $nsubsys - 1 ) {
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
+   my $no_times = 0;
+   my @time_bounds;
+
+# Process each subband independently.
+   my $Frm = $subband_Frms[$subsys];
+
+   foreach my $i ( 1 .. $Frm->nfiles ) {
 
 # Set/get filenames.
-   my ( $in, $in_th ) = $Frm->inout( "_desp", $i );
-   orac_say( "Determine spectra exhibiting transient low-frequency interference in $in." );
+      my ( $in, $in_th ) = $Frm->inout( "_desp", $i );
+      orac_say( "Determine spectra exhibiting transient low-frequency interference in $in." );
 
-   my $temp1file = new ORAC::TempFile( 0 );
-   my $temp2file = new ORAC::TempFile( 0 );
-   my $temp3file = new ORAC::TempFile( 0 );
-   my $temp4file = new ORAC::TempFile( 0 );
-   my $temp5file = new ORAC::TempFile( 0 );
-   my $temp6file = new ORAC::TempFile( 0 );
-   my $temp7file = new ORAC::TempFile( 0 );
+      my $temp1file = new ORAC::TempFile( 0 );
+      my $temp2file = new ORAC::TempFile( 0 );
+      my $temp3file = new ORAC::TempFile( 0 );
+      my $temp4file = new ORAC::TempFile( 0 );
+      my $temp5file = new ORAC::TempFile( 0 );
+      my $temp6file = new ORAC::TempFile( 0 );
+      my $temp7file = new ORAC::TempFile( 0 );
 
 # We need the dimensions of the input file for later.
-   _GET_DIMENSIONS_ FILE=$in
-   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
-   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
-   my $dims = $_GET_DIMENSIONS_{DIMS};
-   my $nel = $ubnd->[0] - $lbnd->[0] + 1;
-   push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
-   $no_times += $ubnd->[2] - $lbnd->[2] + 1;
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+      my $dims = $_GET_DIMENSIONS_{DIMS};
+      my $nel = $ubnd->[0] - $lbnd->[0] + 1;
+      push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
+      $no_times += $ubnd->[2] - $lbnd->[2] + 1;
 
 # Determine valid spectral range.
 # ===============================
 
 # This will either be the regular central 85%, or to user-defined
 # final velocity limits, whichever is more extensive.
-   _GET_SPECTRAL_LIMITS_ FILE=$in TRIM_PERCENT=85
-   my $lower_spect = $_GET_SPECTRAL_LIMITS_{LBOUND};
-   my $upper_spect = $_GET_SPECTRAL_LIMITS_{UBOUND};
+      _GET_SPECTRAL_LIMITS_ FILE=$in TRIM_PERCENT=85
+      my $lower_spect = $_GET_SPECTRAL_LIMITS_{LBOUND};
+      my $upper_spect = $_GET_SPECTRAL_LIMITS_{UBOUND};
 
 # Find the interference.
 # ======================
 
 # The data thus appear noisy because of a typically 50-pixel frequency
 # sinusoid in the baseline.
-   my $spec_bounds = "$lower_spect:$upper_spect";
-   if ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
-        $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) { $spec_bounds = "" }
+      my $spec_bounds = "$lower_spect:$upper_spect";
+      if ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
+           $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) { $spec_bounds = "" }
 
 # Apply threshold to exclude spikes in the spectra.  Not some early
 # spectra had a large bias, hence filter around the median.
-   my $semirange = 20;
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_bounds,,) order" );
-   my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
-   my $thr_low = sprintf( "%.1f", $median - $semirange );
-   my $thr_high = sprintf( "%.1f", $median + $semirange );
+      my $semirange = 20;
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_bounds,,) order" );
+      my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+      my $thr_low = sprintf( "%.1f", $median - $semirange );
+      my $thr_high = sprintf( "%.1f", $median + $semirange );
 
-   orac_say( "  Thresholding the spectra at +/- $semirange to exclude spikes." );
-   $params = "in=$in($spec_bounds,,) out=$in_th thrlo=$thr_low newlo=bad thrhi=$thr_high newhi=bad";
-   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-
-# Record the current Frame.
-   _SET_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
-
-   if ( $auto_emission ) {
+      orac_say( "  Thresholding the spectra at +/- $semirange to exclude spikes." );
+      $params = "in=$in($spec_bounds,,) out=$in_th thrlo=$thr_low newlo=bad thrhi=$thr_high newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Use a pre-calculated mask indicating approximately the velocities where
-# emission exists, if one exists.
-      _RETRIEVE_TAG_ GROUP=0 TAG=APPROX_EMISSION_$i
-      my $tag_status = $_RETRIEVE_TAG_{STATUS};
-      if ( $tag_status ) {
-         my $maskspectrum = $Frm->file;
+# emission exists, if it was accessed.
+      $auto_emission = $maskspectrum[$subsys] ne 'null';
+      if ( $auto_emission ) {
 
 # Grow the spectrum mask to the original time series cube's bounds along
 # the second and third dimensions.
          my $maskcube = new ORAC::TempFile( 0 );
-         $params = "in=$maskspectrum out=$maskcube axes=[1,0,0] ";
+         $params = "in=$maskspectrum[$subsys] out=$maskcube axes=[1,0,0] ";
          $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
          $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
          $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
@@ -417,6 +454,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Apply the mask.
          $params = "in1=$in_th in2=$maskcube out=$temp2file";
          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+         orac_say( "  Masking emission in spectra using $maskspectrum[$subsys]" );
       } else {
 
 # Switch this off, as presumably the recipe has not called
@@ -429,52 +467,48 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
          orac_warn "The approximate emission mask has not been calculated " .
                    "(possible programming error).  Using the default range.";
       }
-   }
 
 # Mask out the central region to exclude narrow astronomical line, but
 # even that has wings.  Allow for variable spectral range by using a
 # velocity range.
-   if ( $emission_count == 1 && ! $auto_emission ) {
-      orac_say( "  Masking the velocity range $emission_bounds[0] to $emission_bounds[1] km/s to exclude astronomical lines." );
-      my $chpix_section = "$emission_bounds[0]:$emission_bounds[1],,";
-      $params = "in=$in_th out=$temp2file section='$chpix_section' newval=bad";
-      $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+      if ( $emission_count == 1 && ! $auto_emission ) {
+         orac_say( "  Masking the velocity range $emission_bounds[0] to $emission_bounds[1] km/s to exclude astronomical lines." );
+         my $chpix_section = "$emission_bounds[0]:$emission_bounds[1],,";
+         $params = "in=$in_th out=$temp2file section='$chpix_section' newval=bad";
+         $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-   } elsif ( ! $auto_emission ) {
-      orac_say( "  Masking the following velocity ranges to exclude astronomical lines:" );
-      orac_say "  " . join ",", ( grep { defined } map { $_ % 2 ? undef : join ":",
-               $emission_bounds[$_], $emission_bounds[$_+1]}0..$#emission_bounds );
+      } elsif ( ! $auto_emission ) {
+         orac_say( "  Masking the following velocity ranges to exclude astronomical lines:" );
+         orac_say "  " . join ",", ( grep { defined } map { $_ % 2 ? undef : join ":",
+                  $emission_bounds[$_], $emission_bounds[$_+1]}0..$#emission_bounds );
 
 # We have the regions in velocities but the masking primitive which
 # runs ARDMASK works in pixels.  First create an NDF containing just
 # the spectral axis.
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in_th(,~1,~1) out=$temp2file trim trimwcs" );
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in_th(,~1,~1) out=$temp2file trim trimwcs" );
 
-      my @pixel_emission;
-      $params = "framein=dsbspectrum frameout=pixel ndf=$temp2file ";
-      for ( my $j = 0; $j <= $#emission_bounds; $j++ ) {
-         $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$emission_bounds[$j]" );
-         ( $ORAC_STATUS, my $pixel_coord ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
-         push @pixel_emission, $pixel_coord;
-      }
+         my @pixel_emission;
+         $params = "framein=dsbspectrum frameout=pixel ndf=$temp2file ";
+         for ( my $j = 0; $j <= $#emission_bounds; $j++ ) {
+            $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$emission_bounds[$j]" );
+            ( $ORAC_STATUS, my $pixel_coord ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
+            push @pixel_emission, $pixel_coord;
+         }
 
 # Make a temporary Frame to pass to _MASK_SINGLE_AXIS_REGIONS_.
-      my $Frm = new $Frm;
-      $Frm->file( $in_th );
+         my $Frm = new $Frm;
+         $Frm->file( $in_th );
 
 # Further indirection appears to be needed for passing the velocity
 # ranges to _MASK_SINGLE_AXIS_REGIONS_.
-      my @em_bounds = \@pixel_emission;
+         my @em_bounds = \@pixel_emission;
 
-      _MASK_SINGLE_AXIS_REGIONS_ INVERSE=0 USEAXIS=1 REGIONS=\@em_bounds SUFFIX=emmask
+         _MASK_SINGLE_AXIS_REGIONS_ INVERSE=0 USEAXIS=1 REGIONS=\@em_bounds SUFFIX=emmask
 
 # Capture the masked file, and default to remove at the end of processing.
-      $temp2file = $Frm->file;
-      $Frm->push_intermediates( $temp2file );
-   }
-
-# Reset to the Frame present as we entered this primitive.
-   _RETRIEVE_TAG_ GROUP=0 TAG=BEFORE_EMISSION_MASK
+         $temp2file = $Frm->file;
+         $Frm->push_intermediates( $temp2file );
+      }
 
 # Find the trends in the background.
 # ----------------------------------
@@ -483,27 +517,27 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # of the baseline.  This aims to identify ripples or turned-up ends of the
 # spectra.  Note that FINDBACK Parameter BOX should only supply elements up
 # to the number of significant dimensions.
-   orac_say( "  Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
-   my $boxparam = "[$smooth_scale,1,1]";
-   if ( $dims->[1] == 1 ) { $boxparam = "[$smooth_scale,1]" }
-   $params = "in=$temp2file out=$temp3file box=$boxparam sub=false accept";
-   my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+      orac_say( "  Determine the smooth trends of the spectra using a filter width of $smooth_scale pixels." );
+      my $boxparam = "[$smooth_scale,1,1]";
+      if ( $dims->[1] == 1 ) { $boxparam = "[$smooth_scale,1]" }
+      $params = "in=$temp2file out=$temp3file box=$boxparam sub=false accept";
+      my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # FINDBACK can fall over, but this should not be fatal.
-   if ( $FINDBACK_STATUS != ORAC__OK ) {
-      if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
-         orac_say "Unable to find the background level in the spectra due to insufficient good data.";
+      if ( $FINDBACK_STATUS != ORAC__OK ) {
+         if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+            orac_say "Unable to find the background level in the spectra due to insufficient good data.";
+         }
+         orac_say "Attempting to continue using block smoothing.";
+         $params = "in=$temp2file out=$temp3file box=$boxparam estimator=median";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
       }
-      orac_say "Attempting to continue using block smoothing.";
-      $params = "in=$temp2file out=$temp3file box=$boxparam estimator=median";
-      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-   }
 
 # Subtract linear baselines from smoothed spectrum for each detector.
-   orac_say( "  Fit linear baselines and subtract these from the trends." );
-   $params = "in=$temp3file out=$temp4file modifyin=false subtract auto";
-   $params .= " order=1 axis=spec method=single";
-   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+      orac_say( "  Fit linear baselines and subtract these from the trends." );
+      $params = "in=$temp3file out=$temp4file modifyin=false subtract auto";
+      $params .= " order=1 axis=spec method=single";
+      $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
 # Form clean non-linearity profile.
 # ---------------------------------
@@ -511,127 +545,127 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Find the rms residuals from a linear baseline i.e. a positive measure of the
 # deviation from flatness.  The normalisation is arbitrary so just approximate with
 # the full spectral dimension.
-   $params = "ia=$temp4file out=$temp5file exp='sqrt(IA*IA/$nel)'";
-   $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+      $params = "ia=$temp4file out=$temp5file exp='sqrt(IA*IA/$nel)'";
+      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Collapse the spectral axis using a clipped mean to form average
 # non-linearity for each spectrum and each current detector.
-   orac_say( "    Collapsing spectra to form average non-linearity per spectrum." );
-   $params = "in=$temp5file out=$temp6file estimator=mean";
-   $params .= " axis=spec trim wlim=0.0 variance=false";
-   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+      orac_say( "    Collapsing spectra to form average non-linearity per spectrum." );
+      $params = "in=$temp5file out=$temp6file estimator=mean";
+      $params .= " axis=spec trim wlim=0.0 variance=false";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Concatenate the profiles.
 # -------------------------
 
 # Form a profile for each receptor throughout a whole observation.  The
 # whole gives a better handle on the normal non-linearity level.
-   if ( $i == 1 ) {
-      $params = "in=$temp6file out=$linearity_profiles";
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      if ( $i == 1 ) {
+         $params = "in=$temp6file out=$linearity_profiles";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-   } else {
+      } else {
 
 # Shift the origin on the time during concatenation.
-      my $time_origin = $time_bounds[-2] - 1;
-      $params = "shift=[0,$time_origin] ";
-      $params .= "in=$linearity_profiles p1=$temp6file out=$temp7file";
-      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+         my $time_origin = $time_bounds[-2] - 1;
+         $params = "shift=[0,$time_origin] ";
+         $params .= "in=$linearity_profiles p1=$temp6file out=$temp7file";
+         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
 # Ready for the next slice to concatenate.  Another, but brave, way
 # is to to make the input and output the same on PASTE.
-      $params = "in=$temp7file out=$linearity_profiles";
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         $params = "in=$temp7file out=$linearity_profiles";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      }
    }
-}
 
 # Get average rms deviations for each receptor not in the bad_receptors list.
 # ---------------------------------------------------------------------------
-my $linearity_mask = new ORAC::TempFile( 0 );
+   my $linearity_mask = new ORAC::TempFile( 0 );
 
-foreach my $receptor ( @receptors ) {
-   orac_say( "  Receptor $receptor." );
-   my $pixel = $array->pixel( $receptor );
+   foreach my $receptor ( @receptors ) {
+      orac_say( "  Receptor $receptor." );
+      my $pixel = $array->pixel( $receptor );
 
-   my $temp8file = new ORAC::TempFile( 0 );
-   my $temp9file = new ORAC::TempFile( 0 );
-   my $temp10file = new ORAC::TempFile( 0 );
-   my $temp11file = new ORAC::TempFile( 0 );
+      my $temp8file = new ORAC::TempFile( 0 );
+      my $temp9file = new ORAC::TempFile( 0 );
+      my $temp10file = new ORAC::TempFile( 0 );
+      my $temp11file = new ORAC::TempFile( 0 );
 
 # Identify anomalous spectra.
 # ---------------------------
 
 # First greatly reduce the effect of noise, provided there are
 # sufficient spectra (arbitrarily twice the box size).;
-   my $boxsize = 11;
-   if ( $no_times > 2 * $boxsize ) {
-      $params = "in=$linearity_profiles($pixel,) out=$temp8file box=$boxsize estimator=mean";
-      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+      my $boxsize = 11;
+      if ( $no_times > 2 * $boxsize ) {
+         $params = "in=$linearity_profiles($pixel,) out=$temp8file box=$boxsize estimator=mean";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
 
-   } else {
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$linearity_profiles($pixel,) out=$temp8file" );
-   }
+      } else {
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$linearity_profiles($pixel,) out=$temp8file" );
+      }
 
 # To obtain the desired binning resolution for the histogram peak cut off
 # definitely non-linear spectra.
-   my $threshold = 0.08;
-   $params = "in=$temp8file out=$temp11file thrlo=0 thrhi=$threshold newlo=0.0 newhi=bad";
-   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      my $threshold = 0.08;
+      $params = "in=$temp8file out=$temp11file thrlo=0 thrhi=$threshold newlo=0.0 newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
 # significant compared with the non-linearity.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp11file clip=$edge_clip order" );
-   my ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
-   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-   ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp11file clip=$edge_clip order" );
+      my ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+      ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # The minimum number is arbitrary.  It's based on needing around ten
 # bins and at least 50 values in the peak bins.  Its aim is to catch those cases
 # where most of the spectra are non-linear and exceed the 0.08 threshold.
-   my ( $mode, $sigma );
-   my $apply_thresh = 0;
-   if ( $numgood > 200 && $numgood > 0.1 * $numpix ) {
+      my ( $mode, $sigma );
+      my $apply_thresh = 0;
+      if ( $numgood > 200 && $numgood > 0.1 * $numpix ) {
 
 # FINDCLUMPS can give off-centre centroids weighted by the outliers we
 # want to exclude and the width is enlarged by outliers.  So just use the
 # histogram peak.  Smooth to define the peak better.  One could do
 # Gaussian fits to derive the sigma or combine the central few to derive
 # a more-precise peak.  For the moment this seems adequate.
-      my $Frm = $Frm->new;
-      $Frm->file( $temp11file );
-      _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 CENTROID=0
-      if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} ) {
-         $mode = $_FIND_HISTOGRAM_PEAK_{PEAK};
+         my $Frm = $Frm->new;
+         $Frm->file( $temp11file );
+         _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 CENTROID=0
+         if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} ) {
+            $mode = $_FIND_HISTOGRAM_PEAK_{PEAK};
 
-      } else {
-         $mode = $mean;
-      }
+         } else {
+            $mode = $mean;
+         }
 
 # Find the percentile of the peak.
-      $params = "in=$temp11file above=no value=$mode";
-      $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
-      ( $ORAC_STATUS, my $number_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
-      my $percentile_peak = 100.0 * ( $number_below + 1 ) / $numgood;
+         $params = "in=$temp11file above=no value=$mode";
+         $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
+         ( $ORAC_STATUS, my $number_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
+         my $percentile_peak = 100.0 * ( $number_below + 1 ) / $numgood;
 
 # Set the percentile for two-sigma below the mode.  For a normal
 # distribution the mean, mode, and median are the same.  As there are
 # positive outliers from non-linear spectra the peak shift the two-sigma
 # percentile down accordingly.
-      my $two_sigma_percentile = 2.23 * $percentile_peak / 50.0;
+         my $two_sigma_percentile = 2.23 * $percentile_peak / 50.0;
 
 # The distribution is skew to higher values.  We would like the mode
 # and width of the normal curve around that.  The mode is approximated by
 # the heavily clipped mean.  Now obtain the two-sigma level below
 # the mode without clipping.
-      $params = "ndf=$temp11file percentiles=$two_sigma_percentile order";
-      $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-      ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
-      $sigma = 0.5 * ( $mode - $perval );
-      $threshold = max( 0.003, min( 0.01, $mode + $thresh_clip * $sigma ) );
-      $apply_thresh = 1;
-   }
+         $params = "ndf=$temp11file percentiles=$two_sigma_percentile order";
+         $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+         ( $ORAC_STATUS, my $perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+         $sigma = 0.5 * ( $mode - $perval );
+         $threshold = max( 0.003, min( 0.01, $mode + $thresh_clip * $sigma ) );
+         $apply_thresh = 1;
+      }
 
 # Threshold spectra whose mean rms non-linearity exceeds an outlier limit.
 # Only exclude values when a new threshold has been set.  The statistics
@@ -645,106 +679,106 @@ foreach my $receptor ( @receptors ) {
 # noise, so protect against drift and signal variations in the timeseries
 # causing the dispersion; these should be small compared with the signal
 # being detected.
-   if ( $numgood > 0 &&
-        ! ( lc( $threshold ) =~ /inf/ || lc( $threshold ) =~ /nan/ ) ) {
-      orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
-      if ( $apply_thresh ) {
-         $params = "in=$temp8file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
-         $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      if ( $numgood > 0 &&
+           ! ( lc( $threshold ) =~ /inf/ || lc( $threshold ) =~ /nan/ ) ) {
+         orac_say( "    Turning off spectra with rms non-linearity above " . sprintf( "%.5f", $threshold ) );
+         if ( $apply_thresh ) {
+            $params = "in=$temp8file out=$temp9file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
+            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+         } else {
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$temp9file" );
+         }
+         ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
+         ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
+         my $total = $eject + $kept;
+         if ( $eject == 1 ) {
+            orac_say( "      One spectrum removed out of $total." );
+         } elsif ( $eject > 0 ) {
+            orac_say( "      $eject spectra removed out of $total." );
+         } else {
+            orac_say( "      No spectra removed out of $total." );
+         }
+
       } else {
          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$temp9file" );
       }
-      ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
-      ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
-      my $total = $eject + $kept;
-      if ( $eject == 1 ) {
-         orac_say( "      One spectrum removed out of $total." );
-      } elsif ( $eject > 0 ) {
-         orac_say( "      $eject spectra removed out of $total." );
-      } else {
-         orac_say( "      No spectra removed out of $total." );
-      }
-
-   } else {
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp8file out=$temp9file" );
-   }
 
 # Form file containing the masks for each receptor.
 # =================================================
 
 # Copy the profiles initially then concatenate them.
-   if ( $receptor eq $receptors[0] ) {
-      $params = "in=$temp9file out=$linearity_mask";
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      if ( $receptor eq $receptors[0] ) {
+         $params = "in=$temp9file out=$linearity_mask";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-   } else {
-      $params = "in=$linearity_mask p1=$temp9file out=$temp10file";
-      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+      } else {
+         $params = "in=$linearity_mask p1=$temp9file out=$temp10file";
+         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
-      $params = "in=$temp10file out=$linearity_mask";
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         $params = "in=$temp10file out=$linearity_mask";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      }
    }
-}
 
 # Loop over the subfiles again to apply the flagging.
 # ===================================================
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
-   my ( $in, $out ) = $Frm->inout( $osuffix, $i );
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my ( $in, $out ) = $Frm->inout( $osuffix, $i );
 
-   _GET_DIMENSIONS_ FILE=$in
-   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
-   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      my $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
-   my $temp11file = new ORAC::TempFile( 0 );
-   my $temp12file = new ORAC::TempFile( 0 );
+      my $temp11file = new ORAC::TempFile( 0 );
+      my $temp12file = new ORAC::TempFile( 0 );
 
 # Create a mask NDF.
 # ------------------
 #
 # As we shall be filling every receptor plane with a mask of any noisy
 # spectra, it is adequate to merely copy the input NDF.
-   my $cubemask = new ORAC::TempFile( 0 );
-   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$cubemask" );
+      my $cubemask = new ORAC::TempFile( 0 );
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$cubemask" );
 
 # Add plane for receptor into mask cube.
 # --------------------------------------
 
 # Pick out the section of the profile MASK applicable to the current
 # input time-series file.
-   my $t_lbnd = $time_bounds[2 * $i - 2];
-   my $t_ubnd = $time_bounds[2 * $i - 1];
+      my $t_lbnd = $time_bounds[2 * $i - 2];
+      my $t_ubnd = $time_bounds[2 * $i - 1];
 
 # Expand the thresholded image to the size of the current receptor's
 # plane in the initial cube.
-   orac_say( "   Expand the masked profile." );
-   $params = "in=$linearity_mask(,$t_lbnd:$t_ubnd) out=$temp11file ";
-   $params .= "axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
-   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+      orac_say( "   Expand the masked profile." );
+      $params = "in=$linearity_mask(,$t_lbnd:$t_ubnd) out=$temp11file ";
+      $params .= "axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Restore the origin on the time axis.
-   $params = "ndf=$temp11file like=$cubemask";
-   $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$params" );
+      $params = "ndf=$temp11file like=$cubemask";
+      $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$params" );
 
 # Paste the data to the mask file.
-   orac_say( "   Paste the masked data into the cube mask." );
-   $params = "in=$cubemask p1=$temp11file out=$temp12file confine=false transp=false";
-   $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp12file out=$cubemask" );
+      orac_say( "   Paste the masked data into the cube mask." );
+      $params = "in=$cubemask p1=$temp11file out=$temp12file confine=false transp=false";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp12file out=$cubemask" );
 
 # At this point $cubemask should have all the original receptors
 # checked for wobbly spectra and have bad values for those spectra.
 # Copy the bad spectra to the output image.
-   orac_say( "  Apply the mask of noisy spectra to the input time series to form $out." );
-   $params = "in=$in ref=$cubemask out=$out";
-   $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+      orac_say( "  Apply the mask of noisy spectra to the input time series to form $out." );
+      $params = "in=$in ref=$cubemask out=$out";
+      $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
 
 # Update the Frm object.
-   $Frm->file( $i, $out );
+      $Frm->file( $i, $out );
 
 # Display if necessary.
-   $Display->display_data( $Frm ) if defined $Display;
-
+      $Display->display_data( $Frm ) if defined $Display;
+   }
 }
 
 # Tidy-up output.
