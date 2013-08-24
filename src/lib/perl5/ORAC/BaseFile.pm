@@ -26,6 +26,7 @@ use vars qw/ $VERSION /;
 use ORAC::Print;
 use Astro::FITS::Header;
 use Astro::FITS::HdrTrans 1.00;
+use Config::IniFiles;
 
 $VERSION = '1.0';
 
@@ -1258,6 +1259,31 @@ sub sync_headers {
   warn "Stub sync_headers does nothing. Please inherit from BaseNDF or BaseFITS";
 }
 
+=item B<_get header_override>
+
+Returns a hash of headers to be overridden by filename.
+
+=cut
+
+do {
+  my $overrides = undef;
+  my $override_file = 'header_override.ini';
+
+  sub _get_header_override {
+    unless (defined $overrides) {
+      if (-e $override_file) {
+        my %ini;
+        tie %ini, 'Config::IniFiles', (-file => $override_file);
+        $overrides = \%ini;
+      }
+      else {
+        $overrides = {};
+      }
+    }
+    return $overrides;
+  }
+};
+
 =item B<calc_orac_headers>
 
 This method calculates header values that are required by the
@@ -1284,6 +1310,21 @@ containing the new keywords.
 
 sub calc_orac_headers {
   my $self = shift;
+
+  # Check whether there are headers which need to be overridden.
+  do {
+    my $filename = $self->file();
+    if (defined $filename) {
+      my $override = _get_header_override();
+
+      foreach my $key (keys %$override) {
+        if ($filename =~ /^$key/) {
+          $self->hdr(%{$override->{$key}});
+          last;
+        }
+      }
+    }
+  };
 
   my %new = ();                 # Hash containing the derived headers
 
