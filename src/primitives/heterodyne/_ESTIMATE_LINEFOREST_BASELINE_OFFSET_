@@ -91,20 +91,6 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
       @objs = $Grp->members;
    }
 
-# Create configuration-parameter file for FINDCLUMPS.  The main ones are
-# ClumpFind.MaxBad, ClumpFind.MinPix (although double the default it could
-# be set larger to weed out peaks from lines), ClumpFind.FwhmBeam, and
-# the dynamic ClumpFind.Tlow added on the command line.  ClumpFind.VeloRes
-# could be set to 1 channel.
-   my $fc_param = new ORAC::TempFile( 1 );
-   open my $fc_fh, ">", $fc_param;
-   print $fc_fh "ClumpFind.Minpix=6\n";
-   print $fc_fh "ClumpFind.AllowEdge=1\n";
-   print $fc_fh "ClumpFind.FwhmBeam=0.0\n";
-   print $fc_fh "ClumpFind.MaxBad=1\n";
-   print $fc_fh "ClumpFind.VeloRes=0\n";
-   close $fc_fh;
-
    my $ORAC_STATUS;
    foreach my $Obj ( @objs ) {
       my ( $in, $out ) = $Obj->inout( "_bldc" );
@@ -113,91 +99,28 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
 # emission lines the skewness will be strongly positive.
       $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in" );
       ( $ORAC_STATUS, my $skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+      ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
       if ( $skewness > $min_skewness ) {
 
-# Now perform statistics trimming off much of the signal from the spectral lines
-# causing positive skewness.  Set the resolution to give seven bins across the
-# FWHM.
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=[2.0,2.0,2.5,3.0]" );
-         ( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
-         ( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
-         ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
-         my $resolution = $sigma / 3;
-
-# Round up or down the histogram range to the bin resolution, and hence
-# determine the number of histogram bins, allowing numerical rounding.
-# Append an extra bin at the lower end so that the first peak does not
-# cut touch the array lower bound.
-         $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
-         $maximum = floor( $maximum / $resolution ) * $resolution;
-         my $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
-
-# Create histogram at the resolution, covering the range of relevant data.
-         my $histfile = new ORAC::TempFile( 0 );
-         my $params = "in=$in out=$histfile ";
-         $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
-         $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
-
-# A gentle smooth should generate a well defined rounded peak.
-         my $smooth_hist = new ORAC::TempFile( 0 );
-         $params = "in=$histfile out=$smooth_hist fwhm=3";
-         $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
-
-# Find the minimum count in the histogram for the clump finding and
-# ensure that the first threshold for clump finding is above this.
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$smooth_hist " );
-         ( $ORAC_STATUS, my $mincount ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
-         $mincount++;
-
-# Set a representative rms for clump finding.
-         ( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-         my $rms = max( 1.001, sqrt( $total / $numbin ) );
-
-# Identify the peaks in the histogram, storing the results table to a Starlink STL file.
-# Since the quanta are integers ensure the RMS level is at least that.
-         my $outmap = new ORAC::TempFile( 0 );
-         my $outcat = new ORAC::TempFile( 0 );
-         $outcat .= ".TXT";
-         $params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=$rms ";
-         $params .= "config='^$fc_param,ClumpFind.Tlow=$mincount' accept";
-         $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
-
-         my $peak = 0;
-
-# Check number of clumps using NCLUMPS.
-         ( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
-         if ( $nclumps > 0 ) {
-
-# Since I'm not allowed to use STILTS, here is a not terribly pretty
-# means to access the required datum in the file.  It searches the STL
-# format for the start of the table and given by the BEGINTABLE, and
-# there is no development of this format so this should be robust.
-# Then we assume that the first row is the lowest co-ordinate; there
-# should not be a peak below the baseline.
-            open( TABLE, "< $outcat" ) or
-              die "Could not find catalogue $outcat specifying the peak baseline: $!\n";
-            my @lines = <TABLE>;
-            my $i = 0;
-            my $row;
-            while ( $i < scalar( @lines ) ) {
-               chomp $lines[$i];
-               if ( $lines[$i] =~ /BEGINTABLE/ ) {
-                  $row = $lines[$i+1];
-                  last;
-               }
-               $i++;
+# FINDCLUMPS can give off-centre centroids weighted by the outliers we
+# want to exclude and the width is enlarged by outliers.  So just use the
+# histogram peak.  Smooth to define the peak better.  One could do
+# Gaussian fits to derive the sigma or combine the central few to derive
+# a more-precise peak.  For the moment this seems adequate.
+         my $dc_offset;
+         {
+            my $Frm = new $Frm;
+            $Frm->file( $in );
+            _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 CENTROID=0
+            if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} ) {
+               $dc_offset = $_FIND_HISTOGRAM_PEAK_{PEAK};
+            } else {
+               $dc_offset = $mean;
             }
-
-# Extract the Peak1 value for the first (baseline peak).  Convert from
-# scientific notion with a D exponent to E so that Perl recognises it.
-            my @fields = split( ' ', $row );
-            $peak = $fields[1];
-            $peak =~ s/D/e/;
          }
 
 # Apply the DC offset.
-         my $dc_offset = $minimum + $peak * $resolution;
-         $params = "in=$in out=$out scalar=$dc_offset";
+         my $params = "in=$in out=$out scalar=$dc_offset";
          $Mon{'kappa_mon'}->obeyw( "csub", "$params" );
 
          orac_print "$in to $out:\n";
@@ -207,9 +130,6 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
          $Obj->file( $out );
       }
    }
-
-# Remove the FINDCLUMPS configuration file.
-   unlink( $fc_param );
 
 # Tidy-up output.
    orac_print "\n";
