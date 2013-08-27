@@ -142,12 +142,46 @@ my $ORAC_STATUS;
 # Perform statistics trimming off much of the signal from the signal
 # causing positive skewness.  Set the resolution to give seven bins across
 # the FWHM.
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip" );
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip order percentiles=[25,75]" );
 ( $ORAC_STATUS, my $skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+( $ORAC_STATUS, my $kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
 ( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
 ( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
 ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
-my $resolution = $sigma / 3;
+( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+( $ORAC_STATUS, my @perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+
+# Allow for extended wings.
+# -------------------------
+
+# It is hard to set default clipping factors which apply well to all
+# data.  If the previous estimate at the standard deviation overestimates
+# the spread from long tails, such as would occur for broadline or
+# lineforest emission, the bin size is too wide and definition of the
+# peak is degraded.  There are various rules such as Sturges or
+# Freedman & Diaconis to set the optimal bin width.  However, tests with
+# one problem dataset either gave fewer bins as used above (Sturges) or
+# what looked too many (Freedman-Diaconis).  The latter was certainly
+# better.
+
+# If there are few outliers and the standard deviation is good
+# estimate of the true standard deviation of the main peak of the
+# histogram.  This another approach is to create the histogram adopting
+# this assumption and see if there is one bin dominating, and scale
+# the number of bins in a refined histogram to bring down the peak
+# count to a smaller fraction, say 12 to 15% of the sample size.
+
+# Let's use both aproaches.  If the data look reasonably Gaussian
+# go with the standard deviaiton and revise the histogram if necessary.
+my ( $numbin, $resolution );
+if ( abs( $skewness ) < 1 && $kurtosis < 2 ) {
+   $resolution = $sigma / 3;
+
+# Increase the number of bins using the Freedman & Diaconis formula,
+# which uses the inter-quartile range.
+} else {
+   $resolution = 2 * abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
+}
 
 # Round up or down the histogram range to the bin resolution, and hence
 # determine the number of histogram bins, allowing numerical rounding.
@@ -155,7 +189,7 @@ my $resolution = $sigma / 3;
 # cut touch the array lower bound.
 $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
 $maximum = floor( $maximum / $resolution ) * $resolution;
-my $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
+$numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
 
 # Create histogram at the resolution, covering the range of relevant data.
 my $histfile = new ORAC::TempFile( 0 );
@@ -163,6 +197,27 @@ $histfile .= "_hist";
 my $params = "in=$in out=$histfile ";
 $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
 $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$histfile" );
+( $ORAC_STATUS, my $binmax ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+
+# Is the main bin over-populated?
+my $target = int( 0.15 * $numgood );
+if ( $binmax > $target ) {
+
+# Simple scaling is insufficient because of the drop off around the
+# peak, so add in a fudge factor.  There is probably some mathematical
+# formula that would derive this correction for a Gaussian to give the
+# peak bin desired.  For this routine this should be adequate to define
+# peak location sufficiently accurately.
+   $resolution /= $binmax / $target * 2;
+   $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
+   $maximum = floor( $maximum / $resolution ) * $resolution;
+   $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
+   $params = "in=$in out=$histfile ";
+   $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
+   $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+}
 
 # A gentle smooth should generate a well-defined rounded peak.
 my $smooth_hist = new ORAC::TempFile( 0 );
