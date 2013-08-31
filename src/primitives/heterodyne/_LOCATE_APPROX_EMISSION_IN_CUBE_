@@ -38,7 +38,7 @@ constrained to the range 2 to 4.  [3]
 Initial binary factor to set the boxsize for FINDBACK smoothing of the
 baseline.  The boxsize is a power of two fraction of the number of
 elements in the spectrum.  Thus a factor of 4 gives a smoothing filter
-box gives one sixteenth (1/2**4) of the spectral range.  It is 
+box gives one sixteenth (1/2**4) of the spectral range.  It is
 constrained to the range INITIAL_FACTOR to 5.  Normally one pass
 is sufficient.  The default is the maximum of 3 and INITIAL_FACTOR.  []
 
@@ -74,6 +74,11 @@ It checks whether or not the internal header MERGED_HYBRID is set; if
 it is defined then the emission is detected in the merged spectrum,
 otherwise the primitive locates the emission in each subband
 independently.
+
+=item *
+
+The receptors are collapsed using a two-sigma clipped mean if there are at least
+nine recptors available, otherwise the median is used.
 
 =back
 
@@ -218,22 +223,32 @@ foreach my $subsys ( 0 .. $nsubsys - 1  ) {
 # median for the collapse over the receptors to reduce the effect of strong
 # non-linear baselines in one or two receptors.
       my $params;
+      $params = "in=$in out=$temp1file estimator=mean wlim=0.0 trim axis=time";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+      my $estimator = ( $dims[1] > 8 ) ? "cmean" : "median";
+
       if ( $first ) {
          $first = 0;
          push @meanspectrum, $spectrum;
 
-         $params = "in=$in out=$temp1file estimator=mean wlim=0.0 axis=time";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-         $params = "in=$temp1file out=$meanspectrum[$subsys] estimator=cmean clip=2.0 wlim=0.0 axis=2";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         $params = "in=$temp1file out=$meanspectrum[$subsys] ";
+         if ( $dims[1] > 1 ) {
+            $params .= "estimator=$estimator clip=2.0 wlim=0.0 trim axis=2";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         } else {
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params trim" );
+         }
 
       } else {
-         $params = "in=$in out=$temp1file estimator=mean wlim=0.0 axis=time";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-         $params = "in=$temp1file out=$temp2file estimator=median wlim=0.0 axis=2";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         if ( $dims[1] > 1 ) {
+            $params = "in=$temp1file out=$temp2file trim";
+            $params .= "estimator=$estimator wlim=0.0 axis=2";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         } else {
+            $temp2file = $temp1file;
+         }
 
-# If there are subscans weight the spectra by the respective numbers of 
+# If there are subscans weight the spectra by the respective numbers of
 # spectra in the current subscan and the sum thus far.  It's not perfect
 # if there are bad pixels but should be quite adequate in practice.
          $params = "exp='(IA*PA+IB*PB)/(PA+PB)' pa=$sum_times pb=$ntime ";
