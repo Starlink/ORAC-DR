@@ -171,11 +171,20 @@ $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip order percentiles
 # the number of bins in a refined histogram to bring down the peak
 # count to a smaller fraction, say 12 to 15% of the sample size.
 
-# Let's use both aproaches.  If the data look reasonably Gaussian
-# go with the standard deviaiton and revise the histogram if necessary.
-my ( $numbin, $resolution );
-if ( abs( $skewness ) < 1 && $kurtosis < 2 ) {
-   $resolution = $sigma / 3;
+# Let's use both approaches.  If the data look reasonably Gaussian
+# go with the standard deviation and revise the histogram if necessary.
+# Also the crude normality test is gives different results analysing
+# the raw data and binned into the histogram reducing both skewness and
+# kurtosis, so test both.
+my ( $binmax, $hist_normal, $numbin, $params, $resolution );
+my $normal = abs( $skewness ) < 1 && $kurtosis < 1;
+my $def_resolution = $sigma / 3;
+
+my $histfile = new ORAC::TempFile( 0 );
+
+# Set the initial bin width.
+if ( $normal ) {
+   $resolution = $def_resolution;
 
 # Increase the number of bins using the Freedman & Diaconis formula,
 # which uses the inter-quartile range.
@@ -183,22 +192,39 @@ if ( abs( $skewness ) < 1 && $kurtosis < 2 ) {
    $resolution = 2 * abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
 }
 
+my $loop = 1;
+my $lc = 1;
+while ( $loop ) {
+
 # Round up or down the histogram range to the bin resolution, and hence
 # determine the number of histogram bins, allowing numerical rounding.
 # Append an extra bin at the lower end so that the first peak does not
 # touch the array lower bound.
-$minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
-$maximum = floor( $maximum / $resolution ) * $resolution;
-$numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
+   $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
+   $maximum = floor( $maximum / $resolution ) * $resolution;
+   $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
 
 # Create histogram at the resolution, covering the range of relevant data.
-my $histfile = new ORAC::TempFile( 0 );
-my $params = "in=$in out=$histfile ";
-$params .= "device=! numbin=$numbin range='$minimum,$maximum'";
-$Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+   $params = "in=$in out=$histfile ";
+   $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
+   $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
 
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$histfile" );
-( $ORAC_STATUS, my $binmax ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+# Repeat the crude test for normality but also obtain the maximum
+# count in a bin.
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$histfile" );
+   ( $ORAC_STATUS, $binmax ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+   ( $ORAC_STATUS, my $hist_skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+   ( $ORAC_STATUS, my $hist_kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
+   $hist_normal = abs( $hist_skewness ) < 1 && $hist_kurtosis < 1;
+   if ( !$hist_normal ) {
+      $resolution = 2 * abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
+   }
+
+# Repeat if we had a normalish original data but skewed or spread out
+# histogram.
+   $loop = $normal && !$hist_normal && $lc == 1;
+   $lc++;
+}
 
 # Is the main bin over-populated?
 my $target = int( 0.15 * $numgood );
