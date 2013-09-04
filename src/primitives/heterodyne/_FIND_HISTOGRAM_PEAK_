@@ -54,8 +54,8 @@ current Frame.
 
 =head1 TASKS
 
-CUPID: FINDCLUMPS;
-KAPPA: GAUSMOOTH, HISTOGRAM, NDFCOPY, STATS.
+CUPID: FINDBACK, FINDCLUMPS;
+KAPPA: BLOCK, GAUSMOOTH, HISSET, HISTOGRAM, NDFCOPY, STATS, SUB.
 
 =head1 REQUIRED PERL MODULES
 
@@ -251,6 +251,35 @@ if ( $smooth ) {
    $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
 } else {
    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$histfile out=$smooth_hist" );
+}
+
+# Attempt to remove the background for asymmetric distributions which
+# bias the centroid.
+if ( ( !$normal || !$hist_normal ) && $centroid ) {
+   my $histback = new ORAC::TempFile( 0 );
+   my $histsub = new ORAC::TempFile( 0 );
+   my $boxsize = max( $numbin / 3, $def_resolution );
+
+# Find rough background but with a box size that it only has a marginal
+# effect on the centroid of the main peak of the histogram.
+   my $oddboxsize = $boxsize + ( $boxsize + 1 ) % 2;
+   $params = "in=$smooth_hist out=$histback box=$oddboxsize rms=1 accept";
+   my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# FINDBACK can fall over, but this should not be fatal.
+   if ( $FINDBACK_STATUS != ORAC__OK ) {
+      if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+           orac_say "   Unable to find the background in the histogram due to insufficient good data.";
+      }
+      orac_say "   Attempting to continue using block smoothing.";
+      $params = "in=$smooth_hist out=$histback box=$oddboxsize estimator=median";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   }
+
+   $params = "in1=$smooth_hist in2=$histback out=$histsub";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   orac_say "   Subtract the background from the histogram.";
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=histsub out=$smooth_hist" );
 }
 
 # Set data-driven parameters for clump finding.
