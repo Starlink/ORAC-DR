@@ -38,7 +38,7 @@ use vars qw/$VERSION $DEBUG/;
 
 use overload '""' => "STRINGIFY", fallback => 1;
 
-$VERSION = '1.0';
+$VERSION = '1.01';
 $DEBUG = 0;
 
 =head1 PUBLIC METHODS
@@ -190,7 +190,8 @@ are also unlinked. This allows the same class to be used
 for temporary plain files and temporary NDF files.
 
 No files are removed if the debugging flag ($DEBUG) is set to
-true (the default is false)
+true (the default is false) or if the ORAC_KEEP environment
+variable has a value of "temp".
 
 =cut
 
@@ -198,7 +199,13 @@ sub DESTROY {
   local($., $@, $!, $^E, $?);
   my $self = shift;
 
-  unless ($DEBUG) {
+  # We delete if $DEBUG is false
+  # or ORAC_KEEP!=temp. Because of the unless clause it is easier
+  # to work out whether we are keeping
+  my $keep = 1 if ($DEBUG ||
+                   (exists $ENV{ORAC_KEEP} && defined $ENV{ORAC_KEEP} && $ENV{ORAC_KEEP} =~ /^temp/i ));
+
+  unless ($keep) {
     # close file handle
     my $hdl = $self->handle;
     $hdl->close if defined $hdl;
