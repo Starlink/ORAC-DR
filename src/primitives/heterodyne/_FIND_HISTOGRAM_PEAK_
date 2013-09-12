@@ -1,17 +1,37 @@
 =head1 NAME
 
 _FIND_HISTOGRAM_PEAK_
- 
+
 =head1 DESCRIPTION
 
 This primitive uses a smoothed histogram of data values to estimate
 the mode from the most populous peak, or the first or last significant
-peak for positive or negative skewness respectively.
+peak for positive or negative skewness respectively.  There is a
+choice of methods available (see Argument METHOD).
 
-It bins the values such that seven pixels cover the clipped standard
-deviation to give approximately Nyquist sampling.
+Because of outliers it adopts an iterative approach.  First it forms
+the histogram with some clipping of the data (see Argument CLIP). The
+number of bins comes from the Freedman & Diaconis rule.  Using the
+Nyguist sampling is too coarse to determine the peak.  Although the
+resolution may be scaled if the peak bin contains more than 15% of the
+sample.  It then smoothes the histogram with a 2-pixel FWHM Gaussian.
+On this first pass the primitive estimates a background to alleviate
+the effect of outliers; its scalelength is one third of the histogram
+range.  Next it estimates with the ClumpFind algorithm the clump peak
+and width parameters, which in turn it uses to trim the histogram with
+clipping to counteract, albeit in an ad hoc fashion, skewed
+distributions.  Then it optionally fits a Gaussian should that method
+be chosen.
 
-The peak is found using Clumpfind.
+Then the process is repeated on the histogrram of just the peak of
+interest.  However, it uses double the number of bins given by the
+Freedman & Diaconis rule to improve the resolution, especially for the
+Peak method.  To counteract noise the smoothing width is enlarged to
+3-pixel FWHM, and there is no background subtraction.
+
+This primitive not guaranteed to work for all distributions, and some
+of the parameters such as smoothing widths and resolution are
+arbitrary. Further refinements and tuning may be necessary.
 
 =head1 ARGUMENTS
 
@@ -25,37 +45,46 @@ and its standard deviation more accurately.  A comma-separated list
 will perform iterative sigma clipping of outliers, but standard
 deviations in the list should not decrease.  ["2.0,2.0,2.5,3.0"]
 
-=item CENTROID = BOOLEAN (Given)
-
-If true (1) obtain the centroid of the chosen clump.  If false
-obtain the modal value at the binning resolution.  [1]
-
 =item EXTREME = BOOLEAN (Given)
 
 Whether to obtain the peak of the first (or last if skewness is negative),
 or the most populous peak.  [1]
 
+=item METHOD = STRING (Given)
+
+This selects the statistic to use for the peak.  Allowed values are
+"Peak" for the location of the peak bin, "Centroid" for the clump
+centroid, and "Gauss" for a Gaussian fit.  The peak is limited to the
+box width, typically 30 bins over +/-2.5 standard deviations.
+The clump is easily biased by unresolved clumps or extended signal to
+one side of the peak.  For example, the centroid would tend to
+understimate the base level in a line forest.  The Gauss will also be
+biased but to a somewhat lesser extent.   ["Peak"]
+
 =item PEAK = REAL (Returned)
 
-The chosen peak of distribution of the values in the current Frame. 
+The chosen peak of distribution of the values in the current Frame.
 
 =item SMOOTH = BOOLEAN (Given)
 
-Whether or to apply Gaussian smooth of 3-pixels FWHM to the histogram.
-The recommenation is to only enble smoothing if only the peak value is
+Whether or to apply Gaussian smooth of 2-pixels then 3-pixels FWHM to
+the histogram.  The recommenation is to only enble smoothing if only the peak value is
 required and not the width of the peak.  [0]
 
 =item WIDTH = REAL (Returned)
 
 The width of the chosen peak of the distribution of values in the
-current Frame. 
+current Frame.   This the the clump width for METHOD="Peak" or
+"Centroid", or the Gaussian fit standard deviation for METHOD="Gauss".
 
 =back
 
 =head1 TASKS
 
 CUPID: FINDBACK, FINDCLUMPS;
-KAPPA: BLOCK, GAUSMOOTH, HISTOGRAM, NDFCOPY, STATS, SUB.
+Figaro: FITGAUSS;
+KAPPA: BLOCK, GAUSMOOTH, HISSET, HISTOGRAM, NDFCOPY, SETTYPE, STATS,
+       SUB, THRESH.
 
 =head1 REQUIRED PERL MODULES
 
@@ -96,7 +125,7 @@ use POSIX qw(ceil floor);
 my $peak = undef;
 my $width = undef;
 my $outlier_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
-my $centroid = get_prim_arg( $_PRIM_ARGS_, "CENTROID", 1 );
+my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "Peak" );
 my $extreme = get_prim_arg( $_PRIM_ARGS_, "EXTREME", 1 );
 my $smooth = get_prim_arg( $_PRIM_ARGS_, "SMOOTH", 1 );
 
@@ -116,6 +145,9 @@ foreach ( @clips ) {
 }
 
 $outlier_clip = "[" . join( ",", @clip_sigma ) . "]";
+
+my @methods = qw( peak centroid gauss );
+$method = "peak" if ( ! grep( $_ eq lc( $method ), @methods ) );
 
 my $in = $Frm->file;
 
@@ -139,17 +171,27 @@ close $fc_fh;
 # ==================================
 my $ORAC_STATUS;
 
+my $full = 1;
+my $data = $in;
+my $params;
+my @fwhm = ( 2, 3 );
+my @iqr_factor = ( 2.0, 1.0 );
+my $itermax = min( scalar( @fwhm ), scalar( @iqr_factor ) );
+
+for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
+
 # Perform statistics trimming off much of the signal from the signal
 # causing positive skewness.  Set the resolution to give seven bins across
 # the FWHM.
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip order percentiles=[25,75]" );
-( $ORAC_STATUS, my $skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
-( $ORAC_STATUS, my $kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
-( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
-( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
-( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
-( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
-( $ORAC_STATUS, my @perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
+   $params = "ndf=$data clip=$outlier_clip order percentiles=[25,75]";
+   $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+   ( $ORAC_STATUS, my $skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+   ( $ORAC_STATUS, my $kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
+   ( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+   ( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+   ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+   ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   ( $ORAC_STATUS, my @perval ) = $Mon{'kappa_mon'}->get( "stats", "perval" );
 
 # Allow for extended wings.
 # -------------------------
@@ -162,7 +204,7 @@ $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip order percentiles
 # Freedman & Diaconis to set the optimal bin width.  However, tests with
 # one problem dataset either gave fewer bins as used above (Sturges) or
 # what looked too many (Freedman-Diaconis).  The latter was certainly
-# better.
+# better and offered far-better resolution for the peak method.
 
 # If there are few outliers and the standard deviation is good
 # estimate of the true standard deviation of the main peak of the
@@ -176,125 +218,135 @@ $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in clip=$outlier_clip order percentiles
 # Also the crude normality test is gives different results analysing
 # the raw data and binned into the histogram reducing both skewness and
 # kurtosis, so test both.
-my ( $binmax, $hist_normal, $numbin, $params, $resolution );
-my $normal = abs( $skewness ) < 1 && $kurtosis < 1;
-my $def_resolution = $sigma / 3;
+   my ( $binmax, $hist_normal, $numbin, $resolution );
+   my $normal = abs( $skewness ) < 1 && $kurtosis < 1;
+   orac_warn "   Data distribution is not approximately Gaussian\n" if ( !$normal );
 
-my $histfile = new ORAC::TempFile( 0 );
-
-# Set the initial bin width.
-if ( $normal ) {
+# Set the initial bin width using the Freedman & Diaconis formula.
+   my $def_resolution = $iqr_factor[$iter-1] *
+                  abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
    $resolution = $def_resolution;
 
-# Increase the number of bins using the Freedman & Diaconis formula,
-# which uses the inter-quartile range.
-} else {
-   $resolution = 2 * abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
-}
+   my $histfile = new ORAC::TempFile( 0 );
 
-my $loop = 1;
-my $lc = 1;
-while ( $loop ) {
+# Adjust the resolution.
+# ----------------------
+   my $loop = 1;
+   my $lc = 1;
+   my ( $hist_kurtosis, $hist_skewness );
+   while ( $loop ) {
 
 # Round up or down the histogram range to the bin resolution, and hence
 # determine the number of histogram bins, allowing numerical rounding.
 # Append an extra bin at the lower end so that the first peak does not
 # touch the array lower bound.
-   $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
-   $maximum = floor( $maximum / $resolution ) * $resolution;
-   $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
+      $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
+      $maximum = floor( $maximum / $resolution ) * $resolution;
+      $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
 
 # Create histogram at the resolution, covering the range of relevant data.
-   $params = "in=$in out=$histfile ";
-   $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
-   $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
-   $Mon{'ndfpack_mon'}->obeyw( "hisset", "ndf=$histfile mode=verbose" );
+      $params = "in=$data out=$histfile ";
+      $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
+      $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+      $Mon{'ndfpack_mon'}->obeyw( "hisset", "ndf=$histfile mode=verbose" );
 
 # Repeat the crude test for normality but also obtain the maximum
 # count in a bin.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$histfile" );
-   ( $ORAC_STATUS, $binmax ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
-   ( $ORAC_STATUS, my $hist_skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
-   ( $ORAC_STATUS, my $hist_kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
-   $hist_normal = abs( $hist_skewness ) < 1 && $hist_kurtosis < 1;
-   if ( !$hist_normal ) {
-      $resolution = 2 * abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
-   }
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$histfile" );
+      ( $ORAC_STATUS, $binmax ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+      ( $ORAC_STATUS, $hist_skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
+      ( $ORAC_STATUS, $hist_kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
+      $hist_normal = abs( $hist_skewness ) < 1 && $hist_kurtosis < 1;
+      if ( !$hist_normal ) {
+         $resolution = $iqr_factor[$iter-1] *
+                       abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
+      }
 
 # Repeat if we had a normalish original data but skewed or spread out
 # histogram.
-   $loop = $normal && !$hist_normal && $lc == 1;
-   $lc++;
-}
+      $loop = $normal && !$hist_normal && $lc == 1;
+      $lc++;
+   }
 
 # Is the main bin over-populated?
-my $target = int( 0.15 * $numgood );
-if ( $binmax > $target ) {
+   my $target = int( 0.15 * $numgood );
+   if ( $binmax > $target ) {
 
 # Simple scaling is insufficient because of the drop off around the
 # peak, so add in a fudge factor.  There is probably some mathematical
 # formula that would derive this correction for a Gaussian to give the
 # peak bin desired.  For this routine this should be adequate to define
 # peak location sufficiently accurately.
-   $resolution /= $binmax / $target * 2;
-   $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
-   $maximum = floor( $maximum / $resolution ) * $resolution;
-   $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
-   $params = "in=$in out=$histfile ";
-   $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
-   $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
-}
+      $resolution /= $binmax / $target * 2;
+      $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
+      $maximum = floor( $maximum / $resolution ) * $resolution;
+      $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
+      $params = "in=$data out=$histfile ";
+      $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
+      $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
+   }
 
 # A gentle smooth should generate a well-defined rounded peak.
-my $smooth_hist = new ORAC::TempFile( 0 );
-if ( $smooth ) {
-   $params = "in=$histfile out=$smooth_hist fwhm=3";
-   $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
-} else {
-   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$histfile out=$smooth_hist" );
-}
+   my $smooth_hist = new ORAC::TempFile( 0 );
+   if ( $smooth ) {
+      $Mon{'ndfpack_mon'}->obeyw( "settype", "ndf=$histfile type=_REAL" );
+      $params = "in=$histfile out=$smooth_hist fwhm=$fwhm[$iter-1]";
+      $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+   } else {
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$histfile out=$smooth_hist" );
+   }
+
+# Remove the background.
+# ----------------------
 
 # Attempt to remove the background for asymmetric distributions which
 # bias the centroid.
-if ( ( !$normal || !$hist_normal ) && $centroid ) {
-   my $histback = new ORAC::TempFile( 0 );
-   my $histsub = new ORAC::TempFile( 0 );
-   my $boxsize = max( $numbin / 3, $def_resolution );
+   if ( !$normal || !$hist_normal && $iter == 1 ) {
+      my $histback = new ORAC::TempFile( 0 );
+      my $histsub = new ORAC::TempFile( 0 );
+      my $boxsize = max( $numbin / 3, $def_resolution );
 
 # Find rough background but with a box size that it only has a marginal
 # effect on the centroid of the main peak of the histogram.
-   my $oddboxsize = $boxsize + ( $boxsize + 1 ) % 2;
-   $params = "in=$smooth_hist out=$histback box=$oddboxsize rms=1 accept";
-   my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+      my $oddboxsize = $boxsize + ( $boxsize + 1 ) % 2;
+      $params = "in=$smooth_hist out=$histback box=$oddboxsize rms=1 accept";
+      my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
 # FINDBACK can fall over, but this should not be fatal.
-   if ( $FINDBACK_STATUS != ORAC__OK ) {
-      if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+      if ( $FINDBACK_STATUS != ORAC__OK ) {
+         if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
            orac_say "   Unable to find the background in the histogram due to insufficient good data.";
+         }
+         orac_say "   Attempting to continue using block smoothing.";
+         $params = "in=$smooth_hist out=$histback box=$oddboxsize estimator=median";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
       }
-      orac_say "   Attempting to continue using block smoothing.";
-      $params = "in=$smooth_hist out=$histback box=$oddboxsize estimator=median";
-      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-   }
 
-   $params = "in1=$smooth_hist in2=$histback out=$histsub";
-   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
-   orac_say "   Subtract the background from the histogram.";
-   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=histsub out=$smooth_hist" );
-}
+      $params = "in1=$smooth_hist in2=$histback out=$histsub";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+      orac_say "   Subtract the background from the histogram.";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=histsub out=$smooth_hist" );
+   }
 
 # Set data-driven parameters for clump finding.
 # =============================================
 
 # Find the minimum count in the histogram for the clump finding and
 # ensure that the first threshold for clump finding is above this.
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$smooth_hist" );
-( $ORAC_STATUS, my $mincount ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
-$mincount++;
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$smooth_hist" );
+   ( $ORAC_STATUS, my $mincount ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+   $mincount++;
+
+# Obtain some backup values should a clump not be located.
+   ( $ORAC_STATUS, my $maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
+   ( $ORAC_STATUS, my $hist_sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
 # Set a representative rms for clump finding.
-( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-my $rms = max( 1.001, sqrt( $total / $numbin ) );
+   ( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+   my $rms = max( 1.001, 0.5 * sqrt( $total / $numbin ) );
+
+# Use maximum as initial value for the Gaussian fit.
+   ( $ORAC_STATUS, my $hist_max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
 
 # Measure the properties of peaks in the histogram.
 # =================================================
@@ -302,17 +354,17 @@ my $rms = max( 1.001, sqrt( $total / $numbin ) );
 # Identify the peaks in the histogram, storing the results table to a
 # Starlink STL file.  Since the quanta are integers ensure the RMS level
 # is at least that.
-my $outmap = new ORAC::TempFile( 0 );
-my $outcat = new ORAC::TempFile( 0 );
-$outcat .= ".TXT";
+   my $outmap = new ORAC::TempFile( 0 );
+   my $outcat = new ORAC::TempFile( 0 );
+   $outcat .= ".TXT";
 
-$params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=$rms ";
-$params .= "config='^$fc_param,ClumpFind.Tlow=$mincount' accept";
-$Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+   $params = "in=$smooth_hist out=$outmap outcat=$outcat method=clumpfind rms=$rms ";
+   $params .= "config='^$fc_param,ClumpFind.Tlow=$mincount' accept";
+   $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
 
 # Check number of clumps using NCLUMPS output parameter.
-( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
-if ( $nclumps > 0 ) {
+   ( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+   if ( $nclumps > 0 ) {
 
 # Extract the desired information from the output table.
 # ======================================================
@@ -323,70 +375,115 @@ if ( $nclumps > 0 ) {
 # there is no development of this format so this should be robust.
 # Then we assume that the first row is the lowest co-ordinate; there
 # should not be a peak below the baseline.
-   open( TABLE, "< $outcat" ) or
-         die "Could not find catalogue $outcat specifying the histogram peaks: $!\n";
-   unlink $outcat;
-   my @lines = <TABLE>;
-   my $i = 0;
-   my $row;
-   my $nlines = scalar( @lines );
-   if ( $skewness >= 0.0 && $extreme ) {
-      while ( $i < $nlines ) {
-         chomp $lines[$i];
-         if ( $lines[$i] =~ /BEGINTABLE/ ) {
-            $row = $lines[$i+1];
-            last;
+      open( TABLE, "< $outcat" ) or
+            die "Could not find catalogue $outcat specifying the histogram peaks: $!\n";
+      unlink $outcat;
+      my @lines = <TABLE>;
+      my $i = 0;
+      my $row;
+      my $nlines = scalar( @lines );
+      if ( $skewness >= 0.0 && $extreme ) {
+         while ( $i < $nlines ) {
+            chomp $lines[$i];
+            if ( $lines[$i] =~ /BEGINTABLE/ ) {
+               $row = $lines[$i+1];
+               last;
+            }
+            $i++;
          }
-         $i++;
-      }
 
 # The final clump is specified in the last line of the file, although
 # this is not particularly robust to external change, albeit unlikely.
-   } elsif ( $extreme ) {
-      $i = $nlines - 1;
-      $row = $lines[$i];
+      } elsif ( $extreme ) {
+         $i = $nlines - 1;
+         $row = $lines[$i];
 
 # Find the most-populous clump.  First reach the table itself.
-   } else {
-      while ( $i < $nlines ) {
-         chomp $lines[$i];
-         if ( $lines[$i] =~ /BEGINTABLE/ ) {
-            last;
+      } else {
+         while ( $i < $nlines ) {
+            chomp $lines[$i];
+            if ( $lines[$i] =~ /BEGINTABLE/ ) {
+               last;
+            }
+            $i++;
          }
-         $i++;
-      }
-      
+
 # The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  So search to find the
 # row with the biggest Sum.
-      my $pop = -1;
-      my $popindex = $i;
-      my $sumindex = 4;
-      while ( $i < $nlines ) {
-         my @fields = split( ' ', chomp $lines[$i] );
-	 if ( $fields[$sumindex] > $pop ) {
-            $pop = $fields[$sumindex];
-	    $popindex = $i;
-	 }
-         $i++;
+         my $pop = -1;
+         my $popindex = $i;
+         my $sumindex = 4;
+         while ( $i < $nlines ) {
+            my @fields = split( ' ', chomp $lines[$i] );
+            if ( $fields[$sumindex] > $pop ) {
+               $pop = $fields[$sumindex];
+               $popindex = $i;
+            }
+            $i++;
+         }
+         $row = $lines[$popindex];
       }
-      $row = $lines[$popindex];
-   }
- 
-# Extract the centroid value for the first or last peak depending on the skewness. 
+
+# Extract the centroid value for the first or last peak depending on the skewness.
 # Convert from scientific notion with a D exponent to E so that Perl recognises it.
-   my @fields = split( ' ', $row );
-   $peak = $centroid ? $fields[2] : $fields[1];
-   $peak =~ s/D/e/;
+      my @fields = split( ' ', $row );
+      $peak = $method eq "centroid" ? $fields[2] : $fields[1];
+      $peak =~ s/D/e/;
+      $peak = $peak * $resolution + $minimum;
 
-# FINDCLUMPS reports the peak one pixel too high.
-   $peak = $peak * $resolution + $minimum;
+      $width = $fields[3];
+      $width =~ s/D/e/;
+      $width *= $resolution;
 
-   $width = $fields[3];
-   $width =~ s/D/e/;
-   $width *= $resolution;
+# Fit the Gaussian.
+      if ( $method eq "gauss" ) {
+         my $init_fwhm = 2.35 * $width;
+         $params = "in=$smooth_hist device=! dialog=f varuse=f ncomp=1 ";
+         $params .= "centre=$peak cont=0 peak=$hist_max fwhm=$init_fwhm ";
+         $params .= "cf=[0] pf=[0] wf=[0] logfil=! comp=1 accept";
+         my $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
+         if ( $FitStatus == ORAC__OK ) {
 
-} else {
-   orac_warn "No clumps found\n";
+# Retrieve the fit information.  FITGAUSS uses the data scale not pixel
+# co-ordinates.
+            ( $ORAC_STATUS, $peak ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
+            ( $ORAC_STATUS, my $ffwhm ) = $Mon{'figaro4'}->get( "fitgauss", "ffwhm" );
+            $width = $ffwhm / 2.3548;
+         } else {
+           orac_warn "Unable to fit Gaussian to histogram peak. Using the location of the maximum bin.\n";
+         }
+      }
+
+   } else {
+      orac_warn "No clumps found.  Using the location of the maximum bin.\n";
+   }
+
+# If clump finding or fitting failed set approximate returned values.
+   $peak = ( $maxpos - 0.5 ) * $resolution + $minimum if ( ! defined( $peak ) );
+   $width = $hist_sigma * $resolution if ( ! defined( $width ) );
+
+# Bias range according to the skewness in an another ad hoc attempt to
+# offset skewness on the centroid.
+   my $tempthresh = new ORAC::TempFile( 0 );
+   if ( $iter != $itermax ) {
+      $minimum = max( $minimum, $peak - 2.5 * $width );
+      $maximum = min( $maximum, $peak + 2.5 * $width );
+      if ( $hist_skewness > 1.0 ) {
+         $maximum = min( $maximum, $peak + 1.5 * $width );
+      } elsif ( $hist_skewness > 0.5 ) {
+         $maximum = min( $maximum, $peak + 2.0 * $width );
+      } elsif ( $hist_skewness < 1.0 ) {
+         $minimum = max( $minimum, $peak - 1.5 * $width );
+      } elsif ( $hist_skewness < 0.5 ) {
+         $minimum = max( $minimum, $peak - 2.0 * $width );
+      }
+
+# Apply the trimmed data range.
+      $params = "in=$data out=$tempthresh ";
+      $params .= "thrlo=$minimum thrhi=$maximum newlo=bad newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      $data = $tempthresh;
+   }
 }
 
 # Remove the FINDCLUMPS configuration file.
