@@ -60,6 +60,7 @@ use Getopt::Long;
 use Pod::Usage;
 use File::Spec;
 use File::Temp;
+use Sys::Hostname;              # For logfile
 
 use Tk;
 use Tk::TextANSIColor;
@@ -77,6 +78,7 @@ use Astro::FITS::Header::NDF;
 
 # We need the ORAC-DR classes to synchronize the flag file I/O
 use ORAC::Loop ();
+use ORAC::LogFile;
 
 # Options
 my ($help, $man);
@@ -191,6 +193,8 @@ for my $r (@remotes) {
                             OBSNUM => 0,
                             TIMESTAMP => 0, };
 }
+
+$PRIV{LOGFILE} = create_logfile();
 
 # Create simple GUI
 $MW->Button( -text => 'EXIT', -command => [\&_shutdown, $MW],
@@ -444,8 +448,30 @@ sub _shutdown {
   # Clean up last flag file
   remove_previous();
 
-  print "Closdeown QL gathering\n";
+  print "Closedown QL gathering\n";
   $w->destroy;
+}
+
+sub create_logfile {
+  my $logfile = ORAC::LogFile->new(File::Spec->catfile($ENV{ORAC_DATA_OUT},
+						       ".qlgather_$$.log"));
+  $logfile->header(" qlgather logfile created on ".scalar(gmtime)." UT",
+		   "\nORAC Environment:\n",
+		   "\tInstrument : $ENV{ORAC_INSTRUMENT}",
+		   "\tInput  Dir : ".(defined $ENV{ORAC_DATA_IN} ?
+				      $ENV{ORAC_DATA_IN} : "<undefined>"),
+		   "\tOutput Dir : $ENV{ORAC_DATA_OUT}",
+		   "\tCalibration: ".(defined $ENV{ORAC_DATA_CAL} ?
+				      $ENV{ORAC_DATA_CAL} : "<undefined>"),
+		   "\tORAC   Dir : $ENV{ORAC_DIR}",
+		   "\tORAC   Lib : $ENV{ORAC_PERL5LIB}",
+		   "\nSystem environment:\n",
+		   "\tHostname        : ". hostname,
+		   "\tUser name       : $ENV{USER}",
+		   "\tPerl version    : $]",
+		   "\tOperating System: $^O",
+		   "\nSession:\n");
+  return $logfile;
 }
 
 # Package the data in a form the pipeline requires
@@ -455,6 +481,7 @@ sub _shutdown {
 
 sub package_data {
 
+  my $logfile = $PRIV{LOGFILE};
   # List of files we have written
   my @outfiles;
 
@@ -521,6 +548,12 @@ sub package_data {
       $fname .= ".sdf";
       push(@outfiles, $fname);
 
+    }
+
+    if ($logfile && defined $results && ref($results)) {
+      my ($vol, $dir, $filename) = File::Spec->splitpath($outfiles[-1]);
+      $logfile->addentry(join(" ", $r, $results->{TIMESTAMP}, $results->{OBSNUM},
+			      $results->{FRAMENUM}, $filename));
     }
 
   }
@@ -606,7 +639,11 @@ sub write_text_messages {
   $update = 1 if $yview == 1.0;
 
   # Insert the text
-  $w->insert('end',join("\n",@lines)."\n");
+  my $text = join("\n",@lines)."\n";
+  $w->insert('end',$text);
+
+  my $logfile = $PRIV{LOGFILE};
+  $logfile->addentry($text) if (defined $logfile);
 
   # Move to the end
   # Make sure that we do not move to the end if we can not see the end
