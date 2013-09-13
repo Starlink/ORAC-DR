@@ -1,0 +1,174 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_GET_NEP_FROM_FILE_ - determine average NEP from SCUBA-2 QL log file
+
+=head1 SYNOPSIS
+
+_SCUBA2_GET_NEP_FROM_FILE_
+
+=head1 DESCRIPTION
+
+This PICARD primitive reads the log file C<log.nep> produced by the
+quick-look pipeline for the appropriate UT date and calculates the
+average NEP over the course of the current observation. The average
+and standard deviation are stored in the Frame uhdr.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+None.
+
+=head1 NOTES
+
+Note that if given the map from a pointing observation, the results
+will be undefined because the QL pipeline does not calculate NEPs for
+pointing observations.
+
+=head1 OUTPUT DATA
+
+If NEP values could be calculated, the Frame uhdr contains the entries
+C<NEP_AV> and C<NEP_AV_ERR> which are the average NEP and its standard
+deviation respectively.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print "\nCalling _SCUBA2_GET_NEP_FROM_FILE_: read NEP data from QL log file\n", "yellow";
+
+# Return immediately for pointing observations
+if ($Frm->hdr("OBS_TYPE") =~ /pointing/i) {
+  orac_warn "Logfile contains no NEP data for pointing observations: rms_nep and NEFD_nep will be undefined\n";
+  return ORAC__OK;
+}
+
+# Check where PICARD is running in order to determine the location of
+# the log files
+use File::Spec;
+use Net::Domain qw(hostname hostdomain);
+my $basedir;
+if (hostdomain() =~ /jach.hawaii.edu$/) {
+  # Running at JAC
+  my $hostname = hostname();
+  if ($hostname =~ /^sc2dr/) {
+    # Running on sc2drX machines
+    $basedir = "/net/pueo/export/data/jcmtdata/pipeline-log";
+  } elsif ($hostname =~ /^pueo/) {
+    # Running on pueo
+    $basedir = "/export/data/jcmtdata/pipeline-log";
+  } else {
+    # Running in Hilo
+    $basedir = "/jcmtdata/raw/pipeline-log";
+  }
+} else {
+  # Running somewhere else
+  $basedir = (defined $ENV{ORAC_LOGDIR}) ? $ENV{ORAC_LOGDIR} : $ENV{ORAC_DATA_OUT};
+}
+
+my $pldir = (($Frm->hdr("FILTER") =~ /850/) ? "850" : "450"). "-ql";
+my $neplogfile = File::Spec->catfile($basedir, $Frm->hdr("UTDATE"), $pldir,
+				     "log.nep");
+if (-e $neplogfile) {
+  orac_print "Reading NEP data from log.nep for ".$Frm->hdr("UTDATE")."\n";
+  # Open file to read header line - must do this separately because
+  # read_file_list below strips out comment lines
+  open my $FH, "<", $neplogfile or die "Unable to open $neplogfile: $!\n";
+  my @header = map { $_ } grep { $_ =~ /^\#/ } <$FH>;
+  close($FH);
+
+  my (@logkeys, %logkeys);
+  foreach my $line (@header) {
+    next if ($line =~ /created/);
+    $line =~ s/\#\s+//;
+    if ($line) {
+      @logkeys = split(/\s+/,uc($line));
+      %logkeys = map { $_ => $logkeys[$_] } 0..$#logkeys;
+      last;
+    }
+  }
+  my $key_index;
+  my $primary_key = "OBS";
+  foreach my $index (sort keys %logkeys) {
+    if ($logkeys{$index} eq $primary_key) {
+      $key_index = $index;
+      last;
+    }
+  }
+  my $key2 = "SUBSCAN";
+  my $key3 = "SUBARRAY";
+  my %logfile;
+  my @lines = read_file_list($neplogfile);
+  foreach my $line (@lines) {
+    chomp($line);
+    my @values = split(/\s+/, $line);
+    my %entry = map {$logkeys{$_} => $values[$_]} sort keys %logkeys;
+    if (defined $logfile{$values[$key_index]}) {
+      my %existing = %{$logfile{$values[$key_index]}};
+      if (defined $key3 && $existing{$entry{$key2}}) {
+	my @exist2 = @{$existing{$entry{$key2}}};
+	push(@exist2, \%entry);
+	$existing{$entry{$key2}} = \@exist2;
+      } else {
+	$existing{$entry{$key2}} = [\%entry];
+      }
+      $logfile{$values[$key_index]} = \%existing;
+    } else {
+      $logfile{$values[$key_index]} = {$entry{$key2} => [\%entry]};
+    }
+  }
+
+  orac_print "Determining average NEP and uncertainty\n";
+  my $entry = $logfile{$Frm->hdr("OBSNUM")};
+  my @nep;
+  foreach my $subscan (keys %{$entry}) {
+    my @data = @{$entry->{$subscan}};
+    my $thisnep = 0;
+    my $nbol = 0;
+    foreach my $entry (@data) {
+      if ($entry->{SHUTTER} == 1.0) {
+	$thisnep += $entry->{MEAN} * $entry->{NBOL};
+	$nbol += $entry->{NBOL};
+      }
+    }
+    push(@nep, $thisnep/$nbol);
+  }
+  use Statistics::Descriptive;
+  my $data = Statistics::Descriptive::Full->new();
+  $data->add_data(\@nep);
+
+  $Frm->uhdr("NEP_AV", 1.0e12 * $data->mean);
+  $Frm->uhdr("NEP_AV_ERR", 1.0e12 * $data->standard_deviation);
+} else {
+  orac_warn "Unable to open log file for ".($Frm->hdr("UTDATE"))." - results will be undefined\n";
+}
