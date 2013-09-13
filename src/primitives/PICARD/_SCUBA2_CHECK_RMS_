@@ -73,12 +73,23 @@ USA.
 
 orac_print "\nCalling _SCUBA2_CHECK_RMS_: determine RMS and NEFD from map and ITC\n", "yellow";
 
-# A few things to sort out ahead of time
+# Required modules
 use DateTime::Format::ISO8601;
+use JCMT::Tau::SCUBA2;
+
+# A few things to sort out ahead of time
 my $dt_obs = DateTime::Format::ISO8601->parse_datetime($Frm->hdr("DATE-OBS"));
 my $dt_end = DateTime::Format::ISO8601->parse_datetime($Frm->hdr("DATE-END"));
 my $t_elapsed = $dt_end->epoch - $dt_obs->epoch;
+my $wave = ($Frm->hdr("FILTER") =~ /850/) ? "850" : "450";
 
+# Calculate average transmission during observation
+my $airmass = 0.5 * ($Frm->hdr("AMSTART") + $Frm->hdr("AMEND"));
+my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
+my ($tauval, $status) = JCMT::Tau::SCUBA2::get_tau($wave, 'CSO', $tau);
+my $trans = exp(-$airmass * $tauval);
+
+# Determine mean exposure time
 my $comp = "more.smurf.exp_time";
 my $texp = "NaN";
 _COMPONENT_EXISTS_ COMPONENT=$comp FILE=$Frm->file
@@ -87,8 +98,6 @@ if ($_COMPONENT_EXISTS_{EXISTS}) {
   _FIND_IMAGE_STATISTICS_ IMAGE=$texp_image VERBOSE=0
   $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
 }
-
-my $wave = ($Frm->hdr("FILTER") =~ /850/) ? "850" : "450";
 
 # Estimator for noise and NEFD
 my $estimator = (defined $Frm->uhdr("RECPAR_STATS_ESTIMATOR"))
@@ -117,8 +126,8 @@ my $nep_av_err = (defined $Frm->uhdr("NEP_AV_ERR")) ? $Frm->uhdr("NEP_AV_ERR") :
 # Determine RMS and NEFD from NEP
 my $fcf = (defined $Frm->hdr("FCF")) ? $Frm->hdr("FCF") :
   $Cal->gain($wave, "BEAM");
-my $nefd_nep = $nep_av * $fcf;
-my $rms_nep = sqrt($nefd_nep/$t_elapsed);
+my $nefd_nep = $nep_av * $fcf / $trans;
+my $rms_nep = $nefd_nep / sqrt($t_elapsed);
 
 # Determine RMS and NEFD from ITC
 use Astro::ITC::SCUBA2 qw/calcrms/;
@@ -135,11 +144,6 @@ if ($scan_pat =~ /pong/) {
 } elsif ($scan_pat =~ /daisy/) {
   $itc_obstype = "Daisy";
 }
-
-# Calculate average transmission during observation
-my $airmass = 0.5 * ($Frm->hdr("AMSTART") + $Frm->hdr("AMEND"));
-my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
-my $trans = exp(-$airmass * $tau);
 
 my $f = (defined $Frm->uhdr("RECPAR_ITC_F")) ? $Frm->uhdr("RECPAR_ITC_F") : 1;
 my $rms_itc = calcrms( $itc_obstype, $wave, $trans, $f, $t_elapsed );
