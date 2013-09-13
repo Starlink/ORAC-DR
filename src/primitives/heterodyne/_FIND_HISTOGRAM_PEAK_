@@ -258,7 +258,7 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
 # ----------------------
    my $loop = 1;
    my $lc = 1;
-   my ( $hist_kurtosis, $hist_skewness, $hist_total );
+   my ( $hist_kurtosis, $hist_skewness, $hist_total, $smooth_hist );
    while ( $loop ) {
 
 # Round up or down the histogram range to the bin resolution, and hence
@@ -275,9 +275,19 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
       $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
       $Mon{'ndfpack_mon'}->obeyw( "hisset", "ndf=$histfile mode=verbose" );
 
+# A gentle smooth should generate a well-defined less jagged, rounded peak.
+      $smooth_hist = new ORAC::TempFile( 0 );
+      if ( $smooth && $lc == 1 ) {
+         $Mon{'ndfpack_mon'}->obeyw( "settype", "ndf=$histfile type=_REAL" );
+         $params = "in=$histfile out=$smooth_hist fwhm=$fwhm[$iter-1]";
+         $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+      } else {
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$histfile out=$smooth_hist" );
+      }
+
 # Repeat the crude test for normality but also obtain the maximum
 # count in a bin.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$histfile" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$smooth_hist" );
       ( $ORAC_STATUS, $binmax ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
       ( $ORAC_STATUS, $hist_skewness ) = $Mon{'kappa_mon'}->get( "stats", "skewness" );
       ( $ORAC_STATUS, $hist_kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
@@ -306,20 +316,11 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
       $minimum = ceil( $minimum / $resolution - 1 ) * $resolution;
       $maximum = floor( $maximum / $resolution ) * $resolution;
       $numbin = int( ( $maximum - $minimum + 0.01 * $resolution ) / $resolution );
-      $params = "in=$data out=$histfile ";
+      $params = "in=$data out=$smooth_hist ";
       $params .= "device=! numbin=$numbin range='$minimum,$maximum'";
       $Mon{'kappa_mon'}->obeyw( "histogram", "$params" );
    }
 
-# A gentle smooth should generate a well-defined rounded peak.
-   my $smooth_hist = new ORAC::TempFile( 0 );
-   if ( $smooth ) {
-      $Mon{'ndfpack_mon'}->obeyw( "settype", "ndf=$histfile type=_REAL" );
-      $params = "in=$histfile out=$smooth_hist fwhm=$fwhm[$iter-1]";
-      $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
-   } else {
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$histfile out=$smooth_hist" );
-   }
 
 # Remove the background.
 # ----------------------
