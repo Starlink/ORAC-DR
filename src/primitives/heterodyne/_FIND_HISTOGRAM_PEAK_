@@ -11,7 +11,8 @@ choice of methods available (see Argument METHOD).
 
 Because of outliers it adopts an iterative approach.  First it forms
 the histogram with some clipping of the data (see Argument CLIP). The
-number of bins comes from the Freedman & Diaconis rule.  Using the
+number of bins comes from the Freedman & Diaconis rule or three per
+standard deviation depending on the use (see Argument FINE).  Using the
 Nyguist sampling is too coarse to determine the peak.  Although the
 resolution may be scaled if the peak bin contains more than 15% of the
 sample.  It then smoothes the histogram with a 2-pixel FWHM Gaussian.
@@ -49,6 +50,18 @@ deviations in the list should not decrease.  ["2.0,2.0,2.5,3.0"]
 
 Whether to obtain the peak of the first (or last if skewness is negative),
 or the most populous peak.  [1]
+
+=item FINE_RESOLUTION = BOOLEAN (Given)
+
+This selects the method for defining the resolution of the histogram
+bins.  Set true the Freedman & Diaconis rule is used as would be
+appropriate for determining the base level in a line forest spectrum,
+where an accurate determination of the peak is desirable.  Set false
+it uses three bins per standard deviation of the peak.  This would be
+appropriate where a rough estimate of the peak is adequate, such as
+to reject outlier non-linear spectra.  The danger of using FINE=1
+for such bad-baseline rejections is that the histogram becomes
+multi-modal and the wrong peak and width are returned.  [0]
 
 =item METHOD = STRING (Given)
 
@@ -127,6 +140,7 @@ my $width = undef;
 my $outlier_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "Peak" );
 my $extreme = get_prim_arg( $_PRIM_ARGS_, "EXTREME", 1 );
+my $fine_res = get_prim_arg( $_PRIM_ARGS_, "FINE_RESOLUTION", 1 );
 my $smooth = get_prim_arg( $_PRIM_ARGS_, "SMOOTH", 1 );
 
 # Convert list of standard-deviation clip levels to an array.
@@ -148,6 +162,12 @@ $outlier_clip = "[" . join( ",", @clip_sigma ) . "]";
 
 my @methods = qw( peak centroid gauss );
 $method = "peak" if ( ! grep( $_ eq lc( $method ), @methods ) );
+
+if ( $fine_res ) {
+   orac_say "Finding the histogram peak using the $method method at high resolution.";
+} else {
+   orac_say "Finding the histogram peak using the $method method at low resolution.";
+}
 
 my $in = $Frm->file;
 
@@ -175,7 +195,7 @@ my $full = 1;
 my $data = $in;
 my $params;
 my @fwhm = ( 2, 3 );
-my @iqr_factor = ( 2.0, 1.0 );
+my @iqr_factor = ( 1.0, 0.5 );
 my $itermax = min( scalar( @fwhm ), scalar( @iqr_factor ) );
 
 for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
@@ -222,10 +242,15 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
    my $normal = abs( $skewness ) < 1 && $kurtosis < 1;
    orac_warn "   Data distribution is not approximately Gaussian\n" if ( !$normal );
 
-# Set the initial bin width using the Freedman & Diaconis formula.
-   my $def_resolution = $iqr_factor[$iter-1] *
-                  abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
-   $resolution = $def_resolution;
+# Set the initial bin width using the Freedman & Diaconis formula or
+# one based upon the Nyquist sampling depending on the application.
+   my $def_resolution;
+   if ( $fine_res ) {
+     $def_resolution = 2.0 * abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
+   } else {
+     $def_resolution = $sigma / 3 ;
+   }
+   $resolution = $iqr_factor[$iter-1] * $def_resolution;
 
    my $histfile = new ORAC::TempFile( 0 );
 
@@ -258,8 +283,7 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
       ( $ORAC_STATUS, $hist_kurtosis ) = $Mon{'kappa_mon'}->get( "stats", "kurtosis" );
       $hist_normal = abs( $hist_skewness ) < 1 && $hist_kurtosis < 1;
       if ( !$hist_normal ) {
-         $resolution = $iqr_factor[$iter-1] *
-                       abs( $perval[1] - $perval[0] ) / $numgood ** 0.3333;
+         $resolution = $iqr_factor[$iter-1] * $def_resolution;
       }
 
 # Repeat if we had a normalish original data but skewed or spread out
