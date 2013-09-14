@@ -22,18 +22,18 @@ methods:
 
 =item 1
 
-Calculate the sum within a given aperture, correcting for any offset
-by analyzing the image outside the aperture (default).
+Use the Starlink C<AUTOPHOTOM> package to perform aperture photometry
+using the given aperture and annulus dimensions (default).
 
 =item 2
 
-As above, but estimate the background offset using an annulus (see the
-parameters B<INNER> and B<OUTER> below).
+Calculate the sum within a given aperture, correcting for any offset
+by analyzing the image outside the aperture.
 
 =item 3
 
-Use the Starlink C<AUTOPHOTOM> package to perform aperture photometry
-using the given aperture and annulus dimensions.
+As above, but estimate the background offset using an annulus (see the
+parameters B<INNER> and B<OUTER> below).
 
 =back
 
@@ -216,6 +216,8 @@ USA.
 
 orac_print ("\nCalling _SCUBA2_PHOTOM_: perform aperture photometry on SCUBA-2 images\n", "yellow");
 
+my $autophotom = (defined $Frm->uhdr("RECPAR_AUTOPHOTOM")) ? $Frm->uhdr("RECPAR_AUTOPHOTOM") : 1;
+
 # Are results to be written to a logfile? Override with recipe
 # parameter
 my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
@@ -229,7 +231,7 @@ $ap_radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
 
 # Inner and outer radii for noise annulus
 my ($inner, $outer);
-if ($Frm->uhdr("RECPAR_ANNULUS") || $Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+if ($Frm->uhdr("RECPAR_ANNULUS") || $autophotom) {
   _CALC_ANNULUS_SCALE_ RADIUS=$ap_radius PRIMARGS=$_PRIM_ARGS_
   $inner = $_CALC_ANNULUS_SCALE_{ANNULUS_INNER};
   $outer = $_CALC_ANNULUS_SCALE_{ANNULUS_OUTER};
@@ -250,7 +252,7 @@ $xypos = [$x, $y] if ( $x && $y );
 
 # Perform photometry using chosen method - autophotom overrides all other choices
 my %results = %_FIND_MAP_PEAK_;
-if ($Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+if ($autophotom) {
   _APERTURE_PHOTOMETRY_ RADIUS=$ap_radius INNER=$inner OUTER=$outer XYPOS=$xypos
   %results = (%results,%_APERTURE_PHOTOMETRY_);
 } else {
@@ -268,10 +270,15 @@ if ($Frm->uhdr("RECPAR_AUTOPHOTOM")) {
   %results = (%results,%_FIND_INTEGRATED_INTENSITY_);
 }
 
+# Now take beam area into account if necessary.
+my $corr_factor = ($Frm->uhdr("DATA_UNITS") =~ /beam/i) ? $Cal->beamarea : 1.0;
+my $totalflux = $results{TOTALFLUX} / $corr_factor;
+my $totalfluxerr = (defined $results{TOTALFLUXERR}) ? $results{TOTALFLUXERR} / $corr_factor : 0.0;
+
 if ($logfile) {
   my $log_inner = "****";
   my $log_outer = "****";
-  if ($Frm->uhdr("RECPAR_ANNULUS") || $Frm->uhdr("RECPAR_AUTOPHOTOM")) {
+  if ($Frm->uhdr("RECPAR_ANNULUS") || $autophotom) {
     $log_inner = $inner;
     $log_outer = $outer;
   }
@@ -281,16 +288,15 @@ if ($logfile) {
   my @names = ("Name", "Sum", "Total", "Err", "Radius", "Inner", "Outer", "Peak", "ErrPk");
   my $peak = (defined $results{PEAK}) ? $results{PEAK} : "*****";
   my $peakerr = (defined $results{PEAKERR}) ? $results{PEAKERR} : "*****";
-  my @values = ( $Frm->file, $results{SUM}, $results{TOTALFLUX},
-		 ($results{TOTALFLUXERR}) ? $results{TOTALFLUXERR} : 0.0,
+  my @values = ( $Frm->file, $results{SUM}, $totalflux, $totalfluxerr,
 		 $ap_radius, $log_inner, $log_outer, $peak, $peakerr );
   _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names
 } else {
   # Print to screen
   orac_print "Aperture photometry results for ".($Frm->hdr("OBJECT"))." (".($Frm->file)."):\n"
-    ."Sum  = ".(sprintf "%10.2f", $results{SUM})."\nFlux = ".(sprintf "%10.2f", $results{TOTALFLUX})."\n";
-  if ($results{TOTALFLUXERR}) {
-    orac_print "Err  = ".(sprintf "%10.2f", $results{TOTALFLUXERR})."\n";
+    ."Sum  = ".(sprintf "%10.2f", $results{SUM})."\nFlux = ".(sprintf "%10.2f", $totalflux)."\n";
+  if ($totalfluxerr) {
+    orac_print "Err  = ".(sprintf "%10.2f", $totalfluxerr)."\n";
   }
 
   orac_print "Using an aperture with r = $ap_radius arcsec";
