@@ -1302,11 +1302,8 @@ sub calc_orac_headers {
       my $text = '';
       if (@files) {
         $text = 'associated with file';
-        if (@files == 1) {
-          $text .= $files[0];
-        } else {
-          $text .= "s ".join(", ",@files);
-        }
+        $text .= "s" if @files > 1;
+        $text .= " ". join(", ",@files);
       }
       die "The observation $text has no FITS headers";
     }
