@@ -83,12 +83,22 @@ USA.
 
 =cut
 
+# Skip if the data are already calibrated
+return ORAC__OK if ($Frm->uhdr("DATA_UNITS") =~ /mjy/i);
+
+# Intro message
 orac_print "\nCalling _CALIBRATE_SCUBA2_DATA_: calibrate data using standard or derived FCF\n", "yellow";
 
 # Select data with a particular tag if given (and it exists)
 my $tag = get_prim_arg($_PRIM_ARGS_, "TAG", undef);
 if ($tag) {
   $Frm->tagretrieve($tag) if $Frm->tagexists($tag);
+}
+
+# SNR maps cannot be calibrated
+if ($Frm->product eq "snr" || $Frm->uhdr("DATA_UNITS") eq "") {
+  orac_warn "Input is a signal-to-noise map: unable to calibrate\n";
+  return ORAC__OK;
 }
 
 # Retrieve existing results if present
@@ -114,7 +124,8 @@ if ( $usefcf ) {
   if (!$fcf) {
     orac_warn "Unknown calibration type, $caltype: falling back on BEAM\n";
     $caltype = "BEAM";
-    $fcf = $picard_results{fcf_beam};
+    $fcftype = "fcf_beam";
+    $fcf = $picard_results{$fcftype};
   }
   if (defined $fcf) {
     orac_print "Calibrating data using derived $caltype FCF...\n";
@@ -127,3 +138,6 @@ if ( $usefcf ) {
   # Otherwise use default calibration `per beam'
   _CALIBRATE_DATA_ UNITS=$caltype
 }
+
+$caltype = "ARCSEC**2" if ($caltype eq "ARCSEC");
+$Frm->uhdr("DATA_UNITS", "mJy/$caltype");
