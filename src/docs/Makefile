@@ -9,7 +9,7 @@ STARPERL    = $${STARLINK_DIR}/Perl/bin/perl
 LATEX       = latex
 DVIPS       = dvips
 HLINK       = $${STARLINK_DIR}/bin/hlink
-ORAC_DIR    = $${STARLINK_DIR}/bin/oracdr/src
+ORAC_DIR    = $(realpath $(CURDIR)/..)
 
 DOCUMENT   := $(wildcard sun*)
 POSTSCRIPT := $(foreach DOC,$(DOCUMENT),$(DOC)/$(DOC).ps)
