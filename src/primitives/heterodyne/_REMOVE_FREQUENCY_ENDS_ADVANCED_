@@ -201,6 +201,7 @@ if ( $dims->[1] < 5 || $dims->[2] < 5 && ! $Frm->uhdr( "ISHYBRID" ) ) {
       my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
       my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
       my $ndim = scalar( @ubnd );
+      my $original_ndim = $ndim;
 
       my $temp1file = new ORAC::TempFile( 0 );
       my $temp2file = new ORAC::TempFile( 0 );
@@ -218,12 +219,22 @@ if ( $dims->[1] < 5 || $dims->[2] < 5 && ! $Frm->uhdr( "ISHYBRID" ) ) {
         $ndim = 2;
       }
 
-      # Collapse along second axis of resulting cube, but only if it's
-      # non-degenerate.
+      # Collapse along second axis of resulting image, but only if it's
+      # non-degenerate.  Starting from a cube we do not need the spread
+      # of the spreads.  Instead take a clipped mean of the noise over each
+      # receptor with the aim of excluding a bad receptor that would swamp
+      # the desired signal.  Only take the spread if starting with an image.
+      # TODO: It would be better to test for the axis domains, and use
+      # these to do appropriate things.  For instance, use sigma for
+      # collapsing a time axis, and cmean over receptors where the noise
+      # is obtained from the one-dimensional Laplacian of each spectrum.
+      # It's not pressing as we currently only call this primitive for
+      # time-series cubes.
       if ( $ndim == 2 ) {
         $colaxis = ( $axis == 1 ) ? $ndim : $ndim - 1;
         if ( ( $ubnd[$colaxis - 1] - $lbnd[$colaxis - 1] + 1 ) != 1 ) {
-          $params = "in=$temp1file out=$temp2file axis=$colaxis wlim=0.0 estimator=sigma trim";
+          my $estimator = ( $ndim == $original_ndim ) ? "sigma" : "cmean";
+          $params = "in=$temp1file out=$temp2file axis=$colaxis wlim=0.0 estimator=cmean trim";
           $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
         } else {
           $temp2file = $temp1file;
