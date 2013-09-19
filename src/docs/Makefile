@@ -22,6 +22,7 @@ GENERATED_TEX = sun230/sun230.tex
 clean:
 	rm -rf \
 		$(GENERATED_TEX) $(SUN233_CLASSES) \
+		$(SUN233_CLASSES:.tex=.aux) \
 		$(HTMLDIR) $(HTMLBUILD) \
 		$(POSTSCRIPT) \
 		$(POSTSCRIPT:.ps=.aux) \
