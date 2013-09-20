@@ -263,7 +263,7 @@ my %MonolithDefns = (
          fluxes => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => \&fluxes_helper,
+           PATH => ( defined( $ENV{'FLUXES_DIR'} ) ? File::Spec->catfile( $ENV{'FLUXES_DIR'}, "fluxes" ) : "" ),
          },
          hdstools_mon => {
                           MESSYS => 'AMS',
@@ -1584,100 +1584,6 @@ object has been launched. This allows for cleanup code to be executed
 and are usually closures.
 
 =over 4
-
-=item B<fluxes_helper>
-
-This function configures the fluxes specific environment variables
-and creates a temporary output directory for use by fluxes.
-
- ($path, $callback) = fluxes_mon_helper;
-
-Returns the path to the monolith and a cleanup function.
-The cleanup function is required to change directory back to the
-directory that we need to be in (since Fluxes requires the directory
-to have special files in it).
-
-=cut
-
-sub fluxes_helper {
-
-  # To start FLUXES requires some environment variables to be defined
-  # Fluxes should be changed to use $FLUXES_DIR rather than $FLUXES
-  # Some of these are historical. Newer versions are much easier
-  unless (exists $ENV{FLUXES}) {
-    # FLUXES_DIR is set on recent starlink releases
-    if (exists $ENV{FLUXES_DIR}) {
-      $ENV{FLUXES} = $ENV{FLUXES_DIR};
-    } else { # Guess by looking at the location of starlink
-      $ENV{FLUXES} = File::Spec->catdir($StarConfig{Star_Bin},"fluxes");
-    }
-  }
-
-  # Now check that FLUXES directory really does exist
-  croak "Error locating fluxes directory. $ENV{FLUXES} does not exist"
-    unless -d $ENV{FLUXES};
-
-  # Should chdir to /tmp, create the soft link, launch fluxes
-  # and then chdir back to wherever we happen to be.
-
-  my $cwd = cwd; # Store current dir
-  croak "Error determining current working directory. Seems we got undef!"
-    unless defined $cwd;
-
-  # Create temp directory - this is needed in case another
-  # oracdr is running fluxes and we want to make sure that
-  # the JPLEPH file is not removed when THAT oracdr finishes!
-  # Should probably be using File::Temp::tempdir
-  my $tmpdir = File::Spec->catdir(File::Spec->tmpdir,"fluxes_$$");
-
-  # Register this with a cleanup END block
-  # Set up an END block to remove the directory on shutdown
-  # This is the only way to tidy up in a non-object-oriented
-  # approach, especially if there is no way of supplying this
-  # information to the caller.
-  push (@DIRS_TO_UNLINK, $tmpdir);
-
-
-  # Create them
-  mkdir $tmpdir,0777 || croak "Could not make directory $tmpdir: $!";
-
-  chdir($tmpdir) || croak "Could not change directory to $tmpdir: $!";
-
-  # Hard-wire in the location of JPLEPH
-  # $JPL_DIR is available on newer systems
-  # Create soft link to JPLEPH
-
-  # If the JPLEPH file is there already then assume it is okay
-  # not sure how that can happen given that we just made the directory!
-  unless (-f "JPLEPH") {
-    unlink "JPLEPH"; # should be nothing here
-
-    # Determine location of ephemeris file
-    my $ephdir = ( $ENV{JPL_DIR} ||
-       File::Spec->catdir($StarConfig{Star},"etc") );
-
-    my $jpleph = File::Spec->catfile($ephdir, "jpleph.dat");
-
-    # Check that the file exists first
-    croak "Could not find JPLEPH file at $jpleph" unless -f $jpleph;
-
-    # Create the soft link required for JPLEPH software to run
-    symlink $jpleph, "JPLEPH"
-      or croak "Could not create link to JPL ephemeris";
-  }
-
-  # Set FLUXPWD variable, required by FLUXES
-  $ENV{'FLUXPWD'} = $tmpdir;
-
-  # Create cleanup sub
-  my $cleanup = sub { chdir $cwd; };
-
-  # Create path to monolith
-  my $path = File::Spec->catfile($ENV{FLUXES}, "fluxes");
-
-  # Need to return the path and the closure
-  return ( $path, $cleanup );
-}
 
 =item B<p4_helper>
 
