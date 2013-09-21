@@ -1,0 +1,153 @@
+=head1 NAME
+
+_SET_HIGHFREQ_INTERFERENCE_RECPARS_ - Obtains and reports the recipe parameters
+that control rejection of spectra affected by high-frequency interference.
+
+=head1 DESCRIPTION
+
+This primitive obtains the recipe parameters associated with the
+removal of transient high-frequency interference in psectea.  It
+copies the values to internal headers for access by the relevant
+primitives.  The primitive also reports the settings to the log in
+yellow.
+
+This primitive serves the heterodyne recipes' steering files in order
+to avoid duplicated code.
+
+=head1 NOTES
+
+=over 4
+
+=item
+
+The recipe parameters accessed by this primitive are:
+HIGHFREQ_INTERFERENCE, HIGHFREQ_INTERFERENCE_EDGE_CLIP,
+HIGHFREQ_INTERFERENCE_THRESH_CLIP, HIGHFREQ_RINGING, and
+HIGHFREQ_RINGING_MIN_SPECTRA.  These should be added to the list of
+parameters to verify with ORAC::Recipe::Parameters::verify_parameters
+in the calling steering primitive.
+
+=item
+
+If HIGHFREQ_INTERFERENCE is set false, other HIGHFREQ_INTERFERENCE_...
+recipe parameters are ignored.  The assumed default is that there
+will be filtering of high-frequency interence.
+
+=item
+
+The internal headers have names "RECPAR_" followed by the recipe
+parameter name.
+
+=item
+
+The bad-baseline detections assume that the receptors supplied are
+not full of bad values.  Therefore the primitive sets the boolean
+internal header INDEX_BAD_RECEPTORS if bad baselines are being
+hunted to ensure that an all-bad receptor is listed in the
+bad_receptors index.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Remove spectra with high-frequency interference?
+
+# This assumes that default is true without setting the corresponding
+# recipe parameter.
+my $highfreq = 1;
+my $highfreq_message = 0;
+
+if ( defined( $RECPARS{'HIGHFREQ_INTERFERENCE'} ) ) {
+   $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE", $RECPARS{'HIGHFREQ_INTERFERENCE'} );
+   if ( $RECPARS{'HIGHFREQ_INTERFERENCE'} ) {
+      orac_say( " Will detect and mask spectra with high-frequency interference.", "yellow" );
+      $highfreq_message = 1;
+   } else {
+      orac_say( " Will ignore high-frequency interference.", "yellow" );
+      $highfreq = 0;
+   }
+}
+
+my $commasep;
+if ( $highfreq ) {
+   if ( defined( $RECPARS{'HIGHFREQ_INTERFERENCE_EDGE_CLIP'} ) ) {
+      if ( !$highfreq_message ) {
+         orac_say( " Will detect and mask spectra with high-frequency interference.", "yellow" );
+         $highfreq_message = 1;
+      }
+
+      $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_EDGE_CLIP", $RECPARS{'HIGHFREQ_INTERFERENCE_EDGE_CLIP'} );
+      if ( ref( $RECPARS{'HIGHFREQ_INTERFERENCE_EDGE_CLIP'} ) eq 'ARRAY' ) {
+        $commasep = join( ",", @{ $RECPARS{'HIGHFREQ_INTERFERENCE_EDGE_CLIP'} } );
+      } else {
+        $commasep = $RECPARS{'HIGHFREQ_INTERFERENCE_EDGE_CLIP'};
+      }
+      orac_say( "    Setting clipping levels to determine dispersion in noise profile to $commasep standard deviations.", "yellow" );
+   }
+
+   if ( defined( $RECPARS{'HIGHFREQ_INTERFERENCE_THRESH_CLIP'} ) ) {
+      if ( !$highfreq_message ) {
+         orac_say( " Will detect and mask spectra with high-frequency interference.", "yellow" );
+         $highfreq_message = 1;
+      }
+
+      $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP", $RECPARS{'HIGHFREQ_INTERFERENCE_THRESH_CLIP'} );
+      orac_say( "    Setting clipping level to select bad spectra to $RECPARS{'HIGHFREQ_INTERFERENCE_THRESH_CLIP'} standard deviations.", "yellow" );
+   }
+
+   if ( defined( $RECPARS{'HIGHFREQ_RINGING'} ) ) {
+      if ( !$highfreq_message ) {
+         orac_say( " Will detect and mask spectra with high-frequency interference.", "yellow" );
+         $highfreq_message = 1;
+      }
+
+      $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING", $RECPARS{'HIGHFREQ_RINGING'} );
+      if ( $RECPARS{'HIGHFREQ_RINGING'} ) {
+         if ( defined( $RECPARS{'HIGHFREQ_RINGING_MIN_SPECTRA'} ) ) {
+            my $min_spectra = max( $RECPARS{'HIGHFREQ_RINGING_MIN_SPECTRA'}, 100 );
+            $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA", $min_spectra );
+            orac_say( "    Filter spectra with ringing provided there are at least $min_spectra spectra.", "yellow" );
+         } else {
+            orac_say( "    Filter spectra with ringing provided there are at least 400 spectra.", "yellow" );
+         }
+      }
+   }
+}
+
+# The intererence-detection code assumes that the receptors supplied are
+# not full of bad values.  So set a flag to hunt for such bad receptors
+# that are not in the bad_receptors index, and add them to the index.
+# Without the bad-baseline filtering the QA stage will pick these up.
+# Other primitives may have set this flag already, so OR the current
+# value with the existing value.
+my $indexbad = $highfreq;
+if ( defined( $Frm->uhdr( "INDEX_BAD_RECEPTORS" ) ) ) {
+   $indexbad = $indexbad || $Frm->uhdr( "INDEX_BAD_RECEPTORS" );
+}
+$Frm->uhdr( "INDEX_BAD_RECEPTORS", $indexbad );
