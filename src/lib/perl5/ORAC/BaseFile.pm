@@ -1259,7 +1259,11 @@ sub sync_headers {
   warn "Stub sync_headers does nothing. Please inherit from BaseNDF or BaseFITS";
 }
 
-=item B<_get header_override>
+=item B<header_override_file>
+
+Sets the name of the file containing header override information.
+
+=item B<_get_header_override>
 
 Returns a hash of headers to be overridden by filename.
 
@@ -1267,16 +1271,24 @@ Returns a hash of headers to be overridden by filename.
 
 do {
   my $overrides = undef;
-  my $override_file = 'header_override.ini';
+  my $override_file = undef;
+
+  sub header_override_file {
+    $override_file = shift;
+  }
 
   sub _get_header_override {
     unless (defined $overrides) {
-      if (-e $override_file) {
+      unless (defined $override_file) {
+        $overrides = {};
+      }
+      elsif (-e $override_file) {
         my %ini;
         tie %ini, 'Config::IniFiles', (-file => $override_file);
         $overrides = \%ini;
       }
       else {
+        orac_warn('Header override file ' . $override_file . " not found\n");
         $overrides = {};
       }
     }
