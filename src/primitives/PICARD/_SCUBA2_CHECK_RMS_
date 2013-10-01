@@ -119,17 +119,6 @@ if ($_COMPONENT_EXISTS_{EXISTS}) {
 _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file COMP=ERR VERBOSE=0
 my $rms_map = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
 
-# Retrieve NEP from earlier calculation
-my $nep_av = (defined $Frm->uhdr("NEP_AV")) ? $Frm->uhdr("NEP_AV") : "Nan";
-my $nep_av_err = (defined $Frm->uhdr("NEP_AV_ERR")) ? $Frm->uhdr("NEP_AV_ERR") : "NaN";
-
-# Determine RMS and NEFD from NEP: remember the factor of 10**12 to
-# convert to pW
-my $fcf = (defined $Frm->hdr("FCF")) ? $Frm->hdr("FCF") :
-  $Cal->gain($wave, "BEAM");
-my $nefd_nep = 1.0e12 * $nep_av * $fcf / $trans;
-my $rms_nep = $nefd_nep / sqrt($t_elapsed);
-
 # Determine RMS and NEFD from ITC
 use Astro::ITC::SCUBA2 qw/calcrms exposure_time_fraction/;
 # Determine ITC observation type from map size and scan pattern
@@ -146,9 +135,21 @@ if ($scan_pat =~ /pong/) {
   $itc_obstype = "Daisy";
 }
 
+my $telapsed_eff = exposure_time_fraction($itc_obstype, $wave) * $t_elapsed;
 my $f = (defined $Frm->uhdr("RECPAR_ITC_F")) ? $Frm->uhdr("RECPAR_ITC_F") : 1;
 my $rms_itc = calcrms( $itc_obstype, $wave, $trans, $f, $t_elapsed );
-my $nefd_itc = $rms_itc * sqrt(exposure_time_fraction($itc_obstype, $wave) * $t_elapsed);
+my $nefd_itc = $rms_itc * sqrt($telapsed_eff);
+
+# Retrieve NEP from earlier calculation
+my $nep_av = (defined $Frm->uhdr("NEP_AV")) ? $Frm->uhdr("NEP_AV") : "Nan";
+my $nep_av_err = (defined $Frm->uhdr("NEP_AV_ERR")) ? $Frm->uhdr("NEP_AV_ERR") : "NaN";
+
+# Determine RMS and NEFD from NEP: remember the factor of 10**12 to
+# convert to pW
+my $fcf = (defined $Frm->hdr("FCF")) ? $Frm->hdr("FCF") :
+  $Cal->gain($wave, "BEAM");
+my $nefd_nep = 1.0e12 * $nep_av * $fcf / $trans;
+my $rms_nep = $nefd_nep / sqrt($telapsed_eff);
 
 # Show results
 my $logfile = ORAC::LogFile->new("log.checkrms");
@@ -159,7 +160,7 @@ $logfile->header("# CHECK_RMS log file - created on ".gmtime(),
 my $object = uc($Frm->hdr("OBJECT"));
 $object =~ s/\s+/_/g;
 my $entry = join("  ", $Frm->hdr("UTDATE"), $object, $Frm->hdr("OBSNUM"), $wave,
-		 (sprintf "%.1f", $t_elapsed), (sprintf "%.1f", $texp),
+		 (sprintf "%.1f", $t_elapsed), (sprintf "%.2f", $texp),
 		 (sprintf "%.2f", $trans),
 		 (sprintf "%.2e", $nep_av), (sprintf "%.2e", $nep_av_err),
 		 (sprintf "%.2e", $rms_nep), (sprintf "%.2e", $nefd_nep),
