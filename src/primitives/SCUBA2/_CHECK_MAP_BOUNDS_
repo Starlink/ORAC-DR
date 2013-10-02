@@ -91,6 +91,9 @@ An array reference with the upper bounds.
 
 =back
 
+In addition the Frame uhdr entry C<NEWBOUNDS> contains a hash
+reference with the same keys as above.
+
 =head1 OUTPUT FILES
 
 None.
@@ -107,8 +110,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010-2011 University of British Columbia. All Rights
-Reserved.
+Copyright (C) 2010-2011,2013 University of British Columbia. All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -127,17 +130,8 @@ USA.
 
 =cut
 
-# Should I be verbose (default to no)
+# Should I be verbose (default to yes)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
-
-if (defined $Frm->uhdr("NEWBOUNDS")) {
-  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = $Frm->uhdr("NEWBOUNDS");
-} else {
-# Input files to process
-my $inlist = get_prim_arg($_PRIM_ARGS_, "IN", undef);
-if ( !defined $inlist ) {
-  orac_throw "_CHECK_MAP_BOUNDS_: Must provide a list of input files\n";
-}
 
 # Which task to use to check the map bounds? The user MUST supply this as
 my $task = lc(get_prim_arg($_PRIM_ARGS_, "TASK", undef));
@@ -149,116 +143,135 @@ unless ($task eq "makemap" || $task eq "wcsmosaic") {
   orac_throw "_CHECK_MAP_BOUNDS_: invalid task, $task. Must be MAKEMAP or WCSMOSAIC\n";
 }
 
-# FTS-2 port
-my $fts_port = get_prim_arg($_PRIM_ARGS_, "FTSPORT", undef);
-
-# Define the maximum number of pixels in an image before it has to be
-# resized/or tiled
-use constant MAXPIX => 60e6;
-
-orac_print "Calculating output map size... " if ($verbose);
-
-# Determine the lower/upper bounds of the output image
-my (@lbound, @ubound);
-my %mons = ( "makemap" => "smurf_mon", "wcsmosaic" => "kappa_mon");
-my $mapszargs;
-if ( $task eq "makemap" ) {
-  # Makemap arguments - make sure the correct pixel scale is used
-  $mapszargs = "in=^$inlist out=! method=rebin";
-  $mapszargs .= " pixsize=".($Frm->uhdr("RECPAR_MAKEMAP_PIXSIZE"))
-    if (defined $Frm->uhdr("RECPAR_MAKEMAP_PIXSIZE"));
-  $mapszargs .= ' ftsport=' . $fts_port if defined $fts_port;
+# Skip the bounds check if it has already been carried out
+if ($task eq "makemap" && defined $Frm->uhdr("NEWBOUNDS")) {
+  orac_print "Using map bounds derived previously\n";
+  %_CHECK_MAP_BOUNDS_ = %{$Frm->uhdr("NEWBOUNDS")};
 } else {
-  my $refimage = (defined $Grp->uhdr("REFIMAGE")) ? $Grp->uhdr("REFIMAGE") : "!";
-  $mapszargs = "ref=$refimage method=nearest wlim=0.2 lbnd=! ubnd=! "
-    ."out=! in=^$inlist";
-}
+  # Input files to process
+  my $inlist = get_prim_arg($_PRIM_ARGS_, "IN", undef);
+  if ( !defined $inlist ) {
+    orac_throw "_CHECK_MAP_BOUNDS_: Must provide a list of input files\n";
+  }
 
-my $MON_STATUS = $Mon{$mons{$task}}->obeyw("$task","$mapszargs");
-if ( $MON_STATUS == ORAC__OK ) {
-  (my $ORAC_STATUS, @lbound) = $Mon{$mons{$task}}->get("$task","lbound");
-  ($ORAC_STATUS,    @ubound) = $Mon{$mons{$task}}->get("$task","ubound");
+  # FTS-2 port
+  my $fts_port = get_prim_arg($_PRIM_ARGS_, "FTSPORT", undef);
 
-  # Calculate output image size
-  my $xsize = $ubound[0] - $lbound[0] + 1;
-  my $ysize = $ubound[1] - $lbound[1] + 1;
-  my $outpix = $xsize*$ysize;
-  # Reset the bounds if necessary
-  if ( $outpix > MAXPIX ) {
-    # Warn user
-    my $scalefactor = sqrt( MAXPIX/$outpix );
-    my $pc_scalefactor = sprintf "%5.3f", 100*$scalefactor;
-    orac_print "\n";
-    orac_warn "Size will exceed 2 GB: reducing to include central $pc_scalefactor % of mapped area\n";
+  # Define the maximum number of pixels in an image before it has to be
+  # resized/or tiled
+  use constant MAXPIX => 60e6;
 
-    my $newxsize = int($xsize * $scalefactor);
-    my $newysize = int($ysize * $scalefactor);
+  orac_print "Calculating output map size... " if ($verbose);
 
-    orac_print "Determining new bounds for output image:\n";
-    if ($task eq "makemap") {
-      # If we're not coadding files then the output map should not be
-      # any larger than that specified in the FITS header. But, we have
-      # to assume a default pixel scale of 4"/2" at 850/450 um
-      # respectively to convert map size to pixels.
-      use Astro::PAL qw(:constants);
-      my $pixsize = ($Frm->hdr("FILTER") =~ /850/) ? 4 : 2;
-      my $map_pa = DD2R * $Frm->hdr("MAP_PA");
-      my $map_width = int(($Frm->hdr("MAP_WDTH") * cos($map_pa) +
-			   $Frm->hdr("MAP_HGHT") * sin($map_pa)) / $pixsize);
-      my $map_height = int(($Frm->hdr("MAP_HGHT") * cos($map_pa) +
-			    $Frm->hdr("MAP_WDTH") * sin($map_pa)) / $pixsize);
-      # Allow for a FoV extra coverage - assume 8-arcmin FoV = 480"
-      my $border = 480.0 / $pixsize;
-      $map_width += $border;
-      $map_height += $border;
-      # Calculate the number of pixels corresponding to the requested map area
-      my $mappix = $map_width * $map_height;
-      my $newmappix = $newxsize * $newysize;
-      # If twice this number is less than the new map area then use
-      # it. The factor of 2 allows for the case that the new map size
-      # is only a little bit bigger than the requested map size, and a
-      # map that has only twice the number of pixels probably won't
-      # significantly longer to process.
-      if (2*$mappix < $newmappix) {
-	orac_warn "New size exceeds defined map size: something has probably gone wrong\n";
-	orac_warn "Using map size from header, but results should be examined for problems\n";
-	$newxsize = $map_width if ($newxsize > $map_width);
-	$newysize = $map_height if ($newysize > $map_height);
+  # Determine the lower/upper bounds of the output image
+  my (@lbound, @ubound);
+  my %mons = ( "makemap" => "smurf_mon", "wcsmosaic" => "kappa_mon");
+  my $mapszargs;
+  if ( $task eq "makemap" ) {
+    # Makemap arguments - make sure the correct pixel scale is used
+    $mapszargs = "in=^$inlist out=! method=rebin";
+    $mapszargs .= " pixsize=".($Frm->uhdr("RECPAR_MAKEMAP_PIXSIZE"))
+      if (defined $Frm->uhdr("RECPAR_MAKEMAP_PIXSIZE"));
+    $mapszargs .= ' ftsport=' . $fts_port if defined $fts_port;
+  } else {
+    my $refimage = (defined $Grp->uhdr("REFIMAGE")) ? $Grp->uhdr("REFIMAGE") : "!";
+    $mapszargs = "ref=$refimage method=nearest wlim=0.2 lbnd=! ubnd=! "
+      ."out=! in=^$inlist";
+  }
+
+  my $MON_STATUS = $Mon{$mons{$task}}->obeyw("$task","$mapszargs");
+  if ( $MON_STATUS == ORAC__OK ) {
+    (my $ORAC_STATUS, @lbound) = $Mon{$mons{$task}}->get("$task","lbound");
+    ($ORAC_STATUS,    @ubound) = $Mon{$mons{$task}}->get("$task","ubound");
+
+    # Calculate output image size
+    my $xsize = $ubound[0] - $lbound[0] + 1;
+    my $ysize = $ubound[1] - $lbound[1] + 1;
+    my $outpix = $xsize*$ysize;
+    # Reset the bounds if necessary
+    if ( $outpix > MAXPIX ) {
+      # Warn user
+      my $scalefactor = sqrt( MAXPIX/$outpix );
+      my $pc_scalefactor = sprintf "%5.3f", 100*$scalefactor;
+      orac_print "\n";
+      orac_warn "Size will exceed 2 GB: reducing to include central $pc_scalefactor % of mapped area\n";
+
+      my $newxsize = int($xsize * $scalefactor);
+      my $newysize = int($ysize * $scalefactor);
+
+      orac_print "Determining new bounds for output image:\n";
+      if ($task eq "makemap") {
+	# If we're not coadding files then the output map should not be
+	# any larger than that specified in the FITS header. But, we have
+	# to assume a default pixel scale of 4"/2" at 850/450 um
+	# respectively to convert map size to pixels.
+	use Astro::PAL qw(:constants);
+	my $pixsize = ($Frm->hdr("FILTER") =~ /850/) ? 4 : 2;
+	my $map_pa = DD2R * $Frm->hdr("MAP_PA");
+	my $map_width = int(($Frm->hdr("MAP_WDTH") * cos($map_pa) +
+			     $Frm->hdr("MAP_HGHT") * sin($map_pa)) / $pixsize);
+	my $map_height = int(($Frm->hdr("MAP_HGHT") * cos($map_pa) +
+			      $Frm->hdr("MAP_WDTH") * sin($map_pa)) / $pixsize);
+	# Allow for a FoV extra coverage - assume 8-arcmin FoV = 480"
+	my $border = 480.0 / $pixsize;
+	$map_width += $border;
+	$map_height += $border;
+	# Calculate the number of pixels corresponding to the requested map area
+	my $mappix = $map_width * $map_height;
+	my $newmappix = $newxsize * $newysize;
+	# If twice this number is less than the new map area then use
+	# it. The factor of 2 allows for the case that the new map size
+	# is only a little bit bigger than the requested map size, and a
+	# map that has only twice the number of pixels probably won't
+	# significantly longer to process.
+	if (2*$mappix < $newmappix) {
+	  orac_warn "New size exceeds defined map size: something has probably gone wrong\n";
+	  orac_warn "Using map size from header, but results should be examined for problems\n";
+	  $newxsize = $map_width if ($newxsize > $map_width);
+	  $newysize = $map_height if ($newysize > $map_height);
+	}
       }
+
+      my $dx = int(($xsize - $newxsize) / 2.0);
+      my $dy = int(($ysize - $newysize) / 2.0);
+      # Reduce the X, Y bounds equally.
+      $lbound[0] += $dx;
+      $ubound[0] -= $dx;
+      $lbound[1] += $dy;
+      $ubound[1] -= $dy;
+
+      orac_print "Old dimensions are $xsize x $ysize - new dimensions are $newxsize x $newysize\n";
+
+      # Set some entries in the primitive hash
+      $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 1;
+      $_CHECK_MAP_BOUNDS_{LBOUND} = \@lbound;
+      $_CHECK_MAP_BOUNDS_{UBOUND} = \@ubound;
+    } else {
+      # No new bounds were calculated
+      orac_print "Size within limits, no need to tile.\n" if ($verbose);
+      $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 0;
     }
-
-    my $dx = int(($xsize - $newxsize) / 2.0);
-    my $dy = int(($ysize - $newysize) / 2.0);
-    # Reduce the X, Y bounds equally.
-    $lbound[0] += $dx;
-    $ubound[0] -= $dx;
-    $lbound[1] += $dy;
-    $ubound[1] -= $dy;
-
-    orac_print "Old dimensions are $xsize x $ysize - new dimensions are $newxsize x $newysize\n";
-
-    # Set some entries in the primitive hash
-    $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 1;
-    $_CHECK_MAP_BOUNDS_{LBOUND} = \@lbound;
-    $_CHECK_MAP_BOUNDS_{UBOUND} = \@ubound;
   } else {
-    # No new bounds were calculated
-    orac_print "Size within limits, no need to tile.\n" if ($verbose);
-    $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 0;
+    # Bounds calculation failed for some reason
+    orac_print "\n";
+    if ( $MON_STATUS == 235176858 ) {
+      # SMURF makemap error SMF__NOSCI: no science data found
+      orac_err "Unable to check map bounds - no science data found\n";
+    } elsif ( $MON_STATUS == 235176850 ) {
+      # SMURF makemap error SMF__BADFLAT: Bad flatfield data
+      orac_err "Map bounds check failed - one or more flatfields failed to process\n";
+    } else {
+      orac_err "Map bounds check failed\n";
+    }
+    $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = -1;
   }
-} else {
-  # Bounds calculation failed for some reason
-  orac_print "\n";
-  if ( $MON_STATUS == 235176858 ) {
-    # SMURF makemap error SMF__NOSCI: no science data found
-    orac_err "Unable to check map bounds - no science data found\n";
-  } elsif ( $MON_STATUS == 235176850 ) {
-    # SMURF makemap error SMF__BADFLAT: Bad flatfield data
-    orac_err "Map bounds check failed - one or more flatfields failed to process\n";
-  } else {
-    orac_err "Map bounds check failed\n";
+  # Store bounds for re-use in subsequent calls to makemap
+  if ($task eq "makemap") {
+    my %bounds = ( NEWBOUNDS => $_CHECK_MAP_BOUNDS_{NEWBOUNDS} );
+    if ($bounds{NEWBOUNDS} == 1) {
+      $bounds{LBOUND} = $_CHECK_MAP_BOUNDS_{LBOUND};
+      $bounds{UBOUND} = $_CHECK_MAP_BOUNDS_{UBOUND};
+    }
+    $Frm->uhdr("NEWBOUNDS", \%bounds);
   }
-  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = -1;
-}
-$Frm->uhdr("NEWBOUNDS", $_CHECK_MAP_BOUNDS_{NEWBOUNDS});
 }
