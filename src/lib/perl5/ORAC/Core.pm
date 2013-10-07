@@ -1161,8 +1161,40 @@ either a ORAC::Recipe::Parameters object or undef.
 =cut
 
 sub orac_parse_recparams {
-  my $file = shift;
-  return ORAC::Recipe::Parameters->new( $file );
+  my $string = shift;
+  return undef unless defined $string;
+
+  my (%fixed, @file);
+  foreach (split ',', $string) {
+    if (/=/) {
+      my ($key, $value) = split '=', $_, 2;
+      $fixed{$key} = $value;
+    }
+    else {
+      push @file, $_;
+    }
+  }
+
+  my $recpars;
+
+  if (0 == scalar @file) {
+    $recpars = new ORAC::Recipe::Parameters();
+  }
+  elsif (1 == scalar @file) {
+    $recpars = ORAC::Recipe::Parameters->new($file[0]);
+  }
+  else {
+    # The ORAC::Recipe::Parameters class does not currently support
+    # loading parameters from more than one file, so we have
+    # to reject this situation.
+    return undef;
+  }
+
+  if (scalar keys %fixed) {
+    $recpars->fixed_parameters(\%fixed);
+  }
+
+  return $recpars;
 }
 
 =item B<orac_process_argument_list>

@@ -53,19 +53,21 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $file = shift;
-  return undef unless defined $file;
 
   my $obj = bless {
                    File => undef,
                    Parameters => {},
+                   FixedParameters => undef,
                   }, $class;
 
-  my $path = $obj->_locate_file( $file );
-  print "PATH = ". (defined $path ? $path : "<undef>")."\n" if $DEBUG;
-  return undef unless defined $path;
+  if (defined $file) {
+    my $path = $obj->_locate_file( $file );
+    print "PATH = ". (defined $path ? $path : "<undef>")."\n" if $DEBUG;
+    return undef unless defined $path;
 
-  # update filename and parse it
-  $obj->filename( $path );
+    # update filename and parse it
+    $obj->filename( $path );
+  }
 
   return $obj;
 }
@@ -96,6 +98,29 @@ sub filename {
     $self->_parse_file;
   }
   return $self->{File};
+}
+
+=item B<fixed_parameters>
+
+Set or return a hash reference of fixed parameters to be set for all
+recipes.  Keys are converted to upper case.
+
+=cut
+
+sub fixed_parameters {
+  my $self = shift;
+  if (@_) {
+    my $fixed = shift;
+    my %clean = ();
+
+    my ($key, $value);
+    while (($key,$value) = each %$fixed) {
+      $clean{uc($key)} = $value;
+    }
+
+    $self->{'FixedParameters'} = \%clean;
+  }
+  return $self->{'FixedParameters'};
 }
 
 =item B<recipe_name_from_params>
@@ -197,6 +222,9 @@ sub for_recipe {
         if defined $usekey;
     }
   }
+
+  my $fixed = $self->fixed_parameters();
+  %RecPars = (%RecPars, %$fixed) if defined $fixed;
 
   return %RecPars;
 }
