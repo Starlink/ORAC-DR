@@ -216,9 +216,12 @@ if ($modelfit) {
 my $fit_method = lc(get_prim_arg($_PRIM_ARGS_, "METHOD", "beamfit"));
 my $use_beamfit = ($fit_method eq "beamfit") ? 1 : 0;
 
+# Is a calibrator being fitted?
+my $calsource = $Cal->iscalsource($Obj->hdr("OBJECT"));
+
 # Should beamfit attempt a two-component fit? Assume yes if the object
 # is a calibrator
-my $twocpt = ($use_beamfit && $Cal->iscalsource($Frm->hdr("OBJECT")) &&
+my $twocpt = ($use_beamfit && $calsource &&
 	      $Frm->hdr("OBJECT") !~ /^jupiter/i) ? 1 : 0;
 # Override with FIT_GAUSSIAN recipe parameter. A value of 0 means that
 # beamfit has free rein with the falloff parameter, but it's unlikely
@@ -295,7 +298,15 @@ if ( $numgood >= $minpix ) {
   my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
 
   # Force gaussian to be true for two-component fits to calibrators
-  $gaussian = 1 if ($twocpt && $Cal->iscalsource($Obj->hdr("OBJECT")));
+  $gaussian = 1 if ($twocpt && $calsource);
+
+  # However, as an accurate fit to the peak is usually required for
+  # matched-filtered images, the radial falloff should be a free
+  # parameter - at least for calibrators
+  my $fit_gauss = (defined $Frm->uhdr("RECPAR_FIT_GAUSSIAN") &&
+		   $Frm->uhdr("RECPAR_FIT_GAUSSIAN") > 0) ? 1 : 0;
+  $gaussian = 0
+    if ($calsource && defined $Obj->product && $Obj->product eq "Matched-filtered" && !$fit_gauss);
 
   # Convert flag to logical
   $gaussian = ( $gaussian ) ? "true" : "false";
@@ -330,7 +341,7 @@ if ( $numgood >= $minpix ) {
     # Beamfit
     my $pos = '"'.$xypos->[0].", ".$xypos->[1].'"';
     # A fixed background of 0 is used for calibrators
-    my $fixback = ($Cal->iscalsource($Frm->uhdr("ORAC_OBJECT"))) ? 0 : "!";
+    my $fixback = ($calsource) ? 0 : "!";
     $fixback = $Frm->uhdr("RECPAR_FIT_FIXBACK")
       if (defined $Frm->uhdr("RECPAR_FIT_FIXBACK"));
     my $var = "false";
