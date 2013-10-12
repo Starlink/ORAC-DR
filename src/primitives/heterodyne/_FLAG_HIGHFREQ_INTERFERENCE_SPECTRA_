@@ -38,6 +38,18 @@ enabled through Argument RINGING.
 
 =over 4
 
+=item DILATE = INTEGER (Given)
+
+The thresholding approach for rejection of the noisy spectra can leave
+affected spectra at the start and end of episodes of interference.
+This is particularly the case when there is ringing present, which
+amplifies the standard deviation of the normal level used for the
+threshold.  If this parameter is set to 1 or 2, the thresholded
+masked regions of high interference are dilated by one or two pixels
+respectively to catch the start and end spectra partly affected by the
+interference.  For other values no dilation occurs.  The default is 1
+if Argument RINGING is true, and 0 otherwise.  [1]
+
 =item EDGE_CLIP = STRING (Given)
 
 The standard deviation to clip iteratively the summed-edginess
@@ -167,6 +179,7 @@ my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $ringing = get_prim_arg( $_PRIM_ARGS_, "RINGING", "0" );
 my $min_spec = get_prim_arg( $_PRIM_ARGS_, "RINGING_MIN_SPECTRA", "400" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
+my $dilate = get_prim_arg( $_PRIM_ARGS_, "DILATE", $ringing );
 
 # Handle recipe parameter overrides.
 
@@ -230,6 +243,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp12file = new ORAC::TempFile( 0 );
    my $temp13file = new ORAC::TempFile( 0 );
    my $temp14file = new ORAC::TempFile( 0 );
+   my $temp15file = new ORAC::TempFile( 0 );
 
 # We need the dimensions of the input file for later.
    _GET_DIMENSIONS_ FILE=$in
@@ -388,9 +402,26 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
          orac_say( "    Turning off spectra with rms edginess above " . sprintf( "%.4f", $threshold ) );
          $params = "in=$temp12file out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
          $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-         ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
-         ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
-         my $total = $eject + $kept;
+
+# The clipping can leave residual spikes in the edginess profile because
+# the standard deviation includes both the noise and actual low-level
+# variations.  FINDBACK treats them as features, not background.  Thus
+# the threshold is too high.  This next step excludes elements/spectra
+# either side of the expunged spectra.  Using BLOCK instead of FINDBACK
+# will often remove the edginess signal.  Instead dilate by two
+# spectra either side with block after thresholding.
+         if ( $dilate == 1 || $dilate == 2 ) {
+            my $dilate_box = 2 * $dilate + 1;
+            $params = "in=$temp4file out=$temp15file box=$dilate_box wlim=1.0";
+            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp15file out=$temp4file" );
+         }
+
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file clip=2" );
+         ( $ORAC_STATUS, my $numgood2 ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+         my $eject = $numgood - $numgood2;
+         my $total = $ntimes;
          if ( $eject == 1 ) {
             orac_say( "       One spectrum removed out of $total." );
          } elsif ( $eject > 0 ) {
