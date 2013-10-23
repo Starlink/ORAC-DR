@@ -21,6 +21,17 @@ The suffix to use for the output files.  The default is '_sbs'.
 
 =back
 
+=head1 UHDR PARAMETERS
+
+=over 4
+
+=item B<STACK_FRAMES_GROUPING>
+
+Comma separated list of extra HDR values by which to group
+the frames.
+
+=back
+
 =head1 EXTERNAL TASKS
 
 SMURF.
@@ -66,32 +77,42 @@ USA.
 =cut
 
 my $suffix = get_prim_arg($_PRIM_ARGS_, "SUFFIX", "_sbs");
+
+my $extra_keys = $Frm->uhdr('STACK_FRAMES_GROUPING');
+my @extra_keys = ();
+@extra_keys = split(',', $extra_keys) if defined $extra_keys;
+
 my @output = ();
 my %subarray_in = ();
 my %subarray_out = ();
 
-for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
-  my $subarray = $Frm->subarray($i);
-  my ($in, $out) = $Frm->inout($suffix, $i);
-  my (undef, $tmp) = $Frm->inout($suffix . 'tmp', $i);
-  $Frm->push_intermediates($tmp);
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+  my $subarray = $Frm->subarray($i + 1);
+  my ($in, $out) = $Frm->inout($suffix, $i + 1);
+  my (undef, $tmp) = $Frm->inout($suffix . 'tmp', $i + 1);
+
+  # Determine combination key to which this file belongs.
+  # Normally just subarray, but optionally it might include
+  # more.
+  my $key = $subarray;
+  $key .= '_' . $Frm->hdrval($_, $i) foreach @extra_keys;
 
   # Sort out the frame of the file...
   $Mon{'ndfpack_mon'}->obeyw('ndfcopy',"$in $tmp trim=true");
   $Mon{'ndfpack_mon'}->obeyw('wcsframe', "$tmp fplane");
 
-  if (! exists($subarray_in{$subarray})) {
-    $subarray_in{$subarray} = [$tmp];
-    $subarray_out{$subarray} = $out;
+  if (! exists($subarray_in{$key})) {
+    $subarray_in{$key} = [$tmp];
+    $subarray_out{$key} = $out;
   }
   else {
-    push @{$subarray_in{$subarray}}, $tmp;
+    push @{$subarray_in{$key}}, $tmp;
   }
 }
 
-for my $subarray (keys %subarray_in) {
-  my @files = @{$subarray_in{$subarray}};
-  my $out = $subarray_out{$subarray};
+for my $key (keys %subarray_in) {
+  my @files = @{$subarray_in{$key}};
+  my $out = $subarray_out{$key};
 
   if (1 == scalar @files) {
     # If there is only one file, just leave it in the frame
@@ -100,7 +121,10 @@ for my $subarray (keys %subarray_in) {
     push @output, $files[0];
   }
   else {
-    # Otherwise stack the frames.
+    # Otherwise stack the frames.  Only add the 'tmp' files to intermediates
+    # if they are going to be stacked, i.e. now but not in the case above.
+
+    $Frm->push_intermediates($_) foreach @files;
 
     my $in = write_file_list(@files);
 
@@ -111,4 +135,4 @@ for my $subarray (keys %subarray_in) {
 }
 
 $Frm->files(@output);
-
+$Frm->readhdr();

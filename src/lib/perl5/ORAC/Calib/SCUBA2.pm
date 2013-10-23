@@ -252,6 +252,8 @@ __PACKAGE__->CreateBasicAccessors( mask => {},
 				   noise => {},
 				   nep => {},
                                    zeropath => {},
+                                   zeropath_fwd => {},
+                                   zeropath_bck => {},
 );
 
 =head1 PUBLIC METHODS
@@ -752,6 +754,36 @@ sub zeropath {
   # Do not warn about non-matching calibrations
   my $warn = 0;
   return $self->GenericIndexAccessor( 'zeropath', -1, 1, 0, $warn, @_ );
+}
+
+=item B<zeropath_fwd>
+
+Return (or set) the name of the current forward zeropath file(s).
+
+  $zeropath = $Cal->zeropath_fwd();
+
+=cut
+
+sub zeropath_fwd {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( 'zeropath_fwd', -1, 1, 0, $warn, @_ );
+}
+
+=item B<zeropath_bck>
+
+Return (or set) the name of the current backward zeropath file(s).
+
+  $zeropath = $Cal->zeropath_bck();
+
+=cut
+
+sub zeropath_bck {
+  my $self = shift;
+  # Do not warn about non-matching calibrations
+  my $warn = 0;
+  return $self->GenericIndexAccessor( 'zeropath_bck', -1, 1, 0, $warn, @_ );
 }
 
 =back
