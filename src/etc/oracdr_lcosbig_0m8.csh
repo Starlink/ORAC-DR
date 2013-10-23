@@ -1,16 +1,16 @@
 
 #+
 #  Name:
-#     oracdr_lcosbig
+#     oracdr_lcosbig_0m8
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with LCO SBIG 1.0M
+#     Initialise ORAC-DR environment for use with LCO SBIG 0.8M
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_lcosbig.csh
+#     source ${ORAC_DIR}/etc/oracdr_lcosbig_0m8.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -34,21 +34,21 @@
 #        Root location of the calibration files. $ORAC_DATA_CAL
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
-#        is set to $ORAC_CAL_ROOT/lcosbig` If ORAC_CAL_ROOT is not
+#        is set to $ORAC_CAL_ROOT/lcosbig_0m8` If ORAC_CAL_ROOT is not
 #        defined it defaults to "/jac_sw/oracdr_cal".
 
 
 #  Examples:
-#     oracdr_lcosbig
+#     oracdr_lcosbig_0m8
 #        Will set the variables assuming the current UT date.
-#     oracdr_lcosbig 20120314 kb75
-#        Use UT data 20120314 for camera kb75
+#     oracdr_lcosbig_0m8 20120314 kb16
+#        Use UT data 20120314 for camera kb16
 
 #  Notes:
 #     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR
 #     are unset by this routine if they have been set.
 #     - The data directories are assumed to be in directories "raw"
-#     (for input) and "reduced" (for output) from root
+#     (for input) and "oracproc" (for output) from root
 #     $ORAC_DATA_ROOT/gmos`data/UT
 #     - $ORAC_DATA_OUT and $ORAC_DATA_IN will have to be
 #     set manually if the UKIRT directory structure is not in use.
@@ -82,7 +82,7 @@ if ( $#argv != 2 ) then
   exit (-1)
 endif
 
-setenv ORAC_INSTRUMENT LCOSBIG-$argv[2]
+setenv ORAC_INSTRUMENT LCOSBIG_0M8-$argv[2]
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
