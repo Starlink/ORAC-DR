@@ -527,6 +527,12 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib::LCOSBIG";
     $instclass = "ORAC::Inst::LCOSBIG";
 
+  } elsif ( $inst eq 'LCOSINISTRO' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOSINISTRO";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSINISTRO";
+
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -775,6 +781,13 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
     push( @path, $imaging_root );
 
+  } elsif ($inst eq 'LCOSINISTRO') {
+    push( @path, File::Spec->catdir( $root, "LCOSINISTRO" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSINISTRO" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -1002,6 +1015,14 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'LCOSINISTRO') {
+    push( @path, File::Spec->catdir( $root, "LCOSINISTRO" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSINISTRO" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
@@ -1146,6 +1167,11 @@ sub orac_determine_calibration_search_path {
 
   } elsif( $inst eq 'LCOSBIG_0M8' ) {
     push( @path, File::Spec->catdir( $root, 'lcosbig_0m8' ) );
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOSINISTRO' ) {
+    push( @path, File::Spec->catdir( $root, 'lcosinistro' ) );
     push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
     push( @path, File::Spec->catdir( $root, 'general-optical') );
 
@@ -1441,6 +1467,11 @@ sub orac_configure_for_instrument {
 
     # Instrument
     $ENV{"ORAC_INSTRUMENT"} = "LCOSBIG_0M8";
+
+  } elsif ( $instrument eq "LCOSINISTRO" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOSINISTRO";
 
   } else {
     orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");

@@ -193,6 +193,7 @@ sub orac_calc_instrument_settings {
                          'KB05' => 'coj',
                          'KB71' => 'coj',
 			 'KB16' => 'sqa',
+                         'FL01' => 'bpl',
                        );
 
     # Split into instrument and camera code
@@ -232,6 +233,7 @@ sub orac_calc_instrument_settings {
                            'LCOCC' => "/mfs-sba/engineering/",
                            'LCOSBIG_0M4' => "/mfs-sba/engineering/",
 			   'LCOSBIG_0M8' => "/mfs-sba/engineering/",
+                           'LCOSINISTRO' => "/data/archive/science/",
                         );
 
   # Default drN directories for ACSIS and SCUBA-2.
@@ -600,6 +602,9 @@ sub orac_calc_instrument_settings {
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                        'LCOSBIG_0M8' => { code => sub { $lcogt_con->( "lcosbig_0m8", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
+                                  ORAC_LOOP => "flag -skip",
+                                  args => { $ukirt_args->() }, },
+                       'LCOSINISTRO' => { code => sub { $lcogt_con->( "lcosinistro", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                    );
