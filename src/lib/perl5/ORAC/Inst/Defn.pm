@@ -531,7 +531,7 @@ sub orac_determine_inst_classes {
     $groupclass = "ORAC::Group::LCOSBIG";
     $frameclass = "ORAC::Frame::LCOSINISTRO";
     $calclass = "ORAC::Calib::LCOSBIG";
-    $instclass = "ORAC::Inst::LCOSINISTRO";
+    $instclass = "ORAC::Inst::LCOSBIG";
 
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
