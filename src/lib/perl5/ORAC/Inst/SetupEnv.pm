@@ -161,7 +161,7 @@ sub orac_calc_instrument_settings {
   }
 
   # Handle LCOGT instruments which will be passed as
-  # LCO{CC,SBIG,SBIG_0M4}-<cameracode>
+  # LCO{CC,SBIG,SBIG_0M4,SINISTRO}-<cameracode>
   # Need to catch this, determine site and then initialize things correctly
   my $cameracode;
   my $sitecode;
@@ -197,7 +197,7 @@ sub orac_calc_instrument_settings {
                        );
 
     # Split into instrument and camera code
-    $inst =~ /^(LCO[A-Z_0-9]*)-(KB[0-9][0-9])/;
+    $inst =~ /^(LCO[A-Z_0-9]*)-((KB|FL)[0-9][0-9])/;
     if ( $1 eq "" or $2 eq "") {
       croak "LCOGT Instrument '$inst' not recognized by ORAC-DR\n";
     }
