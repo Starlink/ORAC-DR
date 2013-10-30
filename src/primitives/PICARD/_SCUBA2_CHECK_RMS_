@@ -84,13 +84,16 @@ my $t_elapsed = $dt_end->epoch - $dt_obs->epoch;
 my $wave = ($Frm->hdr("FILTER") =~ /850/) ? "850" : "450";
 
 # Calculate average transmission during observation
-my ($tauval, $status) = JCMT::Tau::SCUBA2::get_tau($wave, 'CSO',
-						   $Frm->hdr("WVMTAUST"));
-my $tau_st = $Frm->hdr("AMSTART") * $tauval;
-($tauval, $status) = JCMT::Tau::SCUBA2::get_tau($wave, 'CSO',
-						$Frm->hdr("WVMTAUEN"));
-my $tau_en = $Frm->hdr("AMEND") * $tauval;
+my ($tauzen_st, $status) = JCMT::Tau::SCUBA2::get_tau($wave, 'CSO',
+						      $Frm->hdr("WVMTAUST"));
+my $tau_st = $Frm->hdr("AMSTART") * $tauzen_st;
+
+(my $tauzen_en, $status) = JCMT::Tau::SCUBA2::get_tau($wave, 'CSO',
+						      $Frm->hdr("WVMTAUEN"));
+my $tau_en = $Frm->hdr("AMEND") * $tauzen_en;
 my $trans = exp(-0.5 * ($tau_st + $tau_en));
+my $meantauzen = 0.5 * ($tauzen_st + $tauzen_en);
+my $el = 0.5 * ($Frm->hdr("ELSTART") + $Frm->hdr("ELEND"));
 
 # Determine mean exposure time
 my $comp = "more.smurf.exp_time";
@@ -105,6 +108,12 @@ if ($_COMPONENT_EXISTS_{EXISTS}) {
 # Estimator for noise and NEFD
 my $estimator = (defined $Frm->uhdr("RECPAR_STATS_ESTIMATOR"))
   ? $Frm->uhdr("RECPAR_STATS_ESTIMATOR") : "MEDIAN";
+
+# Determine "f" from the pixel scale and wavelength
+_GET_PIXEL_SCALE_ IMAGE=$Frm->file VERBOSE=0
+my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
+my $defpixarea = ($wave == 850) ? 16 : 4;
+my $f = $_GET_PIXEL_SCALE_{AREA} / $defpixarea;
 
 # Code ref to check for bad values
 my $check_good = sub {
@@ -151,12 +160,12 @@ if ($scan_pat =~ /pong/) {
 
 my $texp_frac = exposure_time_fraction($itc_obstype, $wave);
 my $telapsed_eff = (defined $texp_frac) ? $texp_frac * $t_elapsed : 0;
-my $f = (defined $Frm->uhdr("RECPAR_ITC_F")) ? $Frm->uhdr("RECPAR_ITC_F") : 1;
 my $rms_itc = calcrms( $itc_obstype, $wave, $trans, $f, $t_elapsed );
 my $nefd_itc = $rms_itc * sqrt($telapsed_eff);
+my $rms_ratio = $rms_map / $rms_itc;
 
 # Retrieve NEP from earlier calculation
-my $nep_av = (defined $Frm->uhdr("NEP_AV")) ? $Frm->uhdr("NEP_AV") : "Nan";
+my $nep_av = (defined $Frm->uhdr("NEP_AV")) ? $Frm->uhdr("NEP_AV") : "NaN";
 my $nep_av_err = (defined $Frm->uhdr("NEP_AV_ERR")) ? $Frm->uhdr("NEP_AV_ERR") : "NaN";
 
 # Determine RMS and NEFD from NEP: remember the factor of 10**12 to
@@ -168,12 +177,15 @@ my $rms_nep = ($telapsed_eff > 0) ? $nefd_nep / sqrt($telapsed_eff) : "NaN";
 
 # Show results
 my $logfile = ORAC::LogFile->new("log.checkrms");
-my @keys = qw/utdate object obsnum wave telapsed texp trans nep_av nep_av_err rms_nep nefd_nep rms_map nefd_map rms_itc nefd_itc itc_obstype/;
+my @keys = qw/utdate object obsnum wave telapsed texp trans nep_av nep_av_err rms_nep nefd_nep rms_map nefd_map rms_itc nefd_itc itc_obstype rms_ratio el tau radius pixscale f/;
 $logfile->header("# CHECK_RMS log file - created on ".gmtime(),
 		 "# ".join(" ",@keys));
 
 my $object = uc($Frm->hdr("OBJECT"));
 $object =~ s/\s+/_/g;
+my $map_radius = (defined $Frm->uhdr("RECPAR_MAP_RADIUS"))
+  ? $Frm->uhdr("RECPAR_MAP_RADIUS") : 90;
+
 my $entry = join("  ", $Frm->hdr("UTDATE"), $object, $Frm->hdr("OBSNUM"), $wave,
 		 (sprintf "%.1f", $t_elapsed), (sprintf "%.2f", $texp),
 		 (sprintf "%.2f", $trans),
@@ -181,7 +193,9 @@ my $entry = join("  ", $Frm->hdr("UTDATE"), $object, $Frm->hdr("OBSNUM"), $wave,
 		 (sprintf "%.2e", $rms_nep), (sprintf "%.2e", $nefd_nep),
 		 (sprintf "%.1f", $rms_map), (sprintf "%.1f", $nefd_map),
 		 (sprintf "%.1f", $rms_itc), (sprintf "%.1f", $nefd_itc),
-		 $itc_obstype
+		 $itc_obstype, (sprintf "%.2f", $rms_ratio),
+		 (sprintf "%.1f", $el), (sprintf "%.3f", $meantauzen),
+		 $map_radius, (sprintf "%.1f", $_GET_PIXEL_SCALE_{PIXSCALE}), $f
 		);
 
 orac_print "Writing results in log.checkrms...\n";
