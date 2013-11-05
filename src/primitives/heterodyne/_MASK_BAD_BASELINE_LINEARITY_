@@ -79,6 +79,12 @@ normal. Most good receptors will be in 0.02 to 0.05 range.  This
 argument can be overridden by the RECPAR_BASELINE_LINEARITY_MINRMS
 uhdr via the recipe parameter system.  [0.1]
 
+=item MIN_SPECTRA = INTEGER (Given)
+
+Minimum number of good spectra for non-linearity filtering to be attempted.
+This argument can be overridden by the RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA
+uhdr via the recipe parameter system.  This should be at least 50.  [50]
+
 =item RMS_THRESHOLD = REAL (Given)
 
 Instead of iteratively clipping outliers, reject all receptors who rms
@@ -107,9 +113,10 @@ system.  [101]
 
 =item *
 
-This primitive is suitable for ACSIS/HARP time-series data.  The
-restriction to HARP is to ensure there are sufficient receptors to
-derive meaningful statistics and hence identify outliers.
+This primitive is suitable for ACSIS/HARP time-series data comprising
+at least MIN_SPECTRA spectra.  The restriction to HARP is to ensure
+there are sufficient receptors to derive meaningful statistics and
+hence identify outliers.
 
 =item *
 
@@ -211,6 +218,7 @@ my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 1 );
 my $emission_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "auto" );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 my $min_rms = get_prim_arg( $_PRIM_ARGS_, "MINRMS", 0.1 );
+my $min_spec = get_prim_arg( $_PRIM_ARGS_, "MIN_SPECTRA", "50" );
 my $thr_rms = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", 0.1 );
 
 # Handle recipe parameter overrides.
@@ -233,6 +241,10 @@ $smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" )
 $min_rms = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS" ) ) ?
              $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS" )       :
              $min_rms );
+
+$min_spec = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" ) ) ?
+            $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" )              :
+            $min_spec );
 
 $thr_rms = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_RMS_THRESHOLD" ) ) ?
              $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_RMS_THRESHOLD" )       :
@@ -280,6 +292,7 @@ if ( lc( $emission_mask ) eq 'auto' ) {
 
 # Smaller than this give poorer results emprically.
 $smooth_scale = max( 51, $smooth_scale );
+$min_spec = max( 50, $min_spec );
 
 # Sigma clipping levels should not decrease. Do not set the initial
 # threshold too low lest we exclude acceptable but slightly deviant
@@ -292,6 +305,20 @@ foreach ( @clips ) {
 
 my $sigma_clip = ( defined( $thr_rms ) ) ? 0 : 1;
 $thr_rms = max( 0.02, $thr_rms ) if ( ! $sigma_clip );
+
+# Are there sufficient spectra?
+# =============================
+#
+# First determine if there are sufficient spectra to do a meaningful
+# analysis.  Sum through all the files, but almost certainly if there is
+# more than one file, there are sufficient spectra.  The default limit is
+# arbitrary trying to permit removal of bad spectra in small rasters.
+_GET_NUMBER_OF_SPECTRA_
+my $no_spec = $_GET_NUMBER_OF_SPECTRA_{COUNT};
+if ( $no_spec < $min_spec ) {
+   orac_warn "Too few spectra ($no_spec) for low-frequency-interference analysis.  The minimum is $min_spec.\n";
+   goto RETURN;
+}
 
 # Form arrays of bad detectors.
 # =============================

@@ -42,6 +42,14 @@ box gives one sixteenth (1/2**4) of the spectral range.  It is
 constrained to the range INITIAL_FACTOR to 5.  Normally one pass
 is sufficient.  The default is the maximum of 3 and INITIAL_FACTOR.  []
 
+=item MIN_SPECTRA = INTEGER (Given)
+
+Minimum number of good spectra.  This is the same argument as used by
+the non-linearity detections since there is no point in detecting the
+emission if it is not going to be used.  This argument can be
+overridden by the RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA uhdr via the
+recipe parameter system.  This should be at least 50.  [50]
+
 =item THRESH_CLIP = REAL (Given)
 
 The number of standard deviations at which to threshold the histogram
@@ -55,7 +63,8 @@ of the collapsed cube's values above the mean level.  [4.0]
 
 =item *
 
-This primitive is suitable for ACSIS time-series cubes.
+This primitive is suitable for ACSIS time-series cubes containing at
+least 50 spectra.
 
 =item *
 
@@ -144,14 +153,31 @@ if ( ! ( ( $apply_lf || $apply_lin ) && lc( $emission_mask ) eq 'auto' ) ) { got
 
 # Do no more than obtain their values are they are passed to another
 # primitive which actually uses them to analyse the spectrum for
-# emission.
+# emission.  Note that the default for MIN_SPECTRA should be the same
+# as in _FLAG_LOWFREQ_INTERFERENCE_ and _MASK_BAD_BASELINE_LINEARITY_.
 my $minfactor = get_prim_arg( $_PRIM_ARGS_, "INITIAL_FACTOR", 3 );
 my $maxfactor = get_prim_arg( $_PRIM_ARGS_, "MAX_FACTOR", max( $minfactor, 4 ) );
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
+my $min_spec = get_prim_arg( $_PRIM_ARGS_, "MIN_SPECTRA", "50" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
+
+$min_spec = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" ) ) ?
+            $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" )              :
+            $min_spec );
 
 $minfactor = min( 4, max( 2, $minfactor ) );
 $maxfactor = min( 5, max( $minfactor, $maxfactor ) );
+
+# Are there sufficient spectra?
+# =============================
+#
+# First determine if there are sufficient spectra to do a meaningful
+# analysis.  Sum through all the files, but almost certainly if there is
+# more than one file, there are sufficient spectra.  The default limit is
+# arbitrary trying to permit removal of bad spectra in small rasters.
+_GET_NUMBER_OF_SPECTRA_
+my $no_spec = $_GET_NUMBER_OF_SPECTRA_{COUNT};
+if ( $no_spec < $min_spec ) { goto RETURN }
 
 # Obtain and validate data characteristics.
 # =========================================
