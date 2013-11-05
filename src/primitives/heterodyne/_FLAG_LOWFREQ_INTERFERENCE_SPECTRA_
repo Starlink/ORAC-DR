@@ -83,7 +83,7 @@ system.  ["auto"]
 
 Minimum number of good spectra for non-linearity filtering to be attempted.
 This argument can be overridden by the RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA
-uhdr via the recipe parameter system.  [50]
+uhdr via the recipe parameter system.  This should be at least 50.  [50]
 
 =item SCALELENGTH = INTEGER (Given)
 
@@ -111,8 +111,8 @@ parameter system.  [4.0]
 
 =item *
 
-This primitive is suitable for ACSIS timeseries data in raster or grid
-modes.
+This primitive is suitable for ACSIS time-series data comprising at
+least MIN_SPECTRA spectra.
 
 =item *
 
@@ -207,7 +207,7 @@ my $apply = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" ) ) ?
             $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" )              :
             1 );
 my $type = lc( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) );
-$apply = $apply && $type =~ /grid|raster/;
+
 if ( ! $apply ) { goto RETURN }
 
 # Handle arguments.
@@ -286,6 +286,7 @@ if ( lc( $emission_mask ) eq 'auto' ) {
 
 # Smaller than this give poorer results emprically.
 $smooth_scale = max( 51, $smooth_scale );
+$min_spec = max( 50, $min_spec );
 
 # Sigma clipping levels should not decrease. Do not set the initial
 # threshold too low lest we exclude acceptable but slightly deviant
@@ -297,6 +298,21 @@ foreach ( @clips ) {
 }
 
 $edge_clip = "[" . join( ",", @clip_sigma ) . "]";
+
+# Are there sufficient spectra?
+# =============================
+#
+# First determine if there are sufficient spectra to do a meaningful
+# analysis.  Sum through all the files, but almost certainly if there is
+# more than one file, there are sufficient spectra.  The default limit is
+# arbitrary trying to permit removal of bad spectra in small rasters.
+_GET_NUMBER_OF_SPECTRA_
+my $no_spec = $_GET_NUMBER_OF_SPECTRA_{COUNT};
+
+if ( $no_spec < $min_spec ) {
+   orac_warn "Too few spectra ($no_spec) for low-frequency-interference analysis.  The minimum is $min_spec.\n";
+   goto RETURN;
+}
 
 # Form arrays of bad then good detectors.
 # =======================================
@@ -374,21 +390,6 @@ my $osuffix = "_lfimasked";
 
 my $linearity_profiles = new ORAC::TempFile( 0 );
 
-# First determine if there are sufficient spectra to do a meaningful
-# analysis.  Sum through all the files, but almost certainly if there is
-# more than one file, there are sufficient spectra.
-my $no_spec = 0;
-foreach my $i ( 1 .. $Frm->nfiles ) {
-   my $in = $Frm->file( $i );
-   _GET_DIMENSIONS_ FILE=$in
-   my $dims = $_GET_DIMENSIONS_{DIMS};
-   $no_spec += $dims->[2];
-}
-
-if ( $no_spec < $min_spec ) {
-   orac_warn "Too few spectra ($no_spec) for low-frequency-interference analysis.  The minimum is $min_spec.\n";
-   goto RETURN;
-}
 
 # Loop through all subsystems forming a representative spectrum for each.
 # Normally there will be just one band.
