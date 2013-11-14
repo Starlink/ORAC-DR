@@ -1,0 +1,141 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_WRITE_CHECKRMS_LOGFILE_ - write RMS/NEFD data to a log file
+
+=head1 SYNOPSIS
+
+_WRITE_CHECKRMS_LOGFILE_
+
+=head1 DESCRIPTION
+
+This primitive writes a log file which contains the results
+accumulated so far for tracking the RMS/NEFD data for the current
+observation.
+
+If the recipe has access to the QL NEP log files, then those results
+are also retrieved from the current uhdr and added to the log file.
+
+=head1 ARGUMENTS
+
+This primitive supports the following argument:
+
+=over 4
+
+=item B<GROUP>
+
+If true, use the current Group file. Otherwise, use the current
+Frame. Default is 0 (false).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+_ADD_LOG_ENTRY_
+
+=back
+
+=head1 NOTES
+
+None.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Results are written to a log file, C<log.checkrms>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Only add a new logfile entry if a new map was made on this pass
+# through the recipe
+if (defined $Obj->product && $Obj->product eq "newimage" &&
+    defined $Obj->uhdr("CHECK_RMS_DATA")) {
+
+  my %checkrms = %{$Obj->uhdr("CHECK_RMS_DATA")};
+
+  # Retrieve NEP from earlier calculation, if applicable
+  if (defined $Frm->uhdr("NEP_AV") && defined $Frm->uhdr("NEP_AV_ERR")) {
+    $checkrms{nep_av} = $Frm->uhdr("NEP_AV");
+    $checkrms{nep_av_err} = $Frm->uhdr("NEP_AV_ERR");
+    # Determine RMS and NEFD from NEP: remember the factor of 10**12 to
+    # convert to pW
+    my $fcf = (defined $Frm->hdr("FCF")) ? $Frm->hdr("FCF") :
+      $Cal->gain($checkrms{FILTER}, "BEAM");
+    $checkrms{nefd_nep} = 1.0e12 * $checkrms{nep_av} * $fcf / $checkrms{trans};
+    $checkrms{rms_nep} = ($checkrms{texp_itc} > 0) ? $checkrms{nefd_nep} / sqrt($checkrms{texp_itc}) : "NaN";
+  } else {
+    # Default to NaN if not defined
+    foreach my $key (qw/nep_av nep_av_err nefd_nep rms_nep/) {
+      $checkrms{$key} = "NaN";
+    }
+  }
+
+  # Show results
+  my @keys = qw/UT Source Obs FILTER telapsed texp trans nep_av nep_av_err rms_nep nefd_nep rms_map nefd_map rms_itc nefd_itc itc_obstype rms_ratio El CSO Tau Radius pixscale f project/;
+
+  my $object = uc($Frm->hdr("OBJECT"));
+  $object =~ s/\s+/_/g;
+
+  my @values = ($Frm->hdr('ORACTIME'), $object, $checkrms{OBSNUM},
+		$checkrms{FILTER},
+		(sprintf "%.1f", $checkrms{telapsed}), $checkrms{texp},
+		(sprintf "%.3f", $checkrms{trans}),
+		(sprintf "%.2e", $checkrms{nep_av}),
+		(sprintf "%.2e", $checkrms{nep_av_err}),
+		(sprintf "%.2e", $checkrms{rms_nep}),
+		(sprintf "%.2e", $checkrms{nefd_nep}),
+		(sprintf "%.1f", $checkrms{rms_map}),
+		(sprintf "%.1f", $checkrms{nefd_map}),
+		(sprintf "%.1f", $checkrms{rms_itc}),
+		(sprintf "%.1f", $checkrms{nefd_itc}),
+		$checkrms{itc_obstype},
+		(sprintf "%.2f", $checkrms{rms_ratio}),
+		(sprintf "%.1f", ($checkrms{elsum} / $checkrms{numval})),
+		(sprintf "%.3f", ($checkrms{csosum}/$checkrms{numval})),
+		(sprintf "%.3f", ($checkrms{tauzsum}/$checkrms{numval})),
+		$Frm->uhdr("CHECK_RMS_RADIUS"),
+		(sprintf "%.1f", $checkrms{pixscale}),
+		(sprintf "%g", $checkrms{f}),
+		$Frm->hdr("PROJECT")
+	       );
+  orac_print "Writing results in log.checkrms...\n";
+
+  _ADD_LOG_ENTRY_ PARLIST=none LOGFILE=checkrms ENTRIES=\@values PARAMS=\@keys
+}

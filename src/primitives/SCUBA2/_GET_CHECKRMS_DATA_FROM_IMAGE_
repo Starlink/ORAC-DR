@@ -1,0 +1,218 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_GET_CHECK_RMS_DATA_FROM_IMAGE_ - determine RMS and NEFD from SCUBA-2 files
+
+=head1 SYNOPSIS
+
+_GET_CHECK_RMS_DATA_FROM_IMAGE_
+
+_GET_CHECK_RMS_DATA_FROM_IMAGE_ GROUP=1
+
+=head1 DESCRIPTION
+
+This primitive determines a number of parameters to enable a
+comparison with values predicted by the SCUBA-2 integration time
+calculator (ITC). The median noise (from the error component) and NEFD
+are calculated, along with the mean exposure time.
+
+Derives values are stored in a hash reference in the uhdr of the
+current object for writing to a log file.
+
+=head1 ARGUMENTS
+
+This primitive supports the following argument:
+
+=over 4
+
+=item B<GROUP>
+
+If true, use the current Group file. Otherwise, use the current
+Frame. Default is 0 (false).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+_CALC_IMAGE_NOISE_, _CALCULATE_NEFD_, _COMPONENT_EXISTS_,
+_FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Undefined values in the output hash reference are stored as C<NaN>.
+
+=item *
+
+The companion primitive
+L<_GET_CHECKRMS_DATA_FROM_HEADER_|_GET_CHECKRMS_DATA_FROM_HEADER_>
+must be called before this one.
+
+=back
+
+=head1 OUTPUT DATA
+
+The uhdr for the current object contains the hash reference
+C<CHECK_RMS_DATA> updated with additional values. The hash contains
+the following new keys:
+
+=over 4
+
+=item f - pixel-scaling parameter for integration time calculator (ITC)
+
+=item itc_obstype - observation parameters for ITC
+
+=item nefd_itc - NEFD derived from ITC-estimated RMS
+
+=item nefd_map - NEFD derived from current image
+
+=item pixscale - pixel scale of current image (arcsec)
+
+=item rms_itc - RMS estimated from ITC
+
+=item rms_map - RMS derived from current image
+
+=item rms_ratio - ratio of map-to-ITC RMS values
+
+=item texp - mean exposure time in current image
+
+=item texp_itc - the effective elapsed time per pixel derived from the ITC
+
+=item trans - mean transmission for current observation
+
+=back
+
+See also
+L<_GET_CHECKRMS_DATA_FROM_HEADER_|_GET_CHECKRMS_DATA_FROM_HEADER_> for
+other keys in this hash reference.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Only add a new logfile entry if a new map was made on this pass
+# through the recipe
+if (defined $Obj->product && $Obj->product eq "newimage" &&
+    defined $Obj->uhdr("CHECK_RMS_DATA")) {
+
+  my %checkrms = %{$Obj->uhdr("CHECK_RMS_DATA")};
+
+  # Determine mean exposure time
+  my $comp = "more.smurf.exp_time";
+  my $texp = "NaN";
+  _COMPONENT_EXISTS_ COMPONENT=$comp FILE=$Obj->file
+  if ($_COMPONENT_EXISTS_{EXISTS}) {
+    my $texp_image = $Obj->file . ".more.smurf.exp_time";
+    _FIND_IMAGE_STATISTICS_ IMAGE=$texp_image VERBOSE=0
+    $checkrms{texp} = sprintf "%.2f", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
+  }
+
+  # Estimator for noise and NEFD
+  my $estimator = (defined $Frm->uhdr("RECPAR_STATS_ESTIMATOR"))
+    ? $Frm->uhdr("RECPAR_STATS_ESTIMATOR") : "MEDIAN";
+
+  # Determine RMS and NEFD from map
+  my $nefd_map = "NaN";
+  $comp = "more.smurf.nefd";
+  _COMPONENT_EXISTS_ COMPONENT=$comp FILE=$Obj->file
+  if ($_COMPONENT_EXISTS_{EXISTS}) {
+    my $nefdimage = $Obj->file . ".more.smurf.nefd";
+    _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage VERBOSE=0
+    $nefd_map = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+  } else {
+    _CALCULATE_NEFD_ GROUP=$group LOGFILE=0 ESTIMATOR=$estimator
+    $nefd_map = $_CALCULATE_NEFD_{NEFD};
+  }
+  if ($nefd_map == &NDF::VAL__BADD()) {
+    orac_warn "NEFD_map is bad - setting to NaN\n";
+    $nefd_map = "NaN";
+  }
+  $checkrms{nefd_map} = $nefd_map;
+
+  # Calculate the image noise - note this primitive does its own
+  # bad-value check
+  _CALC_IMAGE_NOISE_ METHOD=VARIANCE GROUP=$group
+  $checkrms{rms_map} = $_CALC_IMAGE_NOISE_{SIGMA};
+
+  # Calculate average transmission for use in ITC
+  $checkrms{trans} = $checkrms{transum}/$checkrms{numval};
+
+  # Determine "f" from the pixel scale and wavelength
+  _GET_PIXEL_SCALE_ IMAGE=$Obj->file VERBOSE=0
+  $checkrms{pixscale} = $_GET_PIXEL_SCALE_{PIXSCALE};
+  my $defpixarea = ($checkrms{FILTER} == 850) ? 16 : 4;
+  $checkrms{f} = $_GET_PIXEL_SCALE_{AREA} / $defpixarea;
+
+  # Determine RMS and NEFD from ITC
+  use Astro::ITC::SCUBA2 qw/calcrms exposure_time_fraction/;
+  # Determine ITC observation type from map size and scan pattern
+  if ($Frm->hdr("SCAN_PAT") =~ /pong/i) {
+    $checkrms{itc_obstype} = "Pong".int($Frm->hdr("MAP_WDTH"));
+    unless (grep {$_ eq $checkrms{itc_obstype}} @Astro::ITC::SCUBA2::obsmodes) {
+      orac_warn "Pong type $checkrms{itc_obstype} not known to ITC - some results will be undefined\n";
+    }
+  } elsif ($Frm->hdr("SCAN_PAT") =~ /daisy/i) {
+    $checkrms{itc_obstype} = "Daisy";
+  }
+
+  $checkrms{rms_itc} = calcrms( $checkrms{itc_obstype}, $checkrms{FILTER},
+				$checkrms{trans}, $checkrms{f}, $checkrms{telapsed} );
+  $checkrms{nefd_itc} = "NaN";
+  $checkrms{rms_ratio} = "NaN";
+  my $texp_frac = exposure_time_fraction($checkrms{itc_obstype}, $checkrms{FILTER});
+  $checkrms{texp_itc} = (defined $texp_frac) ? $texp_frac * $checkrms{telapsed} : 0;
+  if (defined $checkrms{rms_itc}) {
+    $checkrms{nefd_itc} = $checkrms{rms_itc} * sqrt($checkrms{texp_itc});
+    $checkrms{rms_ratio} = $checkrms{rms_map} / $checkrms{rms_itc}
+      if ($checkrms{rms_itc} > 0);
+    # Issue a warning if the RMS ratio exceeds 20%
+    if ($checkrms{rms_ratio}) {
+      orac_warn "Map RMS exceeds ITC value by more than 20%\n"
+	if ($checkrms{rms_ratio} > 1.2)
+    }
+  }
+
+  $Obj->uhdr("CHECK_RMS_DATA", \%checkrms);
+  orac_print "Data stored\n";
+}
