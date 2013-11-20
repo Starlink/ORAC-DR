@@ -131,6 +131,34 @@ if ( $Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT") ) {
 if ($Frm->hdr("OBJECT") eq "OMC1" && $Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "pointing") {
   $syscfg .= ",ast.zero_snr=5,ast.zero_circle=<undef>";
 }
+# If we're doing fakemap processing, add the relevant parameters
+# to the config file
+if (defined $Frm->uhdr("FAKEMAP")) {
+  # Create a local config referencing the current config and adding fakemap params
+  use File::Basename qw/basename/;
+  my $tmpconfig = File::Spec->catfile($ENV{ORAC_DATA_OUT}, basename($syscfg) ."_copy");
+  open my $TMPFH, ">", "$tmpconfig"
+    or orac_term "Unable to open temporary config file, $tmpconfig\n";
+  print $TMPFH "^$syscfg\n";
+  print $TMPFH "fakemap=".($Frm->uhdr("FAKEMAP"))."\n";
+  print $TMPFH "fakescale=".($Frm->uhdr("FAKESCALE"))."\n"
+    if (defined $Frm->uhdr("FAKESCALE"));
+  close($TMPFH);
+  $syscfg = $tmpconfig;
+}
+
+# Now modify the config for particular conditions - just append
+# these to the config string, though this might run into problems if
+# the string is too long
+
+# For Mars pointing and focus observations, disable common-mode
+# flagging of bolometers because it's so bright
+$syscfg .= ",com.noflag=1" if ($Frm->hdr("OBJECT") =~ /mars/i &&
+			       $Frm->hdr("OBS_TYPE") =~ /point|focus/i);
+# Disable EXT model for focus observations only
+$syscfg .= ",modelorder=(com,gai,flt,ast,noi)"
+  if ($Frm->hdr("OBS_TYPE") =~ /focus/i);
+
 $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
 
 # A specified config file over-rides the default
