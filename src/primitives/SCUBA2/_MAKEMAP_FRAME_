@@ -288,7 +288,7 @@ $args .= ' ftsport=' . $fts_port if defined $fts_port;
 # Append name of config file to argument list
 # Do not override the _SCUBA2_HELLO_ value unless an explicit
 # argument has been given to this primitive
-my $tmpconfig;
+my $config;
 if ( $iterate ) {
   # Type of config file to use: NORMAL, BLANK_FIELD, BRIGHT_COMPACT etc
   my $conftype = get_prim_arg($_PRIM_ARGS_, "CONFIG_TYPE","");
@@ -305,28 +305,7 @@ if ( $iterate ) {
   }
 
   _GET_MAKEMAP_CONFIG_
-  my $config = $_GET_MAKEMAP_CONFIG_{CONFIG};
-  # If we're doing fakemap processing, add the relevant parameters
-  # to the config file
-  if (defined $Frm->uhdr("FAKEMAP")) {
-    # Create a local config referencing the current config and adding fakemap params
-    use File::Basename qw/basename/;
-    $tmpconfig = File::Spec->catfile($ENV{ORAC_DATA_OUT}, basename($config) ."_copy");
-    open my $TMPFH, ">", "$tmpconfig"
-      or orac_term "Unable to open temporary config file, $tmpconfig\n";
-    print $TMPFH "^$config\n";
-    print $TMPFH "fakemap=".($Frm->uhdr("FAKEMAP"))."\n";
-    print $TMPFH "fakescale=".($Frm->uhdr("FAKESCALE"))."\n"
-      if (defined $Frm->uhdr("FAKESCALE"));
-    close($TMPFH);
-    $config = $tmpconfig;
-  }
-  # For Mars pointing and focus observations, disable common-mode
-  # flagging of bolometers because it's so bright
-  $config .= ",com.noflag=1" if (lc($object) eq "mars" && $point_focus);
-  # Disable EXT model for focus observations only
-  $config .= ",modelorder=(com,gai,flt,ast,noi)"
-    if ($Frm->hdr("OBS_TYPE") =~ /focus/i);
+  $config = $_GET_MAKEMAP_CONFIG_{CONFIG};
   $args .= " config='^$config'";
 }
 
@@ -482,4 +461,11 @@ unless ($Frm->product && $Frm->product eq "newimage") {
 }
 
 # Delete the temporary config file if one was created
-unlink $tmpconfig if ($tmpconfig && -e $tmpconfig);
+if ($Frm->uhdr("FAKEMAP") && $config) {
+  my $tmpconfig = $config;
+  if ($tmpconfig =~ /,/ && $tmpconfig =~ /_copy/) {
+    my @cfgstr = split(/,/, $config, 2);
+    $tmpconfig = $cfgstr[0];
+  }
+  unlink $tmpconfig if (-e $tmpconfig && $tmpconfig =~ /_copy$/);
+}
