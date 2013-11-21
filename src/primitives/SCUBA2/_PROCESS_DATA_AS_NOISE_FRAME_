@@ -129,6 +129,16 @@ my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 my $display_noise = get_prim_arg($_PRIM_ARGS_, "DISPLAY", 1);
 
+if ($Frm->uhdr("CHECK_RMS")) {
+  # Don't bother calculating the noise for Mars
+  if ($Frm->hdr("OBJECT") =~ /mars/i) {
+    orac_warn "Skipping CHECK_RMS noise calculations for Mars\n";
+    return ORAC__OK;
+  }
+  $display_noise = 0;
+  $Frm->tagset("raw");
+}
+
 # If the Frame contains multiple subscans, pick out the first
 # on-sky that is not the fast-flat if doing a "quick" noise
 # calculation, or select all of the on-sky files if doing a "full"
@@ -207,6 +217,23 @@ foreach my $key (sort keys %related) {
     $Frm->files(@noifiles);
     $Frm->tagset("scinoi");
   }
+
+  # For CHECK_RMS stat gathering, there must be only 1 file per subarray
+  if ($Frm->uhdr("CHECK_RMS")) {
+    my $nepsum = 0;
+    my $neperrsum = 0;
+    my $subuhdr = $Frm->uhdr("SUBARRAY");
+    foreach my $file ($Frm->files) {
+      my $subarray = $Frm->subarray($file);
+      my $nepentry = $Cal->nepindex->indexentry($file);
+      $nepsum += $nepentry->{MEAN};
+      $neperrsum += $nepentry->{SIGMA};
+    }
+    $Frm->uhdr("SUBARRAY", $subuhdr) if ($subuhdr);
+    $Frm->uhdr("NEP_AV", ($nepsum / $Frm->nfiles));
+    $Frm->uhdr("NEP_AV_ERR", ($neperrsum / $Frm->nfiles));
+    $Frm->tagretrieve("raw");
+    $Frm->readhdr;
   }
 
   # Add an entry to the log file if desired
