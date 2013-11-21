@@ -145,7 +145,8 @@ my @fastflats = map {@{$_}} values %fastflats;
 
 my (%related, %filesub_lut);
 if ($noisecalc eq "full") {
-  # In this case we just retrieve every science file - fastflats will be added later
+  # In this case we just retrieve every science file - fastflats will
+  # be added later
   $related{full} = [map { @{$related_subarray{$_}} } grep { $_ =~ /science/ } keys %related_subarray];
 } else {
   # Retrieve the list of subscan numbers and subarrays
@@ -184,30 +185,34 @@ foreach my $subarray (@subarrays) {
 }
 my $datanoiselog = "scinoise" . $Frm->hdr("FILTER");
 foreach my $key (sort keys %related) {
-
-  my $data = ($noisecalc eq "each") ? "subscan ".(sprintf "%d", $key) :
-    ($noisecalc eq "quick") ? "first 30-sec of data" : "full time stream";
+  $key = (sprintf "%d", $key) unless ($noisecalc eq "full");
+  my $data = ($noisecalc eq "each") ? "subscan $key" :
+    ($noisecalc eq "quick" ? "first 30-sec of data" : "full time stream");
   orac_print "Calculating noise properties of $data\n";
 
   # Store the files in the current Frame along with the fastflats
   $Frm->files(@{$related{$key}}, @fastflats);
   $Frm->readhdr;
+  # On exit, the Frame will contain either the noise files or the
+  # noise mosaic(s)
   _PROCESS_DATA_AS_NOISE_ VERBOSE=$verbose DISPLAY=$display_noise LOGFILE=$uselog
 
-  # Store all the mosaics for stacking later
-  push(my @noifiles, $Frm->file);
-  if ($Frm->tagexists("scinoi") && $noisecalc eq "each") {
-    $Frm->tagretrieve("scinoi");
-    push(@noifiles, $Frm->files);
+  if ($display_noise) {
+    # Store the mosaic(s) for stacking later
+    push(my @noifiles, $Frm->file);
+    if ($Frm->tagexists("scinoi") && $noisecalc eq "each") {
+      $Frm->tagretrieve("scinoi");
+      push(@noifiles, $Frm->files);
+    }
+    $Frm->files(@noifiles);
+    $Frm->tagset("scinoi");
   }
-  $Frm->files(@noifiles);
-  $Frm->tagset("scinoi");
+  }
 
   # Add an entry to the log file if desired
   my $qa_results = $Frm->uhdr("QA_REPORT_INFO");
   if ($uselog) {
-    my @entries = ( $Frm->hdr("DATE-OBS"), $Frm->hdr("OBSNUM"),
-		    (sprintf "%d", $key) );
+    my @entries = ( $Frm->hdrval("DATE-OBS"), $Frm->hdr("OBSNUM"), $key );
     my @vars = qw/NBOLO MEDIAN WTNEP/;
     # Must loop over original list of subarrays so blank values can be
     # added for subarrays with no data
