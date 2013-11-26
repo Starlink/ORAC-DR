@@ -122,6 +122,9 @@ USA.
 my $noisecalc = lc(get_prim_arg($_PRIM_ARGS_, "NOISE_CALC", "each"));
 $noisecalc = $Frm->uhdr("RECPAR_NOISE_CALC")
   if (defined $Frm->uhdr("RECPAR_NOISE_CALC"));
+$noisecalc = "each" if ($noisecalc eq "full" && $Frm->hdr("OBS_TYPE") =~ /pointing/i);
+
+my $scitype = ($Frm->hdr("OBS_TYPE") =~ /pointing/i) ? "pointing" : "science";
 
 my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 
@@ -157,7 +160,7 @@ my (%related, %filesub_lut);
 if ($noisecalc eq "full") {
   # In this case we just retrieve every science file - fastflats will
   # be added later
-  $related{full} = [map { @{$related_subarray{$_}} } grep { $_ =~ /science/ } keys %related_subarray];
+  $related{full} = [map { @{$related_subarray{$_}} } grep { $_ =~ /science/i } keys %related_subarray];
 } else {
   # Retrieve the list of subscan numbers and subarrays
   my @subscans = $Frm->hdrvals("NSUBSCAN");
@@ -168,7 +171,7 @@ if ($noisecalc eq "full") {
   foreach my $nsubscan (@subscans) {
     my @scanfiles;
     foreach my $subarray (@subarrays) {
-      my $testkey = $subarray . "1.0science". $nsubscan;
+      my $testkey = $subarray . "1.0" . $scitype . $nsubscan;
       # Store the data files if science data exists for the current
       # subarray/subscan
       if ($related_subarray{$testkey}) {
@@ -195,8 +198,9 @@ foreach my $subarray (@subarrays) {
 }
 my $datanoiselog = "scinoise" . $Frm->hdr("FILTER");
 foreach my $key (sort keys %related) {
-  $key = (sprintf "%d", $key) unless ($noisecalc eq "full");
-  my $data = ($noisecalc eq "each") ? "subscan $key" :
+  # Tell user what's going on
+  my $outkey = ($noisecalc eq "full") ? $key : (sprintf "%d", $key);
+  my $data = ($noisecalc eq "each") ? "subscan $outkey" :
     ($noisecalc eq "quick" ? "first 30-sec of data" : "full time stream");
   orac_print "Calculating noise properties of $data\n";
 
@@ -239,7 +243,7 @@ foreach my $key (sort keys %related) {
   # Add an entry to the log file if desired
   my $qa_results = $Frm->uhdr("QA_REPORT_INFO");
   if ($uselog) {
-    my @entries = ( $Frm->hdrval("DATE-OBS"), $Frm->hdr("OBSNUM"), $key );
+    my @entries = ( $Frm->hdrval("DATE-OBS"), $Frm->hdr("OBSNUM"), $outkey );
     my @vars = qw/NBOLO MEDIAN WTNEP/;
     # Must loop over original list of subarrays so blank values can be
     # added for subarrays with no data
