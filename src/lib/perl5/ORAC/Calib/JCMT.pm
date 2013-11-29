@@ -96,6 +96,8 @@ sub isplanet {
   my $self = shift;
   my $source = uc( shift );
 
+  # Protect against empty pattern matches that always match
+  return 0 unless ($source =~ /\w+/);
   return 1 if grep /$source/, @PLANETS;
   return 0;
 }
