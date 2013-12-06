@@ -208,7 +208,7 @@ sub orac_calc_instrument_settings {
     $sitecode = $lcogt_cammap{$2};
     $inst = $1;
     $env{ORAC_INSTRUMENT} = $inst;
-    print STDERR colored(" ** LCOGT-specific settings $cameracode $sitecode $oracinst  **\n","green");
+    print STDERR colored(" ** LCOGT-specific settings $cameracode $sitecode $oracinst $inst **\n","green");
 
 
   }
@@ -233,7 +233,8 @@ sub orac_calc_instrument_settings {
                            'LCOCC' => "/mfs-sba/engineering/",
                            'LCOSBIG_0M4' => "/mfs-sba/engineering/",
 			   'LCOSBIG_0M8' => "/mfs-sba/engineering/",
-                           'LCOSINISTRO' => "/data/archive/science/",
+#                           'LCOSINISTRO' => "/data/archive/science/", # Testing line
+                           'LCOSINISTRO' => "/mfs-sba/engineering/",
                         );
 
   # Default drN directories for ACSIS and SCUBA-2.
