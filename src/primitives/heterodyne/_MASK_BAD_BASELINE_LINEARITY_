@@ -307,6 +307,8 @@ foreach ( @clips ) {
 my $sigma_clip = ( defined( $thr_rms ) ) ? 0 : 1;
 $thr_rms = max( 0.02, $thr_rms ) if ( ! $sigma_clip );
 
+my $ORAC_STATUS;
+
 # Are there sufficient spectra?
 # =============================
 #
@@ -343,6 +345,7 @@ orac_say( "  Receptors disabled by the calibration system: " . join( ",", sort @
 my @bad_receptors;
 my @bad_receptors_local;
 my @bad_receptors_uniq;
+my @receptors;
 
 # Specify output and temporary filenames.
 # =======================================
@@ -463,7 +466,7 @@ foreach my $i ( 1 .. $nsubsys ) {
    my $semirange = 20;
    orac_say( "  Thresholding the spectra at +/- $semirange to exclude spikes." );
    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$mot order" );
-   my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+   ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
    if ( $median != VAL__BADD ) {
       my $thr_low = sprintf( "%.1f", $median - $semirange );
       my $thr_high = sprintf( "%.1f", $median + $semirange );
@@ -616,12 +619,12 @@ foreach my $i ( 1 .. $nsubsys ) {
    my %keep;
    @keep{ $array->receptors } = ( );
    delete @keep{ @baddets };
-   my @receptors = keys %keep;
+   @receptors = keys %keep;
 
    foreach my $receptor ( @receptors ) {
       my $pixel = $array->pixel( $receptor );
       $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp7file(,$pixel)" );
-      my ( $ORAC_STATUS, $nel ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+      ( $ORAC_STATUS, my $nel ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
 # Calculate rms from the linear fit for the current receptor.  Exclude
 # the ends of each spectrum where the noise increases dramatically,
@@ -735,6 +738,10 @@ foreach my $i ( 1 .. $nsubsys ) {
    }
 }
 
+if ( scalar( @bad_receptors_uniq ) == scalar( @receptors ) ) {
+   orac_err "All receptors have excessive measured non-linearity, probably due to excessive noise.\n";
+   $ORAC_STATUS = ORAC__BADFRAME;
+}
 orac_print "\n";
 
 # Create masked cube.
