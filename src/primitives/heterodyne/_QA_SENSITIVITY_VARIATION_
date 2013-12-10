@@ -46,7 +46,7 @@ This primitive is suitable for ACSIS time-series data.
 
 If the observed object is located in the JCMT Pointing Catalogue, then
 the line velocity and width is used to mask out the emission
-line.
+line, provided it lies within the observed spectral range.
 
 =item *
 
@@ -65,11 +65,12 @@ are the corresponding RMS.
 =head1 AUTHORS
 
 Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008-2009 Science and Technology Facilities Council. All
-Rights Reserved.
+Copyright (C) 2008-2009, 2013 Science and Technology Facilities Council.
+All Rights Reserved.
 
 =cut
 
@@ -83,6 +84,7 @@ my @rms_files;
 my %rms;
 my %receptor_rms;
 my %receptor_stats;
+my $ORAC_STATUS;
 
 my $key = $Frm->uhdr( "ORAC_OBSERVATION_ID" ) . "_" . $Frm->hdr( $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" ) );
 
@@ -117,8 +119,21 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     my $range = $result->misc->{'velocity_range'};
     my $centre = $result->coords->rv;
 
-    my $params = "in=$infile out=$temp1 section='$centre~$range,,' newval=bad";
-    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+    # Check that the velocity range lies within the data.
+    $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$infile" );
+    my $lline = $centre - $range * 0.5;
+    my $uline = $centre + $range * 0.5;
+
+    ( $ORAC_STATUS, my @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+    ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+
+    if ( ( $lline >= $flbnd[0] && $lline <= $fubnd[0] ) ||
+         ( $uline >= $flbnd[0] && $uline <= $fubnd[0] ) ) {
+       my $params = "in=$infile out=$temp1 section='$centre~$range,,' newval=bad";
+       $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+    } else {
+       $temp1 = $infile;
+    }
 
   } else {
     $temp1 = $infile;
