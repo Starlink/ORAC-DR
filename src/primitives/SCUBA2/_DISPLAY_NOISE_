@@ -74,7 +74,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009-2012 the University of British Columbia.  All
+Copyright (C) 2009-2013 the University of British Columbia.  All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -100,6 +100,13 @@ return ORAC__OK unless ($Frm->tagexists("noise"));
 # Skip the display if the last noise result for FOCUS observations
 if ($Frm->hdr("OBS_TYPE") =~ /focus/i && ($Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT"))) {
   return ORAC__OK if ($Frm->hdrval("NSUBSCAN") > 1);
+}
+
+# Only display every third (noise) subscan in the QL pipeline
+my $dispnoise = 1;
+if ($Frm->uhdr("QUICKLOOK")) {
+  $dispnoise = 0
+    if ($Frm->hdr("SEQ_TYPE") =~ /science/i && $Frm->hdr("NSUBSCAN") % 3 != 0);
 }
 
 # Which component is being displayed?
@@ -158,8 +165,6 @@ if ($display_ok) {
     $title = "Average noise (".($Frm->uhdr("AVNOISE"))." files)";
   }
 
-  orac_print "\nDisplaying focal-plane mosaic for $title\n";
-
   my %refimage = ( refsub => $refsub, refimage => $ref );
   _MAKE_MOSAIC_FPLANE_ SUFFIX=$noimos REFERENCE=\%refimage
   my $out = $Frm->file;
@@ -169,31 +174,35 @@ if ($display_ok) {
   # the NEP mosaic
   $Mon{ndfpack_mon}->obeyw("setext","ndf=$out xname=smurf option=delete noloop");
 
-  if ($plotmax) {
-    # Threshold the data at ZMAX and determine how many bolometers lie
-    # above that cut
-    my $thresh = new ORAC::TempFile;
-    my $threshfile = $thresh->file;
-    my $thrargs = "in=$out out=$threshfile thrhi=$plotmax newhi=bad thrlo=0 newlo=0";
-    $Mon{kappa_mon}->obeyw("thresh","$thrargs");
-    _FIND_IMAGE_STATISTICS_ IMAGE=$threshfile COMP=$comp VERBOSE=0
-    my $nthrgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
-    $plotmax = sprintf "%g", $plotmax;
-    my $threshpc = sprintf "%2.0f", 100.0 * $nthrgood / $sumnumgood;
-    orac_print "Displaying noise data between 0 and $plotmax $units (Noise spec)\n", "green";
-    orac_print "Histogram shows $nthrgood bolometers ($threshpc %) within noise spec ($plotmax $units)\n", "green";
-  } else {
-    # Make sure there is a defined upper limit for the histogram
-    _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=$comp VERBOSE=0
-    $plotmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-    $plotmax = sprintf "%g", $plotmax;
-    orac_print "Displaying noise data between 0 and $plotmax $units\n", "green";
-  }
+  my %options;
+  if ($dispnoise) {
+    if ($plotmax) {
+      # Threshold the data at ZMAX and determine how many bolometers lie
+      # above that cut
+      my $thresh = new ORAC::TempFile;
+      my $threshfile = $thresh->file;
+      my $thrargs = "in=$out out=$threshfile thrhi=$plotmax newhi=bad thrlo=0 newlo=0";
+      $Mon{kappa_mon}->obeyw("thresh","$thrargs");
+      _FIND_IMAGE_STATISTICS_ IMAGE=$threshfile COMP=$comp VERBOSE=0
+      my $nthrgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+      $plotmax = sprintf "%g", $plotmax;
+      my $threshpc = sprintf "%2.0f", 100.0 * $nthrgood / $sumnumgood;
+      orac_print "Displaying noise data between 0 and $plotmax $units (Noise spec)\n", "green";
+      orac_print "Histogram shows $nthrgood bolometers ($threshpc %) within noise spec ($plotmax $units)\n", "green";
+    } else {
+      # Make sure there is a defined upper limit for the histogram
+      _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=$comp VERBOSE=0
+      $plotmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+      $plotmax = sprintf "%g", $plotmax;
+      orac_print "Displaying noise data between 0 and $plotmax $units\n", "green";
+    }
 
-  # Display the focal-plane mosaic and histogram
-  my %options = ( ZMIN => 0, ZMAX => $plotmax, WINDOW => 1,
-		  ZAUTOSCALE => 0, TITLE => $title );
-  $Display->display_data($Frm, \%options, -1);
+    orac_print "\nDisplaying focal-plane mosaic for $title\n";
+    # Display the focal-plane mosaic and histogram
+    my %options = ( ZMIN => 0, ZMAX => $plotmax, WINDOW => 1,
+		    ZAUTOSCALE => 0, TITLE => $title );
+    $Display->display_data($Frm, \%options, -1);
+  }
 
   # Create the percentage difference noise image, but for the QL pipeline
   # only. This requires a previous image for comparison - the pipeline
@@ -211,7 +220,7 @@ if ($display_ok) {
       my $files = read_file_list($flagfile);
       $prev = $files->[0];
     }
-    if ($prev) {
+    if ($prev && $dispnoise) {
       orac_print "Creating and displaying noise percentage change image...\n";
       my $deltafile = $Frm->inout("_pcnoi");
       my $exp = "PA*(IA-IB)/IB";
@@ -236,8 +245,8 @@ if ($display_ok) {
   }
 
   # Finally create and display NEP mosaic
-  orac_print "Creating and displaying NEP mosaic\n";
   $units = "W s**0.5";
+  orac_print "Creating ".( $dispnoise ? "and displaying " : "")."NEP mosaic\n";
   my $nepmos = "_nepmos";
   my $smurf = "nep";
   $refimage{refimage} = $ref .".more.smurf.nep";
@@ -252,21 +261,23 @@ if ($display_ok) {
   $title = "NEP $wave: obs $obs $extra";
   $args = "ndf=$nepout title='$title'";
   $Mon{ndfpack_mon}->obeyw("settitle","$args");
-  $Frm->files($nepout);
-  $plotmax = $Frm->uhdr("NEP_SPEC");
-  if ($plotmax) {
-    $plotmax = sprintf "%g", $plotmax;
-    orac_print "Displaying NEP data between 0 and $plotmax $units (NEP spec)\n", "green";
-  } else {
-    # Make sure there is a defined upper limit for the histogram
-    _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=$comp VERBOSE=0
-    $plotmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-    $plotmax = sprintf "%g", $plotmax;
-    orac_print "Displaying NEP data between 0 and $plotmax $units\n", "green";
+  if ($dispnoise) {
+    $Frm->files($nepout);
+    $plotmax = $Frm->uhdr("NEP_SPEC");
+    if ($plotmax) {
+      $plotmax = sprintf "%g", $plotmax;
+      orac_print "Displaying NEP data between 0 and $plotmax $units (NEP spec)\n", "green";
+    } else {
+      # Make sure there is a defined upper limit for the histogram
+      _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=$comp VERBOSE=0
+      $plotmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+      $plotmax = sprintf "%g", $plotmax;
+      orac_print "Displaying NEP data between 0 and $plotmax $units\n", "green";
+    }
+    %options = ( ZMIN => 0, ZMAX => $plotmax, WINDOW => 1,
+		 ZAUTOSCALE => 0, TITLE => $title );
+    $Display->display_data($Frm, \%options, -1);
   }
-  %options = ( ZMIN => 0, ZMAX => $plotmax, WINDOW => 1,
-	       ZAUTOSCALE => 0, TITLE => $title );
-  $Display->display_data($Frm, \%options, -1);
   orac_print "\n";
 
   # Now copy the NEP image into the noise mosaic as an NDF extension
