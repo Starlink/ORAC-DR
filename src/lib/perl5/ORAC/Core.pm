@@ -682,6 +682,7 @@ sub orac_print_configuration {
 
   # Initialise file handle arrays
   my @out_hdl = ();
+  my @res_hdl = ();
   my @err_hdl = (\*STDERR);
   my @war_hdl = ();
 
@@ -695,7 +696,7 @@ sub orac_print_configuration {
   my $ARRAY = []; $CURRENT_PRIMITIVE = \$ARRAY;
 
   # defined references to the filehandles for the Tk widgets
-  my ( $TEXT1, $TEXT2, $TEXT3);
+  my ( $TEXT1, $TEXT2, $TEXT3, $TEXT4 );
 
   # Flag to indicate that we need a main window
   my $NeedMainWindow = 1;
@@ -710,7 +711,7 @@ sub orac_print_configuration {
       # Create the Tk log window
       # Routine returns references to packed Tk variable and
       # references to output, warning and error file handles
-      ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3 ) =
+      ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3, $TEXT4 ) =
         ORAC::Xorac::xorac_log_window( $win_str, \$orac_prt );
       $NeedMainWindow = 0;
 
@@ -732,6 +733,7 @@ sub orac_print_configuration {
 
       # Store the filehandles
       push (@out_hdl, $TEXT1);
+      push (@res_hdl, $TEXT4);
       push (@err_hdl, $TEXT3);
       push (@war_hdl, $TEXT2, $TEXT1); # Display warnings with messages
 
@@ -826,12 +828,14 @@ sub orac_print_configuration {
 
       # Store the filehandles
       push (@out_hdl, @logfiles);
+      push (@res_hdl, @logfiles);
       push (@err_hdl, @logfiles);
       push (@war_hdl, @logfiles);
     }
 
     # Configure ORAC::Print
     $orac_prt->outhdl(@out_hdl);
+    $orac_prt->reshdl(@res_hdl);
     $orac_prt->warhdl(@war_hdl);
     $orac_prt->errhdl(@err_hdl);
 
