@@ -448,7 +448,7 @@ sub xorac_log_window {
     unless scalar(@_) == 2;
 
   my ( $win_str, $orac_prt ) = @_;
-  my ($msg1, $lab1, $textw1, $textw2, $textw3, $lab2);
+  my ($msg1, $lab1, $textw1, $textw2, $textw3, $lab2, $textw4, $lab4);
 
   # Get the Window ID
   my $MW = ORAC::Event->query($win_str);
@@ -460,6 +460,7 @@ sub xorac_log_window {
                              $$orac_prt->outhdl(\*STDOUT);
                              $$orac_prt->warhdl(\*STDOUT);
                              $$orac_prt->errhdl(\*STDERR);
+                             $$orac_prt->reshdl(\*STDOUT);
                              record ORAC::Error::UserAbort( "Destroy from Log Window",
                                                             ORAC__ABORT );
 
@@ -482,6 +483,7 @@ sub xorac_log_window {
                     $$orac_prt->outhdl(\*STDOUT);
                     $$orac_prt->warhdl(\*STDOUT);
                     $$orac_prt->errhdl(\*STDERR);
+                    $$orac_prt->reshdl(\*STDOUT);
 
                     # store an error to be flushed on the next update
                     record ORAC::Error::UserAbort( "Exited from log window",
@@ -547,9 +549,23 @@ sub xorac_log_window {
   $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 
+  # ORAC Result messages
+  $lab4   = $MW->Label(-text=>'Results',-font=>$FONT)->pack;
+  $textw4 = $MW->Scrolled('TextANSIColor',
+                          -scrollbars=>'w',
+                          -background=>'#555555',
+                          -foreground=>'white',
+                          -height => 5,
+                          -width  => 90,
+                          -font    => $FONT
+                         )->pack( -fill => 'x' );
+  $textw4->insert('end',"ORAC-DR results\n");
+  $textw4->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
+  tie *TEXT4,  "Tk::TextANSIColor", $textw4;
+
   # Routine returns references to packed Tk variable and
   # references to output, warning and error file handles
-  return ( \$ORAC_MESSAGE, \*TEXT1, \*TEXT2, \*TEXT3 );
+  return ( \$ORAC_MESSAGE, \*TEXT1, \*TEXT2, \*TEXT3, \*TEXT4 );
 }
 
 # xorac_recipe_window() ---------------------------------------------------

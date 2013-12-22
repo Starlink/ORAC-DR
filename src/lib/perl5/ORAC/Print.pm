@@ -73,7 +73,7 @@ require Exporter;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
              orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp orac_notify
              orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo orac_term
-             orac_termerr /;
+             orac_termerr orac_result /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -171,6 +171,11 @@ for primtives).
 sub orac_print {
   my $prt = __curr_obj;
   $prt->out(@_);
+}
+
+sub orac_result {
+  my $prt = __curr_obj;
+  $prt->result(@_);
 }
 
 =item orac_say( text, [colour] )
@@ -528,6 +533,10 @@ sub new {
   $prt->{LogMessages} = 0;       # Are we logging messages?
   $prt->{LogInfo}  = {};         # Additional static info
 
+  $prt->{ResColour} = 'green';
+  $prt->{ResHdl} = undef;
+  $prt->{ResPre} = undef;
+
   bless($prt, $class);
 
   # Store the current object
@@ -590,6 +599,14 @@ sub outcol {
     $self->{OutColour} = shift;
   }
   return $self->{OutColour};
+}
+
+sub rescol {
+  my $self = shift;
+  if (@_) {
+    $self->{ResColour} = shift;
+  }
+  return $self->{ResColour};
 }
 
 =item warncol(colour)
@@ -787,6 +804,14 @@ sub outpre {
   return $self->{OutPre};
 }
 
+sub respre {
+  my $self = shift;
+  if (@_) {
+    $self->{ResPre} = shift;
+  }
+  return $self->{ResPre};
+}
+
 =item warpre
 
 Prefix that is prepended to all strings printed with the
@@ -867,6 +892,20 @@ sub outhdl {
     unless defined $self->{OutHdl};
 
   return $self->{OutHdl};
+
+}
+
+sub reshdl {
+  my $self = shift;
+
+  # Read any args and redefine IO object
+  $self->{ResHdl} = new IO::Tee(@_) if @_;
+
+  # Set up default value
+  $self->{ResHdl} = new IO::Tee(\*STDOUT)
+    unless defined $self->{ResHdl};
+
+  return $self->{ResHdl};
 
 }
 
@@ -1003,6 +1042,34 @@ sub out {
 
   # store the message
   $self->_store_msg( $outtext );
+
+  tk_update();
+
+}
+
+sub result {
+  my $self = shift;
+  return unless @_;             # Return if no second argument
+  my $text = shift;
+
+  my $col = $self->rescol;
+  if (@_) {
+    $col = shift;
+  }
+
+  my $fh = $self->reshdl;
+  return unless defined $fh;
+
+  my $prefix = $self->prefix;
+  $prefix = '' unless defined $prefix;
+  my $respre = $self->respre;
+  $respre = '' unless defined $respre;
+
+  my $restext = $prefix . $respre . $text;
+  print $fh colored($restext ,$col);
+
+  # store the message
+  $self->_store_msg( $restext );
 
   tk_update();
 
@@ -1452,6 +1519,10 @@ sub PRINT {
   } elsif ($obj->{_outtype} eq 'war') {
     foreach (@_) {
       orac_warn $_, $obj->warncol;
+    }
+  } elsif ($obj->{_outtype} eq 'res') {
+    foreach (@_) {
+      orac_result $_, $obj->rescol;
     }
   } else {
     foreach (@_) {
