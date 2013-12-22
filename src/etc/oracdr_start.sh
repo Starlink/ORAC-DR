@@ -46,6 +46,8 @@
 #     2009 September 4 (MJC):
 #        ORAC_PERSON now contains the full e-mail address, so remove the
 #        "@jach.hawaii.edu".
+#     2013 December 21 (MJC):
+#        Do not report the SUN number if is XXX, meaninig there is no SUN.
 
 #  Revision:
 #     $Id$
@@ -148,7 +150,9 @@ echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
 echo "     Configured for instrument $ORAC_INSTRUMENT"
 echo " "
 echo '     Type "oracdr -man" for usage'
-echo "     Type $doc_command to browse the hypertext documentation"
+if test "${ORAC_SUN}" != "XXX"; then
+   echo "     Type $doc_command to browse the hypertext documentation"
+fi
 echo " "
 echo " "
 echo " Raw data will be read from $ORAC_DATA_IN"

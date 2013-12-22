@@ -56,6 +56,8 @@
 #     2009 September 4 (MJC):
 #        ORAC_PERSON now contains the full e-mail address, so remove the
 #        "@jach.hawaii.edu".
+#     2013 December 21 (MJC):
+#        Do not report the SUN number if is XXX, meaninig there is no SUN.
 
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research Council
@@ -160,7 +162,7 @@ if ( -e $starperl ) then
   echo "     Configured for instrument $ORAC_INSTRUMENT"
   echo " "
   echo '     Type "oracdr -man" for usage'
-  echo "     Type $doc_command to browse the hypertext documentation"
+  if ( "${ORAC_SUN}" != "XXX" )  echo "     Type $doc_command to browse the hypertext documentation"
   echo " "
 #  echo " "
   echo " Raw data will be read from $ORAC_DATA_IN"
