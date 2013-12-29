@@ -404,6 +404,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
          orac_say( "    Turning off spectra with rms edginess above " . sprintf( "%.4f", $threshold ) );
          $params = "in=$temp12file out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
          $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+         ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
 
 # The clipping can leave residual spikes in the edginess profile because
 # the standard deviation includes both the noise and actual low-level
@@ -413,16 +414,19 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # will often remove the edginess signal.  Instead dilate by two
 # spectra either side with block after thresholding.
          if ( $dilate == 1 || $dilate == 2 ) {
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+            ( $ORAC_STATUS, my $numgood_predilate ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
             my $dilate_box = 2 * $dilate + 1;
             $params = "in=$temp4file out=$temp15file box=$dilate_box wlim=1.0";
             $Mon{'kappa_mon'}->obeyw( "block", "$params" );
             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp15file out=$temp4file" );
+
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+            ( $ORAC_STATUS, my $numgood_postdilate ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+            $eject += $numgood_predilate - $numgood_postdilate;
          }
 
-         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file clip=2" );
-         ( $ORAC_STATUS, my $numgood2 ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
-
-         my $eject = $numgood - $numgood2;
          my $total = $ntimes;
          if ( $eject == 1 ) {
             orac_say( "       One spectrum removed out of $total." );
