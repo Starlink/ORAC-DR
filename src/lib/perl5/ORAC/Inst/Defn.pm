@@ -796,7 +796,7 @@ sub orac_determine_primitive_search_path {
   my $het_root     =  File::Spec->catdir( $root, "heterodyne" );
   my $general_root =  File::Spec->catdir( $root, "general" );
   my $casu_root    =  File::Spec->catdir( $root, "casu");
-  my $jsa_root     =  File::Spec->catdir( $root, "JSA");
+  my $jsa_root     =  File::Spec->catdir( $root, "JSA" );
 
   # If we have a PICARD prefix we put the picard directories
   # at the start of the search path.
@@ -829,19 +829,19 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
     push( @path, File::Spec->catdir( $spectro_root, "CGS4" ) );
     push( @path, $spectro_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
     push( @path, File::Spec->catdir( $root, "IRCAM" ) );
     push( @path, File::Spec->catdir( $imaging_root, "IRCAM" ) );
     push( @path, $imaging_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
     push( @path, File::Spec->catdir( $root, "UFTI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "UFTI" ) );
     push( @path, $imaging_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif ($inst =~ /^WFCAM/) {
     push( @path, File::Spec->catdir( $root, "WFCAM" ) );
@@ -855,7 +855,7 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif ($inst eq 'UIST') {
     push( @path, File::Spec->catdir( $root, "UIST" ) );
@@ -865,7 +865,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $ifu_root );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif ($inst eq 'INGRID') {
     push( @path, File::Spec->catdir( $root, "INGRID" ) );
