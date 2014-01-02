@@ -47,8 +47,8 @@ amplifies the standard deviation of the normal level used for the
 threshold.  If this parameter is set to 1 or 2, the thresholded
 masked regions of high interference are dilated by one or two pixels
 respectively to catch the start and end spectra partly affected by the
-interference.  For other values no dilation occurs.  The default is 1
-if Argument RINGING is true, and 0 otherwise.  [1]
+interference.  For other values no dilation occurs.  The default is 2
+if Argument RINGING is true, and 0 otherwise.  []
 
 =item EDGE_CLIP = STRING (Given)
 
@@ -79,7 +79,11 @@ uhdr via the recipe parameter system.  [400]
 The number of standard deviations at which to threshold the noise
 profile above the median level.  This argument can be overridden by
 the RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP uhdr via the recipe
-parameter system.  [4.0]
+parameter system.  The default is 4.0 is RINGING is true and 3.0
+otherwise.  This is because we do not want to bifurcate any ringing
+regions that would cause the clump to be split.  The weaker outliers
+are taken care of via the dilation of non-correlated noise bands
+when ringing is expected.  []
 
 =back
 
@@ -180,7 +184,9 @@ if ( ! $apply ) { goto RETURN }
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $ringing = get_prim_arg( $_PRIM_ARGS_, "RINGING", "0" );
 my $min_spec = get_prim_arg( $_PRIM_ARGS_, "RINGING_MIN_SPECTRA", "400" );
-my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
+my $thresh_def = $ringing ? 4.0 : 3.0;
+my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", $thresh_def );
+my $dilate_def = $ringing ? 2 : 0;
 my $dilate = get_prim_arg( $_PRIM_ARGS_, "DILATE", $ringing );
 
 # Handle recipe parameter overrides.
@@ -246,6 +252,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    my $temp13file = new ORAC::TempFile( 0 );
    my $temp14file = new ORAC::TempFile( 0 );
    my $temp15file = new ORAC::TempFile( 0 );
+   my $temp16file = new ORAC::TempFile( 0 );
+   my $temp17file = new ORAC::TempFile( 0 );
+   my $temp18file = new ORAC::TempFile( 0 );
 
 # We need the dimensions of the input file for later.
    _GET_DIMENSIONS_ FILE=$in
@@ -298,6 +307,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Get average rms deviations for each receptor not in the bad_receptors list.
 # ---------------------------------------------------------------------------
    my $array = new JCMT::ACSIS::Array( File => $in );
+   my ( %numvalid, %totspect );
 
 # Form set of receptors that are not bad in the master list.
    my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
@@ -382,15 +392,27 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp11file out=$temp12file" );
       }
 
+# Estimate the noise in the profile.
+# -----------------------------------
+
+# Ringing and oscillations can amplify the apparent standard deviation.
+
+# Smooth and subtract to estimate the noise.
+      $params = "in=$temp12file out=$temp16file fwhm=15";
+      $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+      $params = "in1=$temp12file in2=$temp16file out=$temp17file";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
 # Identify anomalous spectra.
 # ---------------------------
 
 # Estimate the normal level, and standard deviation excluding anomalous spectra.
 # This assumes that most of the spectra are good and the drift is not
 # significant compared with the noise.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp12file clip=$edge_clip order" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp17file clip=$edge_clip" );
       ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
       ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+      $numvalid{$receptor} = $numgood;
 
 # Threshold spectra whose mean rms edginess exceeds an outlier limit.
 # The median will give a reliable normal signal on which there are
@@ -435,63 +457,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
          } else {
             orac_say( "       No spectra removed out of $total." );
          }
-
-# Early data exhibit a further effect, a persistent beating oscillatory
-# high-frequency noise that has the same phase for all affected spectra,
-# just the intensity varies.  The signal this generates peaks about 5%
-# of the strong signal.  This is just a first crude attempt at
-# filtering them.  They seem to occur between the the first type of
-# high-frequency interference.  Given that ringing has been observed thus
-# far to extend typically over tens and even over 200 spectra, and
-# that some reference level for unaffected spectra is needed, define a
-# minimum number of spectra.
-         if ( $ringing && $numgood >= $min_spec ) {
-            if ( $eject > 0 ) {
-
-# The first step is to exclude the strong signals from the flattened
-# profile.  The previous FINDBACK tracks the weaker slowly varying
-# edge signal.
-               $params = "ia=$temp3file ib=$temp4file ";
-               $params .= "exp=ia+0*ib out=$temp13file";
-               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
-            } else {
-               $params = "in=$temp3file out=$temp13file";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-            }
-
-# Estimate and subtract the 'continuum' level.  0.4 aims to exclude
-# broad regions of affected spectra but still allow for trending.
-# While the the 500 is arbitrary, it is based on a few empirical
-# observations of the time extent of blocks of affected spectra.
-            my $box = min( int( 0.4 * $total ), 500 );
-            $params = "in=$temp13file out=$temp14file box=$box sub accept";
-            my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
-
-# FINDBACK can fall over, but this should not be fatal.
-            if ( $FINDBACK_STATUS != ORAC__OK ) {
-               if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
-                  orac_say "Unable to find the background level due to insufficient good data.";
-                  orac_say "Attempting to continue.";
-               }
-               $temp14file = $temp13file;
-            }
-
-# Threshold the profile at a fixed level  Using clip means and standard
-# deviations have not worked too well.
-            $threshold = 0.0036;
-            orac_say( "    Turning off spectra with differential rms edginess above " . sprintf( "%.4f", $threshold ) );
-            $params = "in=$temp14file out=$temp4file thrlo=-1 newlo=bad thrhi=$threshold newhi=bad";
-            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-            ( $ORAC_STATUS, my $eject ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
-            ( $ORAC_STATUS, my $kept ) = $Mon{'kappa_mon'}->get( "thresh", "numsame" );
-            if ( $eject == 1 ) {
-               orac_say( "       One spectrum removed out of $kept." );
-            } elsif ( $eject > 0 ) {
-               orac_say( "       $eject spectra removed out of $kept." );
-            } else {
-               orac_say( "       No spectra removed out of $kept." );
-            }
-         }
+         $numvalid{$receptor} -= $eject;
+         $totspect{$receptor} = $total;
 
 # Add plane for receptor into mask cube.
 # ======================================
@@ -516,6 +483,278 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
    orac_say( "  Apply the mask of noisy spectra to the input time series to form $out." );
    $params = "in=$in ref=$temp6file out=$out";
    $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+
+
+# Ringing filter
+# ==============
+
+# Early data exhibit a further effect, a persistent beating oscillatory
+# high-frequency noise that has the same phase for all affected spectra,
+# just the intensity varies.  The signal this generates peaks about 5%
+# of the strong signal.  This is just a first crude attempt at
+# filtering them.  They seem to occur between the the first type of
+# high-frequency interference.
+   if ( $ringing ) {
+      orac_say( "\nFilter spectra affected by correlated ringing noise." );
+      my $hfi = new ORAC::TempFile( 0 );
+
+# Create configuration-parameter file for FINDCLUMPS.
+# ---------------------------------------------------
+
+# The main ones are ClumpFind.MaxBad, ClumpFind.MinPix (although double the
+# default it could be set larger to weed out peaks from lines),
+# ClumpFind.FwhmBeam, and the dynamic ClumpFind.Tlow added on the command
+# line.  ClumpFind.VeloRes could be set to 1 channel.
+     my $fc_param = new ORAC::TempFile( 1 );
+     open my $fc_fh, ">", $fc_param;
+     print $fc_fh "ClumpFind.Minpix=50\n";
+     print $fc_fh "ClumpFind.AllowEdge=1\n";
+     print $fc_fh "ClumpFind.FwhmBeam=0.0\n";
+     print $fc_fh "ClumpFind.MaxBad=1\n";
+     print $fc_fh "ClumpFind.VeloRes=0\n";
+     print $fc_fh "ClumpFind.DeltaT=0.003\n";
+     close $fc_fh;
+
+    foreach my $receptor ( @receptors ) {
+         orac_say( "  Receptor $receptor." );
+         my $pixel = $array->pixel( $receptor );
+
+# Since the pattern is correlated we can improve the signal-to-noise
+# ratio and discrimination in the profile by first smoothing along the
+# time axis.
+         $params = "in=$out out=$hfi box=[0,0,7]";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+# Perform an approximate Difference of Gaussian filter along the spectral axis.
+# -----------------------------------------------------------------------------
+#
+# Since the interference has lots of zero crossings an edge detector is
+# one way to identify this inference signal.  Note as currently coded
+# LAPLACE only operates on two-dimensional data and thus includes
+# variation along the time-series axis into the signal, rejecting more
+# spectra than is necessary.  While the smoothing have been applied
+# before the earlier DoG filter to avoid repirition, it would degrade
+# the uncorrelated noise signal.
+         orac_say( "    Computing squared Laplacian of spectra." );
+         $params = "in=$hfi($spec_percent,$pixel,) out=$temp8file stype=absolute";
+         $params .= " method=nearest abs=[-1,0,0]";
+         $Mon{'kappa_mon'}->obeyw( "slide", "$params" );
+
+         $params = "in=$hfi($spec_percent,$pixel,) out=$temp9file stype=absolute";
+         $params .= " method=nearest abs=[1,0,0]";
+         $Mon{'kappa_mon'}->obeyw( "slide", "$params" );
+
+         $params = "ia=$hfi($spec_percent,$pixel,) ib=$temp8file ic=$temp9file";
+         $params .= " exp=2*IA-IB-IC out=$temp1file";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Form clean 'edginess' profile.
+# ------------------------------
+#
+# Find the rms `edginess' i.e. a positive measure of the deviation from flatness.
+# The normalisation is arbitrary so just approximate with the full spectral
+# dimension.
+         $params = "ia=$temp1file out=$temp2file exp='sqrt(IA*IA/$nel)'";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Collapse the spectral axis using a clipped mean to form average
+# edginess for each spectrum for the current detector.
+         orac_say( "    Collapsing spectra to form average edge detection per spectrum." );
+         $params = "in=$temp2file out=$temp3file estimator=mean";
+         $params .= " axis=spec trim=f wlim=0.0 variance=false";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# There may be glitches or drift in the levels.  Correct for these
+# before thresholding.  FIXSTEPS needs double-precision data.
+         my $rejected = 1;
+         my $ORAC_STATUS;
+         orac_say( "    Correcting for glitches or drift in the edginess profile." );
+         $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp3file type=_DOUBLE" );
+         $params = "in=$temp3file out=$temp11file";
+         $params .= " meanshift=no dcfitbox=$boxsize";
+         my $FIXSTEPS_STATUS = $Mon{'smurf_mon'}->obeyw( "fixsteps", "$params" );
+         if ( $FIXSTEPS_STATUS == 0 ) {
+            ( $ORAC_STATUS, $rejected ) = $Mon{'smurf_mon'}->get( "fixsteps", "nrejected" );
+         }
+
+# Check that FIXSTEPS has not rejected the receptor.  This seems to
+# happen extremely rarely when there are no genuine steps and too few
+# points in the profile.  In this case we can pass the original profile
+# directly to FINDBACK.
+         if ( $rejected > 0 ) {
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp3file out=$temp11file" );
+         }
+
+# Reset the data type.
+         $Mon{'ndfpack_mon'}->obeyw( "settype", "$temp11file type=_REAL" );
+
+# Given that ringing has been observed thus far to extend typically over tens and
+# even over 200 spectra, and that some reference level for unaffected spectra is
+# needed, define a minimum number of spectra.
+         if ( $numvalid{$receptor} >= $min_spec ) {
+
+# Estimate and subtract the 'continuum' level.  0.4 aims to exclude
+# broad regions of affected spectra but still allow for trending.
+# While the 500 is arbitrary, it is based on a few empirical
+# observations the time extent of blocks of affected spectra.
+            my $box = min( int( 0.4 * $totspect{$receptor} ), 500 );
+            $params = "in=$temp11file out=$temp14file box=$box sub accept";
+            my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# FINDBACK can fall over, but this should not be fatal.
+            if ( $FINDBACK_STATUS != ORAC__OK ) {
+               if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+                  orac_say "Unable to find the background level due to insufficient good data.";
+                  orac_say "Attempting to continue.";
+               }
+               $temp14file = $temp11file;
+            }
+
+# Estimate the noise in the profile.
+# -----------------------------------
+
+# Ringing and oscillations can amplify the apparent standard deviation.
+
+# Smooth and subtract to estimate the noise.
+            $params = "in=$temp14file out=$temp16file fwhm=11";
+            $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+            $params = "in1=$temp14file in2=$temp16file out=$temp17file";
+            $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Find the noise level that lay on top of possibly varying base level.
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp17file clip=3" );
+            ( $ORAC_STATUS, my $rms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+# Obtain the mean level from the background-subtracted profile.
+            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp14file clip=$edge_clip" );
+            ( $ORAC_STATUS, my $baselevel ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+            my $minlevel = $baselevel + 3.0 * $rms;
+            my $minpeak = max( 0.006, $baselevel + 5.0 * $rms );
+
+# Smooth the pofile so only broad clumps are identified rather than
+# being subdivided into overlapping regions, as this reduced the widths
+# leaving the tails of the ringing after masking.
+            $params = "in=$temp14file out=$temp18file fwhm=15";
+            $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+
+# Measure the properties of peaks in the profile.
+# -----------------------------------------------
+
+# Identify the peaks in the histogram, storing the results table to a
+# Starlink STL file.  Since the quanta are integers ensure the RMS level
+# is at least that.
+            my $outmap = new ORAC::TempFile( 0 );
+            my $outcat = new ORAC::TempFile( 0 );
+            $outcat .= ".TXT";
+            my $nclumps = 0;
+
+            $params = "in=$temp18file out=$outmap outcat=$outcat method=clumpfind ";
+            $params .= "rms=$rms config='^$fc_param,ClumpFind.Tlow=$minlevel' accept";
+            my $FINDCLUMPS_STATUS = $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+            if ( $FINDCLUMPS_STATUS == ORAC__OK ) {
+
+# Check number of clumps using NCLUMPS output parameter.
+               ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+            }
+            if ( $nclumps > 0 ) {
+
+# Extract the desired information from the output table.
+# ------------------------------------------------------
+
+# Access the required data in the file.  It searches the STL
+# format for the start of the table and given by the BEGINTABLE, and
+# there is no development of this format so this should be robust.
+               open( TABLE, "< $outcat" ) or
+                 die "Could not find catalogue $outcat specifying the ringing peaks: $!\n";
+               unlink $outcat;
+               my @lines = <TABLE>;
+               my $i = 0;
+               my $nlines = scalar( @lines );
+               while ( $i < $nlines ) {
+                  chomp $lines[$i];
+                  if ( $lines[$i] =~ /BEGINTABLE/ ) {
+                     last;
+                  }
+                  $i++;
+               }
+
+ # Move beyond the BEGINTABLE line.
+               $i++;
+
+# The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  So search to find the
+# rows with peaks above a 5-sigma threshold.
+               my @ring_limits;
+               my $eject = 0;
+               my $mask_ringing = 0;
+               while ( $i < $nlines ) {
+                  chomp $lines[$i];
+                  $lines[$i] =~ s/^\s+//;
+                  my @fields = split( /\s+/, $lines[$i] );
+                  s/D/e/ for @fields;
+                  if ( $fields[5] > $minpeak ) {
+                      my $lbnd_ring = int( $fields[1] - 3.0 * $fields[3] );
+                      my $ubnd_ring = int( $fields[1] + 3.0 * $fields[3] ) + 1;
+                      push @ring_limits, $lbnd_ring, $ubnd_ring;
+                      $eject += $ubnd_ring - $lbnd_ring + 1;
+                      $mask_ringing = 1;
+                  }
+                  $i++;
+               }
+
+# Store the thresholded file for the masking primitive.
+               if ( $mask_ringing ) {
+                  my $Frm = new $Frm;
+                  my $temp17file = new ORAC::TempFile( 0 );
+                  $temp17file = "$temp14file";
+                  $Frm->file( $temp17file );
+
+# Further indirection appears to be needed for passing the ranges to
+# _MASK_SINGLE_AXIS_REGIONS_.
+                  my @em_bounds = \@ring_limits;
+
+                  _MASK_SINGLE_AXIS_REGIONS_ INVERSE=0 USEAXIS=3 REGIONS=\@em_bounds SUFFIX=emmask
+
+# Capture the masked file, and default to remove at the end of processing.
+                  $temp4file = $Frm->file;
+
+                  my $kept = $numvalid{$receptor};
+                  if ( $eject == 1 ) {
+                     orac_say( "       One spectrum removed out of $kept." );
+                  } elsif ( $eject > 0 ) {
+                     orac_say( "       $eject spectra removed out of $kept." );
+                  } else {
+                     orac_say( "       No spectra removed out of $kept." );
+                  }
+
+# Add plane for receptor into mask cube.
+# ======================================
+
+# Expand the thresholded image to the size of the current receptor's
+# plane in the initial cube.
+                  if ( $eject > 0 ) {
+                     orac_say( "    Expand the masked profile." );
+                     $params = "in=$temp4file out=$temp5file axes=[0,2,3] lbound=" .
+                                $lbnd->[0] . " ubound=" . $ubnd->[0];
+                     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Paste the data to the mask file.
+                     orac_say( "    Paste the masked data into the cube mask." );
+                     $params = "in=$temp6file p1=$temp5file out=$temp7file confine=false transp=false";
+                     $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp7file out=$temp6file" );
+                  }
+               }
+            }
+         }
+      }
+
+# At this point $temp6file should have all the original receptors
+# checked for noisy spectra and have bad values for those spectra.
+# Copy the bad spectra to the output image.
+      orac_say( "  Apply the mask of noisy spectra to the input time series to form $out." );
+      $params = "in=$in ref=$temp6file out=$out";
+      $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+   }
 
 # Update the Frm object.
    $Frm->file( $i, $out );
