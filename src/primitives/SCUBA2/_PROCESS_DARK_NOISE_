@@ -154,13 +154,25 @@ if ($online || $Frm->hdr("OBS_TYPE") =~ /setup/i) {
     # Write a flag file for the TCS to pick up if this is a setup observation
     if ($Frm->hdr("OBS_TYPE") =~ /setup/i) {
       # Retrieve successful noise calculations
-      my @files = $Frm->files if ($Frm->tagretrieve("noise"));
-      orac_err "No noise results from SETUP - flag file will be incomplete!\n"
-	if (!@files);
-
-      _RETRIEVE_FASTFLATS_ TYPE=SOL ALLSUB=1
-      my @flats = @{$_RETRIEVE_FASTFLATS_{FASTFLATS}} if ($_RETRIEVE_FASTFLATS_{FASTFLATS});
-      push (@files, @flats) if (@flats);
+      my @files;
+      if ($Frm->tagretrieve("noise")) {
+	@files = $Frm->files;
+	_RETRIEVE_FASTFLATS_ TYPE=SOL ALLSUB=1
+	if ($_RETRIEVE_FASTFLATS_{FASTFLATS}) {
+	  # The de-reference here is safe because the above primitive
+	  # only stores this value if it has a non-empty array
+	  push (@files, @{$_RETRIEVE_FASTFLATS_{FASTFLATS}});
+	} else {
+	  orac_err "**** SETUP failed: unable to retrieve flatfield solutions ****\n";
+	  orac_err "Writing dummy flag file to avoid timeouts\n";
+	  @files = qw/ none /;
+	}
+      } else {
+	orac_err "**** SETUP failed: no noise results were derived ****\n";
+	orac_err "Writing dummy flag file to avoid timeouts\n";
+	@files = qw/ none /;
+      }
+      # Write flag file
       _WRITE_FLAG_FILE_ FILES=\@files
 
       # Now write the list of bad bolometers
