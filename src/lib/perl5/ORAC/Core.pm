@@ -1433,6 +1433,7 @@ sub orac_main_data_loop {
   my $recsuffix = $opts->{recsuffix};
   my $recpars = $opts->{recpars};
   my $grptrans = $opts->{grptrans};
+  my $skip_error = exists $opts->{'skip_error'} && defined $opts->{'skip_error'};
 
   # If recsuffix has not been converted to a array ref yet do it here
   if (defined $recsuffix && ! ref($recsuffix) ) {
@@ -1652,7 +1653,10 @@ sub orac_main_data_loop {
         }
           catch ORAC::Error::FatalError with {
             my $Error = shift;
-            $Error->throw;
+            $Error->throw unless $skip_error;
+            ORAC::Error->flush();
+            orac_err("SKIPPING ERROR: $Error\n");
+            orac_store_recipe_status( \%Stats, ORAC__TERMERR );
           }
             catch ORAC::Error::UserAbort with {
               my $Error = shift;
@@ -1660,7 +1664,10 @@ sub orac_main_data_loop {
             }
               otherwise {
                 my $Error = shift;
-                throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+                throw ORAC::Error::FatalError("$Error", ORAC__FATAL)
+                    unless $skip_error;
+                orac_err("SKIPPING ERROR: $Error\n");
+                orac_store_recipe_status( \%Stats, ORAC__TERMERR );
               };
 
         # Reset the obs number labels
