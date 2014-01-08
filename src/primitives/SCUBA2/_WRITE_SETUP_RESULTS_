@@ -1,0 +1,145 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_WRITE_SETUP_RESULTS_ - write flag file and bad-bolometer list for SETUPs
+
+=head1 SYNOPSIS
+
+ _WRITE_SETUP_RESULTS_
+
+=head1 DESCRIPTION
+
+This primitive retrieves the fastflat flatfield solutions and write a
+SETUP flag file with those and the current noise solutions, plus a
+list of the current non-operating bolometers.
+
+An error is issued under the following conditions:
+
+=over 2
+
+=item *
+
+if the fastflats are from a different observation; or
+
+=item *
+
+if the fastflats are from multiple observations; or
+
+=item *
+
+if there are no fastflat solutions; or
+
+=item *
+
+if there there are no noise solutions.
+
+=back
+
+A dummy flag file will be written that contains a single (invalid)
+entry C<none.sdf> to avoid timeouts.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+=over 2
+
+=item ORAC-DR PRIMITIVES
+
+_RETRIEVE_FASTFLATS_, _WRITE_BADBOL_LIST_, _WRITE_FLAG_FILE_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+This primitive is a no-op for observation types other than C<SETUP>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+
+# Write a flag file for the TCS to pick up if this is a setup observation
+if ($Frm->hdr("OBS_TYPE") =~ /setup/i) {
+  my @files;
+  my $is_ok = 0;
+  my $errmsg;
+  # Retrieve successful noise calculations
+  if ($Frm->tagretrieve("noise")) {
+    _RETRIEVE_FASTFLATS_ TYPE=SOL ALLSUB=1
+    if ($_RETRIEVE_FASTFLATS_{FASTFLATS}) {
+      # Perform sanity check to ensure the returned fastflats are from
+      # the current observation
+      my %obsnum = %{$_RETRIEVE_FASTFLATS_{OBSNUM}};
+      my %obslist = map {$obsnum{$_} => 1} keys %obsnum;
+      my @obslist = keys %obslist;
+      if (@obslist == 1) {
+	if ($Frm->hdr("OBSNUM") == $obslist[0]) {
+	  # All's well - set the OK flag
+	  $is_ok = 1;
+	} else {
+	  $errmsg = "flatfield solutions are from a different observation";
+	}
+      } else {
+	$errmsg = "flatfield solutions are from multiple observations";
+      }
+
+      if ($is_ok) {
+	@files = $Frm->files;
+	# The de-reference here is safe because the above primitive
+	# only stores this value if it has a non-empty array
+	push (@files, @{$_RETRIEVE_FASTFLATS_{FASTFLATS}});
+      }
+    } else {
+      $errmsg = "unable to retrieve flatfield solutions";
+    }
+  } else {
+    $errmsg = "no noise results were derived";
+  }
+
+  # Issue error message if necessary
+  if ($errmsg && !@files) {
+    orac_err "**** SETUP failed: $errmsg ****\n";
+    orac_err "**** Writing dummy flag file to avoid timeouts ****\n";
+    @files = qw/ none /;
+  }
+
+  # Write flag file
+  _WRITE_FLAG_FILE_ FILES=\@files
+
+  # Now write the list of bad bolometers
+  _WRITE_BADBOL_LIST_
+}
