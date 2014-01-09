@@ -149,7 +149,44 @@ sub memberhdrvals {
   return @output;
 }
 
-=item sort_by_subarray
+=item B<refimage>
+
+Set or retrieve the name of a reference image used to define a
+coordinate system when mosaicking.  The name of the reference image is
+stored in the Group uhdr as C<REFIMAGE_KEY> where C<KEY> is either
+C<SKY> of C<FPLANE>.
+
+Separate reference images may be defined for on-sky images and
+focal-plane mosaics as given by the first (optional) argument. A
+C<SKY> reference is assumed if not specified when retrieving a
+reference. However, the refernce type must be given when storing the
+name of the reference image.
+
+  my $skyref = $Grp->refimage;
+  my $fpref = $Grp->refimage("FPLANE");
+  $Grp->refimage("FPLANE", $fpref);
+  $Grp->refimage("SKY", $skyref);
+
+=cut
+
+sub refimage {
+  my $self = shift;
+  my $reftype = (@_) ? shift : "SKY";
+  $reftype = "SKY" unless ($reftype =~ /fplane/i);
+
+  my $refimage;
+  if (@_) {
+    $refimage = shift;
+    $self->uhdr("REFIMAGE_".$reftype, $refimage);
+  } else {
+    $refimage = $self->uhdr("REFIMAGE_".$reftype)
+      if (defined $self->uhdr("REFIMAGE_".$reftype));
+  }
+
+  return $refimage;
+}
+
+=item B<sort_by_subarray>
 
 Create a new group containing frame objects for the files
 from each subarray.
@@ -253,11 +290,16 @@ $Id$
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Graham Bell E<lt>g.bell@jach.hawaii.eduE<gt>
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+Copyright (C) 2005 Particle Physics and Astronomy Research Council.
+Copyright (C) 2008,2010 Science and Technology Facilities Council.
+Copyright (C) 2008,2010,2014 University of British Columbia.  All
+Rights Reserved.
 
 =cut
 
