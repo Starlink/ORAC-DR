@@ -284,7 +284,6 @@ sub new {
   $obj->{BeamFit} = undef;        # Current best-fit beam parameters
   $obj->{ErrBeamFit} = undef;     # Current estimate of error beam
   $obj->{FWHM} = undef;           # Current mean main-beam FWHM
-  $obj->{SkyRefImage} = undef;    # Name of current reference image
 
   # Specify default tausys
   $obj->tausys( "CSO" );
@@ -544,31 +543,6 @@ Method to return the NEP spec for the current wavelength
 sub nep_spec {
   my $self = shift;
   return $NEP{$self->subinst};
-}
-
-=item B<refimage>
-
-Method to store or retrieve current reference image. The method
-requires two arguments: the group name and the name of the reference
-image. Currently, the group name is not used, but that may change in
-the future.
-
-  $Cal->refimage( $group_name, $refimage );
-
-  my $refimage = $Cal->refimage;
-
-=cut
-
-sub refimage {
-  my $self = shift;
-
-  if ( @_ ) {
-    my ( $group, $refimage ) = @_;
-    $self->{SkyRefImage} = $refimage;
-    return;
-  }
-
-  return $self->{SkyRefImage};
 }
 
 =item B<secondary_calibrator_fluxes>
