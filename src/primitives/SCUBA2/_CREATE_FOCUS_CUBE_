@@ -95,7 +95,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2008,2012 the University of British Columbia. All
+Copyright (C) 2007-2008,2012,2014 the University of British Columbia. All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -304,24 +304,36 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && $nocubeproduct) {
   }
 
   # Find the peak position of the centre focus step (presumed to be
-  # nearest the actual focus). Nfoc should be odd but make it an int
-  # just in case...
+  # nearest the actual focus). The number of SMU positions should be
+  # odd but make it an int just in case...
   my $midplane = int((scalar(@focposns) + 1) / 2) - 1;
-  $Frm->files($planes{$focposns[$midplane]});
-  $Frm->tagset("midplane");
-  $Frm->product("midplane");
-  # Find the peak position just in case the source is way off centre -
-  # adjust the WCS if so
-  my $initpos = [0,0];
-  _FIND_MAP_PEAK_ PLOTFIT=0 FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
-  # If the peak could be determined, and had a S/N exceeding 3 then proceed with shift
-  my $SNR_MIN = 3.0;
+  my $midfile = $planes{$focposns[$midplane]};
+  if (!$midfile) {
+    # No midfile means that the centre SMU position was skipped by the
+    # pipeline - see if the neighbouring files are defined instead
+    if (defined $planes{$focposns[$midplane+1]}) {
+      $midfile = $planes{$focposns[$midplane+1]};
+    } elsif (defined $planes{$focposns[$midplane-1]}) {
+      $midfile = $planes{$focposns[$midplane-1]};
+    }
+  }
   my @newpos;
-  if (defined $_FIND_MAP_PEAK_{PEAK} &&
-      (defined $_FIND_MAP_PEAK_{SNR} && $_FIND_MAP_PEAK_{SNR} > $SNR_MIN)) {
-    @newpos = ($_FIND_MAP_PEAK_{POSITION}->[0], $_FIND_MAP_PEAK_{POSITION}->[1]);
-  } else {
-    orac_warn "Unable to locate a significant maximum - WCS will not be adjusted\n";
+  if ($midfile) {
+    $Frm->files($midfile);
+    $Frm->tagset("midplane");
+    $Frm->product("midplane");
+    # Find the peak position just in case the source is way off centre -
+    # adjust the WCS if so
+    my $initpos = [0,0];
+    _FIND_MAP_PEAK_ PLOTFIT=0 FITPEAK=1 INITPOS=$initpos VERBOSE=0 FITBOX=15
+      # Proceed with shift if the peak could be determined with S/N > 3
+      my $SNR_MIN = 3.0;
+    if (defined $_FIND_MAP_PEAK_{PEAK} &&
+	(defined $_FIND_MAP_PEAK_{SNR} && $_FIND_MAP_PEAK_{SNR} > $SNR_MIN)) {
+      @newpos = ($_FIND_MAP_PEAK_{POSITION}->[0], $_FIND_MAP_PEAK_{POSITION}->[1]);
+    } else {
+      orac_warn "Unable to locate a significant maximum - WCS will not be adjusted\n";
+    }
   }
 
   orac_print "Adjusting WCS to put source at image centre...\n"
