@@ -1,0 +1,130 @@
+=head1 NAME _TRIM_VIGNETTED_BORDERS_
+
+=head1 DESCRIPTION
+
+UIST suffers from vigetting at the edges of the frame.  This primitive
+trims off the rows and columns where the vignetting is strongest.  The
+The numbers of border pixels excised depends on the filter.
+
+=head1 AUTHORS
+
+Malcolm J . Currie <mjc@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science & Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either Version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA 02111-1307, USA.
+
+=cut
+
+# This should only be performed on OBJECT frames.  The objective
+# really is to exclude calibrations that are independent of the
+# filter, particulalry the darks.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKYFLAT" ) {
+
+   my $lower_x = 0;
+   my $upper_x = 0;
+   my $lower_y = 0;
+   my $upper_y = 0;
+
+# The extent of the vignetting is governed by the filter and camera.
+   my $filter = $Frm->uhdr( "ORAC_FILTER" );
+   my $camera = $Frm->uhdr( "ORAC_CAMERA" );
+
+# Choose some sensible defaults.  The camera will only be 0.06 for
+# thermal observations.  At present the broad-band filters have similar
+# limits.
+   $filter = "J98" if ! defined( $filter );
+   $camera = "0.12" if ! defined( $camera );
+
+# Just simply trim border rows and columns.
+   if ( defined( $filter ) ) {
+
+      if ( $filter eq "H98" ) {
+         $lower_x = 0;
+         $upper_x = 12;
+         $lower_y = 2;
+         $upper_y = 0;
+
+      } elsif ( $filter eq "J98" ) {
+         $lower_x = 0;
+         $upper_x = 12;
+         $lower_y = 6;
+         $upper_y = 0;
+
+      } elsif ( $filter eq "K98" ) {
+         $lower_x = 0;
+         $upper_x = 12;
+         $lower_y = 6;
+         $upper_y = 0;
+
+      } elsif ( $filter eq "Lp98" && $camera =~ /0.06/ ) {
+         $lower_x = 0;
+         $upper_x = 18;
+         $lower_y = 12;
+         $upper_y = 2;
+
+      } elsif ( $filter eq "Lp98" ) {
+         $lower_x = 0;
+         $upper_x = 12;
+         $lower_y = 6;
+         $upper_y = 0;
+
+      } elsif ( $filter eq "Mp98" && $camera =~ /0.06/ ) {
+         $lower_x = 17;
+         $upper_x = 32;
+         $lower_y = 26;
+         $upper_y = 24;
+
+      } elsif ( $filter eq "Mp98" ) {
+         $lower_x = 0;
+         $upper_x = 12;
+         $lower_y = 6;
+         $upper_y = 0;
+
+      }
+
+# Read readout bounds from the headers.  There is no cropping of
+# 512x512.
+      my $xl = max( $Frm->uhdr( "ORAC_X_LOWER_BOUND" ), $lower_x + 1 );
+      my $yl = max( $Frm->uhdr( "ORAC_Y_LOWER_BOUND" ), $lower_y + 1 );
+      my $xu = min( $Frm->uhdr( "ORAC_X_UPPER_BOUND" ), 1024 - $upper_x );
+      my $yu = min( $Frm->uhdr( "ORAC_Y_UPPER_BOUND" ), 1024 - $upper_y );
+      my $section = "($xl:$xu,$yl:$yu)";
+
+# Process all files within the current Frame.
+      foreach my $i ( 1 .. $Frm->nfiles ) {
+         my ( $in, $out ) = $Frm->inout( "_vgc", $i );
+
+# Trim the edges.
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in$section out=$out" );
+    
+# Report the processing status.
+         orac_print "$in to $out: Trimmed vignetted borders to $section pixel bounds.\n";
+
+# And update the Frm object.
+         $Frm->file( $i, $out );
+     }
+   }
+
+# Keep the output tidy.
+   orac_print "\n";
+}
