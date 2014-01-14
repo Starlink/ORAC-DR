@@ -142,22 +142,50 @@ if (defined $Frm->uhdr("LAMBDA_MIN") && defined $Frm->uhdr("LAMBDA_MAX")) {
     $Mon{'kappa_mon' }->obeyw("collapse", "$param");
     orac_print "Written to $out.\n\n";
 
+# Set the product name.  At present recipes seem to make the flux-calibrated
+# cube before calling this primitive.  In case this is wrong or may change
+# check that it is indeed flux-calibrated.  Another approach would be
+# to compare the NDF label (which would be set to "flux").   Although there
+# is similar code in _FLUX_CALIBRATE_ to set different products depending
+# whether it is a cube, image, or spectrum, it appears that that
+# primitive processes cubes and the image and spectrum are made later.
+# It is coded in both places if this proves to be a superficial analysis.
+    my $comment;
+    if ( $Frm->uhdr( "FLUX_CALIBRATED" ) ) {
+       $comment = "Flux-calibrated white-light image";
+       _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=fcimage COMMENT=$comment
+
+    } elsif ( $out =~ /_im$/ ) {
+       $comment = "White-light image";
+      _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=image COMMENT=$comment
+    }
+
     # Temporarily define $Object to point to the new file so we can
     # display it if necessary.
-    if ( $nogrp ) {
-       $Object->file( $out );
+    $Object->file( $out );
 
-    } else {
+    if ( ! $nogrp ) {
 
-       # The file names have an extra extension name to distingush
+       # The file names may have an extra extension name to distinguish
        # image and spectral products.  Once we make a rimg we know it
-       # is an image.  So copy to the revised name and create the
-       # previews with names derived from the trimmed name.  There is
-       # no need to create a new group as the group file name is
-       # returned to its value on inout to this primitive.
-       my $trimname = $out;
-       $trimname =~ s/_im//;
-       if ( $out ne $trimname ) {
+       # is an image; the _im is superfluous.  First need to know if
+       # there is more than one extension, i.e. _im_<suffix>, or just
+       # _im.  For multiple extension create a new suffix to replace
+       # _im_<suffix> as used throughout the IFU code, but _<suffix>i.
+       # The important point is to avoid creating a file which already
+       # exists.
+
+       # Split the file name on underscores.
+       my @extensions = split( /_/, $out );
+       my $rename = $extensions[-1] ne "im" && $out =~ /_im/;
+       if ( $rename ) {
+          my $trimname = $out;
+          $trimname =~ s/_im//;
+          $trimname .= "i";
+
+       # Copy to the revised name and create the previews with names derived
+       # from the trimmed name.  There is no need to create a new group as
+       # the group file name is returned to its value on inout to this primitive.
           $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$out out=$trimname" );
           orac_say "Copied $out to $trimname to remove unnecessary _im.";
           $Object->file( $trimname );

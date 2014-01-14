@@ -188,27 +188,57 @@ if( $group ) {
   # Update the Group object.
   $Grp->file( $out );
 
-  # Add a WCS.
+  # Add a WCS.  It edits the Group file.
   _CREATE_SPECTRUM_WCS_ FRAME=0
 
-  # The file names have an extra extension name to distingush
-  # image and spectral products.  Once we make a rimg we know it
-  # is an image.  So copy to the revised name and create the
-  # previews with names derived from the trimmed name.
-  {
-     my $Grp = new $Grp;
-     my $trimname = $out;
+# Set the product name.  At present recipes seem to make the flux-calibrated
+# cube before calling this primitive.  In case this is wrong or may change
+# check that it is indeed flux-calibrated.  Another approach would be
+# to compare the NDF label (which would be set to "flux").   Although there
+# is similar code in _FLUX_CALIBRATE_ to set different products depending
+# whether it is a cube, image, or spectrum, it appears that that
+# primitive processes cubes and the image and spectrum are made later.
+# It is coded in both places if this proves to be a superficial analysis.
+  my $comment;
+  if ( $Frm->uhdr( "FLUX_CALIBRATED" ) ) {
+     $comment = "Flux-calibrated composite spectrum";
+     _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=fcspectrum COMMENT=$comment
+
+    } elsif ( $out =~ /_sp$/ ) {
+     $comment = "Composite spectrum";
+    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=spectrum COMMENT=$comment
+  }
+
+  # The file names may have an extra extension name to distinguish
+  # image and spectral products.  Once we make an rsp we know it
+  # is a spectrum; the _sp is superfluous.  First need to know if
+  # there is more than one extension, i.e. _sp_<suffix>, or just
+  # _sp.  For multiple extension create a new suffix to replace
+  # _sp_<suffix> as used throughout the IFU code, but _<suffix>s.
+  # The important point is to avoid creating a file which already
+  # exists.
+
+  # Split the file name on underscores.
+  my @extensions = split( /_/, $out );
+  my $trimname = $out;
+  my $rename = $extensions[-1] ne "sp" && $out =~ /_sp/;
+  if ( $rename ) {
      $trimname =~ s/_sp//;
-     if ( $out ne $trimname ) {
-        $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$out out=$trimname" );
-        orac_say "Copied $out to $trimname to remove unnecessary _sp";
-        $Grp->file( $trimname );
-     }
+     $trimname .= "s";
+
+     # Copy to the revised name and create the previews with names derived
+     # from the trimmed name.  There is no need to create a new group as
+     # the group file name is returned to its value on inout to this primitive.
+     $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$out out=$trimname" );
+     orac_say "Copied $out to $trimname to remove unnecessary _sp.";
+     $Grp->file( $trimname );
+  }
 
   # Create the preview images and create the PRODUCT keyword.
-     my $comment = "Flux-calibrated spectrum";
-     _TAG_AS_REPRESENTATIVE_ UPDATE=0 GROUP=1 SUFFIX=rsp COMMENT=$comment
-  }
+  _TAG_AS_REPRESENTATIVE_ UPDATE=0 GROUP=1 SUFFIX=rsp COMMENT=$comment
+
+  # Restore the Group object.
+  $Grp->file( $out );
 
   # Display.
   $Display->display_data($Grp) if defined $Display;
