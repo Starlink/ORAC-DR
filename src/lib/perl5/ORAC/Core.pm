@@ -1526,7 +1526,10 @@ sub orac_main_data_loop {
         }
           catch ORAC::Error::FatalError with {
             my $Error = shift;
-            $Error->throw;
+            $Error->throw unless $skip_error;
+            ORAC::Error->flush();
+            orac_err("SKIPPING ERROR: $Error\n");
+            orac_store_recipe_status( \%Stats, ORAC__TERMERR );
           }
             catch ORAC::Error::UserAbort with {
               my $Error = shift;
@@ -1534,7 +1537,10 @@ sub orac_main_data_loop {
             }
               otherwise {
                 my $Error = shift;
-                throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+                throw ORAC::Error::FatalError("$Error", ORAC__FATAL)
+                    unless $skip_error;
+                orac_err("SKIPPING ERROR: $Error\n");
+                orac_store_recipe_status( \%Stats, ORAC__TERMERR );
               };
 
         # Reset the obs number labels
