@@ -497,12 +497,6 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::PICARD";
 
-  } elsif ( $inst eq 'LCOSPECTRAL' ) {
-    $groupclass = "ORAC::Group::LCOSPECTRAL";
-    $frameclass = "ORAC::Frame::LCOSPECTRAL";
-    $calclass = "ORAC::Calib::LCOSPECTRAL";
-    $instclass = "ORAC::Inst::LCOSPECTRAL";
-
   } elsif ( $inst eq 'LCOSBIG' ) {
     $groupclass = "ORAC::Group::LCOSBIG";
     $frameclass = "ORAC::Frame::LCOSBIG";
@@ -544,6 +538,18 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::LCOFLOYDS";
     $calclass = "ORAC::Calib::LCOFLOYDS" ;
     $instclass = "ORAC::Inst::LCOFLOYDS";
+
+  } elsif ( $inst eq 'LCOMEROPE' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOMEROPE";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
+
+  } elsif ( $inst eq 'LCOSPECTRAL' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOSPECTRAL";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
 
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
@@ -812,6 +818,20 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $spectro_root, "LCOFLOYDS" ) );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'LCOMEROPE') {
+    push( @path, File::Spec->catdir( $root, "LCOMEROPE" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOMEROPE" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
+  } elsif ($inst eq 'LCOSPECTRAL') {
+    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -1061,6 +1081,22 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'LCOMEROPE') {
+    push( @path, File::Spec->catdir( $root, "LCOMERPE" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOMEROPE" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOSPECTRAL') {
+    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
@@ -1220,6 +1256,16 @@ sub orac_determine_calibration_search_path {
 
   } elsif( $inst eq 'LCOFLOYDS' ) {
     push( @path, File::Spec->catdir( $root, 'lcofloyds' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOMEROPE' ) {
+    push( @path, File::Spec->catdir( $root, 'lcomerope' ) );
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOSPECTRAL' ) {
+    push( @path, File::Spec->catdir( $root, 'lcospectral' ) );
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
     push( @path, File::Spec->catdir( $root, 'general-optical') );
 
  } else {
@@ -1534,6 +1580,16 @@ sub orac_configure_for_instrument {
 
     # Instrument
     $ENV{"ORAC_INSTRUMENT"} = "LCOFLOYDS";
+
+  } elsif ( $instrument eq "LCOMEROPE" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOMEROPE";
+
+  } elsif ( $instrument eq "LCOSPECTRAL" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOSPECTRAL";
 
   } else {
     orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");

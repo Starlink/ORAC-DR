@@ -199,6 +199,10 @@ sub orac_calc_instrument_settings {
 			 'FL04' => 'lsc',
                          'FL07' => 'lsc',
 			 'EN06' => 'ogg',
+			 'EM01' => 'ogg',
+			 'FS02' => 'ogg',
+			 'EM03' => 'coj',
+			 'FS03' => 'coj',			 
                          'EF02' => 'cpt',
                          'EF03' => 'cpt',
                          'EF04' => 'cpt',
@@ -210,7 +214,7 @@ sub orac_calc_instrument_settings {
                        );
 
     # Split into instrument and camera code
-    $inst =~ /^(LCO[A-Z_0-9]*)-((KB|FL|EF|EN)[0-9][0-9])/;
+    $inst =~ /^(LCO[A-Z_0-9]*)-((KB|FL|EF|EN|EM|FS)[0-9][0-9])/;
     if ( $1 eq "" or $2 eq "") {
       croak "LCOGT Instrument '$inst' not recognized by ORAC-DR\n";
     }
@@ -249,6 +253,8 @@ sub orac_calc_instrument_settings {
 #                           'LCOSINISTRO' => "/data/archive/science/", # Testing line
                            'LCOSINISTRO' => "/mfs-sba/engineering/",
                            'LCOFLOYDS' => "/mfs-sba/engineering/",
+                           'LCOMEROPE' => "/mfs-sba/engineering/",
+                           'LCOSPECTRAL' => "/mfs-sba/engineering/",
                            'LCOFLI' => "/mfs-sba/engineering/",
                         );
 
@@ -637,6 +643,12 @@ sub orac_calc_instrument_settings {
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                        'LCOFLOYDS' => { code => sub { $lcogt_con->( "lcofloyds", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
+                                  ORAC_LOOP => "flag -skip",
+                                  args => { $ukirt_args->() }, },
+                       'LCOMEROPE' => { code => sub { $lcogt_con->( "lcomerope", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
+                                  ORAC_LOOP => "flag -skip",
+                                  args => { $ukirt_args->() }, },
+                       'LCOSPECTRAL' => { code => sub { $lcogt_con->( "lcospectral", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                    );
