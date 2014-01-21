@@ -768,11 +768,6 @@ sub orac_determine_recipe_search_path {
   } elsif ($inst =~ /^PICARD/) {
     push( @path, File::Spec->catdir( $root, "PICARD" ) );
 
-  } elsif ($inst eq 'LCOSPECTRAL') {
-    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
-    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
-    push( @path, $imaging_root );
-
   } elsif ($inst eq 'LCOSBIG') {
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
@@ -1021,13 +1016,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $het_root );
     push( @path, $jsa_root );
     push( @path, $general_root );
-    # Setups for LCOSBIG and LCOSPECTRAL
-
-  } elsif ($inst eq 'LCOSPECTRAL') {
-    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
-    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
-    push( @path, $imaging_root );
-    push( @path, $general_root );
+    # Setups for LCOSBIG and other LCOGT instruments
 
   } elsif ($inst eq 'LCOSBIG') {
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
@@ -1223,9 +1212,6 @@ sub orac_determine_calibration_search_path {
   } elsif( $inst eq 'SPEX' ) {
     push( @path, File::Spec->catdir( $root, 'spex' ) );
     push( @path, $general_ir_root );
-
-  } elsif( $inst eq 'LCOSPECTRAL' ) {
-    push( @path, File::Spec->catdir( $root, 'lcospectral' ) );
 
   } elsif( $inst eq 'LCOSBIG' ) {
     push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
