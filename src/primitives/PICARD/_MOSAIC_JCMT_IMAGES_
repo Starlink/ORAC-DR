@@ -48,13 +48,17 @@ The following external tasks are used:
 
 =over 4
 
+=item CCDPACK
+
+MAKEMOS
+
 =item KAPPA
 
-MAKEMOS, WCSMOSAIC
+NDFCOPY, WCSMOSAIC
 
 =item ORAC-DR primitives:
 
-SCUBA2: _ADD_IMAGES_, _ALIGN_ARRAYS_, _FIND_IMAGE_STATISTICS_, _SHIFT_IMAGES_
+_ADD_IMAGE_COMPS_, _ALIGN_IMAGES_
 
 =back
 
@@ -192,23 +196,12 @@ if ($Grp->lastmember($Frm)) {
     $Frm->readhdr;
     $Frm->uhdr(%{$uhdr});
 
-    # If processing SCUBA-2 data, shift the images to a common origin
-    # if requested. Always do this for SCUBA-2 calibration sources as
-    # the position is known. Note the hdrval method should be used
-    # instead of hdr because the Frame may now contain multiple
-    # sources and so OBJECT might be in the subheaders.
-    my $info = "images";
-    if ( $Frm->hdr("INSTRUME") eq "SCUBA-2" &&
-	 ( $Frm->uhdr("RECPAR_REGISTER_IMAGES") ||
-	   $Cal->iscalsource($Frm->hdrval("OBJECT")) ) ) {
-      $Frm->uhdr("NSHIFT", 0);
-      _SHIFT_IMAGES_ VERBOSE=1
-      $info = "shifted images" if ($Frm->uhdr("NSHIFT") > 1);
-    }
-
     # Combine images
     if ($Frm->nfiles > 1) {
-      orac_print "mosaicking ".($Frm->nfiles)." $info...\n";
+      my $complist = ($Frm->hdr("INSTRUME") eq "SCUBA-2")
+	? "exp_time,weights" : "exp_time,eff_time";
+
+      orac_print "mosaicking ".($Frm->nfiles)." images...\n";
 
       # Write input list for wcsmosaic here to avoid realigning aligned
       # files
@@ -220,11 +213,12 @@ if ($Grp->lastmember($Frm)) {
 	# Only align SNR images if not using wcsmosaic
 	unless ($wcsmos) {
 	  orac_print "Aligning images...\n";
-	  _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=0 PARAMS=$params
+	  _ALIGN_IMAGES_ METHOD=$method REFIMAGE=! PARAMS=$params
 	}
       } else {
-	orac_print "Aligning images and other components...\n";
-	_ALIGN_ARRAYS_ METHOD=$method REFIMAGE=! COMP=1 PARAMS=$params
+	orac_print "Aligning images and ".join(", ", split(/,/,$complist))
+	  ." components...\n";
+	_ALIGN_IMAGES_ METHOD=$method REFIMAGE=! EXTEN=smurf COMPS=$complist PARAMS=$params
       }
 
       # Mosaic the given images
@@ -244,9 +238,7 @@ if ($Grp->lastmember($Frm)) {
       # Add up exposure times and other NDF components if present: Frm
       # contains the aligned files
       unless ($Frm->tagexists("snr")) {
-	my $comps = "EXP_TIME,";
-	$comps .= ($Frm->hdr("INSTRUME") eq "SCUBA-2") ? "WEIGHTS" : "EFF_TIME";
-	_ADD_IMAGES_ OUT=$out COMPS=$comps
+	_ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist
       }
       push(@aligned, $Frm->files);
     } else {
