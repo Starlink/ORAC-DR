@@ -1,0 +1,203 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_ADD_IMAGE_COMPS_ - Add together NDF components within 2-D images
+
+=head1 SYNOPSIS
+
+ _ADD_IMAGE_COMPS_ OUT=$out EXTEN=$exten COMPS=$comps
+
+ _ADD_IMAGE_COMPS_ OUT=$out EXTEN=$exten COMPS=$comps INLIST=$imagelistref
+
+=head1 DESCRIPTION
+
+This primitive adds up a list of given NDF components images and
+writes the sum to the corresponding component in the given output
+file. It is useful for performing pixel-based summations of
+quantities, such as exposure time, where no interpolation is
+permitted.
+
+The user specifies the names of one or more NDF components, as well as
+the name of the extension holding those NDFs. The components are
+assumed to be located under the C<.MORE.EXTEN> hierarchy where
+C<EXTEN> is specified below.
+
+The user may optionally supply a list of image bounds which be used to
+restrict the dimensions of the output sums. Note that this must match
+the output file, though there is no check to make sure it does so.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<BOUNDS>
+
+Reference to array of four values defining the bounds of the NDF
+section. Optional.
+
+=item B<COMPS>
+
+Comma-separated list of NDF components to add. No default.
+
+=item B<EXTEN>
+
+The name of the extension under the C<.more> component of the output
+file. No default.
+
+=item B<INLIST>
+
+Perl reference to array of image file names. Default list will be
+obtained from the current Frame object.
+
+=item B<OUT>
+
+Name of output file in which to write new NDF components corresponding
+to those given in the B<COMPS> parameter. This file must already exist
+and the existing version(s) of the given NDF components are
+deleted. No default.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA:
+
+ERASE, MSTATS
+
+=item ORAC-DR PRIMITIVES:
+
+_COMPONENT_EXISTS_FILE_
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The sum is carried out on a pixel-for-pixel basis so the images must
+be aligned to a common coordinate system before calling this
+primitive. See also L<_ALIGN_IMAGES_|_ALIGN_IMAGES_>.
+
+=item *
+
+Any existing component(s) with the same name(s) will be overwritten by
+the new version.
+
+=item *
+
+This step requires an existing output file to be specified and so
+should be carried out B<after> mosaicking.
+
+=item *
+
+The names of the extension and NDF components are not case sensitive.
+
+=item *
+
+Supplying an input file list is highly recommended unless the user has
+not already stored the output file in the current Frame.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008,2012-2014 the University of British Columbia. All
+Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Output file - no default
+my $outfile = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+orac_termerr "_ADD_IMAGE_COMPS_ must be given an output file name\n"
+  unless ($outfile);
+
+# Extension name
+my $exten = get_prim_arg($_PRIM_ARGS_, "EXTEN", undef);
+orac_termerr "_ADD_IMAGE_COMPS_ must be given an NDF extension name\n"
+  unless ($exten);
+
+# Name of components to add
+my $complist = get_prim_arg( $_PRIM_ARGS_, "COMPS", undef);
+orac_termerr "_ADD_IMAGE_COMPS_ must be given one or more NDF component names\n"
+  unless ($complist);
+
+# Split on commas to get list of components
+my @comps = split(/,/, $complist);
+
+# Optional input list
+my $inref = get_prim_arg( $_PRIM_ARGS_, "INLIST", undef );
+my @infiles = ( defined $inref && (ref($inref) eq "ARRAY") ) ?
+  @{$inref} : $Frm->files;
+
+# Number of input files - if there is only one file then do nothing
+if ( @infiles > 1 ) {
+  # Print extra info or not (default to yes)?
+  my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+  # Now see if image bounds have been given
+  my $bounds = get_prim_arg( $_PRIM_ARGS_, "BOUNDS", undef);
+  my $boundstr = "";
+  # Note that BOUNDS will be ignored if it is not an array ref, no error is thrown
+  if ( defined $bounds && (ref($bounds) eq "ARRAY") ) {
+    my @bounds = @{ $bounds };
+    # Check we have at least 4 numbers
+    orac_err "BOUNDS array contains too few elements (must be 4)\n"
+      if ( scalar(@bounds) < 4 );
+    $boundstr = "($bounds[0]:$bounds[2],$bounds[1]:$bounds[3])";
+  }
+
+  # Loop over each component
+  foreach my $comp ( @comps ) {
+    # Check that the chosen component exists in each file
+    my $fullcomp = join(".","more", $exten, $comp);
+    _COMPONENT_EXISTS_FILES_ COMPONENT=$fullcomp FILES=\@infiles
+    if ($_COMPONENT_EXISTS_FILES_{COMPFILES}) {
+      my @addfiles = @{$_COMPONENT_EXISTS_FILES_{COMPFILES}};
+      # Add component to end of output file name
+      my $out = join(".",$outfile, $fullcomp);
+      # Delete the existing version of the current component in the output file
+      $Mon{ndfpack_mon}->obeyw("erase","object=$out ok=true");
+      # Feedback for user
+      orac_print "Calculating total $comp... " if ($verbose);
+
+      # Use MSTATS with estimator=sum
+      $fullcomp .= $boundstr if ($boundstr ne "");
+      my $inlist = write_file_list(map { join(".",$_,$fullcomp) } @addfiles);
+      my $args = "in=^$inlist wlim=0 variance=f trim=false estimator=sum single=false out=$out";
+      $Mon{kappa_mon}->obeyw("mstats","$args");
+    }
+  }
+  orac_print "done\n" if ($verbose);
+}
