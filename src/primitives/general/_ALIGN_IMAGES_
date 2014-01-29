@@ -2,25 +2,27 @@
 
 =head1 NAME
 
-_ALIGN_ARRAYS_ - Align all images to a reference image
+_ALIGN_IMAGES_ - Align all images to a reference image
 
 =head1 SYNOPSIS
 
-_ALIGN_ARRAYS_ COMP=1 METHOD=BILINEAR
+ _ALIGN_IMAGES_
+
+ _ALIGN_IMAGES_ EXTEN=$exten COMPS=$complist
+
+ _ALIGN_IMAGES_ EXTEN=$exten COMPS=$complist METHOD=bilinear
 
 =head1 DESCRIPTION
 
-This primitive takes all the images within an ORAC-DR Frame object and
-aligns them to a common coordinate system as defined by a reference
-image. By default this primitive operates on files within the current
-Frm, but this can be over-ridden by supplying an optional Frm object.
+This primitive takes all the images within a Frame object and aligns
+them to a common coordinate system as defined by a reference image. By
+default this primitive operates on files within the current Frame, but
+this can be over-ridden by supplying an optional Frame object.
 
-The reference image may be given as an argument. Otherwise, if a group
-file exists, that is used as the reference, else the current reference
-image in the calibration system. If neither exists then the B<SKYREF>
-parameter is used to determine whether to create a reference image in
-the desired coordinate frame. If B<SKYREF> is 0 then the first frame
-is chosen as reference.
+The user may choose resampling or rebinning and can specify the
+relevant options supported by C<wcsalign>. Default behaviour is to use
+resampling with nearest-neighbour, taking the coordinate system from
+the first file in the Frame object.
 
 =head1 ARGUMENTS
 
@@ -28,17 +30,15 @@ The following arguments are supported:
 
 =over 4
 
-=item B<COMP>
+=item B<COMPS>
 
-A flag to denote whether to also align any NDFs within the parent
-file. Default is 0 (do not align). The only sub-NDFs currently
-supported are C<.MORE.SMURF.EXP_TIME> and
-C<.MORE.SMURF.WEIGHTS>. Others should be added as necessary.
+List of NDF components to align. Default behaviour is to align the
+data/variance components only.
 
 =item B<FRAME>
 
 An ORAC-DR Frame object with files to be aligned. If left unset, the
-current Frm is used.
+current Frame is used.
 
 =item B<METHOD>
 
@@ -56,7 +56,7 @@ A flag to determine whether to rebin or resample. Default is 0
 =item B<REFIMAGE>
 
 The name of the reference image to use for alignment in the SKY
-domain. If left blank, the primitive will call _GET_REFERENCE_IMAGE_.
+domain. Default is to use the first file in the Frame object.
 
 =item B<PARAMS>
 
@@ -64,12 +64,6 @@ Optional parameters if B<METHOD> is not C<NEAREST> or
 C<BILINEAR>. Should be specified as a string of 1 or 2 values
 (separated by a comma). See documentation for wcsalign for further
 details.
-
-=item B<SKYREF>
-
-A flag to denote whether to align the images to a celestial coordinate
-frame. The default is 0 (false) and the images will be aligned with
-either the group file if it exists or the first image in the Frame.
 
 =item B<VERBOSE>
 
@@ -90,16 +84,14 @@ WCSALIGN, WCSATTRIB
 
 =item ORAC-DR PRIMITIVES:
 
-_GET_REFERENCE_IMAGE_
+_COMPONENT_EXISTS_FILES_
 
 =back
 
 =head1 OUTPUT DATA
 
-The files in the given Frame object are tagged with C<aligned>.
-
-The name of the reference image is stored in the given Frame uhdr
-under C<REFIMAGE> (if not the default).
+The aligned files are stored in the given Frame object and tagged with
+C<aligned>.
 
 =head1 OUTPUT FILES
 
@@ -107,8 +99,15 @@ Creates an output image per input image with a suffix of C<_al>.
 
 =head1 NOTES
 
-There is currently no checking that other NDF components exist before
-alignment (if COMP = 1). This could cause the pipeline to stop working.
+=over 4
+
+=item *
+
+The NDF components must contain their own WCS information. The
+existence of each component is verified before proceeding but not
+whether it has WCS.
+
+=back
 
 =head1 AUTHOR
 
@@ -119,7 +118,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 Copyright (C) 2004-2007 Particle Physics and Astronomy Research
 Council.
-Copyright (C) 2004-2008,2012 the University of British Columbia. All
+Copyright (C) 2004-2008,2014 the University of British Columbia. All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -139,16 +138,15 @@ USA.
 
 =cut
 
-# Check arguments
-# Has the user passed in a Frame object?
+# Determine the Frame object to use
 my $Frmobj = get_prim_arg( $_PRIM_ARGS_, "FRAME", $Frm );
 
-# Check that the user has really passed in a Frm!
+# Check that it's really a Frame object
 unless ( UNIVERSAL::isa($Frmobj, "ORAC::Frame") ) {
-  orac_throw "Error: input FRAME to _ALIGN_ARRAYS_ is not an ORAC-DR Frm object\n";
+  orac_throw "Error: input FRAME is not an ORAC-DR Frame object\n";
 }
 
-# Has the Frame object already been aligned? Only proceed if not.
+# Proceed if the files in the Frame object have not already been aligned
 unless ( $Frmobj->tagexists("aligned") ) {
   # Rebin or resample? Default is resample (rebin = 0).
   my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0 );
@@ -156,34 +154,46 @@ unless ( $Frmobj->tagexists("aligned") ) {
   $rebin = ( $rebin ) ? "true" : "false";
 
   # Method for determining the output pixel values
-  my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "bilinear" ));
+  my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" ));
 
   # Set reference image if specified
-  my $refimage = get_prim_arg( $_PRIM_ARGS_, "REFIMAGE", "" );
+  my $refimage = get_prim_arg( $_PRIM_ARGS_, "REFIMAGE", "!" );
 
-  # Are we aligning images in a SKY frame? Default to yes.
-  my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1 );
+  # NDF extension and list of other components to align
+  my $exten = get_prim_arg( $_PRIM_ARGS_, "EXTEN", undef );
+  my $complist = get_prim_arg( $_PRIM_ARGS_, "COMPS", undef);
 
-  # Flag to decide whether to align other components
-  my $comp = get_prim_arg( $_PRIM_ARGS_, "COMP", 0 );
-
-  # PARAMS for wcsalign/wcsmosaic
+  # PARAMS for wcsalign
   my $params = get_prim_arg( $_PRIM_ARGS_, "PARAMS", undef );
   my $parstring = "[$params]" if (defined $params);
 
   # Verbose?
   my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
 
-  # If refimage not given then retrieve current reference image
-  if ( $refimage eq "" ) {
-    _GET_REFERENCE_IMAGE_ SKYREF=$skyalign
-    $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
-  }
-
   my ($inlist, $outlist, @out) = write_file_list_inout( $Frmobj, "_al" );
 
   my $nfiles = $Frmobj->nfiles;
   orac_print("Aligning $nfiles ".( ($nfiles == 1) ? "image" : "images")." to common coordinate frame...\n") if $verbose;
+
+  # Use a code-ref to set the WCS attributes for moving sources
+  my $set_moving = sub {
+    my $in = shift;
+    my $args = "ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'";
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+  };
+
+  # Check the desired coordinate system to see if it's a moving
+  # system: either check the reference image if given or use the first
+  # file in the Frame. If so then set the relevant attributes for all
+  # files in the Frame before aligning.
+  my $image = ($refimage ne "!") ? $refimage : $Frmobj->file;
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$image mode=get name=system(1)");
+  my ($ORAC_STATUS, $cosys) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
+  my $moving = 0;
+  if ($cosys =~ /azel|gappt/i) {
+    $set_moving->($_) foreach ($Frmobj->files);
+    $moving = 1;
+  }
 
   # Align data (and variance) components first
   my $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^$outlist in=^$inlist rebin=$rebin";
@@ -191,34 +201,25 @@ unless ( $Frmobj->tagexists("aligned") ) {
   $Mon{kappa_mon}->obeyw("wcsalign","$args");
 
   # If we are also aligning any sub-components then do that now
-  if ( $comp ) {
-    # Check if we have a moving object
-    my $moving = $Grp->uhdr("MOVING");
-    # Start with exp_time and weights - add more as necessary
-    my %known_comps = ( EXP_TIME => "exposure times",
-			WEIGHTS => "weights",
-		      );
-    foreach my $ndfcomp ( sort keys %known_comps ) {
-      orac_print "Aligning $known_comps{$ndfcomp}... " if $verbose;
-      orac_print "Setting attributes for moving sources... "
-	if ($moving && $verbose);
-      my $fullcomp = "more.smurf.$ndfcomp";
+  if ( $exten && $complist ) {
+    my @comps = split(/,/, $complist);
+    foreach my $ndfcomp ( @comps ) {
+      my $fullcomp = join(".","more", $exten, $ndfcomp);
+      orac_print "Aligning $ndfcomp ($fullcomp)... " if ($verbose);
       my $infiles = [$Frmobj->files];
       _COMPONENT_EXISTS_FILES_ COMPONENT=$fullcomp FILES=$infiles
       if ($_COMPONENT_EXISTS_FILES_{COMPFILES}) {
 	my @alignfiles = @{$_COMPONENT_EXISTS_FILES_{COMPFILES}};
-	my @in = map { $_.".$fullcomp"} @alignfiles;
+	my @in = map { join(".", $_, $fullcomp) } @alignfiles;
 	# Set SkyRefIs and AlignOffset attributes for moving sources.
-	# Note that the EXP_TIME and WEIGHTS components have separate
-	# WCS and must therefore be modified separately for moving sources
-	for my $i (0..$#in) {
-	  if ( $moving ) {
-	    my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
-	    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-	  }
+	# Note that the NDF components have separate WCS and must
+	# therefore be modified separately for moving sources
+	if ( $moving ) {
+	  orac_print "Setting attributes for moving sources... " if ($verbose);
+	  $set_moving->($_) foreach (@in);
 	}
 	$inlist = write_file_list( @in );
-	$outlist = write_file_list( map { $_.".$fullcomp"} @out );
+	$outlist = write_file_list( map { join(".", $_, $fullcomp) } @out );
 
 	$args = "ref=$refimage lbnd=! ubnd=! method=$method out=^$outlist in=^$inlist";
 	$args .= " params=$parstring" if ($params);
@@ -227,9 +228,6 @@ unless ( $Frmobj->tagexists("aligned") ) {
     }
   }
 
-  # Set uhdr variables to store the name of the reference image for
-  # sanity checking.
-  $Frmobj->uhdr("REFIMAGE",$refimage) if ($refimage ne "!");
   # Register new file names and tag
   $Frmobj->files( @out );
   $Frmobj->tagset("aligned");
