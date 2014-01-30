@@ -86,55 +86,54 @@ USA.
 =cut
 
 unless ( $Frm->tagexists("dark") ) {
+  orac_print "Flatfielding raw data... ";
 
-orac_print "Flatfielding raw data... ";
+  # Find the necessary files to flatfield - need to include the
+  # fastflats in the SUMMIT pipeline
+  my $incfastflats = ($Frm->uhdr("SUMMIT")) ? 1 : 0;
+  _RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats
+  my @files = @{ $_RETRIEVE_GOOD_DATA_FRAME_{FILES} }
+    if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
 
-my $incfastflats = ($Frm->uhdr("SUMMIT")) ? 1 : 0;
+  if (@files) {
+    # Create a temporary Frame object for defining output file names
+    my $Frmobj = $Frm->new();
+    $Frmobj->files(@files);
+    $Frmobj->readhdr;
 
-_RETRIEVE_GOOD_DATA_FRAME_ FASTFLATS=$incfastflats
-my @files = @{ $_RETRIEVE_GOOD_DATA_FRAME_{FILES} }
-  if (defined $_RETRIEVE_GOOD_DATA_FRAME_{FILES});
+    # Write list of input and output filenames to a temp file
+    my ($inlist, $outlist) = write_file_list_inout( $Frmobj, "_ff", 0 );
 
-if (@files) {
-  # Create a temporary Frame object for defining output file names
-  my $Frmobj = $Frm->new();
-  $Frmobj->files(@files);
-  $Frmobj->readhdr;
+    # Define a convenient temporary file name for the OUTFILES parameter
+    my $outfiles = "flatfield.$$";
 
-  # Write list of input and output filenames to a temp file
-  my ($inlist, $outlist) = write_file_list_inout( $Frmobj, "_ff", 0 );
+    # Flatfield the data
+    my $args = "in=^$inlist outfiles=$outfiles out=^$outlist";
+    $args .= " resist=".($Frm->uhdr("RECPAR_RESIST_CFG"))
+      if (defined $Frm->uhdr("RECPAR_RESIST_CFG"));
+    my $ffstatus = $Mon{smurf_mon}->obeyw("flatfield","$args");
 
-  # Define a convenient temporary file name for the OUTFILES parameter
-  my $outfiles = "flatfield.$$";
+    # Check flatfield status before continuing
+    if ($ffstatus == ORAC__OK) {
+      # Obtain the filenames corresponding to flatfielded data
+      my @out = read_file_list( $outfiles );
 
-  # Flatfield the data
-  my $args = "in=^$inlist outfiles=$outfiles out=^$outlist";
-  $args .= " resist=".($Frm->uhdr("RECPAR_RESIST_CFG"))
-    if (defined $Frm->uhdr("RECPAR_RESIST_CFG"));
-  my $ffstatus = $Mon{smurf_mon}->obeyw("flatfield","$args");
+      # Register new file names in current Frame
+      $Frm->force_product_update("flatfield", @out);
+      $Frm->tagset("flatfield");
+      $Frm->readhdr;
 
-  # Check flatfield status before continuing
-  if ($ffstatus == ORAC__OK) {
-    # Obtain the filenames corresponding to flatfielded data
-    my @out = read_file_list( $outfiles );
-
-    # Register new file names in current Frame
-    $Frm->force_product_update("flatfield", @out);
-    $Frm->tagset("flatfield");
-    $Frm->readhdr;
-
-    # Finished
-    orac_print "Flatfield applied to ".scalar(@out)." files\n";
-  } else{
-    orac_warn "Flatfield failed for some reason - marking frame as bad\n";
-    $Frm->isgood(0);
+      # Finished
+      orac_print "Flatfield applied to ".scalar(@out)." files\n";
+    } else {
+      orac_warn "Flatfield failed for some reason - marking frame as bad\n";
+      $Frm->isgood(0);
+    }
+    # Delete the outfiles file
+    unlink $outfiles if (-e $outfiles);
+  } else {
+    orac_warn "All flatfields bad - unable to process these files\n";
   }
-  # Delete the outfiles file
-  unlink $outfiles if (-e $outfiles);
-} else {
-  orac_warn "All flatfields bad - unable to process these files\n";
-}
-
 } else {
   _COPY_RAW_DATA_
 }
