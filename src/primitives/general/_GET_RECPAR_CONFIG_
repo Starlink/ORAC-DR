@@ -11,7 +11,7 @@ _GET_RECPAR_CONFIG_ - name of config file for SMURF routines
 =head1 DESCRIPTION
 
 This primitive checks for the existence of a specified configuration
-file used by C<SMURF> tasks. The user must specify the type of config
+file used by various tasks. The user must specify the type of config
 file through a string which matches the relevant recipe parameter. For
 example, if the recipe parameter is C<RESIST_CFG>, then B<CONFIG> must
 be C<RESIST>. See the recipe documentation for supported recipe
@@ -53,11 +53,11 @@ None.
 
 =item *
 
-The file must exist in the standard SMURF location
-(C<STARLINK_DIR/share/smurf>), the current working directory,
-C<ORAC_DATA_OUT> or a directory defined by C<CONFTYPE_CONFIG_DIR>,
-where C<CONFYTPE> is the config file type defined by the B<CONFIG>
-parameter above.
+The file must exist in a standard task-specific location
+(e.g. C<STARLINK_DIR/share/smurf> for SMURF tasks), the current
+working directory, C<ORAC_DATA_OUT> or a directory defined by
+C<CONFTYPE_CONFIG_DIR>, where C<CONFYTPE> is the config file type
+defined by the B<CONFIG> parameter above.
 
 =item *
 
@@ -72,7 +72,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011-2013 University of British Columbia. All Rights
+Copyright (C) 2011-2014 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -104,13 +104,26 @@ if ($conftype) {
     if (File::Spec->file_name_is_absolute( $RECPARS{$confname} )) {
       $config = $RECPARS{$confname};
     } else {
+      # Some tasks allow for multiple config files - return a suitable
+      # default location for those tasks if appropriate
+      my $get_config_location = sub {
+	my $config_type = shift;
+	my $default_dir;
+	if ($config_type =~ /makemap|resist|noise/i) {
+	  $default_dir = File::Spec->catdir($ENV{STARLINK_DIR},"share","smurf");
+	}
+	return $default_dir;
+      };
+
       # OK not an absolute path - check in current working dir, and
       # other known locations if necessary. Use the first match.
       use Cwd;
-      my @locations = ( File::Spec->catdir($ENV{STARLINK_DIR}, "share", "smurf"),
-			getcwd(), $ENV{ORAC_DATA_OUT}, $ENV{$conftype."_CONFIG_DIR"});
+      my $default_location = $get_config_location->($conftype);
+      my @locations = ($default_location) if (defined $default_location);
+      push( @locations, ( getcwd(), $ENV{ORAC_DATA_OUT},
+			  $ENV{$conftype."_CONFIG_DIR"} ) );
       foreach my $testlocation ( @locations ) {
-	my $new_config = File::Spec->catfile($testlocation, $RECPARS{$confname});
+	my $new_config = File::Spec->catfile($testlocation,$RECPARS{$confname});
 	if ( -e $new_config ) {
 	  $config = $new_config;
 	  last;
