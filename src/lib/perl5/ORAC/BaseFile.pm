@@ -82,6 +82,7 @@ sub new {
                                                           NoKeepArr => [],
 
                                                           Product => undef,
+                                                          Product_Comment => undef,
 
                                                           UHeader => {},
                                                           Tags => {},
@@ -988,6 +989,7 @@ sub nokeepArr {
 Set or return the "product" of the current File object.
 
   $self->product( 'Baselined cube' );
+  $self->product( 'reduced', 'White-light cube' );
   $product = $self->product;
 
 A "product" is a description of what the current Frame actually
@@ -1000,9 +1002,15 @@ sub product {
   my $self = shift;
   if ( @_ ) {
     $self->{Product} = shift;
+    if ( defined $_[0] ) {
+      $self->{Product_Comment} = shift;
+    } else {
+      $self->{Product_Comment} = "productID";
+    }
   }
   ;
-  return $self->{Product};
+  return ( $self->{Product}, $self->{Product_Comment} ) if wantarray(); # Array context
+  return $self->{Product};                           # Scalar context
 }
 
 =item B<tagexists>

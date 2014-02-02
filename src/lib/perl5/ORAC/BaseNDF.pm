@@ -144,13 +144,14 @@ sub collate_headers {
   # Insert the PRODUCT header. This comes from the $self->product
   # method. If the return value from this method is undefined, do not
   # insert the header.
-  my $product = $self->product;
+  my ( $product, $comment ) = $self->product;
+  $comment = defined( $comment ) ? $comment : 'Pipeline product';
   if ( defined( $product ) ) {
     my $prod = new Astro::FITS::Header::Item( Keyword => 'PRODUCT',
                                               Value   => $product,
-                                              Comment => 'Pipeline product',
+                                              Comment => $comment,
                                               Type    => 'STRING' );
-    push(@items, $prod );
+    push( @items, $prod );
   }
 
   $header->append( \@items );
@@ -397,7 +398,6 @@ sub sync_headers {
       my $header = new Astro::FITS::Header::NDF( File => $file );
       $header->append( $newheader );
       $header->writehdr( File => $file );
-
     }
   }
 }
