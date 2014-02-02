@@ -30,16 +30,18 @@ or neither.
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
 Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
-Council. All Rights Reserved.
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research Council.
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
 
 =cut
 
 # Bring in Starlink::HDSPACK
-use Starlink::HDSPACK qw/ create_hdsobj /;
+use Starlink::HDSPACK qw/ copobj create_hdsobj /;
 
 # Parse the parameter
 
@@ -180,11 +182,33 @@ foreach my $i (1 .. $nbeams) {
       $oep = $base."_oep".".beam$i";
    }
    $oes = $base."_oes".".beam$i";
+   my $status;
+
+   # This is a quick patch until something better can ve devised to propagate
+   # the HISTORY through OPTEXTRACT.  Switching the propagation flag in
+   # DSA_OUTPUT unsurprisingly leads to a SEGV when reshaping the array.
+
+   # First create a text file in case the comment is longer than 132
+   # characters permitted for the Interface mode of HISCOM.
+   my $hiscomment = "Figaro optextract image $in with profile $oep weighted to form spectrum $oes";
+   my $tmphis = new ORAC::TempFile( 1 );
+   my $hiscomfile = $tmphis->file;
+   open( COMMENTARY, ">$hiscomfile" );
+   print COMMENTARY  "$hiscomment\n";
+   close( COMMENTARY );
+   my $params = "mode=file file=$hiscomfile wrap";
+
    if ($mult == 1) {
       $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$oes");
+      $status = copobj( $in . ".HISTORY", $oes. ".HISTORY", $status );
+      orac_say "$status: Copied HISTORY from $in to $oes.";
+      $Mon{ "ndfpack_mon" }->obeyw( "hiscom", "ndf=$oes $params" );
+
    } else {
       $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$tmpfile");
-      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mult out=$oes");
+      $status = copobj( $in . ".HISTORY", $tmpfile. ".HISTORY", $status );
+      $Mon{ "ndfpack_mon" }->obeyw( "hiscom", "ndf=$tmpfile $params" );
+      $Mon{ 'kappa_mon' }->obeyw("cdiv", "in=$tmpfile scalar=$mult out=$oes");
    }
 
    $Mon{'ccdpack_reg'}->obeyw("wcsedit", "in=$oes mode=current frame=AXIS");
