@@ -229,6 +229,11 @@ sub findgroup {
 	 uc( $self->hdr( "OBSTYPE" ) ) ne 'DARK') {
 	 $hdrgrp .= "_" . $self->uhdr( "ORAC_FILTER" );
     }
+    # For biases and darks, add the molecule number
+    if ( uc( $self->hdr( "OBSTYPE" ) ) eq 'BIAS' or
+	 uc( $self->hdr( "OBSTYPE" ) ) eq 'DARK') {
+	 $hdrgrp .= "_" . $self->hdr( "MOLNUM" );
+    }
     # Add DATE-OBS if we *are* doing a science observation,
     # to ensure that they are not combined into groups
     if ( uc( $self->hdr( "OBSTYPE" ) ) eq 'EXPOSE' ) {
