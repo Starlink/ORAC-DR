@@ -599,7 +599,7 @@ sub orac_declare_location {
   if ( open(my $fh, ">", $locfile) ) {
     print $fh $ENV{ORAC_DATA_OUT} ."\n";
     close($fh);
-    chmod  S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH, $locfile;
+    chmod  S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, $locfile;
   } else {
     print STDERR "Unable to write file to locate DR ($locfile) : $!\n";
   }
