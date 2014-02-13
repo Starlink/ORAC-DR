@@ -64,7 +64,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011 University of British Columbia. All Rights
+Copyright (C) 2011,2014 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -93,14 +93,24 @@ my ($ORAC_STATUS, $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 # Assume the source is at (0, 0) initially, retrieve the SkyRef
 # attribute for non-offset systems
 my ($x, $y) = (0.0, 0.0);
-if ( lc($skyrefis) eq "ignored" ) {
-  # Otherwise use the SkyRef attribute
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$image mode=get name=skyref");
-  ($ORAC_STATUS, my $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  if ( defined $skyref ) {
-    ($x, $y) = split( /,\s+/, $skyref);
+if ( lc($skyrefis) eq "ignored" || $Frm->hdr("TRACKSYS") =~ /app/i ) {
+  # BASE is in degrees, offset is in arcsec
+  my $x0 = $Frm->hdr("BASEC1") + $Frm->hdr("MAP_X")/3600.0;
+  my $y0 = $Frm->hdr("BASEC2") + $Frm->hdr("MAP_Y")/3600.0;
+
+  # Galactic coordinates can use these values as they are
+  if ($Frm->hdr("TRACKSYS") =~ /^gal/i) {
+    $x = $x0;
+    $y = $y0;
   } else {
-    orac_err "Unable to determine a suitable map centre - assuming (0,0)\n";
+    # RA/Dec need to be converted to HH:MM:SS,DD:MM:SS
+    use Astro::Coords;
+    my $coords = Astro::Coords->new( type => $Frm->hdr("TRACKSYS"),
+				     ra => $x0, dec => $y0,
+				     units => 'degrees'
+				   );
+    $x = $coords->ra;
+    $y = $coords->dec;
   }
 }
 
