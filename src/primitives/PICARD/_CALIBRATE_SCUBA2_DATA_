@@ -63,7 +63,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2013 University of British Columbia. All Rights
+Copyright (C) 2013-2014 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -83,11 +83,16 @@ USA.
 
 =cut
 
+# Check that the input data are from SCUBA-2
+if ($Frm->hdr("INSTRUME") ne "SCUBA-2") {
+  orac_termerr "Input data are not from SCUBA-2\n";
+}
+
 # Skip if the data are already calibrated
 return ORAC__OK if ($Frm->uhdr("DATA_UNITS") =~ /mjy/i);
 
 # Intro message
-orac_print "\nCalling _CALIBRATE_SCUBA2_DATA_: calibrate data using standard or derived FCF\n", "yellow";
+orac_print "\nCalling _CALIBRATE_SCUBA2_DATA_: calibrate data using standard, given or derived FCF\n", "yellow";
 
 # Select data with a particular tag if given (and it exists)
 my $tag = get_prim_arg($_PRIM_ARGS_, "TAG", undef);
@@ -111,21 +116,29 @@ if (defined $Frm->uhdr("PICARD_RESULTS")) {
 my $caltype = get_prim_arg($_PRIM_ARGS_, "UNITS", "BEAM");
 
 # Should the data be calibrated using derived or standard FCFs?
-my $usefcf = (defined $Frm->uhdr("RECPAR_USEFCF"))
-  ? $Frm->uhdr("RECPAR_USEFCF") : 0;
+my $usefcf = ($Frm->uhdr("RECPAR_USEFCF") || $Frm->uhdr("RECPAR_FCF"))
+  ? 1 : 0;
 
 # Calibrate using derived FCF is requested
 if ( $usefcf ) {
-  $caltype = $Frm->uhdr("RECPAR_USEFCF_CALTYPE")
-    if (defined $Frm->uhdr("RECPAR_USEFCF_CALTYPE"));
+  $caltype = $Frm->uhdr("RECPAR_FCF_CALTYPE")
+    if (defined $Frm->uhdr("RECPAR_FCF_CALTYPE"));
 
-  my $fcftype = "fcf_".lc($caltype);
-  my $fcf = $picard_results{$fcftype};
-  if (!$fcf) {
-    orac_warn "Unknown calibration type, $caltype: falling back on BEAM\n";
-    $caltype = "BEAM";
-    $fcftype = "fcf_beam";
+  # If no FCF has been given and there are existing results then the
+  # FCF is obtained from those
+  my $fcf;
+  if (!$Frm->uhdr("RECPAR_FCF") && %picard_results) {
+    my $fcftype = "fcf_".lc($caltype);
     $fcf = $picard_results{$fcftype};
+    if (!$fcf) {
+      orac_warn "Unknown calibration type, $caltype: falling back on BEAM\n";
+      $caltype = "BEAM";
+      $fcftype = "fcf_beam";
+      $fcf = $picard_results{$fcftype};
+    }
+  } else {
+    # Otherwise use the specified FCF
+    $fcf = $Frm->uhdr("RECPAR_FCF");
   }
   if (defined $fcf) {
     orac_print "Calibrating data using derived $caltype FCF...\n";
