@@ -62,12 +62,8 @@ if (defined $_FILE_ARC_{GROUP}) {
 # for humans and one for the product tagging so that it has
 # a normal prefix.
 my $in = $Frm->file;
-my $grouparc = $Grp->raw . "_arc";
 $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$arc" );
 orac_print "$in copied to $arc\n";
-
-my ( undef, $out ) = $Frm->inout( "_arc" );
-$Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
 
 # Store the arc as the current frame.
 $Frm->file($arc);
@@ -84,26 +80,29 @@ $Cal->arcindex->add($Frm->file, {%{$Frm->hdr}, %{$Frm->uhdr}});
 # Report the processing status.
 orac_print $Frm->file . " added to index file.\n\n";
 
-# Create the preview images and create the PRODUCT keyword.
+# Create the preview images and create the PRODUCT keyword.  As we
+# are working with a Frm not a Grp file, we need to make a temporary
+# copy of the arc to the Grp file as expected by the science-archive
+# wrapdr script.  The suffix is arbitrary.  _TAG_AS_REPRESENTATIVE_
+# will copy from this again to the desired group file with the _arc
+# suffix.
 my $comment = "Arc spectrum";
 my $product = "arc";
+my $temp = $Grp->raw . "_temp";
 {
    my $Grp = new $Grp;
-   $Grp->file( $out );
-   _TAG_AS_REPRESENTATIVE_ UPDATE=0 GROUP=1 PRODUCT=$product SUFFIX=rsp COMMENT=$comment DISPLAY=0
-
-# Take a copy of the product frame renaming for the science-archive
-# wrapper script.
-   my $arc = $Frm->file;
-   $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$arc out=$grouparc" );
-
-   $Grp->file( $grouparc );
+   $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$arc out=$temp" );
+   $Grp->file( $temp );
+   _TAG_AS_REPRESENTATIVE_ UPDATE=1 GROUP=1 FILE=$arc PRODUCT=$product SUFFIX=arc COMMENT=$comment DISPLAY=0
    $Grp->product( $product, $comment );
 
 # Update the headers with the PRODUCT.
    $Grp->allow_header_sync( 1 );
    $Grp->sync_headers( 1 );
    $Grp->allow_header_sync( 0 );
+
+   $Grp->file( $temp );
+   $Grp->erase;
 }
 
 orac_print "\n";
