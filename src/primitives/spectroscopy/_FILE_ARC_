@@ -58,10 +58,16 @@ if (defined $_FILE_ARC_{GROUP}) {
    $arc = "arc_".$num;
 }
 
-# Take a copy of the current frame using a more-identifiable name.
+# Take a copy of the current frame using a more-identifiable name
+# for humans and one for the product tagging so that it has
+# a normal prefix.
 my $in = $Frm->file;
+my $grouparc = $Grp->raw . "_arc";
 $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$arc" );
 orac_print "$in copied to $arc\n";
+
+my ( undef, $out ) = $Frm->inout( "_arc" );
+$Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
 
 # Store the arc as the current frame.
 $Frm->file($arc);
@@ -81,12 +87,23 @@ orac_print $Frm->file . " added to index file.\n\n";
 # Create the preview images and create the PRODUCT keyword.
 my $comment = "Arc spectrum";
 my $product = "arc";
-_TAG_AS_REPRESENTATIVE_ UPDATE=0 GROUP=0 PRODUCT=$product SUFFIX=rsp COMMENT=$comment DISPLAY=0
-$Frm->product( $product, $comment );
+{
+   my $Grp = new $Grp;
+   $Grp->file( $out );
+   _TAG_AS_REPRESENTATIVE_ UPDATE=0 GROUP=1 PRODUCT=$product SUFFIX=rsp COMMENT=$comment DISPLAY=0
+
+# Take a copy of the product frame renaming for the science-archive
+# wrapper script.
+   my $arc = $Frm->file;
+   $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$arc out=$grouparc" );
+
+   $Grp->file( $grouparc );
+   $Grp->product( $product, $comment );
 
 # Update the headers with the PRODUCT.
-$Frm->allow_header_sync( 1 );
-$Frm->sync_headers( 1 );
-$Frm->allow_header_sync( 0 );
+   $Grp->allow_header_sync( 1 );
+   $Grp->sync_headers( 1 );
+   $Grp->allow_header_sync( 0 );
+}
 
 orac_print "\n";
