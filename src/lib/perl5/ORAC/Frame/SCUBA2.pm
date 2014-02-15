@@ -409,7 +409,8 @@ sub file_from_bits {
 =item B<file_from_bits_extra>
 
 Method to return C<extra> information to be used in the file name. For
-SCUBA-2 this is a string representing the wavelength.
+SCUBA-2 this is a string representing the wavelength (see the
+C<subsystem_id> method.
 
   my $extra = $Frm->file_from_bits_extra;
 
@@ -417,8 +418,7 @@ SCUBA-2 this is a string representing the wavelength.
 
 sub file_from_bits_extra {
   my $self = shift;
-
-  return ( $self->hdr("FILTER") =~ /^8/ ) ? "850" : "450";
+  return $self->subsystem_id();
 }
 
 =item B<pattern_from_bits>
@@ -484,6 +484,20 @@ sub number {
     $number = -1;
   }
   return $number;
+}
+
+=item B<subsystem_id>
+
+Method to return the subsystem identifier. For
+SCUBA-2 this is a string representing the wavelength.
+
+  my $ssid = $self->subsystem_id();
+
+=cut
+
+sub subsystem_id {
+  my $self = shift;
+  return ( $self->hdr("FILTER") =~ /^8/ ) ? "850" : "450";
 }
 
 =item B<flag_from_bits>

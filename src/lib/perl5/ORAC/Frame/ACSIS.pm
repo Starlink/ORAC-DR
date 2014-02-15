@@ -220,9 +220,7 @@ methods when constructing the Group filename.
 
 sub file_from_bits_extra {
   my $self = shift;
-  my (@subsysnrs) = $self->subsysnrs;
-  # for hybrid mode return the first subsystem number
-  return $subsysnrs[0];
+  return $self->subsystem_id();
 }
 
 =item B<flag_from_bits>
@@ -378,6 +376,20 @@ sub number {
     $number = -1;
   }
   return $number;
+}
+
+=item B<subsystem_id>
+
+Subsystem identifier. For ACSIS this is the first subsystem
+number.
+
+=cut
+
+sub subsystem_id {
+  my $self = shift;
+  my (@subsysnrs) = $self->subsysnrs;
+  # for hybrid mode return the first subsystem number
+  return $subsysnrs[0];
 }
 
 =back
