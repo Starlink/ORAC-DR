@@ -184,6 +184,50 @@ sub asn_id {
   return;
 }
 
+=item B<product_id>
+
+Retrieves the product identifier. This is a combination
+of the current product and the subsystem.
+
+ $productID = $obj->product_id();
+
+For a Group the product ID is calculated from the first
+Frame in the group.
+
+An optional argument can be supplied to override the
+internal product() value. This is sometimes required
+when the product is about to be updated in the object
+but has not yet been updated.
+
+ $productID = $obj->product_id( $product );
+
+=cut
+
+sub product_id {
+  my $self = shift;
+  my $product = shift;
+
+  # Get the current product if we did not have an override
+  $product = $self->product()
+    unless defined $product;
+
+  # Get the subsystem identifier
+  my $subsys;
+  if ($self->is_frame) {
+    $subsys = $self->subsystem_id();
+  } else {
+    # Could be a subsystem_id() method in ORAC::Group
+    # if we feel that the concept is useful. If a subsystem_id()
+    # method is added to the base class of ORAC::Frame we should
+    # add it to ORAC::Group
+    my @all = $self->allmembers;
+    my $Frm = shift(@all);
+    $subsys = $Frm->subsystem_id();
+  }
+
+  return $product . "_" . $subsys;
+}
+
 =back
 
 =head1 SEE ALSO
