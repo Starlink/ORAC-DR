@@ -66,11 +66,11 @@ The following external tasks are used by this primitive:
 
 =item KAPPA:
 
-DIV, FLIP, MATHS, NDFCOPY, ROTATE, SETTITLE, WCSFRAME, WCSMOSAIC
+DIV, MATHS, NDFCOPY, SETTITLE
 
 =item ORAC-DR PRIMITIVES:
 
-_FIND_IMAGE_STATISTICS_
+_FIND_IMAGE_STATISTICS_, _MAKE_MOSAIC_FPLANE_
 
 =back
 
@@ -108,7 +108,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011-2012 the University of British Columbia. All
+Copyright (C) 2011-2014 the University of British Columbia. All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -130,39 +130,15 @@ USA.
 
 $Frm->tagset("display_fastflat_in");
 # Check for a solution before attempting to mosaic
-#unless ($Frm->tagexists("resp_new")) {
 unless ($Frm->uhdr("RESP_NEW")) {
-  orac_warn "No responsivities to display\n";
+  orac_warn "No new responsivities to display\n";
   return ORAC__OK;
 }
-#$Frm->tagretrieve("resp_old");
-#my $prev = $Frm->file;
 my $prev = $Frm->uhdr("RESP_OLD");
 
 # Derive the list of current/previous filenames - the assumption here
 # is that each Frame in the Group contains 1 file per subarray
 my @files = map { $_->files } $Grp->members;
-
-# Reference subarray
-my $short = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? 1 : 0;
-my $refsub =  ($short) ? "s4d" : "s8b";
-
-# Find out which file corresponds to the reference subarray, redefine
-# the reference if not present.
-my %ref;
-foreach my $file (@files) {
-  # Never trust the filenames...
-  my $fitshdr = new Astro::FITS::Header::NDF( File => $file );
-  $ref{lc($fitshdr->value("SUBARRAY"))} = $file;
-}
-my $ref = $ref{$refsub};
-unless ($ref) {
-  # Pick first one...
-  my @subs = sort keys %ref;
-  $refsub = $subs[0];
-  $ref = $ref{$refsub};
-}
-my %refimage = ( refsub => $refsub );
 
 orac_print "\nCreating combined responsivity images...";
 
@@ -171,7 +147,7 @@ $Frm->files(@files);
 $Frm->tagset("flat");
 
 # Create mosaic for current/previous (PROPOSED/CURRENT)
-my $wave = ($short) ? "450 um" : "850 um";
+my $wave = ($Frm->uhdr("ORAC_FILTER") =~ /450/) ? "450 um" : "850 um";
 foreach my $soln ("PROPOSED", "CURRENT") {
   my ($ext, $newsoln, $suffix);
   if ($soln eq "PROPOSED") {
@@ -186,8 +162,7 @@ foreach my $soln ("PROPOSED", "CURRENT") {
     $suffix = "_respold";
   }
 
-  $refimage{refimage} = $ref . ".more.smurf.$ext";
-  _MAKE_MOSAIC_FPLANE_ SUFFIX=$suffix SMURF=$ext REFERENCE=\%refimage
+  _MAKE_MOSAIC_FPLANE_ SUFFIX=$suffix SMURF=$ext
   my $fpmos = $Frm->file;
 
   my $title = "$newsoln $wave solution";
