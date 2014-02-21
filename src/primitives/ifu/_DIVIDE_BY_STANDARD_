@@ -85,6 +85,8 @@ if ($Frm->uhdr("PAIR_COMPLETE")) {
 
   my ( $in, $out );
   my $iscube = 0;
+  my $suffix = "dbs";
+  my ( $ORAC_STATUS, @dims );
   if( $frame ) {
 
     # We need to get $in set first in order to set the output suffix..
@@ -92,19 +94,19 @@ if ($Frm->uhdr("PAIR_COMPLETE")) {
 
     # Find out the dimensions of the input Frame.
     $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-    my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+    ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
 
     # The output file's suffix depends on the file's dimensionality.
     if( defined( $dims[2] ) ) {
       # cube
-      ( $in, $out ) = $Frm->inout( "_cube_dbs" );
+      ( $in, $out ) = $Frm->inout( "_cube_" . $suffix );
       $iscube = 1;
     } elsif( defined( $dims[1] ) ) {
       # image
-      ( $in, $out ) = $Frm->inout( "_im_dbs" );
+      ( $in, $out ) = $Frm->inout( "_im_" . $suffix );
     } else {
       # spectrum
-      ( $in, $out ) = $Frm->inout( "_sp_dbs" );
+      ( $in, $out ) = $Frm->inout( "_sp_" . $suffix );
     }
 
   } else {
@@ -113,18 +115,18 @@ if ($Frm->uhdr("PAIR_COMPLETE")) {
 
     # Find the dimensions of the input Group.
     $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-    my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+    ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
 
     if( defined( $dims[2] ) ) {
       # cube
-      $out = $Grp->raw . "_cube_dbs";
+      $out = $Grp->raw . "_cube_" . $suffix;
       $iscube = 1;
     } elsif( defined( $dims[1] ) ) {
       # image
-      $out = $Grp->raw . "_im_dbs";
+      $out = $Grp->raw . "_im_" . $suffix;
     } else {
       # spectrum
-      $out = $Grp->raw . "_sp_dbs";
+      $out = $Grp->raw . "_sp_" . $suffix;
     }
   }
 
@@ -181,18 +183,33 @@ if ($Frm->uhdr("PAIR_COMPLETE")) {
     $Display->display_data( $Grp ) if defined $Display;
   }
 
-  # Set the PRODUCT keyword for the cube divided by the standard.
+  # Set the PRODUCT keyword for the reformatted data divided by the standard.
   if ( $iscube && ! $frame ) {
-     $Grp->product( "dbscube", "Cube divided by standard" );
+     my $product = "dbs";
+     my ( $comment, $preview_suffix );
+     if ( defined( $dims[2] ) ) {
+        $comment = "Cube divided by standard blackbody";
+      } elsif ( defined( $dims[1] ) ) {
+        $comment = "White-light image divided by standard blackbody";
+        $preview_suffix = $suffix . "_rimg";
+     } else {
+        $comment = "Spectrum divided by standard blackbody";
+        $preview_suffix = $suffix . "_rsp";
+     }
+     $Grp->product( $product, $comment );
 
      # Update the headers with the PRODUCT.
      $Grp->allow_header_sync( 1 );
      $Grp->sync_headers( 1 );
      $Grp->allow_header_sync( 0 );
+
+# Create the preview images and create the jsa:product keyword within them.
+     if ( ! defined( $dims[2] ) ) {
+        _TAG_AS_REPRESENTATIVE_ UPDATE=0 GROUP=1 PRODUCT=$product SUFFIX=$preview_suffix COMMENT=$comment
+     }
   }
 
   # Tidy up output.
   orac_print "\n";
 }
-
 
