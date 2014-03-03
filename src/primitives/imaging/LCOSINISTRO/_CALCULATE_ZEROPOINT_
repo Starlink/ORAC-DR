@@ -1,0 +1,547 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_ZEROPOINT_ - Calculate various image quality
+statistics based on an input catalogue.
+
+=head1 DESCRIPTION
+
+This primitive calculates image quality statistics based on an input
+catalogue. This catalogue is typically the output from either
+C<Starlink::Extractor> or C<Starlink::Autoastrom>, so that object
+morphology information is available for calculations.
+
+This primitive calculates the mean axial ratio of bright sources, the
+average object diameter converted to K-band equivalent, the sky
+brightness, the limiting magnitude, and the instrumental zero point.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = LOGICAL (Given)
+
+If true, use the current Group file for sky brightness
+calculations. Otherwise, use the current Frame. [0]
+
+=item IMAGE_CATALOGUE = C<Astro::Catalog> object (Given)
+
+=item MAGNITUDE_TYPE = CHARACTER (Given)
+
+The magnitude type to use when  calculating zeropoint. This can be any
+of the MAG_* output parameters from SExtractor. [MAG_ISO]
+
+=item MATCHED_CATALOGUE = C<Astro::Catalog> object (Given)
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Files results with the Calibration system. FWHM is obtained with the
+fwhm() method, axial ratio is obtained with the axial_ratio() method,
+sky brightness is obtained with the sky_brightness() method, limiting
+magnitude is obtained with the limiting_mag() method, and the zero
+point is obtained with the zeropoint() method.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+None.
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+Astro::Catalog.
+
+=head1 AUTHORS
+
+Tim Lister <tlister@lcogt.net>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Las Cumbres Observatory Global Telescope Network.
+All Rights Reserved.
+
+=cut
+
+# Arcseconds->radians
+use constant DAS2R => 4.8481368110953599358991410235794797595635330237270e-6;
+
+my $localDEBUG = 0;
+
+# Find out if we want to do statistics on the current Group or Frame
+# object.
+my $group = $_CALCULATE_ZEROPOINT_{GROUP};
+my $Obj;
+$group = defined( $group ) ? $group : 0;
+if( $group ) {
+  $Obj = $Grp;
+} else {
+  $Obj = $Frm;
+}
+
+# See if a limiting magnitude was passed
+my $cat_limmag = $_CALCULATE_ZEROPOINT_{CATLIMITMAG};
+$cat_limmag = defined( $cat_limmag ) ? $cat_limmag : 25.0;
+print "Using $cat_limmag as the limiting magnitude\n" if $localDEBUG;
+
+# Set up a bunch of variables for later use.
+my ( $axialratio, $ext_ellipticity, $fwhm, $k_fwhm, $k_fwhm_zen, $orient );
+my ( $zeropoint_variance, $limiting_magnitude, $extcor, $sky_value, $sky_value_variance );
+my ( $sky_brightness, @zps, $zeropoint, $zeropoint_src, $transparency, $this_m1 );
+my %calhash;
+my $num_objs = 0;
+
+# Obtain the airmass from the FITS headers. Find the approximate
+# mean airmass from the start and end values. This should be
+# adequate unless it is a long integration with the source crossing
+# the meridian.
+my $airmass;
+my $amstart = $Obj->uhdr( "ORAC_AIRMASS_START" );
+my $amend   = $Obj->uhdr( "ORAC_AIRMASS_END" );
+$airmass = 0.5 * ( $amstart + $amend );
+orac_print ("Mean airmass=$airmass\n");
+
+# Only process if astrometry succeeded
+if ( $Obj->uhdr( "ASTROMETRY_ADDED" ) ) {
+    my $in = $Obj->file;
+    my $catalogue_name = $in;
+    if ( $Obj->uhdr( "QUICK_LOOK" ) == 1 ) {
+      $catalogue_name =~ s/02_bp_ff/10_cat.fits/;
+    } else {
+      $catalogue_name =~ s/02_bp_ff/90_cat.fits/;
+    }
+    my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+
+    # Minimum number of objects needed to do histogram-based stats.
+    my $minhist = 20;
+
+    # Get the magnitude type, defaulting to MAG.
+    my $magnitude_type = $_CALCULATE_ZEROPOINT_{MAGNITUDE_TYPE} || 'MAG';
+
+    # Obtain the filter.
+    my $filter = $Frm->uhdr("ORAC_FILTER");
+    my $sloanfilter = 0;
+    if ( $filter =~ /[ugriz]p$/i ) {
+      print "Sloan filter detected\n" if $localDEBUG;
+      chop($filter);
+      $filter = 'P' . $filter;
+      $sloanfilter = 1;
+    } elsif ( $filter =~ /zs$/i ) {
+      print "PS/Sloan zs filter detected\n" if $localDEBUG;
+      $filter = 'Pz';
+      $sloanfilter = 1;
+    } elsif ( $filter =~ /w$/ or $filter =~ /solar$/i or $filter =~ /clear$/i or $filter =~ /air$/i ) {
+      print "PS w, clear, air or solar filter detected\n" if $localDEBUG;
+      $filter = 'SO';
+      $sloanfilter = 1;
+    }
+    my $waveband = new Astro::WaveBand( Filter => $filter );
+
+    # Get the catalogue containing all of the objects detected in the image.
+    my $image_catalogue = new Astro::Catalog( Format => 'LCOGTFITSTable',
+					      File => $cat_file,
+					      ReadOpt => { Filter => $waveband } );
+    my $origin = $image_catalogue->origin();
+    print "Srcs Origin=$origin\n" if $localDEBUG;
+    my $num = $image_catalogue->sizeof();
+    print "Num src objects=$num\n" if $localDEBUG;
+
+    # And get the standard star catalogue
+
+    # Get the RA and Dec of the tracking centre for this frame.
+    my $ra = $Frm->uhdr( "ORAC_RA_BASE" );
+    my $dec = $Frm->uhdr( "ORAC_DEC_BASE" );
+
+    my $fc = new Astro::Coords( ra => $ra,
+				dec => $dec,
+				units => 'degrees',
+				type => 'J2000',
+			      );
+
+    # Obtain pixelscale.
+    _GET_PLATE_SCALE_
+    my $plate_scale = ( $_GET_PLATE_SCALE_{PLATESCALE} || 0 );
+
+    # Get image dimensions
+    my ( $xdim, $ydim );
+    if ( defined $Frm->uhdr( "ORAC_X_UPPER_BOUND" ) &&
+	 defined $Frm->uhdr( "ORAC_X_LOWER_BOUND" ) ) {
+       $xdim = $Frm->uhdr( "ORAC_X_UPPER_BOUND" ) - $Frm->uhdr( "ORAC_X_LOWER_BOUND" ) + 1;
+    }
+    if ( defined $Frm->uhdr( "ORAC_Y_UPPER_BOUND" ) &&
+	 defined $Frm->uhdr( "ORAC_Y_LOWER_BOUND" ) ) {
+       $ydim = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" ) - $Frm->uhdr( "ORAC_Y_LOWER_BOUND" ) + 1;
+    }
+
+    # Assemble command string for AJP's FINDASSM program
+    my $findassm_params = "findassm";
+    $findassm_params = $findassm_params . " -c " . $fc->ra->degrees . " " . $fc->dec->degrees;
+    $findassm_params = $findassm_params . " -bs " . int($xdim * $plate_scale) . " " . int($ydim * $plate_scale);
+
+    if ( $sloanfilter ) {
+      $findassm_params = $findassm_params . " -F " . $filter . 'PrPis';
+    } else {
+      $findassm_params = $findassm_params . " -F " . $filter . 'RIs';
+    }
+    $findassm_params = $findassm_params . " -l LandoltFit,SnFit,StetsonFit,SDSSPTFit,SDSSSouthFit,Tycho2Fit,ApassCat";
+    $findassm_params = $findassm_params . " -L -Vb " . $cat_limmag . " -Vf -5.000";
+    my $stdscatfile = 'systemed_assm.cat';
+    $findassm_params = $findassm_params . " > " . $stdscatfile;
+    print "#lma:f $findassm_params\n" if $localDEBUG;
+    system($findassm_params);
+    if ( $? != 0 ) {
+      printf "child exited with value %d\n", $? >> 8;
+    }
+    # Read AJP's ASSM catalog
+    my $stds_catalogue = new Astro::Catalog( Format => 'ASSM', File => $stdscatfile );
+    $origin = $stds_catalogue->origin();
+    print "Stds Origin=$origin\n" if $localDEBUG;
+    $num = $stds_catalogue->sizeof();
+    print "Num std objects=$num\n" if $localDEBUG;
+
+    # Cross matching radius
+    my $radius = 3.0 * DAS2R;
+
+    my $minisoarea = 60.0;
+    my $maxisoarea = 8888.0;
+    my $ellipmax = 0.5;
+    _GET_SATURATION_LEVEL_
+    my $fluxmax = ( $_GET_SATURATION_LEVEL_{SATURATION} || 45000.0);
+
+    my $match = ( defined( $stds_catalogue ) ? 1 : 0 );
+
+    if( defined( $image_catalogue ) and $match ) {
+
+    #    use Data::Dumper;
+    #    print Dumper $stds_catalogue;
+      my $stdpos;
+      my @catmatchitems;
+
+      foreach my $stdstar ( $stds_catalogue->stars ) {
+        $stdpos = $stdstar->coords();
+        print "Stdpos=" . $stdpos->ra->degrees . " " . $stdpos->dec->degrees ."\n" if $localDEBUG;
+        foreach my $star ( $image_catalogue->stars ) {
+	  next if $star->quality;
+          next if ( $star->coords->distance( $stdpos ) > $radius );
+  #   print "Passed quality & distance\n" if $localDEBUG;
+          next if ( ! defined( $star->morphology->area ) );
+          next if ( defined( $star->morphology->ellipticity ) &&
+		    $star->morphology->ellipticity->value > $ellipmax );
+          next if ( $star->morphology->area < $minisoarea );
+          next if ( $star->morphology->area > $maxisoarea );
+	  print "Star=". $star->id() . " X=". $star->x() . " Y=". $star->y() .
+              " RA=" . $star->ra() . " Dec=" . $star->dec() . "\n" if $localDEBUG;
+	  my $stdmag = $stdstar->get_magnitude( $filter );
+	  print "Inst, Std V, Qual=" . $star->get_magnitude( $filter ) .
+              ", " . $stdmag . ", " . $star->quality() . "\n" if $localDEBUG;
+
+  #	      print "# Filters before: " . $star->what_filters() . "\n" if $localDEBUG;
+          my $existstdmag = $star->get_flux_quantity( waveband => $filter, type => 'MAG_CATALOG');
+	  if ( $localDEBUG and defined( $existstdmag) ) {
+	    print "Existing stdmag=" . $existstdmag ."\n";
+          }
+          if ( ! defined( $existstdmag) ) {
+            print "Adding std mag\n" if $localDEBUG;
+	    # Add catalog mags
+            my $stdflux = new Astro::Flux( $stdmag, 'MAG_CATALOG', $filter );
+	    # Retrieve existing Fluxes
+            my $fluxes =  $star->fluxes( );
+	    # Add in new matched standard star mag.
+	    $fluxes->pushfluxes( $stdflux );
+	    # Push back into star object, replacing existing Fluxes
+            $star->fluxes( $fluxes, 1 );
+	  }
+  #	      print Dumper $star->fluxes() if $star->id() == 9;
+  #	      print "# Filters  after: " . $star->what_filters() . "\n" if $localDEBUG;
+	  print  "New Inst, Std V=" . $star->get_flux_quantity( waveband => $filter, type => 'MAG') .
+	    ", " . $star->get_flux_quantity( waveband => $filter, type => 'MAG_CATALOG') . "\n" if $localDEBUG;
+	  push @catmatchitems, $star;
+          $num_objs++;
+      }
+    }
+    orac_print ("Cross match complete with $num_objs matched.\n");
+
+    if( $num_objs > 0 ) {
+
+      # Determine the sky background values.
+      my $params = "ndf=" . $Obj->file . " clip=[2,3,3]";
+      $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+      ( my $ORAC_STATUS, $sky_value ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      ( $ORAC_STATUS, $sky_value_variance ) = $Mon{'kappa_mon'}->get( "stats",  "sigma" );
+
+      # Set up defaults for photometric values.
+      $zeropoint = 0;
+      $zeropoint_variance = 0;
+      $limiting_magnitude = 0;
+      $sky_brightness = 0;
+      $transparency = 0;
+      $extcor = 0;
+
+
+      # Obtain the mean extinction coefficient and instrumental ZP.
+      _GET_FILTER_PARAMETERS_
+      my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
+      $this_m1 = ( $_GET_FILTER_PARAMETERS_{M1INSTZP} || 22.0 );
+
+      # Derive the extinction correction using the IR standard of
+      # one airmass.
+      $extcor = ( $airmass - 1.0 ) * $extinction;
+      orac_print ("Ext. correction, coeff= $extinction, $extcor\n");
+
+      # Obtain the exposure time.
+      my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+      # Set up various arrays and hashes that will hold magnitude
+      # information.
+      my @image_mags;
+      my @standard_mags;
+      my %zp_hist;
+      my %stdmag_hist;
+      my %imgmag_hist;
+
+      # Stepsizes for the zeropoint and limiting magnitude histograms.
+      my $zp_step = 0.01;
+      my $lm_step = 0.1;
+
+      # Now, go through the list of objects that had catalogue magnitudes
+      # and calculate the zeropoint.
+      foreach my $catmatchitem ( @catmatchitems ) {
+
+	  my $st_mag = $catmatchitem->get_flux_quantity( waveband => $waveband, type => 'MAG_CATALOG' );
+	  # Get the magnitude in the current waveband.
+	  my $im_mag = $catmatchitem->get_flux_quantity( waveband => $waveband, type => $magnitude_type );
+
+          # Skip if the magnitude is fainter than 10 (which denotes
+          # something bad).
+  #	 next if $im_mag > 10;
+
+          # Correct the measured magnitude for exposure time.
+  #	 $im_mag += 2.5 * log10( $exptime );
+
+          # Correct the measured magnitude for extinction.
+          $im_mag -= $extcor;
+
+          # Push the magnitudes onto the arrays, correcting the
+          # magnitude from the EXTRACTOR-based catalogue.
+          push( @image_mags, $im_mag );
+          push( @standard_mags, $st_mag );
+          push( @zps, $st_mag - $im_mag );
+	  print $st_mag - $im_mag . " " . $st_mag . " " . $im_mag . "\n" if $localDEBUG;
+          $zp_hist{ int( ( $st_mag - $im_mag ) / $zp_step ) * $zp_step }++;
+      }
+
+      if( $#image_mags != -1 ) {  # start photometric calculations.
+
+        # Calculate the zeropoint from our histogram.
+        my $max_zp = 0;
+        my $max_zp_bin = 0;
+        foreach my $zp_bin ( sort keys %zp_hist ) {
+          if( $zp_hist{$zp_bin} > $max_zp ) {
+            $max_zp = $zp_hist{$zp_bin};
+            $max_zp_bin = $zp_bin;
+          }
+        }
+        my $first = $max_zp_bin - ( 2 * $zp_step );
+        my $second = $max_zp_bin - $zp_step;
+        my $third = $max_zp_bin + $zp_step;
+        my $fourth = $max_zp_bin + ( 2 * $zp_step );
+        if( ! defined( $zp_hist{"$first"} ) ) {
+          $zp_hist{"$first"} = 0;
+        }
+        if( ! defined( $zp_hist{"$second"} ) ) {
+          $zp_hist{"$second"} = 0;
+        }
+        if( ! defined( $zp_hist{"$third"} ) ) {
+          $zp_hist{"$third"} = 0;
+        }
+        if( ! defined( $zp_hist{"$fourth"} ) ) {
+          $zp_hist{"$fourth"} = 0;
+        }
+        my $total_zps = $zp_hist{"$first"} + $zp_hist{"$second"} + $zp_hist{"$max_zp_bin"} + $zp_hist{"$third"} + $zp_hist{"$fourth"};
+        my $sum_zp = $zp_hist{"$first"}  * $first
+		   + $zp_hist{"$second"} * $second
+		   + $zp_hist{"$max_zp_bin"} * $max_zp_bin
+		   + $zp_hist{"$third"}  * $third
+		   + $zp_hist{"$fourth"} * $fourth
+		   ;
+        $zeropoint = $sum_zp / $total_zps;
+
+        # Calculate the mean difference and the variance in the
+        # difference between the standard magnitudes and the measured
+        # magnitudes.
+        my $sum = 0;
+        foreach my $zp ( @zps ) {
+          $sum += $zp;
+        }
+        my $avg = $sum / ( $#zps + 1 );
+        my $sumsqu = 0;
+        foreach my $zp ( @zps ) {
+          $sumsqu += ( $zp - $avg ) * ( $zp - $avg );
+        }
+        $zeropoint_variance = sqrt( $sumsqu / ( $#zps + 1 ) );
+
+        # Calculate magnitudes for all detected objects.
+        foreach my $item ( $image_catalogue->stars ) {
+          my $im_mag = $item->get_flux_quantity( waveband => $filter,
+						 type => $magnitude_type );
+          next if $im_mag > 50;
+
+          # Correct for exposure time, extinction, and zeropoint.
+#	   $im_mag += 2.5 * log10( $exptime );
+          $im_mag -= $extcor;
+          $im_mag += $zeropoint;
+
+          $imgmag_hist{ int( $im_mag / $lm_step ) * $lm_step }++;
+        }
+
+        my $maximgmag = 0;
+        my $maximgmagbin = 0;
+        foreach my $imgmag_bin ( sort keys %imgmag_hist ) {
+          if( $imgmag_hist{$imgmag_bin} > $maximgmag ) {
+            $maximgmag = $imgmag_hist{$imgmag_bin};
+            $maximgmagbin = $imgmag_bin;
+          }
+        }
+
+        $first = $maximgmagbin - ( 2 * $lm_step );
+        $second = $maximgmagbin - $lm_step;
+        $third = $maximgmagbin + $lm_step;
+        $fourth = $maximgmagbin + ( 2 * $lm_step );
+        if( ! defined( $imgmag_hist{"$first"} ) ) {
+          $imgmag_hist{"$first"} = 0;
+        }
+        if( ! defined( $imgmag_hist{"$second"} ) ) {
+          $imgmag_hist{"$second"} = 0;
+        }
+        if( ! defined( $imgmag_hist{"$third"} ) ) {
+          $imgmag_hist{"$third"} = 0;
+        }
+        if( ! defined( $imgmag_hist{"$fourth"} ) ) {
+          $imgmag_hist{"$fourth"} = 0;
+        }
+        my $sum_imgmags = $imgmag_hist{"$first"} + $imgmag_hist{"$second"} + $imgmag_hist{"$maximgmagbin"} + $imgmag_hist{"$third"} + $imgmag_hist{"$fourth"};
+        my $sum_imgmag = $imgmag_hist{"$first"}  * $first
+		       + $imgmag_hist{"$second"} * $second
+		       + $imgmag_hist{"$maximgmagbin"} * $maximgmagbin
+		       + $imgmag_hist{"$third"}  * $third
+		       + $imgmag_hist{"$fourth"} * $fourth
+		       ;
+        $limiting_magnitude = $sum_imgmag / $sum_imgmags;
+
+        # Now to calculate the sky level in magnitudes/arcsec^2.
+        my $counts_per_square_arcsecond = $sky_value / ( $plate_scale * $plate_scale );
+        $sky_brightness = $zeropoint - 2.5 * log10( $counts_per_square_arcsecond); # /
+#						     $exptime );
+
+# Calculate transparency
+	my $run_dmag = $this_m1 - ($zeropoint - 2.5 * log10( $exptime ));
+	$transparency = 10.0 ** (-0.4*$run_dmag);
+      } # end photometric calculations.
+    }
+    if( $num_objs > 0 ) {
+
+	 # Create printable versions.
+	 my $p_num_obj = sprintf( "%d", $#zps + 1 );
+	 my $p_zp = sprintf( "%.3f", $zeropoint );
+     #  my $p_zp_hist = sprintf( "%.3f", $diff_hist_avg );
+	 my $p_zp_var = sprintf( "%.3f", $zeropoint_variance );
+	 my $p_limmag = sprintf( "%.3f", $limiting_magnitude );
+	 my $p_ext = sprintf( "%.3f", $extcor );
+	 my $p_sky_value = sprintf( "%.2f", $sky_value );
+	 my $p_sky_value_variance = sprintf( "%.2f", $sky_value_variance );
+	 my $p_sky_brightness = sprintf( "%.2f", $sky_brightness );
+	 my $p_transparency = sprintf( "%.3f", $transparency );
+	 my $p_m1zp = sprintf( "%.3f", $this_m1 );
+
+	 my $p_filter = $Frm->uhdr( "ORAC_FILTER" );
+	 my $p_exptime = sprintf( "%.1f", $Frm->uhdr( "ORAC_EXPOSURE_TIME" ) );
+	 my $p_object = $Frm->uhdr( "ORAC_OBJECT" );
+
+	 # Output statistics to the user.
+	 orac_print( "Image information for " .
+		     ( $group ? $Grp->file : $Frm->file ) .
+		     ":\n", "blue" );
+	 orac_print( " Filter:	  $p_filter\n", "blue" );
+     #  orac_print( " Exposure time: $p_exptime seconds\n", "blue" );
+	 orac_print( " Object name:   $p_object\n", "blue" );
+	 orac_print( "\n" );
+	 orac_print( "Image quality statistics on " .
+		     ( $group ? $Grp->file : $Frm->file ) .
+		     ":\n", "blue" );
+	 orac_print( " Number of objects used in calculations: $num_objs\n", "blue" );
+	 if( $num_objs < $minhist ) {
+	   orac_print( " Number of objects fewer than $minhist. Standard mean calculated.\n", "white on_red" );
+	 }
+	 orac_print( "\n" );
+	 orac_print( "Photometric statistics on " .
+		     ( $group ? $Grp->file : $Frm->file ) .
+		     ":\n", "blue" );
+	 orac_print( " Number of objects used in calculations: $p_num_obj\n", "blue" );
+
+	 orac_print( " Frame zero-point: $p_zp +/- $p_zp_var\n", "blue" );
+	 orac_print( " Limiting magnitude:      $p_limmag\n", "blue" );
+	 orac_print( " Background sky level:    $p_sky_value +/- $p_sky_value_variance counts.\n",
+		     "blue" );
+	 orac_print( " Sky brightness:	    $p_sky_brightness magnitudes/arcsec^2.\n",
+		     "blue" );
+	 orac_print( " Transparency:	    $p_transparency [0-1].\n",
+		     "blue" );
+	 orac_print( "  Extinction coefficient of $p_ext was used.\n", "blue" );
+	 orac_print( "  Instrumental zero-point of $p_m1zp was used.\n", "blue" );
+	 $zeropoint_src = '_CALCULATE_ZEROPOINT_-$Revision: 6338 $';
+	 $zeropoint_src =~ s/\$Revision: /r/;
+	 $zeropoint_src =~ s/ \$//;
+    } else {
+	orac_warn "Not enough objects were found to determine image zeropoint statistics.\n";
+	$extcor = -99.0;
+	$limiting_magnitude = -99.0;
+	$sky_value = -99.0;
+	$sky_value_variance = -99.0;
+	$sky_brightness = -99.0;
+	$zeropoint = -99.0;
+	$zeropoint_variance = -99.0;
+	$transparency = -99.0;
+	$zeropoint_src = 'N/A';
+    }
+    }  # end num_objs > 0
+} else { # bad astrometry
+    orac_warn "Astrometric fit was bad so unable to determine image zeropoint statistics.\n";
+    $num_objs = -99;
+    $extcor = -99.0;
+    $limiting_magnitude = -99.0;
+    $sky_value = -99.0;
+    $sky_value_variance = -99.0;
+    $sky_brightness = -99.0;
+    $zeropoint = -99.0;
+    $zeropoint_variance = -99.0;
+    $transparency = -99.0;
+    $zeropoint_src = 'N/A';
+}
+# File the whole shebang with the calibration system.
+%calhash = ( %{$Obj->hdr},
+	     AIRMASS => $airmass,
+	     EXTINCTION => $extcor,
+	     FILTER => $Frm->uhdr( "ORAC_FILTER" ),
+	     MAG_LIMIT => $limiting_magnitude,
+	     NCALOBJS => $num_objs,
+	     SKY_VALUE => $sky_value,
+	     SKY_VALUE_ERROR => $sky_value_variance,
+	     SKY_VALUE_MAG => $sky_brightness,
+	     TRANSPARENCY => $transparency,
+	     ZEROPOINT => $zeropoint,
+	     ZEROPOINT_ERROR => $zeropoint_variance,
+	     ZEROPOINT_SRC => $zeropoint_src,
+	   );
+$Cal->zeropointindex->add( $Obj->file, \%calhash );

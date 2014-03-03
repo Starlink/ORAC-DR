@@ -1,0 +1,337 @@
+#+
+# Name:
+#    _CREATE_DERIVED_PRODUCTS_
+#
+# Purpose:
+#    Steers processing for CREATE_DERIVED_PRODUCTS recipe.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive control processing for CREATE_DERIVED_PRODUCTS recipe through
+#    steering headers listed below.
+#
+# Steering Headers:
+#    ADD_ASTROMETRY = LOGICAL
+#       Whether or not automated astrometry is to occur.  This equates to
+#       argument DOASTROM.
+#
+# Arguments:
+#    DOASTROM = LOGICAL (Given)
+#       Whether or not to perform astrometry.  [1]
+#
+# Notes:
+#    -  This primitive is suitable for imaging cameras.
+#    -  Processing only occurs for object frames.
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#    RAS: Rachel Street (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2011-2012 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+use File::Copy;
+use ORAC::Version;
+#$VERSION = ORAC::Version->getVersion();
+#my @vers = ORAC::Version->oracversion_global; #getVersion();
+#print "Version=$vers[0], $vers[1], $vers[2]\n";
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ) {
+#    # Allow syncing
+#      my $prevsync = $Frm->allow_header_sync;
+#      $Frm->allow_header_sync(1);
+#      $Frm->sync_headers(1);
+      my $file = $Frm->file(1);
+
+      _ADD_PIPELINE_VERSION_
+
+      my $bias_used = $Cal->bias;
+# Check for too long length (67 is max allowed by SUBPAR)
+      if ( length($bias_used) > 50 ) {
+        my @bias_values = split('/', $bias_used);
+        $bias_used = $bias_values[-1];
+        $bias_used =~ s/[.]sdf//;
+#       print "bias=$bias_used\n";
+      }
+      my $dark_used = $Cal->dark;
+# Check for too long length (67 is max allowed by SUBPAR)
+      if ( length($dark_used) > 50 ) {
+        my @dark_values = split('/', $dark_used);
+        $dark_used = $dark_values[-1];
+        $dark_used =~ s/[.]sdf//;
+#       print "dark=$dark_used\n";
+      }
+      my $flat_used = $Cal->flat;
+# Check for too long length (67 is max allowed by SUBPAR)
+      if ( length($flat_used) > 50 ) {
+        my @flat_values = split('/', $flat_used);
+        $flat_used = $flat_values[-1];
+        $flat_used =~ s/[.]sdf//;
+#       print "flat=$flat_used\n";
+      }
+      my $shut_used = 'N/A'; #$Cal->shut;
+      my $mask_used = $Cal->mask;
+# Check for too long length (67 is max allowed by SUBPAR)
+      if ( length($mask_used) > 50 ) {
+        my @bpm_values = split('/', $mask_used);
+        $mask_used = $bpm_values[-1];
+        $mask_used =~ s/[.]sdf//;
+#        print "mask=$mask_used\n";
+      }
+      my $fringe_used = 'N/A'; #$Cal->fringe;
+#      print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
+
+# Determine processing steps done
+      my $ovscan_correct = 0;
+      $ovscan_correct = $Frm->uhdr( "OVSCAN_CORRECT")
+                           if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
+      my $bias_removed = 0;
+      $bias_removed = $Frm->uhdr( "BIAS_REMOVED")
+                           if(defined $Frm->uhdr( "BIAS_REMOVED"));
+      my $dark_removed = 0;
+      $dark_removed = $Frm->uhdr( "DARK_REMOVED")
+                           if(defined $Frm->uhdr( "DARK_REMOVED"));
+      my $ovscan_removed = 0;
+      $ovscan_removed = $Frm->uhdr( "OVSCAN_REMOVED")
+                           if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
+      my $flat_removed = 0;
+      $flat_removed = $Frm->uhdr( "FLAT_REMOVED")
+                           if(defined $Frm->uhdr( "FLAT_REMOVED"));
+      my $fringe_removed = 0;
+      $fringe_removed = $Frm->uhdr( "FRINGE_REMOVED")
+                           if(defined $Frm->uhdr( "FRINGE_REMOVED"));
+
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATOV VALUE=$ovscan_correct, COMMENT=Status|flag|for|overscan|correction
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATBI VALUE=$bias_removed, COMMENT=Status|flag|for|bias|frame|correction
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATDA VALUE=$dark_removed, COMMENT=Status|flag|for|dark|frame|correction
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATTR VALUE=$ovscan_removed, COMMENT=Status|flag|for|overscan|trimming
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFL VALUE=$flat_removed, COMMENT=Status|flag|for|flat|frame|correction
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFR VALUE=$fringe_removed, COMMENT=Status|flag|for|fringe|frame|correction
+
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDBIAS VALUE=$bias_used, COMMENT=Id.|of|bias|frame|used
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDDARK VALUE=$dark_used, COMMENT=Id.|of|dark|frame|used
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFLAT VALUE=$flat_used, COMMENT=Id.|of|flat|frame|used
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDSHUT VALUE=$shut_used, COMMENT=Id.|of|shutter|corr.|frame|used
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDMASK VALUE=$mask_used, COMMENT=Id.|of|mask|file|used
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFRNG VALUE=$fringe_used, COMMENT=Id.|of|fringe|frame|used
+
+#
+       _GET_SATURATION_LEVEL_
+       my $satlevel = $_GET_SATURATION_LEVEL_{SATURATION};
+       _SET_FILE_FITS_ITEM_ FILE=$file KEY=SATURATE VALUE=$satlevel, COMMENT=[ADU]|Saturation|level|used
+
+      my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+      my $x2 = $Frm->uhdr( "ORAC_X_UPPER_BOUND" );
+      my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+      my $y2 = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" );
+      my $trimsec = '\'[' . $x1 . ':' . $x2 . ',' . $y1 . ':' . $y2 . ']\'';
+#      print "DBG: TRIMSEC=$trimsec\n";
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=TRIMSEC VALUE=$trimsec, STRING=True
+
+# Determine image statistics
+      _CLIPPED_STATS_MEDIAN_
+      my $skymean = $_CLIPPED_STATS_MEDIAN_{MEAN};
+      my $skymedian = $_CLIPPED_STATS_MEDIAN_{MEDIAN};
+      my $skysigma = $_CLIPPED_STATS_MEDIAN_{SIGMA};
+
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1MEAN VALUE=$skymean COMMENT=[counts]|Mean|of|frame|background
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1MEDIAN VALUE=$skymedian COMMENT=[counts]|Median|of|frame|background
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1SIGMA VALUE=$skysigma COMMENT=[counts]|Std.dev|of|frame|background
+
+#      use Data::Dumper ; print Dumper $Cal->skybrightness;
+# Set PSF parameter values from computed statistics
+      my $skybrt = -99.0;
+      my $extinct = -99.0;
+      my $l1zp = -99.0;
+      my $l1zperr = -99.0;
+      my $l1zpsrc = 'N/A';
+      if (defined $Cal->zeropoint ) {
+        my $dqc = $Cal->zeropoint;
+# Dereference row/hash reference of zeropoint params
+        $skybrt = $dqc->{'SKY_VALUE_MAG'};
+        $extinct = $dqc->{'EXTINCTION'};
+        $l1zp = $dqc->{'ZEROPOINT'};
+        $l1zperr = $dqc->{'ZEROPOINT_ERROR'};
+        $l1zpsrc = $dqc->{'ZEROPOINT_SRC'};
+      }
+#      print "FWHM=$fwhm, Elong=$elong, ElongPA=$elongPA\n";
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1SKYBRT VALUE=$skybrt COMMENT=[mag/arcsec^2]|Estimated|sky|brightness
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PHOTOM VALUE=$extinct COMMENT=[mags]|Estimated|extinction
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ZP VALUE=$l1zp COMMENT=[mags]|Instrumental|zeropoint
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ZPERR VALUE=$l1zperr COMMENT=[mags]|Error|on|Instrumental|ZP
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1ZPSRC VALUE=$l1zpsrc STRING=True COMMENT=Source|of|Instrumental|ZP
+
+# Set Data quality params and flags. Now spun-off to seperate primitive.
+
+      _SET_QC_FLAGS_
+
+# Fix incorrect PROPIDs
+      my $tagid = '';
+
+      my $propid = $Frm->hdr( "PROPID" );
+      if ( $propid =~ /^LCODDT/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/LCODDT/DDTELP/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+      } elsif ( $propid =~ /^LCOELP-106/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/LCOELP-106/LCOELP-006/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+      } elsif ( $propid =~ /^LCOEPO04/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/LCOEPO04/LCOEPO4/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+      } elsif ( $propid =~ /^Scheduler/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/Scheduler Testing/LCOSchedulerTest/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+      } elsif ( $propid =~ /^calibrate/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/calibrate/LCOEngineering/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+      } elsif ( $propid =~ /^LCOXXX-NNN/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/LCOXXX-NNN/LCOEPO4/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+        $tagid = 'LCOEPO';
+        print "Wrong value of TAGID found, changing to $tagid.\n";
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=TAGID VALUE=$tagid COMMENT=Time|Allocation|Group|ID|(corrected)
+      } elsif ( $propid =~ /^N\/A/ ) {
+        print "Incorrect PROPID ($propid) found, fixing.\n";
+        $propid =~ s/N\/A/LCOEngineering/;
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=PROPID VALUE=$propid COMMENT=Proposal|ID|(corrected)
+        $tagid = 'LCOGT';
+        print "Wrong value of TAGID found, changing to $tagid.\n";
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=TAGID VALUE=$tagid COMMENT=Time|Allocation|Group|ID|(corrected)
+      }
+# Write back into hdr part of $Frm object
+      if ( $tagid ne '' ) {
+        $Frm->uhdr( "TAGID", $tagid);
+      }
+      $Frm->uhdr( "PROPID", $propid);
+
+# Check if PROPID is known to the archive
+      _CHECK_PROPID_
+
+# Set public/private flag and release date
+# If we don't have a value already (due to corrections above), fetch from the
+# header. If we still don't have a value after fetching, set to 'LCOGT'
+      if ( $tagid eq '' ) {
+        $tagid = $Frm->hdr( "TAGID");
+      }
+      if ( $tagid eq '' ) {
+        $tagid = 'LCOGT';
+      }
+      my $pubdate;
+      my $pubprivate;
+      my $frmdate;
+      $frmdate =  $Frm->hdr( "ORACDATETIME");
+      if ( $tagid =~ /^LCOEPO/ ) {
+        $pubprivate = 'public';
+        $pubdate = $frmdate;
+      } elsif ( $propid =~ /^ENG|Engineering/ ) {
+        $pubprivate = 'private';
+        $pubdate =  '9999-12-31T23:59:59';
+      } else {
+        $pubprivate = 'private';
+
+        my $year = substr($frmdate, 0, 4);
+        $pubdate = $year+1 . substr($frmdate, 4, );
+      }
+      orac_print "Access rights: $pubprivate $frmdate $pubdate\n";
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBPRV VALUE=$pubprivate COMMENT=Public|or|private|data?
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBDAT VALUE=$pubdate COMMENT=[UTC]|Date|the|frame|becomes|public
+
+      my $siteid = $Frm->hdr( "SITEID");
+
+      if ( $siteid ne "bpl" ) {
+        orac_print "SiteID=$siteid, setting to OPERATIONAL\n";
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='OPERATIONAL'
+      } else {
+        orac_print "SiteID=$siteid, setting to COMMISSIONING\n";
+        _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='COMMISSIONING'
+      }
+
+
+# Set recipes used
+      my $framerecipe = $Frm->uhdr("ORAC_DR_RECIPE"); #recipe;
+#      orac_print "Recipe=$framerecipe\n";
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$framerecipe COMMENT=Processing|Recipes|required/used
+      my $postprocrecipe = 'timecorrect';
+      _SET_FILE_FITS_ITEM_ FILE=$file KEY=PPRECIPE VALUE=$postprocrecipe COMMENT=Post-Processing|Recipes|required/used
+#      use Data::Dumper ; print Dumper $Frm;
+
+# Set the ASN_TYPE to prevent warning in _CREATE_GRAPHIC_FROM_FILE_
+      $Frm->uhdr( "ASN_TYPE", 'obs');
+
+# A little callback
+      my $create_graphic = sub {
+        my $out = shift;
+#          _CREATE_GRAPHIC_FROM_FILE_ FILE=$out . "_small" XRES=256 YRES=256 TYPE=PNG
+          _CREATE_GRAPHIC_FROM_FILE_ FILE=$out XRES=512 YRES=512 TYPE=PNG
+      };
+
+# Create graphic file
+      $create_graphic->( $file );
+      my $pngfile = $file . '.png';
+      my $renamefile = $pngfile;
+      if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+        $renamefile =~ s/02_bp_ff/10/;
+      } else {
+        $renamefile =~ s/02_bp_ff/90/;
+      }
+      unlink $renamefile;
+#      print "New filename=$pngfile $renamefile\n";
+      rename $pngfile, $renamefile;
+
+# If we have a final destination environment var. set, move files there.
+      my $final_dest;
+      if ( defined $ENV{FINAL_DATA_OUT} ) {
+        $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
+        if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+          $final_dest = File::Spec->catfile($final_dest, "quicklook");
+          mkdir $final_dest;
+        }
+        move($renamefile, $final_dest);
+        orac_print "Moving ". $renamefile . " to final data place=" . $final_dest . "\n";
+      }
+# Convert FITS file
+#      my $wcs = $Frm->read_wcs( $file );
+#      $wcs->Set("System=ICRS");
+      _CONVERT_TO_FITS_
+      my $fitsfile = $_CONVERT_TO_FITS_{FILENAME};
+      $renamefile = $fitsfile;
+      if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+        $renamefile =~ s/02_bp_ff/10/;
+      } else {
+        $renamefile =~ s/02_bp_ff/90/;
+      }
+      unlink $renamefile;
+#      print "New filename=$fitsfile $renamefile\n";
+      rename $fitsfile, $renamefile;
+
+# Call timecorrect code
+      my $tcorr_path = File::Spec->catfile( $ENV{ORAC_DIR},"bin","timecorrect.py");
+      my @tcorr_args = ($tcorr_path, $renamefile);
+      system(@tcorr_args);
+      if ( $? != 0 ) {
+        printf "child exited with value %d\n", $? >> 8;
+      }
+# If we have a final destination environment var. set, move files there.
+      if ( defined $ENV{FINAL_DATA_OUT} ) {
+        move($renamefile, $final_dest);
+        orac_print "Moving ". $renamefile . " to final data place=" . $final_dest . "\n";
+        if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
+          $renamefile =~ s/10.fits/10_cat.fits/;
+        } else {
+          $renamefile =~ s/90.fits/90_cat.fits/;
+        }
+        orac_print "Moving ". $renamefile . " to final data place=" . $final_dest . "\n";
+        move($renamefile, $final_dest);
+      }
+    }
