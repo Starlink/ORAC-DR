@@ -444,8 +444,15 @@ sub orac_calc_instrument_settings {
     $finaldir = File::Spec->catfile( "/mnt/images/daydirs", $cameracode, $localut, "oracproc");
     _mkdir_lcogt($finaldir);
 
+    my $rawdir;
+    if ($cameracode =~ /^fl/) {
+        $rawdir = File::Spec->catfile( $dataroot, $sitecode, $cameracode, $localut, "preproc" );
+    } else {
+        $rawdir = File::Spec->catfile( $dataroot, $sitecode, $cameracode, $localut, "raw" );
+    }
+
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root, $cameracode ),
-             ORAC_DATA_IN => File::Spec->catfile( $dataroot, $sitecode, $cameracode, $localut, "raw" ),
+             ORAC_DATA_IN => $rawdir,
              ORAC_DATA_OUT => $outdir,
              ORAC_SUN => $sun,
              ORAC_PERSON => $auth,
