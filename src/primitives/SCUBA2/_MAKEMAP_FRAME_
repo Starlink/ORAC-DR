@@ -49,8 +49,9 @@ The following arguments are supported:
 
 Type of makemap configuration file to use. The choice is determined by
 the type of object observed (and hence by the calling recipe). May be
-C<BRIGHT>, C<EXTENDED> or C<FAINT> which use the normal, extended or
-faint versions of the makemap configuration file. Default is C<FAINT>.
+C<BRIGHT>, C<EXTENDED>, C<FAINT> or C<JSA_GENERIC> which use the normal,
+extended, faint or JSA generic versions of the makemap configuration
+file. Default is C<FAINT>.
 
 =item B<INFILES>
 
@@ -70,6 +71,11 @@ C<ITER>.
 =item B<SYSTEM>
 
 Coordinate system in which to create map. Default is C<TRACKING>.
+
+=item B<JSA_TILES>
+
+Can be used to override the C<JSA_TILES> uhdr which determines
+whether or not MAKEMAP should be instructed to make JSA tiles.
 
 =back
 
@@ -117,7 +123,8 @@ The Frame uhdr entries C<SKY_SUBTRACTION> and C<EXTINCTION> are set to
 
 =head1 OUTPUT FILES
 
-Creates a single output file with a C<_fmos> suffix.
+Creates a single output file with a C<_fmos> suffix or multiple files
+if C<JSA_TILES> is enabled (by uhdr or argument).
 
 =head1 AUTHOR
 
@@ -182,6 +189,11 @@ my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
 # already contain the fastflats).
 my $incfastflats = (($Frm->uhdr("SUMMIT") && !$Frm->tagexists("flatfield")) ||
 		     $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") ? 1 : 0;
+
+# Making JSA tiles?
+my $jsa_tiles = get_prim_arg($_PRIM_ARGS_, 'JSA_TILES', undef)
+             // $Frm->uhdr('JSA_TILES')
+             // 0;
 
 my @infiles;
 my $suffix = "_fmos";
@@ -263,7 +275,8 @@ my $bbm ="!";
 
 # Since the map bound are being checked and the bounds returned
 # explicitly to keep the output file below 2 GB, just set tiledims to
-# null
+# null.  Note that makemap ignores this parameter when JSATILES
+# is set, so it should be mostly harmless in JSA tile mode.
 my $tiledims = "!";
 
 # Define makemap argument list - mandatory arguments
@@ -324,23 +337,25 @@ my $msg;
 
 # Check the output map bounds
 my $proceed = 1;
-unless (defined $fts_port) {
-  _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
-}
-else {
-  _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP FTSPORT=$fts_port
-}
-if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
-  my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
-  my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
-  # Append the new bounds to the list of arguments
-  $args .= " lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
-} elsif ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == -1 ) {
-  # The bounds check failed so mark the current frame as bad and
-  # set an error message
-  $Frm->isgood(0);
-  $proceed = 0;
-  $msg = "Checking map size failed - skipping this observation\n";
+unless ($jsa_tiles) {
+  unless (defined $fts_port) {
+    _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
+  }
+  else {
+    _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP FTSPORT=$fts_port
+  }
+  if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
+    my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
+    my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
+    # Append the new bounds to the list of arguments
+    $args .= " lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
+  } elsif ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == -1 ) {
+    # The bounds check failed so mark the current frame as bad and
+    # set an error message
+    $Frm->isgood(0);
+    $proceed = 0;
+    $msg = "Checking map size failed - skipping this observation\n";
+  }
 }
 
 my $fault_msg = "If this failure is not associated with a bad observation please file a fault\n";
@@ -355,46 +370,64 @@ if ($proceed) {
     orac_print " a $long while... please be patient...";
   }
   orac_print "\n";
+  my $outfiles = new ORAC::TempFile(0);
+  $outfiles = $outfiles->file(); # read_file_list() fails otherwise!
+  unlink $outfiles; # MAKEMAP fails if the file already exists!
+  $args .= " outfiles=$outfiles";
+  $args .= ' jsatiles trimtiles' if $jsa_tiles;
   my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
+  my @out = read_file_list($outfiles);
 
   # Check for SMF__NOMEM return status
   if ( $SMURF_STATUS == ORAC__OK ) {
     # Check that an output file was actually created - in some
     # instances bad data can be dealt with by makemap which then exits
     # with good status and no output file.
-    my $fullout = File::Spec->catfile($ENV{ORAC_DATA_OUT}, $out);
-    $fullout .= ".sdf" unless ($fullout =~ /.sdf$/); # hack...
-    if ( -e $fullout ) {
+    # Is this test necessary any more when using "outfiles"?
+    @out = grep {
+        my $fullout = File::Spec->catfile($ENV{ORAC_DATA_OUT}, $_);
+        $fullout .= ".sdf" unless ($fullout =~ /.sdf$/); # hack...
+        -e $fullout;
+    } @out;
+
+    if (scalar @out) {
       # Now, is there any analysis of the model component files that could
       # be useful?
 
       # Set the title to include the source name - add obs num if
       # running at the summit
       my $title = ($Frm->uhdr("SUMMIT")) ? "'$object / $obsnum'" : "'$object'";
-      $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
+      foreach $out (@out) {
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
+      }
 
-      # Register the new file and tag it as makemap output. Re-read
-      # the header because the Frame now contains only a single image
-      # file.
-      $Frm->force_product_update("makemap", $out);
+      # Register the new files and tag them as makemap output. Re-read
+      # the header because the Frame probably now contains a different number
+      # of files.
+      $Frm->force_product_update("makemap", @out);
       $Frm->tagset("makemap");
       $Frm->readhdr();
       $Frm->product("newimage");
       $Frm->tagset("newimage");
 
       # Check the image to see if the target is covered by good pixels
-      _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
-      my $ngood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+      my $ngood = 0;
+      foreach $out (@out) {
+        _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
+        $ngood += $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+      }
       my $nbol = sprintf "%d", $Frm->hdr("NBOLOEFF");
       if ($nbol > 0 && $ngood > 0) {
-	orac_print "Thank you for waiting: image $out created using $nbol bolometers\n";
-	orac_warn "Map created from only $nbol bolometers: check map quality\n"
-	  if ($nbol < 100);
+        foreach $out (@out) {
+	  orac_print "Thank you for waiting: image $out created using $nbol bolometers\n";
+	  orac_warn "Map created from only $nbol bolometers: check map quality\n"
+	    if ($nbol < 100);
 
-	# Print the config parameters to the screen - this will only
-	# show up if the pipeline is run with -verbose, such as at
-	# CADC
-	$Mon{kappa_mon}->obeyw("configecho","ndf=$out config=! name=! application=makemap");
+	  # Print the config parameters to the screen - this will only
+	  # show up if the pipeline is run with -verbose, such as at
+	  # CADC
+	  $Mon{kappa_mon}->obeyw("configecho","ndf=$out config=! name=! application=makemap");
+        }
 
 	# Mark current frame as good now that we have a map
 	$Frm->isgood(1);
@@ -408,8 +441,8 @@ if ($proceed) {
 
 	# Shift image to nominal source position if a calibrator -
 	# except for pointing (obviously...!) and focus obs (done
-	# later)
-	if ($Cal->iscalsource($object) && !$point_focus) {
+	# later) and JSA tiles.
+	if ($Cal->iscalsource($object) && !$point_focus and ! $jsa_tiles) {
 	  _SHIFT_IMAGES_ INPLACE=1
 	}
       } else {
