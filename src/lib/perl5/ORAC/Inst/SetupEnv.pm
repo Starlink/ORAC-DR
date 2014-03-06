@@ -195,6 +195,8 @@ sub orac_calc_instrument_settings {
 			 'KB16' => 'sqa',
                          'FL01' => 'bpl',
 			 'FL02' => 'lsc',
+			 'FL03' => 'lsc',
+			 'FL04' => 'lsc',
                        );
 
     # Split into instrument and camera code
