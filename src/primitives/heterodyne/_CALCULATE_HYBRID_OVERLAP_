@@ -85,8 +85,37 @@ if( ! defined( $file1 ) ||
 
 # First, do a WCSALIGN in-situ to get the frequency channels on the
 # same scale.
-my $params = "in='$file1,$file2' insitu=true lbnd=! ubnd=! ref=!";
-$Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
+my $params = "in='$file1,$file2' insitu lbnd=! ubnd=! ref=! abort";
+my $WCSALIGN_STATUS = $Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
+orac_warn "WCSALIGN status is $WCSALIGN_STATUS\n";
+
+# About 10% of the time for old GSD data converted to ACSIS format
+# WCSALIGN complains about an in-situ bug when there is a small
+# displacement from integer pixel shifts between the adjacent
+# sub-bands.  It's not clear whether this is coming from the initial
+# setup for the observation, or there's a bug in GSD2ACSIS.  The shifts
+# are small (few percent error) and SPECX would ignore them.  WCSALIGN
+# with in situ restricted to 0.1 pixel error in linearity and shift
+# of origin.  For DAS it appears to be a shift of origin.
+if ( $WCSALIGN_STATUS == 257327114 ) {
+
+# Emulate the in situ correction by aligning with the nearest neighbour
+# and copying back as if nothing had gone wrong.  In effect this
+# determines the pixel offset of the second file with respect to the
+# first, and shifts the pixel origin of the second file into the same
+# pixel co-ordinates.
+   my $tempfile1 = new ORAC::TempFile( 0 );
+   my $tempfile2 = new ORAC::TempFile( 0 );
+   my @tfiles;
+   push @tfiles, $tempfile1;
+   push @tfiles, $tempfile2;
+   my $outlist = write_file_list( @tfiles );
+   $params = "in='$file1,$file2' insitu=f lbnd=! ubnd=! ref=! ";
+   $params .=  "method=nearest out=^$outlist";
+   $Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tempfile1 out=$file1" );
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tempfile2 out=$file2" );
+}
 
 # Now retrieve the NDF bounds.
 my @lbounds;
