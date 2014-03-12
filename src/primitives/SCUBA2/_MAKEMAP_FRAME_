@@ -113,6 +113,10 @@ flatfielded and thus dark frames need to be added to the list of input
 files. Conversely, for C<ALL> it is assumed that the input data are
 already flatfielded and thus there is no need for dark frames.
 
+If uhdr entries B<POINTING_OFFSET_X> and/or B<POINTING_OFFSET_Y>
+are present then they will be passed to makemap via a pointing
+file.
+
 =head1 OUTPUT DATA
 
 The Frame C<isgood> flag is set to false if MAKEMAP fails for any
@@ -120,6 +124,10 @@ reason.
 
 The Frame uhdr entries C<SKY_SUBTRACTION> and C<EXTINCTION> are set to
 1 on success.
+
+If L<_SHIFT_IMAGES_|_SHIFT_IMAGES_> is used to determine the
+image shifts of a known calibrator, then the results are placed
+in the primitive hash as an entry B<IMAGE_SHIFTS>.
 
 =head1 OUTPUT FILES
 
@@ -160,6 +168,9 @@ if ($Frm->tagexists("dark")) {
   $Frm->uhdr("NOCALIB",1);
   return ORAC__OK;
 }
+
+# Shifts determined for calibrators
+my $image_shifts = undef;
 
 # Method for reconstructing map
 my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "iter"));
@@ -332,6 +343,27 @@ $args .= " resist=".($Frm->uhdr("RECPAR_RESIST_CFG"))
 # Call makemap - really must have some sort of feedback to user
 orac_print "Calling makemap using $method method\n";
 
+# Have pointing offsets?
+my $pointing_file;
+if (defined $Frm->uhdr('POINTING_OFFSET_X')
+    or defined $Frm->uhdr('POINTING_OFFSET_Y')) {
+  my $dx = $Frm->uhdr('POINTING_OFFSET_X') // 0;
+  my $dy = $Frm->uhdr('POINTING_OFFSET_Y') // 0;
+  orac_say("Using pointing offsets $dx, $dy");
+
+  # Write pointing offsets to a pointing file for makemap.
+  $pointing_file = new ORAC::TempFile();
+  my $fh = $pointing_file->handle();
+  print $fh "# SYSTEM=TRACKING\n";
+  print $fh "# TAI DLON DLAT\n";
+  print $fh $Frm->uhdr('ORAC_UTSTART')->mjd(), " $dx $dy\n";
+  print $fh $Frm->uhdr('ORAC_UTEND')->mjd(), " $dx $dy\n";
+  $fh->close();
+
+  # Add this pointing file to the makemap arguments.
+  $args .= ' pointing='.$pointing_file->file();
+}
+
 # Error message text
 my $msg;
 
@@ -448,6 +480,7 @@ if ($proceed) {
 	# later) and JSA tiles.
 	if ($Cal->iscalsource($object) && !$point_focus and ! $jsa_tiles) {
 	  _SHIFT_IMAGES_ INPLACE=1
+          $image_shifts = $_SHIFT_IMAGES_{'FITPEAKS'};
 	}
       } else {
 	# Mark this frame as BAD since every bolometer was flagged
@@ -515,3 +548,5 @@ if ($Frm->uhdr("FAKEMAP") && $config) {
   }
   unlink $tmpconfig if (-e $tmpconfig && $tmpconfig =~ /_copy$/);
 }
+
+$_PRIM_ARGS_->{'IMAGE_SHIFTS'} = $image_shifts;
