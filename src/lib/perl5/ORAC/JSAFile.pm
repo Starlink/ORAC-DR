@@ -228,6 +228,71 @@ sub product_id {
   return $product . "_" . $subsys;
 }
 
+=item B<jsa_filename_bits>
+
+Get or set the number of "bits" to keep in filenames. JSA filenames
+are troublesome for the standard inout methods.  However we know that
+JSA filenames normally follow the pattern:
+
+E<lt>prefixE<gt>E<lt>dateE<gt>_E<lt>obsE<gt>_E<lt>subsysE<gt>_E<lt>productE<gt>_...
+
+So we normally want to keep the first three components, which is the
+number this method returns by default, and then add the new product name.
+
+=cut
+
+sub jsa_filename_bits {
+  my $self = shift;
+
+  return $self->{'JSA_FN_BITS'} = shift if @_;
+
+  return $self->{'JSA_FN_BITS'} // 3;
+}
+
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<inout_jsatile>
+
+A variation of the frame C<inout> method for use with files which should
+be named based on their JSA tile number.  The tile number is found using
+the JSATILE header.
+
+    my ($in, $out) = $Frm->inout_jsatile('suffix', $i + 1);
+
+=cut
+
+sub inout_jsatile {
+  my $self = shift;
+  my $suffix = shift; $suffix =~ s/^_//;
+  my $i = (shift) - 1;
+
+  my $tile = $self->hdrval('JSATILE', $i);
+  my $in = $self->file($i + 1);
+
+  orac_term('No JSATILE header found for ' . $in)
+    unless defined $tile;
+
+  # Since this class doesn't inherit from another class implementing
+  # an inout method, we can't use SUPER to call another.  Therefore
+  # implement a simple one, but use knowledge of expected JSA filenames
+  # to set the number of filename bits to keep.
+
+  my ($bits, $extn) = $self->_split_fname($in);
+  my $nbit = $self->jsa_filename_bits();
+
+  pop @$bits while $nbit < scalar @$bits;
+  push @$bits, sprintf('%s%06d', $suffix, $tile);
+
+  my $out = $self->_join_fname($bits, $extn);
+
+  return $out unless wantarray;
+  return ($in, $out);
+}
+
 =back
 
 =head1 SEE ALSO
