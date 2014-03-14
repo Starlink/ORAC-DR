@@ -33,6 +33,7 @@ in addition to the temporary file created by this class.
 use strict;
 use warnings;
 use Carp;
+use File::Spec;
 use File::Temp qw/ tempfile /;
 use vars qw/$VERSION $DEBUG/;
 
@@ -269,6 +270,11 @@ sub Initialise {
   }
 
   return if (!defined $fh && !defined $file);
+
+  # Since the file is in ORAC_DATA_OUT and since the CWD
+  # is always ORAC_DATA_OUT (according to SUN/230) we do not
+  # need a pathname.
+  (undef, undef, $file) = File::Spec->splitpath($file);
 
   # Set autoflush
   $fh->autoflush(1) if defined $fh;
