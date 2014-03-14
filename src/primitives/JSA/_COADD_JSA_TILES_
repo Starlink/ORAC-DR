@@ -47,20 +47,31 @@ foreach my $subgrp ($Grp->subgrps(qw/JSATILE/)) {
   # that we can use the corresponding frame class.  However
   # we don't yet have the code for the public product ASNIDs
   # so use a temporary placeholder value.
-  my ($prefix, $complist);
+  # Also the PICARD frame class doesn't know about subsystem
+  # IDs, so prepare the relevant instrument class.
+  my ($prefix, $complist, $frmclass);
   my $asnid = '00000000000000000000000000000000';
   my $backend = $frames[0]->uhdr('ORAC_BACKEND');
   if ($backend eq 'SCUBA-2') {
     $prefix = 's';
     $complist = 'exp_time,weights';
+    require 'ORAC/Frame/SCUBA2.pm';
+    $frmclass = 'ORAC::Frame::SCUBA2';
+    # For SCUBA-2 the only instrument parameter going into the
+    # ASNID appears to be the wavelength.  Therefore we might
+    # as well use this to produce a more readable filename.
+    $asnid = ORAC::Frame::SCUBA2::subsystem_id($frames[0]);
   }
   elsif ($backend eq 'ACSIS') {
     $prefix = 'a';
     $complist = 'exp_time,eff_time';
+    require 'ORAC/Frame/ACSIS.pm';
+    $frmclass = 'ORAC::Frame::ACSIS';
   }
   else {
     orac_warn("Unknown backend: ${backend}\n");
     $prefix = 'x';
+    $frmclass = 'ORAC::Frame::NDF';
   }
 
   my $out = sprintf('%s%s_coadd%06d', $prefix, $asnid, $tile);
@@ -105,8 +116,10 @@ foreach my $subgrp ($Grp->subgrps(qw/JSATILE/)) {
   # Put the file in a temporary frame to allow us to tag it
   # as the reduced product.
   do {
-    my $Frm = $Frm->new();
+    my $Frm = $frmclass->new();
     $Frm->files($out);
-    _TAG_AS_REDUCED_PRODUCT_ FILE=$out GRAPHIC=1 UPDATE=1
+    $Frm->uhdr('JSA_TILES', 1);
+    $Frm->jsa_filename_bits(1);
+    _TAG_AS_REDUCED_PRODUCT_ GRAPHIC=1 UPDATE=1
   };
 }
