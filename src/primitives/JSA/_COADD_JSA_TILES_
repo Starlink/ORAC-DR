@@ -1,0 +1,112 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_COADD_JSA_TILES_ - co-add JSA tiles together by tile number
+
+=head1 DESCRIPTION
+
+This primitive takes a set of JSA tiles and groups them by
+tile number.  It then co-adds the tiles for each tile.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+# Wait until we have the whole group so that we can organise the files
+# by tile number.
+unless ($Grp->lastmember($Frm)) {
+  orac_say('Waiting for end of group');
+  return ORAC__OK;
+}
+orac_say('Grouping by tile number');
+
+foreach my $subgrp ($Grp->subgrps(qw/JSATILE/)) {
+  my @frames = $subgrp->members();
+  my $tile = $frames[0]->hdrval('JSATILE');
+  my $title = "JSA tile $tile";
+
+  # Need to determine file name to be used for the co-add.
+  # Probably based on the ASNID so determine the backend so
+  # that we can use the corresponding frame class.  However
+  # we don't yet have the code for the public product ASNIDs
+  # so use a temporary placeholder value.
+  my ($prefix, $complist);
+  my $asnid = '00000000000000000000000000000000';
+  my $backend = $frames[0]->uhdr('ORAC_BACKEND');
+  if ($backend eq 'SCUBA-2') {
+    $prefix = 's';
+    $complist = 'exp_time,weights';
+  }
+  elsif ($backend eq 'ACSIS') {
+    $prefix = 'a';
+    $complist = 'exp_time,eff_time';
+  }
+  else {
+    orac_warn("Unknown backend: ${backend}\n");
+    $prefix = 'x';
+  }
+
+  my $out = sprintf('%s%s_coadd%06d', $prefix, $asnid, $tile);
+
+  # Mark the "coadd" file as an intermediate as we only need to
+  # end up with the tagged "reduced" file.
+  $Grp->push_intermediates($out);
+
+  orac_say("Processing tile: $tile");
+
+  my @files = map {$_->files()} @frames;
+
+  unless (1 < scalar @files) {
+    # If there is only one file for this tile, just copy it
+    # and set the title.
+
+    my $in = $files[0];
+    orac_say("   single file: $in");
+    orac_say("   copy to: $out");
+
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+    $Mon{'ndfpack_mon'}->obeyw('settitle', "ndf=$out title='$title'");
+  }
+  else {
+    # If there are multiple files, use MAKEMOS to combine them.
+
+    orac_say("    file: $_") foreach @files;
+    orac_say("    output: $out");
+
+    my $in = write_file_list(@files);
+    my $args = "in=^$in out=$out title='$title' "
+             . 'method=mean noscale usevar nozero';
+    $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
+
+    # Now add up exposure times, etc.  This should be done in the same
+    # way as _MOSAIC_JCMT_IMAGES_ does.  We call the same primitive as
+    # it uses.
+    my $inlistref = \@files;
+    _ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist INLIST=$inlistref
+  }
+
+  # Put the file in a temporary frame to allow us to tag it
+  # as the reduced product.
+  do {
+    my $Frm = $Frm->new();
+    $Frm->files($out);
+    _TAG_AS_REDUCED_PRODUCT_ FILE=$out GRAPHIC=1 UPDATE=1
+  };
+}

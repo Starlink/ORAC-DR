@@ -113,6 +113,10 @@ flatfielded and thus dark frames need to be added to the list of input
 files. Conversely, for C<ALL> it is assumed that the input data are
 already flatfielded and thus there is no need for dark frames.
 
+If uhdr entries B<POINTING_OFFSET_X> and/or B<POINTING_OFFSET_Y>
+are present then they will be passed to makemap via a pointing
+file.
+
 =head1 OUTPUT DATA
 
 The Frame C<isgood> flag is set to false if MAKEMAP fails for any
@@ -120,6 +124,10 @@ reason.
 
 The Frame uhdr entries C<SKY_SUBTRACTION> and C<EXTINCTION> are set to
 1 on success.
+
+If L<_SHIFT_IMAGES_|_SHIFT_IMAGES_> is used to determine the
+image shifts of a known calibrator, then the results are placed
+in the primitive hash as an entry B<IMAGE_SHIFTS>.
 
 =head1 OUTPUT FILES
 
@@ -160,6 +168,9 @@ if ($Frm->tagexists("dark")) {
   $Frm->uhdr("NOCALIB",1);
   return ORAC__OK;
 }
+
+# Shifts determined for calibrators
+my $image_shifts = undef;
 
 # Method for reconstructing map
 my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "iter"));
@@ -332,6 +343,27 @@ $args .= " resist=".($Frm->uhdr("RECPAR_RESIST_CFG"))
 # Call makemap - really must have some sort of feedback to user
 orac_print "Calling makemap using $method method\n";
 
+# Have pointing offsets?
+my $pointing_file;
+if (defined $Frm->uhdr('POINTING_OFFSET_X')
+    or defined $Frm->uhdr('POINTING_OFFSET_Y')) {
+  my $dx = $Frm->uhdr('POINTING_OFFSET_X') // 0;
+  my $dy = $Frm->uhdr('POINTING_OFFSET_Y') // 0;
+  orac_say("Using pointing offsets $dx, $dy");
+
+  # Write pointing offsets to a pointing file for makemap.
+  $pointing_file = new ORAC::TempFile();
+  my $fh = $pointing_file->handle();
+  print $fh "# SYSTEM=TRACKING\n";
+  print $fh "# TAI DLON DLAT\n";
+  print $fh $Frm->uhdr('ORAC_UTSTART')->mjd(), " $dx $dy\n";
+  print $fh $Frm->uhdr('ORAC_UTEND')->mjd(), " $dx $dy\n";
+  $fh->close();
+
+  # Add this pointing file to the makemap arguments.
+  $args .= ' pointing='.$pointing_file->file();
+}
+
 # Error message text
 my $msg;
 
@@ -370,11 +402,11 @@ if ($proceed) {
     orac_print " a $long while... please be patient...";
   }
   orac_print "\n";
-  my $outfiles = new ORAC::TempFile(0);
-  $outfiles = $outfiles->file(); # read_file_list() fails otherwise!
+  my $outfiles_obj = new ORAC::TempFile(0); # New name to avoid destruction.
+  my $outfiles = $outfiles_obj->file(); # read_file_list() fails otherwise!
   unlink $outfiles; # MAKEMAP fails if the file already exists!
   $args .= " outfiles=$outfiles";
-  $args .= ' jsatiles trimtiles' if $jsa_tiles;
+  $args .= ' jsatiles' if $jsa_tiles;
   my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
   my @out = read_file_list($outfiles);
 
@@ -412,12 +444,16 @@ if ($proceed) {
 
       # Check the image to see if the target is covered by good pixels
       my $ngood = 0;
+      my %sigma;
       foreach $out (@out) {
         _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
         $ngood += $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+	$sigma{$out} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
       }
+      @out = map {$_} grep {$sigma{$_} > 0} @out;
+
       my $nbol = sprintf "%d", $Frm->hdr("NBOLOEFF");
-      if ($nbol > 0 && $ngood > 0) {
+      if ($nbol > 0 && $ngood > 0 && scalar(@out)) {
         foreach $out (@out) {
 	  orac_print "Thank you for waiting: image $out created using $nbol bolometers\n";
 	  orac_warn "Map created from only $nbol bolometers: check map quality\n"
@@ -444,6 +480,7 @@ if ($proceed) {
 	# later) and JSA tiles.
 	if ($Cal->iscalsource($object) && !$point_focus and ! $jsa_tiles) {
 	  _SHIFT_IMAGES_ INPLACE=1
+          $image_shifts = $_SHIFT_IMAGES_{'FITPEAKS'};
 	}
       } else {
 	# Mark this frame as BAD since every bolometer was flagged
@@ -458,9 +495,10 @@ if ($proceed) {
     }
   } else {
     # OK we have bad exit status - check for known reasons
-    if ( $SMURF_STATUS == 235176770 ) {
-      # SMF__NOMEM: Memory allocation error
-      $msg = "Makemap could not allocate enough memory to create a map - will not continue\n";
+    if ( $SMURF_STATUS == 235176770 || $SMURF_STATUS == 233933562 ) {
+      # SMF__NOMEM: Memory allocation error, or
+      # AST__NOMEM: memory allocation error (can be triggered from smf_fft_data)
+      $msg = "Makemap could not allocate the memory required to create a map - will not continue\n";
     } elsif ( $SMURF_STATUS == 235176794 ) {
       # SMF__INSMP: insufficient samples for statistics
       $msg = "All data flagged bad: insufficient samples available for calculating statistics - will not continue\n";
@@ -486,7 +524,7 @@ if ($proceed) {
 }
 
 # If no new image was created issue an error saying why
-unless ($Frm->product && $Frm->product eq "newimage") {
+unless ($Frm->isgood) {
   $Frm->uhdr("NOCALIB",1);
   $Frm->uhdr("EXTINCTION",1);
   $Frm->uhdr("SKY_SUBTRACTION",1);
@@ -510,3 +548,5 @@ if ($Frm->uhdr("FAKEMAP") && $config) {
   }
   unlink $tmpconfig if (-e $tmpconfig && $tmpconfig =~ /_copy$/);
 }
+
+$_PRIM_ARGS_->{'IMAGE_SHIFTS'} = $image_shifts;

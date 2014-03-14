@@ -263,46 +263,49 @@ if ($Frm->hdr("OBS_TYPE") =~ /pointing|science/i) {
 	$lastsubhdr = $subhdr if ($subhdr->{NSUBSCAN} == $maxscan);
       }
 
-      my ($taust, $taustatus) = JCMT::Tau::SCUBA2::get_tau($Frm->hdr("FILTER"),
-							   "CSO",
-							   $startsubhdr->{WVMTAUST});
-      my $dt_obs = DateTime::Format::ISO8601->parse_datetime($startsubhdr->{'DATE-OBS'});
-      my $dt_end = DateTime::Format::ISO8601->parse_datetime($lastsubhdr->{'DATE-END'});
-      # Store initial data
-      my %startdata = (elsum => $startsubhdr->{ELSTART},
-		       csosum => $startsubhdr->{WVMTAUST},
-		       tauzsum => $taust,
-		       tausum => ($taust * $startsubhdr->{AMSTART}),
-		       transum => (exp(-$taust * $startsubhdr->{AMSTART})),
-		       numval => 1,
-		      );
-      # Next check for existing data
-      if (%checkrms) {
-	if ($Frm->hdr("OBSNUM") == $checkrms{OBSNUM}) {
-	  # Accumulate values if the OBSNUM is the same
-	  orac_print "Accumulating CHECK_RMS data for current $grpfrm (multi)\n";
-	  $data{telapsed} = $dt_end->epoch - $dt_obs->epoch;
-	  foreach my $key (keys %data) {
-	    $checkrms{$key} += $data{$key};
+      # Proceed if we have valid first/last subheaders
+      if ($startsubhdr && $lastsubhdr) {
+	my ($taust, $taustatus) = JCMT::Tau::SCUBA2::get_tau($Frm->hdr("FILTER"),
+							     "CSO",
+							     $startsubhdr->{WVMTAUST});
+	my $dt_obs = DateTime::Format::ISO8601->parse_datetime($startsubhdr->{'DATE-OBS'});
+	my $dt_end = DateTime::Format::ISO8601->parse_datetime($lastsubhdr->{'DATE-END'});
+	# Store initial data
+	my %startdata = (elsum => $startsubhdr->{ELSTART},
+			 csosum => $startsubhdr->{WVMTAUST},
+			 tauzsum => $taust,
+			 tausum => ($taust * $startsubhdr->{AMSTART}),
+			 transum => (exp(-$taust * $startsubhdr->{AMSTART})),
+			 numval => 1,
+			);
+	# Next check for existing data
+	if (%checkrms) {
+	  if ($Frm->hdr("OBSNUM") == $checkrms{OBSNUM}) {
+	    # Accumulate values if the OBSNUM is the same
+	    orac_print "Accumulating CHECK_RMS data for current $grpfrm (multi)\n";
+	    $data{telapsed} = $dt_end->epoch - $dt_obs->epoch;
+	    foreach my $key (keys %data) {
+	      $checkrms{$key} += $data{$key};
+	    }
+	  } else {
+	    # Otherwise reset and start again
+	    orac_print "New observation in same $grpfrm - reset values (multi)\n";
+	    %checkrms = map { $_ => ($data{$_} + $startdata{$_})} keys %data;
+	    $checkrms{telapsed} = $dt_end->epoch - $dt_obs->epoch;
 	  }
 	} else {
-	  # Otherwise reset and start again
-	  orac_print "New observation in same $grpfrm - reset values (multi)\n";
+	  # No data - store what we have
+	  orac_print "Beginning storage of CHECK_RMS data for new $grpfrm (multi)\n";
 	  %checkrms = map { $_ => ($data{$_} + $startdata{$_})} keys %data;
 	  $checkrms{telapsed} = $dt_end->epoch - $dt_obs->epoch;
 	}
-      } else {
-	# No data - store what we have
-	orac_print "Beginning storage of CHECK_RMS data for new $grpfrm (multi)\n";
-	%checkrms = map { $_ => ($data{$_} + $startdata{$_})} keys %data;
-	$checkrms{telapsed} = $dt_end->epoch - $dt_obs->epoch;
-      }
 
-      $checkrms{FILTER} = $Frm->hdr("FILTER");
-      $checkrms{OBSNUM} = $Frm->hdr("OBSNUM");
-      $checkrms{NSUBSCAN} = $maxscan;
-      # Store in the uhdr
-      $Obj->uhdr("CHECK_RMS_DATA", \%checkrms);
+	$checkrms{FILTER} = $Frm->hdr("FILTER");
+	$checkrms{OBSNUM} = $Frm->hdr("OBSNUM");
+	$checkrms{NSUBSCAN} = $maxscan;
+	# Store in the uhdr
+	$Obj->uhdr("CHECK_RMS_DATA", \%checkrms);
+      }
     }
   }
 }

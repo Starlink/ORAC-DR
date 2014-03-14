@@ -1,0 +1,80 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_FUDGE_CALIBRATOR_POSITION_ - insert pointing offsets to fix positions
+
+=head1 DESCRIPTION
+
+This primitive only applies if the target object is a known calibration
+source.  If it is, then L<_MAKEMAP_FRAME_|_MAKEMAP_FRAME_> is called
+to make a map of it.  The pointing offsets are then retrieved
+from its primitive hash and written into the uhdr.  The reason for
+doing this is that, with SCUBA-2, calibrators may be observed prior to
+a pointing being performed.  Multiple maps of calibrators can thus
+only be co-added if they are corrected for pointing.
+
+=head1 OUTPUT DATA
+
+The pointing offsets are written into the uhdr entries
+B<POINTING_OFFSET_X> and B<POINTING_OFFSET_Y>.
+
+=head1 OUTPUT FILES
+
+The original input files are tagged before this primitive
+begins processing and restored at the end.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+if ($Cal->iscalsource($Frm->hdr('OBJECT'))) {
+  # Tag the raw data for use with subsequent map-making.
+  _SET_TAG_ TAG=pre_fudge
+
+  # Run _MAKEMAP_FRAME_ with normal parameters.
+  orac_say('Producing a regular map ' .
+           'to determine calibrator pointing offsets');
+
+  _MAKEMAP_FRAME_
+
+  # Determine whether _MAKEMAP_FRAME_ obtained offsets
+  # (via _SHIFT_IMAGES_).
+  my $filename = $Frm->file(1);
+  my $image_shifts = $_MAKEMAP_FRAME_{'IMAGE_SHIFTS'};
+
+  if (ref $image_shifts and exists $image_shifts->{$filename}) {
+    # Pointing offsets found.  Store them in the frame uhdr.
+    my $dx = $image_shifts->{$filename}->{'dx'};
+    my $dy = $image_shifts->{$filename}->{'dy'};
+
+    orac_say("Determined pointing offsets of $dx, $dy");
+    $Frm->uhdr('POINTING_OFFSET_X', $dx);
+    $Frm->uhdr('POINTING_OFFSET_Y', $dy);
+  }
+  else {
+    # Pointing offsets not found.  Print a warning and don't set
+    # offsets in the frame uhdr.
+    orac_warn("Did not find pointing offsets for this calibrator\n");
+  }
+
+  # Restore the original raw data to the frame.
+  _RETRIEVE_TAG_ TAG=pre_fudge
+  $Frm->readhdr();
+}
