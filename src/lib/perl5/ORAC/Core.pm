@@ -486,7 +486,7 @@ sub orac_print_config_with_defaults {
   my $win_str;
   if ( $log_options =~ /x/  ||
        (exists $opt{showcurrent} && $opt{showcurrent})) {
-    my $MW = orac_launch_tk("Tk");
+    my $MW = orac_launch_tk("Tk", \%opt);
     if (defined $MW) {
       $win_str = "Tk";
     } else {
@@ -512,7 +512,7 @@ sub orac_print_config_with_defaults {
 Attempt to load Tk and create a main window indexed by the identifying
 string.
 
-  $w = orac_launch_tk($win_str);
+  $w = orac_launch_tk($win_str, \%opt);
 
 This routine can safely be called multiple times.
 
@@ -522,6 +522,7 @@ Returns the top level MainWindow object.
 
 sub orac_launch_tk {
   my $win_str = shift;
+  my $opt = shift // {};
 
   # first ask if ORAC::Event has a main window registered
   my $MW = ORAC::Event->query($win_str);
@@ -531,6 +532,13 @@ sub orac_launch_tk {
   eval { require Tk; require Tk::TextANSIColor; require ORAC::Xorac};
   unless( $@ ) {
     $MW = MainWindow->new();
+    my $title = (exists $opt->{'picard_recipe'}) ? 'PICARD' : 'ORAC-DR';
+    $title .= ' ' . $opt->{'picard_recipe'} if exists $opt->{'picard_recipe'};
+    $title .= ' ' . $opt->{'orac_instrument'} if exists $opt->{
+                                                        'orac_instrument'};
+    $title .= ' ' . $opt->{'recsuffix'} if exists $opt->{'recsuffix'}
+                                        and defined $opt->{'recsuffix'};
+    $MW->title($title);
     ORAC::Event->register($win_str=>$MW);
   }
   return $MW;
