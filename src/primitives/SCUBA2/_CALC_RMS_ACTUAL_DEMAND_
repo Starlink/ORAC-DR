@@ -159,7 +159,34 @@ if ($proceed) {
   if ($allok) {
     orac_print "Calculating RMS actual-demand  azimuth  difference: ";
     # Calculate the differences
-    my @delta_az = map { ($azactual[$_] - $azdemand[$_]) * cos($elactual[$_]) } 0 .. $#azactual;
+    my @delta_az;
+    my ($azstart, $azend) = ($Frm->hdr("AZSTART"),  $Frm->hdr("AZEND"));
+
+    # Define the value used to define "close" to the meridian
+    use Astro::PAL qw/ :constants /;
+    use constant DAZ_MIN => 1e-2;
+
+    # If near the north meridian, then check for az differences which
+    # span the meridian that would otherwise lead to huge and
+    # incorrect differences
+    if ($azdemand[0] < DAZ_MIN || $azactual[0] < DAZ_MIN ||
+	abs(D2PI-$azdemand[0]) < DAZ_MIN || abs(D2PI-$azactual[0]) < DAZ_MIN) {
+      # To do the test we need the actual azimuth difference, not the
+      # effective difference on the sky
+      my @raw_delta_az = map { abs($azactual[$_] - $azdemand[$_]) } 0 .. $#azactual;
+      # A test of delta_az > 1 is good enough here, no need to be more
+      # specific. Here is also where the elevation dependence is
+      # factored in to get the effective difference
+      @delta_az = map { ($raw_delta_az[$_] > 0.1)
+			  ? (D2PI - $raw_delta_az[$_])*cos($elactual[$_])
+			  : $raw_delta_az[$_]*cos($elactual[$_]) }
+	0 .. $#raw_delta_az;
+
+      # Add 360 deg to AZ start to get a sensible average in the log file
+      $azstart += 360 if ($azend > 359 && $azstart < 1)
+    } else {
+      @delta_az = map { ($azactual[$_] - $azdemand[$_]) * cos($elactual[$_]) } 0 .. $#azactual;
+    }
     my @delta_el = map { $elactual[$_] - $eldemand[$_] } 0 .. $#azactual;
 
     # Calculate the square of the differences
@@ -168,10 +195,10 @@ if ($proceed) {
 
     # Now calculate the mean/min/max values
     use Statistics::Descriptive;
-    use Astro::PAL qw/ :constants /;
 
     # Mean Az/El for reporting
-    my $az = sprintf "%.2f", 0.5 * ( $Frm->hdr("AZSTART") + $Frm->hdr("AZEND"));
+    my $az = 0.5 * ( $azstart + $azend );
+    $az = sprintf "%.2f", ($az > 360 ? ($az-360) : $az);
     my $el = sprintf "%.2f", 0.5 * ( $Frm->hdr("ELSTART") + $Frm->hdr("ELEND"));
 
     # Min/max deviations
