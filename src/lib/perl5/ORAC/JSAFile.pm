@@ -225,7 +225,7 @@ sub product_id {
     $subsys = $Frm->subsystem_id();
   }
 
-  return $product . "_" . $subsys;
+  return $product . "-" . $subsys;
 }
 
 =item B<jsa_filename_bits>
