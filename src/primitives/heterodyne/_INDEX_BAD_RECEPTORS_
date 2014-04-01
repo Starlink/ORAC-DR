@@ -4,8 +4,9 @@ _INDEX_BAD_RECEPTORS_
 
 =head1 DESCRIPTION
 
-This primitive identifies receptors whose data are entirely bad
-but not flagged as bad, and records them in the bad_receceptor index.
+This primitive identifies receptors whose data are entirely bad for
+an observation, but are not flagged as bad, and records such receptors
+in the bad_receceptor index.
 
 =head1 ARGUMENTS
 
@@ -43,7 +44,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2013 Science & Technology Facilities Council.
+Copyright (C) 2013-2014 Science & Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -99,34 +100,74 @@ my $spec_percent = "~85%";
 if ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
      $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) { $spec_percent = "" }
 
+orac_say( "Check that receptors have non-bad data." );
+
+# Obtain the offsets between the subscans to paste along the time axis
+# and allocate the workspace to form the the array of spectra for each
+# receptor.
+my $no_times = 0;
+my @time_bounds;
+my ( $in, $params, $ORAC_STATUS );
+
 foreach my $i ( 1 .. $Frm->nfiles ) {
+   $in = $Frm->file( $i );
+   _GET_DIMENSIONS_ FILE=$in
+   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+   push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
+   $no_times += $ubnd->[2] - $lbnd->[2] + 1;
+}
 
-# Set/get filenames.
-   my $in = $Frm->file( $i );
-   orac_say( "Check that receptors have non-bad data." );
+my $pasted = new ORAC::TempFile( 0 );
+my $tempfile = new ORAC::TempFile( 0 );
 
-   my $array = new JCMT::ACSIS::Array( File => $in );
+# Test each receptor in turn.
+my $array = new JCMT::ACSIS::Array( File => $in );
 
 # Form set of receptors that are not bad in the master list.
-   my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
-   @receptors = sort @receptors;
+my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
+@receptors = sort @receptors;
 
-   foreach my $receptor ( @receptors ) {
-      orac_print( "  Receptor $receptor" );
-      my $pixel = $array->pixel( $receptor );
+foreach my $receptor ( @receptors ) {
+   my $pixel = $array->pixel( $receptor );
 
-      my $ORAC_STATUS;
+# Concatenate the subscans for the current receptor.
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Form a profile for each receptor throughout a whole observation.  The
+# whole gives a better handle on the normal non-linearity level.
+      $in = $Frm->file( $i );
+      if ( $i == 1 ) {
+         $params = "in=$in($spec_percent,$pixel,) out=$pasted";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+      } else {
+
+# Shift the origin on the time axis during concatenation.
+         my $time_origin = $time_bounds[-2] - 1;
+         $params = "shift=[0,0,$time_origin] ";
+         $params .= "in=$pasted p1=$in($spec_percent,$pixel,) out=$tempfile";
+         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+# Ready for the next subscan to concatenate.  Another, but brave, way
+# is to to make the input and output the same on PASTE.
+         $params = "in=$tempfile out=$pasted";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      }
+   }
 
 # Check that the receptor is not completely bad.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_percent,$pixel,)" );
-      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
-      if ( $numbad >= 0.999 * $numpix ) {
-         orac_say(" has mostly or entirely bad data." );
-         push @bad_receptors, $receptor;
-      } else {
-         orac_say( " is valid." );
-      }
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$pasted" );
+   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+   ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+
+# Report the findings.
+   orac_print( "  Receptor $receptor" );
+   if ( $numbad >= 0.999 * $numpix ) {
+      orac_say(" has mostly or entirely bad data." );
+      push @bad_receptors, $receptor;
+   } else {
+      orac_say( " is valid." );
    }
 }
 
