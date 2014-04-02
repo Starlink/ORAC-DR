@@ -259,7 +259,7 @@ sub jsa_filename_bits {
 
 A variation of the frame C<inout> method for use with files which should
 be named based on their JSA tile number.  The tile number is found using
-the JSATILE header.
+the TILENUM header.
 
     my ($in, $out) = $Frm->inout_jsatile('suffix', $i + 1);
 
@@ -270,10 +270,10 @@ sub inout_jsatile {
   my $suffix = shift; $suffix =~ s/^_//;
   my $i = (shift) - 1;
 
-  my $tile = $self->hdrval('JSATILE', $i);
+  my $tile = $self->hdrval('TILENUM', $i);
   my $in = $self->file($i + 1);
 
-  orac_term('No JSATILE header found for ' . $in)
+  orac_term('No TILENUM header found for ' . $in)
     unless defined $tile;
 
   # Since this class doesn't inherit from another class implementing
