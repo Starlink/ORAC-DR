@@ -246,7 +246,8 @@ if ($usesnr) {
   (my $ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
 }
 
-my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr, $posn);
+my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr);
+my $posn = \@xy;
 # Choose a S/N cutoff of 3, which will correspond to a peak S/N of ~6
 # in the matched-filtered map
 if ( $peaksn > 3 ) {
@@ -328,8 +329,7 @@ if ($fitpeak) {
   # observations as the image will have been trimmed
   my $box_default = (lc($Obj->hdr("OBS_TYPE")) eq "pointing") ? 15 : 25;
   # Double the default box size for "large" planets at 450 um
-  my $bigplanet = (uc($Obj->hdr("OBJECT")) eq "JUPITER") ? 1
-    : (uc($Obj->hdr("OBJECT")) eq "SATURN" ? 1 : 0);
+  my $bigplanet = ($Obj->hdr("OBJECT") =~ /JUPITER|SATURN/i) ? 1 : 0;
   $box_default *= 2 if ($bigplanet && $Obj->hdr("FILTER") =~ /450/);
   # However, if FITBOX is given, assume that the caller has done their
   # bit in choosing a suitable size
@@ -361,9 +361,9 @@ if ($fitpeak) {
     # better sense of the overall uncertainty but in practice it's
     # only a little bit higher than this
     $dpeak = $amp[1];
-    $posn = $_FIT_SOURCE_{POSITION};
     $snr = $_FIT_SOURCE_{SNR};
-    orac_print " Fitted peak at $posn->[0], $posn->[1]\n" if ($verbose);
+    @xy = @{$_FIT_SOURCE_{POSITION}};
+    orac_print " Fitted peak at $xy[0], $xy[1]\n" if ($verbose);
     my %fitpars = %_FIT_SOURCE_;
     $_PRIM_ARGS_->{BEAM} = \%fitpars;
 
@@ -380,7 +380,6 @@ if ($fitpeak) {
     orac_warn "Fit to source failed - using peak position instead\n";
     $peak = $peakval;
     $dpeak = $peakerr;
-    $posn = \@xy;
     # Return a SNR of 0 if the uncertainty is not defined
     $snr = ($dpeak && $dpeak > 0) ? $peak / $dpeak : 0;
     orac_print " Found peak at $posn->[0], $posn->[1]\n" if ($verbose);
@@ -392,14 +391,13 @@ if ($fitpeak) {
   # These will be undef, but return them anyway
   $peak = $peakval;
   $dpeak = $peakerr;
-  $posn = \@xy;
   $snr = $peaksnr;
 }
 
 # Store the result in the hash
 $_PRIM_ARGS_->{PEAK} = $peak;
 $_PRIM_ARGS_->{PEAKERR} = $dpeak;
-$_PRIM_ARGS_->{POSITION} = $posn;
+$_PRIM_ARGS_->{POSITION} = $posn if @$posn;
 $_PRIM_ARGS_->{SNR} = $snr;
 
 # Restore object to original state
