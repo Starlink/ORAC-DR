@@ -220,7 +220,9 @@ methods when constructing the Group filename.
 
 sub file_from_bits_extra {
   my $self = shift;
-  return $self->subsystem_id();
+  my (@subsysnrs) = $self->subsysnrs;
+  # for hybrid mode return the first subsystem number
+  return $subsysnrs[0];
 }
 
 =item B<flag_from_bits>
@@ -265,26 +267,7 @@ sub findgroup {
   my $self = shift;
 
   # Read extra information required for group disambiguation
-  my $restfreq = '';
-  if( defined( $self->hdr( "RESTFREQ" ) ) ) {
-    # We can not sprintf this because the version read from
-    # the WCS is not sprintfed (but it should be). This could
-    # cause problems when rounding through a database.
-    $restfreq = $self->hdr( "RESTFREQ" );
-  } elsif( defined( $self->hdr( "FRQSIGLO" ) ) &&
-           defined( $self->hdr( "FRQSIGHI" ) ) ) {
-    $restfreq = sprintf( "%.2f", ( $self->hdr( "FRQSIGLO" ) +
-                                   $self->hdr( "FRQSIGHI" ) ) /
-                         2 );
-  } else {
-    # Read rest frequency from the WCS
-    my $wcs = $self->read_wcs;
-    if ( defined $wcs->GetC("RestFreq") ) {
-       $restfreq = $wcs->GetC("RestFreq");
-    } elsif( defined $wcs->GetC("RstFrq") ) {
-       $restfreq = $wcs->GetC("RstFrq");
-    }
-  }
+  my $restfreq = $self->rest_frequency(0) // '';
 
   # This class handles ACSIS data and data converted with gsd2acsis
   # DAS data might come with multiple IFFREQs so we include that here.
@@ -380,16 +363,22 @@ sub number {
 
 =item B<subsystem_id>
 
-Subsystem identifier. For ACSIS this is the first subsystem
-number.
+Subsystem identifier. For ACSIS this is the rest frequency,
+bandwidth mode and first subsystem number.
 
 =cut
 
 sub subsystem_id {
   my $self = shift;
-  my (@subsysnrs) = $self->subsysnrs;
-  # for hybrid mode return the first subsystem number
-  return $subsysnrs[0];
+
+  my $restfreq = $self->rest_frequency(1);
+  die 'Could not determine rest frequency when attempting to ' .
+      'make up the subsystem ID' unless defined $restfreq;
+  my $bwmode = $self->hdr('BWMODE');
+  my @subsysnrs = $self->subsysnrs();
+
+  # For hybrid mode use the first subsystem number.
+  return sprintf('%.0fMHz-%s-%i', $restfreq * 1000, $bwmode, $subsysnrs[0]);
 }
 
 =back
@@ -424,6 +413,51 @@ sub subsysnrs {
     @numbers = map { $_->{SUBSYSNR} } @{$hdr->{SUBHEADERS}};
   }
   return (wantarray ? sort @numbers : scalar(@numbers));
+}
+
+=item B<rest_frequency>
+
+Attempt to determine the rest frequency.  Returns undef on failure.
+
+Intended to maintain the historical behavior of C<findgroup> in order that
+the nightly association IDs do not change:
+
+    my $rf = $self->rest_frequency(0);
+
+The first parameter can be set to a true value to disable rounding when
+the rest frequency is determined by averaging FRQSIGLO and FRQSIGHI.
+This is different from the historical behavior mentioned above, but
+necessary if 1MHz precision is required.
+
+=cut
+
+sub rest_frequency {
+  my $self = shift;
+  my $no_rounding = shift;
+
+  if( defined( $self->hdr( "RESTFREQ" ) ) ) {
+    # We can not sprintf this because the version read from
+    # the WCS is not sprintfed (but it should be). This could
+    # cause problems when rounding through a database.
+    return $self->hdr( "RESTFREQ" );
+  } elsif( defined( $self->hdr( "FRQSIGLO" ) ) &&
+           defined( $self->hdr( "FRQSIGHI" ) ) ) {
+    my $sig_av = ($self->hdr( "FRQSIGLO" ) + $self->hdr( "FRQSIGHI" )) / 2;
+    return $sig_av if $no_rounding;
+    return sprintf('%.2f', $sig_av);
+  } else {
+    # Read rest frequency from the WCS
+    my $wcs = $self->read_wcs;
+    if ( defined $wcs->GetC("RestFreq") ) {
+       return $wcs->GetC("RestFreq");
+    } elsif( defined $wcs->GetC("RstFrq") ) {
+       return $wcs->GetC("RstFrq");
+    }
+  }
+
+  # None of the methods to find the rest frequency worked
+  # so return undef.
+  return undef;
 }
 
 =back
