@@ -194,6 +194,7 @@ $usesnr = $Frm->uhdr("RECPAR_USESNR") if (defined $Frm->uhdr("RECPAR_USESNR"));
 # Set a dummy value for the peak S/N if the user is confident that a
 # bright source exists
 my $peaksn = 10;
+my $mfpeaksn = 1.67 * $peaksn;
 
 # Initial position
 my $initpos = get_prim_arg($_PRIM_ARGS_, "INITPOS", undef);
@@ -211,6 +212,7 @@ if ($Frm->tagexists("badpeak")) {
   undef $initpos;
   $plotfit = 0;
   $peaksn = 0;
+  $mfpeaksn = 0;
 }
 
 # Retrieve the pixel scale
@@ -236,32 +238,37 @@ if ($initpos) {
   }
 }
 
+# User can supply a matched-filtered image to save some time. However,
+# only use an existing matched-filtered image if the current object
+# contains a single file otherwise there is no guarantee the
+# matched-filtered image corresponds to the current image
+unless ($Obj->nfiles == 1 && $Obj->tagretrieve("matchfilt")) {
+  _APPLY_MATCHED_FILTER_ VERBOSE=0 IN=$image
+}
+my $image_mf = $Obj->file;
+
 if ($usesnr) {
   # Now find the position of the brightest peak in the map
   my $image_snr = new ORAC::TempFile;
-  # Make snr image
-  $Mon{kappa_mon}->obeyw("makesnr","minvar=0 in=$image out=$image_snr");
-  # Check that SNR image has >5 sigma peaks
-  $Mon{kappa_mon}->obeyw("stats","ndf=$image_snr");
-  (my $ORAC_STATUS, $peaksn) = $Mon{kappa_mon}->get("stats","maximum");
+  _CALC_SCUBA2_SNR_ IN=$image OUT=$image_snr VERBOSE=0
+  my $results = $_CALC_SCUBA2_SNR_{RESULTS};
+  $peaksn = $results->{MAX} if (defined $results);
+  # Calculate peak SNR of matched-filtered image - if there's a source
+  # then peak S/N should go up by a factor of ~2.
+  my $mf_snr = new ORAC::TempFile;
+  _CALC_SCUBA2_SNR_ IN=$image_mf OUT=$mf_snr VERBOSE=0
+  $results = $_CALC_SCUBA2_SNR_{RESULTS};
+  $mfpeaksn = $results->{MAX} if (defined $results);
 }
 
 my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr);
 my $posn = \@xy;
 # Choose a S/N cutoff of 3, which will correspond to a peak S/N of ~6
-# in the matched-filtered map
-if ( $peaksn > 3 ) {
+# in the matched-filtered map. Allow some leeway in this scaling with
+# a matched-filtered peak S/N of 5.
+if ( $peaksn > 3 && $mfpeaksn > 5 ) {
   orac_warn "Peak S/N is only ".(sprintf "%.1f", $peaksn).": source may not be located accurately\n"
     if ($peaksn < 6);
-  # User can supply a matched-filtered image to save some time
-  my $image_mf;
-  # Only use an existing matched-filtered image if the current object
-  # contains a single file otherwise there is no guarantee the
-  # matched-filtered image corresponds to the current image
-  unless ($Obj->nfiles == 1 && $Obj->tagretrieve("matchfilt")) {
-    _APPLY_MATCHED_FILTER_ VERBOSE=0 IN=$image
-  }
-  $image_mf = $Obj->file;
 
   my $point_focus = ($Obj->hdr("OBS_TYPE") =~ /focus|pointing/i) ? 1 : 0;
   # Find position of max value - restrict search to a 60-arcsec box for
