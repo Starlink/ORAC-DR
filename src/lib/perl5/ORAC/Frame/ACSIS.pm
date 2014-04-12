@@ -306,6 +306,86 @@ sub inout {
   return $self->SUPER::inout( $suffix, (defined $number ? $number : () ) );
 }
 
+=item B<jsa_pub_asn_id>
+
+Determine the association ID to be used for the JCMT Science Archive
+to collect the "public" products.  This is written in plain text
+as it will be short enough to not require an md5sum to be taken
+as is the case for C<asn_id()>.
+
+This contains the components necessary to distinguish the desired
+"public" co-adds as determined by the instrument scientist.  It does
+not contain the tile number.  Instead it identifies the whole
+association -- i.e. all the public data for a particular set of
+configurations which we can co-add.  The wrapper script
+(F<jsawrapdr>) will call the C<JSA::Headers::CADC::correct_asn_id()>
+subroutine to add the tile number to this at a later stage.
+
+Returns "undef" on failure (e.g. for an unsupported instrument
+or for configurations which the instrument scientist has decided
+to reject).
+
+=cut
+
+{
+  # Aliases for bandwidth modes in older data which
+  # now have new names.
+  my %bw_mode_alias = (
+    '1GHzx2048' => '1000MHzx2048',
+  );
+
+  # Allowed bandwidth modes (after aliasing) -- see POD note
+  # above.
+  my %bw_mode_list = (
+    'HARP' => [
+               '1000MHzx1024',
+               '1000MHzx2048',
+               '250MHzx4096',
+               '250MHzx8192',
+              ],
+  );
+
+  sub jsa_pub_asn_id {
+    my $self = shift;
+
+    # Determine bandwith mode.
+    my $bwmode = $self->hdr('BWMODE');
+    $bwmode = $bw_mode_alias{$bwmode} if exists $bw_mode_alias{$bwmode};
+
+    # Check if this is an allowed bandwith mode.
+    my $instrument = $self->hdr('INSTRUME');
+    return undef unless exists $bw_mode_list{$instrument}
+                 and grep {$_ eq $bwmode} @{$bw_mode_list{$instrument}};
+
+    # Remove the number of channels part of the bandwidth mode.
+    $bwmode =~ s/x\d+$// or die 'Failed to process bandwidth mode';
+
+    # Determine rest frequency.
+    my $restfreq = $self->rest_frequency(1);
+    return undef unless defined $restfreq;
+
+    # Declare sideband variable
+    my $sideband = undef;
+
+    if ($instrument eq 'HARP') {
+      # HARP only has single-sideband mode.
+      $sideband = 'SSB';
+    }
+    else {
+      # This should not happen because we already checked that the instrument
+      # is a key in the %bw_mode_list so raise an error.
+      die "Instrument $instrument not handled by sideband block";
+    }
+
+    # Check that the sideband variable got filled.
+    die 'Failed to determine sideband!' unless defined $sideband;
+
+    # Finally format the association identifier.  Rest frequency is rounded
+    # to one megahertz precision.
+    return sprintf('%.0fMHz-%s-%s', $restfreq * 1000, $bwmode, $sideband);
+  }
+}
+
 =item B<pattern_from_bits>
 
 Determine the pattern for the raw filename given the variable component

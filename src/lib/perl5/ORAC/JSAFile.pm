@@ -293,6 +293,17 @@ sub inout_jsatile {
   return ($in, $out);
 }
 
+=item B<jsa_pub_asn_id>
+
+Method to determine the JCMT Science Archive association identifer
+for use in "public" products.  Must be provided by subclasses.
+
+=cut
+
+sub jsa_pub_asn_id {
+  return 'jsa_pub_asn_id must be implemented by subclasses of JSAFile';
+}
+
 =back
 
 =head1 SEE ALSO

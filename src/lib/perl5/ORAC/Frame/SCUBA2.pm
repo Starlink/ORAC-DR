@@ -616,6 +616,24 @@ sub instap_subarray {
   return $instap;
 }
 
+=item B<jsa_pub_asn_id>
+
+Determine the association ID to be used for the JCMT Science Archive
+to collect the "public" products.  This is written in plain text
+as it will be short enough to not require an md5sum to be taken
+as is the case for C<asn_id()>.
+
+Currently the same as C<subsystem_id> but implemented separately
+so that changes to one do not alter the other.
+
+=cut
+
+sub jsa_pub_asn_id {
+  my $self = shift;
+  return $self->hdr('FILTER') =~ /^8/ ? '850um' : '450um';
+
+}
+
 =item B<meta_file>
 
 Search for and return the full path to the meta file associated with
