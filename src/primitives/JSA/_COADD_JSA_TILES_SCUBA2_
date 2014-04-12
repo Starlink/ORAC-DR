@@ -1,0 +1,87 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_COADD_JSA_TILES_SCUBA2_ - co-add JSA tiled images
+
+=head1 DESCRIPTION
+
+This primitive co-adds all the files in the frame using
+MAKEMOS with the "mean" method.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item TITLE
+
+The title for the co-added image.
+
+=item OUT
+
+The initial output filename.  The primitive can perform
+extra processing (e.g. calibration) leading to a filename
+derived from this.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+my $title = get_prim_arg($_PRIM_ARGS_, 'TITLE', undef);
+my $out = get_prim_arg($_PRIM_ARGS_, 'OUT', undef);
+
+orac_termerr('TITLE or OUT missing')
+    unless defined $title and defined $out;
+
+my @files = $Frm->files();
+
+unless (1 < scalar @files) {
+  # If there is only one file for this tile, just copy it
+  # and set the title.
+
+  my $in = $files[0];
+  orac_say("   single file: $in");
+  orac_say("   copy to: $out");
+
+  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+  $Mon{'ndfpack_mon'}->obeyw('settitle', "ndf=$out title='$title'");
+}
+else {
+  # If there are multiple files, use makemos to
+  # combine them.
+
+  orac_say("    file: $_") foreach @files;
+  orac_say("    output: $out");
+
+  my $in = write_file_list(@files);
+  my $args = "in=^$in out=$out title='$title' "
+           . 'method=mean noscale usevar nozero';
+  $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
+
+  # Now add up exposure times, etc.  This should be done in the same
+  # way as _MOSAIC_JCMT_IMAGES_ does.  We call the same primitive as
+  # it uses.
+  my $complist = 'exp_time,weights';
+  my $inlistref = \@files;
+  _ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist INLIST=$inlistref
+}
+
+$Frm->files($out);

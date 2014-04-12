@@ -40,88 +40,55 @@ orac_say('Grouping by tile number');
 foreach my $subgrp ($Grp->subgrps(qw/TILENUM/)) {
   my @frames = $subgrp->members();
   my $tile = $frames[0]->hdrval('TILENUM');
-  my $title = "JSA tile $tile";
 
-  # Need to determine file name to be used for the co-add.
-  # Probably based on the ASNID so determine the backend so
-  # that we can use the corresponding frame class.  However
-  # we don't yet have the code for the public product ASNIDs
-  # so use a temporary placeholder value.
-  # Also the PICARD frame class doesn't know about subsystem
-  # IDs, so prepare the relevant instrument class.
-  my ($prefix, $complist, $frmclass);
-  my $asnid = '00000000000000000000000000000000';
+  # Need to determine file name to be used for the co-add,
+  # probably based on the ASNID so determine the backend so
+  # that we can use the corresponding frame class -- the PICARD
+  # frame class doesn't know about JSA public association IDs.
+  my ($prefix, $frmclass, $Frm);
+  my $instrument = $frames[0]->uhdr('ORAC_INSTRUMENT');
   my $backend = $frames[0]->uhdr('ORAC_BACKEND');
   if ($backend eq 'SCUBA-2') {
     $prefix = 's';
-    $complist = 'exp_time,weights';
     require 'ORAC/Frame/SCUBA2.pm';
     $frmclass = 'ORAC::Frame::SCUBA2';
-    # For SCUBA-2 the only instrument parameter going into the
-    # ASNID appears to be the wavelength.  Therefore we might
-    # as well use this to produce a more readable filename.
-    $asnid = ORAC::Frame::SCUBA2::subsystem_id($frames[0]);
   }
   elsif ($backend eq 'ACSIS') {
     $prefix = 'a';
-    $complist = 'exp_time,eff_time';
     require 'ORAC/Frame/ACSIS.pm';
     $frmclass = 'ORAC::Frame::ACSIS';
   }
   else {
-    orac_warn("Unknown backend: ${backend}\n");
-    $prefix = 'x';
-    $frmclass = 'ORAC::Frame::NDF';
+    orac_termerr("Unknown backend: ${backend}\n");
   }
 
-  my $out = sprintf('%s%s_coadd%06d', $prefix, $asnid, $tile);
-
-  # Mark the "coadd" file as an intermediate as we only need to
-  # end up with the tagged "reduced" file.
-  $Grp->push_intermediates($out);
-
-  orac_say("Processing tile: $tile");
-
-  my @files = map {$_->files()} @frames;
-
-  unless (1 < scalar @files) {
-    # If there is only one file for this tile, just copy it
-    # and set the title.
-
-    my $in = $files[0];
-    orac_say("   single file: $in");
-    orac_say("   copy to: $out");
-
-    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
-    $Mon{'ndfpack_mon'}->obeyw('settitle', "ndf=$out title='$title'");
-  }
-  else {
-    # If there are multiple files, use MAKEMOS to combine them.
-
-    orac_say("    file: $_") foreach @files;
-    orac_say("    output: $out");
-
-    my $in = write_file_list(@files);
-    my $args = "in=^$in out=$out title='$title' "
-             . 'method=mean noscale usevar nozero';
-    $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
-
-    # Now add up exposure times, etc.  This should be done in the same
-    # way as _MOSAIC_JCMT_IMAGES_ does.  We call the same primitive as
-    # it uses.
-    if ($complist) {
-      my $inlistref = \@files;
-      _ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist INLIST=$inlistref
-    }
-  }
-
-  # Put the file in a temporary frame to allow us to tag it
-  # as the reduced product.
   do {
+    # Create new temporary frame containing the files for this tile.
     my $Frm = $frmclass->new();
-    $Frm->files($out);
+    my @files = map {$_->files()} @frames;
+    $Frm->configure(\@files);
     $Frm->uhdr('JSA_TILES', 1);
     $Frm->jsa_filename_bits(1);
+    my $asnid = $Frm->jsa_pub_asn_id();
+
+    # Determine output filename and title.
+    my $title = "$instrument $asnid tile $tile";
+    my $out = sprintf('%s%s_coadd%06d', $prefix, $asnid, $tile);
+
+    # Mark the "coadd" file as an intermediate as we only need to
+    # end up with the tagged "healpix" file.
+    $Grp->push_intermediates($out);
+
+    orac_say("Processing tile: $tile");
+
+    if ($backend eq 'SCUBA-2') {
+      _COADD_JSA_TILES_SCUBA2_ OUT=$out TITLE=$title
+    }
+    else {
+      _COADD_JSA_TILES_ACSIS_ OUT=$out TITLE=$title
+    }
+
+    # Tag the file as the healpix product.
     _TAG_AS_REDUCED_PRODUCT_ GRAPHIC=1 UPDATE=1
   };
 }
