@@ -1,0 +1,369 @@
+#+
+# Name:
+#    _MAKE_DARK_FROM_GROUP_
+#
+# Purpose:
+#    Makes masterdark from the current group of frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes a masterdark from the current group. It uses a
+#    median to combine the frames pixel by pixel.  The primitive
+#    files the resultant masterdark in its calibration index.
+#
+# Arguments:
+#    METHOD = CHARACTER (Given)
+#       The method used to combine frames to form the dark.  See
+#       parameter METHOD of CCDPACK/MAKECAL (SUN/139) for the options.
+#       The main two in practice will be "median" or "mode".  The
+#       former is an weighted median.
+#       The "mode" option uses an iteratively "sigma clipped" mean which
+#     	approximates to the modal value.  ["median"]
+#
+# Notes:
+#    -  This primitive is suitable for optical imaging instruments.
+#    -  Processing only occurs for dark frames, and when the steering
+#     	header MAKE_DARK is true.
+#    -  The dark is displayed.
+#
+# Tasks:
+#    CCDPACK: MAKECAL; KAPPA: FITSMOD, NDFCOPY.
+#
+# Output Data:
+#    The masterdark.  It is called
+#    "dark_<instrument>_<UT night>_bin<Xbin>x<Ybin>" where <instrument> is the
+#    LCOGT instrument identifier and <Xbin>,<Ybin> are the binning factors
+#    in X and Y.
+#
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2012 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+use File::Copy;
+
+# Selection
+# =========
+#
+# This should only be performed on DARK frames, when it's time make a dark.
+    my $obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE");
+    my $stuff = "N/A";
+    if ( defined $Frm->uhdr( "MAKE_DARK" ) ) {
+	$stuff = $Frm->uhdr( "MAKE_DARK" );
+    }
+#    print "SVN DBG:$obstype $stuff\n";
+    if (  $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "DARK" &&
+           $Frm->uhdr( "MAKE_DARK" ) ) {
+
+# Record the current file, to be restored at the conclusion.
+# The current frame will normally be the last group member, but
+# this may not be the Frm needed if there are multiple filters
+# represented.
+        my $inputfile = $Frm->file;
+
+# Get the cycle number.  Supply a default for recipes not supporting
+# this yet.  Defined because the default is zero.
+#       my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+#       $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Arguments
+# =========
+
+# Obtain the value for the combination method.
+        my $method = ( $_MAKE_DARK_FROM_GROUP_{METHOD} || "median" );
+
+# Make a dark for each filter within the group.
+        orac_print "Making masterdark\n";
+
+# Extract from the main group those frames belonging to this group.
+#          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+#                                       ORAC_FILTER => $filter );
+
+# Make this the main group for this context.
+#             my $Grp = $cycleGrp;
+
+# Form a list of input file names for MAKEDARK from the other members
+# of the group.  This is not as obvious as it sounds since we are
+# trying to do this by looking at the current file values for each
+# Frame object in the loop.  First time around everything is fine.
+# Second time around we realise that the previous frames now have the
+# wrong names since they have been dark-fielded etc.  We now have to
+# construct the input names from the template.  The template is the
+# current frame name.
+# XXX. TAL 2011/11/03. template() currently breaks things by assigning
+# all Group members the same filename...
+#             $Grp->template( $Frm->file );
+
+# Set a new current file with the same filter.
+        my $Frm = $Grp->frame( 0 );
+
+# Make lists of files to process
+# ==============================
+
+# Form a list of input file names for CCDPACK tasks.  Set up the object
+# list assuming that everything in the Group members list contains the
+# file pointer to de-biased data.
+        my @objects = $Grp->membernames;
+        my $objlist = join( ",", @objects );
+
+        my @exposearray = ();
+        foreach my $Frm ( $Grp->members ) {
+          my $exptime = $Frm->uhdr("ORAC_EXPOSURE_TIME");
+#         print "DBG: exptime=$exptime\n";
+          push(@exposearray , $exptime);
+        }
+#        my $exposetimes = join(",", @exposearray);
+#        $exposetimes = "'\"" . $exposetimes ."\"'" ;
+#        print "DBG: exposetimes=$exposetimes\n";
+
+# Create text file to hold the list of exposure factors, one per line.  This
+# is needed because expanded lists of exptimes seem to make the command line too
+# long for the ADAM message system.
+        unlink( "makedark.exposelist$$" );
+        open( my $fh_explist, ">makedark.exposelist$$" ) ||
+          orac_throw "Unable to open makedark.exposelist$$ to create a list of exposure times.  Error: $!.\n";
+        print $fh_explist join( "\n", @exposearray ), "\n";
+        close( $fh_explist );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+        unlink( "makedark.inlist$$" );
+        open( my $fh_inlist, ">makedark.inlist$$" ) ||
+          orac_throw "Unable to open makedark.inlist$$ to create a list of frames to process.  Error: $!.\n";
+        print $fh_inlist join( "\n", @objects ), "\n";
+        close( $fh_inlist );
+
+# Generate the dark's name.
+# =========================
+
+# Form the dark name, from the group number. If it gets more complicated later
+# we can add a new primitive as was done for _GET_DARK_NAME_.
+#    _GET_DARK_NAME_
+#    my $dark = $_GET_DARK_NAME_{NAME};
+        my $groupname = $Frm->findgroup;
+#       print "Groupname1=$groupname\n";
+        $groupname =~ s/DARK//;
+#       print "Groupname2=$groupname\n";
+        $groupname =~ s/_\d*$//;
+#	print "Groupname3=$groupname\n";
+        my $out = "dark_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . $groupname;
+#       print "darkname=$out\n";
+
+# Make a master dark
+# ======================
+
+# Assign the other parameters.
+        my $param1 = "method=$method expose='^makedark.exposelist$$'";
+        my $param2 = "in='^makedark.inlist$$' out=$out"; # title=\'Master dark\'";
+
+# Median filter the raw darks to produce the darkframe.
+        $Mon{ "ccdpack_red" }->obeyw( "makecal", "$param1 $param2" );
+        unlink( "makedark.inlist$$", "makedark.exposelist$$" );
+
+# Record and display the dark
+# ===========================
+
+        $Frm->file( $out );
+
+        _CLIPPED_STATS_
+        my $darkmean = $_CLIPPED_STATS_{MEAN};
+        orac_print "Mean of masterdark=$darkmean\n";
+
+# Check the mean in the masterdark is positive and not too large
+#
+        if ( $darkmean > 0.0 && $darkmean < 2.0 ) {
+
+# Set the current dark in the calibration object.
+#          _FILE_DARK_ FILE=$out
+
+          $Cal->dark( $Frm->file );
+# Report the processing status.
+          orac_print $Frm->file . " filed as the current dark\n";
+
+# Add this frame to the index of dark frames, along with its headers and
+# user headers.
+          $Cal->darkindex->add( $Frm->file, { %{ $Frm->hdr }, %{ $Frm->uhdr } } );
+
+# Report the processing status.
+          orac_print $Frm->file . " added to index file\n\n";
+
+# Report the status of the processing.
+	  orac_print "Frames $objlist used for dark\n";
+
+# If we have a final destination environment var. set, convert to fits and copy
+# files there.
+          if ( defined $ENV{FINAL_DATA_OUT} ) {
+            $Frm->file( $out );
+            _ADD_PIPELINE_VERSION_
+            my $file = $Frm->file( $out );
+            my $bias_used = $Cal->bias;
+# Check for too long length (67 is max allowed by SUBPAR)
+            if ( length($bias_used) > 50 ) {
+              my @bias_values = split('oracdr/', $bias_used);
+# No 'oracdr/' found in filename, must be local not from cal/. Resplit on '/'.
+              if ( $#bias_values == 0 ) {
+                @bias_values = split('/', $bias_used);
+                $bias_used = $bias_values[-1];
+              } else {
+                $bias_used = $bias_values[1];
+              }
+              $bias_used =~ s/[.]sdf//;
+#              print "bias=$bias_used\n";
+            }
+            my $dark_used = 'N/A';
+            my $flat_used = 'N/A';
+            my $shut_used = 'N/A';
+            my $mask_used = $Cal->mask;
+# Check for too long length (67 is max allowed by SUBPAR)
+            if ( length($mask_used) > 50 ) {
+              my @mask_values = split('oracdr/', $mask_used);
+# No 'oracdr/' found in filename, must be local not from cal/. Resplit on '/'.
+              if ( $#mask_values == 0 ) {
+                @mask_values = split('/', $mask_used);
+                $mask_used = $mask_values[-1];
+              } else {
+                $mask_used = $mask_values[1];
+              }
+              $mask_used =~ s/[.]sdf//;
+  #              print "mask=$mask_used\n";
+            }
+            my $fringe_used = 'N/A';
+#            print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
+
+# Determine processing steps done
+            my $ovscan_correct = 0;
+            $ovscan_correct = $Frm->uhdr( "OVSCAN_CORRECT")
+                                 if(defined $Frm->uhdr( "OVSCAN_CORRECT"));
+            my $bias_removed = 1;
+            $bias_removed = $Frm->uhdr( "BIAS_REMOVED")
+                                 if(defined $Frm->uhdr( "BIAS_REMOVED"));
+            my $dark_removed = -1;
+            $dark_removed = $Frm->uhdr( "DARK_REMOVED")
+                                 if(defined $Frm->uhdr( "DARK_REMOVED"));
+            my $ovscan_removed = -1;
+            $ovscan_removed = $Frm->uhdr( "OVSCAN_REMOVED")
+                                 if(defined $Frm->uhdr( "OVSCAN_REMOVED"));
+            my $flat_removed = -1;
+            my $fringe_removed = -1;
+
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATOV VALUE=$ovscan_correct, COMMENT=Status|flag|for|overscan|correction
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATBI VALUE=$bias_removed, COMMENT=Status|flag|for|bias|frame|correction
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATDA VALUE=$dark_removed, COMMENT=Status|flag|for|dark|frame|correction
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATTR VALUE=$ovscan_removed, COMMENT=Status|flag|for|overscan|trimming
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFL VALUE=$flat_removed, COMMENT=Status|flag|for|flat|frame|correction
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1STATFR VALUE=$fringe_removed, COMMENT=Status|flag|for|fringe|frame|correction
+
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDBIAS VALUE=$bias_used, COMMENT=Id.|of|bias|frame|used
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDDARK VALUE=$dark_used, COMMENT=Id.|of|dark|frame|used
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFLAT VALUE=$flat_used, COMMENT=Id.|of|flat|frame|used
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDSHUT VALUE=$shut_used, COMMENT=Id.|of|shutter|corr.|frame|used
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDMASK VALUE=$mask_used, COMMENT=Id.|of|mask|file|used
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1IDFRNG VALUE=$fringe_used, COMMENT=Id.|of|fringe|frame|used
+# Set image quality flag (unassessed for now)
+            my $img_status = -1;
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1QIMGST VALUE=$img_status, COMMENT=Image|taking|status|(bitmask;-1=Unknown,0=OK)
+
+# Set public/private flag and release date
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBPRV VALUE='public' COMMENT=Public|or|private|data?
+
+            my $pubdate =  $Frm->hdr( "ORACDATETIME");
+#      orac_print "$pubdate\n";
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=L1PUBDAT VALUE=$pubdate COMMENT=[UTC]|Date|the|frame|becomes|public
+
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=ENGSTATE VALUE='OPERATIONAL'
+
+# Set recipe used
+            my $recipe = $Frm->recipe;
+#      orac_print "Recipe=$recipe\n";
+            _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
+
+            _CONVERT_TO_FITS_
+            my $fitsdarkframe = $_CONVERT_TO_FITS_{FILENAME};
+
+            move($fitsdarkframe, $ENV{FINAL_DATA_OUT});
+            orac_print "Moving ". $fitsdarkframe . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+          }
+        } else {
+          orac_warn "Mean of masterdark out of range (Mean=" . $darkmean . ")\n";
+        }
+# Restore the original Frame file.
+        $Frm->file( $inputfile );
+
+        orac_print "\n";
+    }
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_DARK_FROM_GROUP_ -- Makes a masterdark from the current group of frames.
+
+=head1 DESCRIPTION
+
+This primitive makes a master dark from the current group. The primitive
+files the resultant dark in its calibration index.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = CHARACTER (Given)
+
+The method used to combine frames to form the dark.  See
+parameter METHOD of CCDPACK/MAKECAL (SUN/139) for the options.
+The main two in practice will be "median" or "mode".  The
+former is an weighted median.
+The "mode" option uses an iteratively "sigma clipped" mean which
+approximates to the modal value.  ["median"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for optical imaging instruments.
+
+=item *
+
+Processing only occurs for dark frames, and when the steering header
+MAKE_DARK is true.
+
+=item *
+
+The dark is displayed.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEDARK; KAPPA: FITSMOD, NDFCOPY.
+
+=head1 OUTPUT DATA
+
+The masterdark.  It is called
+"dark_E<lt>instrumentE<gt>_E<lt>UT nightE<gt>_binE<lt>XbinE<gt>xE<lt>YbinE<gt>" where
+E<lt>instrumentE<gt> is the LCOGT instrument identifier and E<lt>XbinE<gt>,
+E<lt>YbinE<gt> are the binning factors in X and Y.
+
+=head1 AUTHORS
+
+Tim Lister (tlister@lcogt.net)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012 Las Cumbres Observatory Global Telescope Inc.
+All Rights Reserved.
+
+=cut
