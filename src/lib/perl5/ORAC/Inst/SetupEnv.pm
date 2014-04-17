@@ -197,10 +197,13 @@ sub orac_calc_instrument_settings {
 			 'FL02' => 'lsc',
 			 'FL03' => 'lsc',
 			 'FL04' => 'lsc',
+                         'EF06' => 'lsc',
+                         'EF07' => 'lsc',
+                         'EF08' => 'lsc',
                        );
 
     # Split into instrument and camera code
-    $inst =~ /^(LCO[A-Z_0-9]*)-((KB|FL)[0-9][0-9])/;
+    $inst =~ /^(LCO[A-Z_0-9]*)-((KB|FL|EF)[0-9][0-9])/;
     if ( $1 eq "" or $2 eq "") {
       croak "LCOGT Instrument '$inst' not recognized by ORAC-DR\n";
     }
@@ -238,6 +241,7 @@ sub orac_calc_instrument_settings {
 			   'LCOSBIG_0M8' => "/mfs-sba/engineering/",
 #                           'LCOSINISTRO' => "/data/archive/science/", # Testing line
                            'LCOSINISTRO' => "/mfs-sba/engineering/",
+                           'LCOFLI' => "/mfs-sba/engineering/",
                         );
 
   # Default drN directories for ACSIS and SCUBA-2.
@@ -616,6 +620,9 @@ sub orac_calc_instrument_settings {
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                        'LCOSINISTRO' => { code => sub { $lcogt_con->( "lcosinistro", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
+                                  ORAC_LOOP => "flag -skip",
+                                  args => { $ukirt_args->() }, },
+                       'LCOFLI' => { code => sub { $lcogt_con->( "lcofli", "tlister\@lcogt.net", "XXX", $sitecode, $cameracode ) },
                                   ORAC_LOOP => "flag -skip",
                                   args => { $ukirt_args->() }, },
                    );
