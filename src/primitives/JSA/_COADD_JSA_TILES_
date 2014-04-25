@@ -29,25 +29,69 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 =cut
 
+orac_termerr('Received a frame with the wrong number of files')
+  unless $Frm->nfiles() == 1;
+
+# Determine the association ID.
+do {
+  my (undef, $tempfrm) = create_suitable_frame($Frm);
+  my ($file) = $Frm->files();
+  $tempfrm->configure([$file]);
+  my $asnid = $tempfrm->jsa_pub_asn_id();
+  $Frm->uhdr('JSA_PUB_ASN_ID', $asnid);
+  orac_say('Association of ' . $file . ': ' . $asnid);
+};
+
 # Wait until we have the whole group so that we can organise the files
-# by tile number.
+# by tile number and association ID.
 unless ($Grp->lastmember($Frm)) {
-  orac_say('Waiting for end of group');
   return ORAC__OK;
 }
-orac_say('Grouping by tile number');
 
-foreach my $subgrp ($Grp->subgrps(qw/TILENUM/)) {
+orac_say('Grouping by tile number and association');
+
+foreach my $subgrp ($Grp->subgrps(qw/TILENUM JSA_PUB_ASN_ID/)) {
   my @frames = $subgrp->members();
   my $tile = $frames[0]->hdrval('TILENUM');
-
-  # Need to determine file name to be used for the co-add,
-  # probably based on the ASNID so determine the backend so
-  # that we can use the corresponding frame class -- the PICARD
-  # frame class doesn't know about JSA public association IDs.
-  my ($prefix, $frmclass, $Frm);
+  my $asnid = $frames[0]->uhdr('JSA_PUB_ASN_ID');
   my $instrument = $frames[0]->uhdr('ORAC_INSTRUMENT');
-  my $backend = $frames[0]->uhdr('ORAC_BACKEND');
+
+  do {
+    # Create new temporary frame containing the files for this tile.
+    my ($prefix, $Frm) = create_suitable_frame($frames[0]);
+    my @files = map {$_->files()} @frames;
+    $Frm->configure(\@files);
+    $Frm->uhdr('JSA_TILES', 1);
+    $Frm->jsa_filename_bits(1);
+
+    # Determine output filename and title.
+    my $title = "$instrument $asnid tile $tile";
+    my $out = sprintf('%s%s_coadd%06d', $prefix, $asnid, $tile);
+
+    # Mark the "coadd" file as an intermediate as we only need to
+    # end up with the tagged "healpix" file.
+    $Grp->push_intermediates($out);
+
+    orac_say("Processing tile: $asnid $tile");
+
+    # Co-add the data using the instrument-specific
+    # primitive.
+    _COADD_SINGLE_JSA_TILE_ OUT=$out TITLE=$title
+
+    # Tag the file as the healpix product.
+    _TAG_AS_REDUCED_PRODUCT_ GRAPHIC=1 UPDATE=1
+  };
+}
+
+# To compute the ASNID we need to determine the backend so
+# that we can use the corresponding frame class -- the PICARD
+# frame class doesn't know about JSA public association IDs.
+# Also select the filename prefix at the same time.
+sub create_suitable_frame {
+  my $Obj = shift;
+  my $backend = $Obj->uhdr('ORAC_BACKEND');
+  my ($prefix, $frmclass);
+
   if ($backend eq 'SCUBA-2') {
     $prefix = 's';
     require 'ORAC/Frame/SCUBA2.pm';
@@ -62,33 +106,5 @@ foreach my $subgrp ($Grp->subgrps(qw/TILENUM/)) {
     orac_termerr("Unknown backend: ${backend}\n");
   }
 
-  do {
-    # Create new temporary frame containing the files for this tile.
-    my $Frm = $frmclass->new();
-    my @files = map {$_->files()} @frames;
-    $Frm->configure(\@files);
-    $Frm->uhdr('JSA_TILES', 1);
-    $Frm->jsa_filename_bits(1);
-    my $asnid = $Frm->jsa_pub_asn_id();
-
-    # Determine output filename and title.
-    my $title = "$instrument $asnid tile $tile";
-    my $out = sprintf('%s%s_coadd%06d', $prefix, $asnid, $tile);
-
-    # Mark the "coadd" file as an intermediate as we only need to
-    # end up with the tagged "healpix" file.
-    $Grp->push_intermediates($out);
-
-    orac_say("Processing tile: $tile");
-
-    if ($backend eq 'SCUBA-2') {
-      _COADD_JSA_TILES_SCUBA2_ OUT=$out TITLE=$title
-    }
-    else {
-      _COADD_JSA_TILES_ACSIS_ OUT=$out TITLE=$title
-    }
-
-    # Tag the file as the healpix product.
-    _TAG_AS_REDUCED_PRODUCT_ GRAPHIC=1 UPDATE=1
-  };
+  return ($prefix, $frmclass->new());
 }
