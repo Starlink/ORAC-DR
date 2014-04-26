@@ -301,7 +301,7 @@ for use in "public" products.  Must be provided by subclasses.
 =cut
 
 sub jsa_pub_asn_id {
-  return 'jsa_pub_asn_id must be implemented by subclasses of JSAFile';
+  die 'jsa_pub_asn_id must be implemented by subclasses of JSAFile';
 }
 
 =back
