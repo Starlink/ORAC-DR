@@ -19,9 +19,9 @@ that position. If desired, the best-fit source position can be derived
 by fitting a 2-d profile. The peak value is then the maximum from this
 fit.
 
-The primitive works by first creating a signal-to-noise image. If the
-peak S/N exceeds 5, the primitive goes on to apply a matched filter
-and the peak value and position are derived from the filtered image.
+The image is assessed for the presence of a peak by applying a matched
+filter and the position of that peak is used as the initial guess for
+the fit.
 
 The primitive returns C<undef> values if no 5-sigma or greater peak
 could be located.
@@ -36,11 +36,6 @@ The following arguments are supported:
 
 Size of area in pixels within which to constrain the fit. Default is
 25.
-
-=item B<FITPEAK>
-
-A flag to denote whether the peak position should be refined by fitting
-a 2-d function. Default is 1 (yes).
 
 =item B<GAUSSIAN>
 
@@ -60,19 +55,15 @@ not an NDF section.
 
 =item B<INITPOS>
 
-Optional reference to an array containing the X, Y coordinate to be
-used as the initial estimate of the peak position. If not given, the
-entire image will be searched for the brightest peak.
+Optional (but strongly recommended) initial estimate of the peak
+position, specified as a reference to an array containing the X, Y
+coordinates. If not given, the entire image will be searched for the
+brightest peak.
 
 =item B<PLOTFIT>
 
 A flag to denote whether the fit should be plotted against the input
 data. Default is 0 (do not plot).
-
-=item B<USESNR>
-
-A flag to indicate that a signal-to-noise ratio map should be made to
-determine if a peak exists. Default is 1 (yes).
 
 =item B<VERBOSE>
 
@@ -89,18 +80,31 @@ The following external tasks are used:
 
 =item KAPPA:
 
-NDFCOPY, NDFTRACE, STATS, THRESH
+NDFCOPY
 
 =item ORAC-DR PRIMITIVES:
 
-_APPLY_MATCHED_FILTER_, _ASSESS_BEAM_FIT_, _FIT_SOURCE_, _PLOT_FIT_PROFILE_
+_ASSESS_BEAM_FIT_, _ASSESS_IMAGE_, _FIT_SOURCE_, _PLOT_FIT_PROFILE_
 
 =back
 
 =head1 NOTES
 
+=over 4
+
+=item *
+
+Giving an initial position (or cropping the image earlier in the
+processing) is B<strongly recommended> for time-critical
+applications. The matched filter applied in the initial assessment can
+take a significant amount of time.
+
+=item *
+
 The fit undergoes an assessment for C<point-like> properties and
 returns an error if the fit looks poor.
+
+=back
 
 =head1 OUTPUT DATA
 
@@ -146,7 +150,7 @@ None.
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2009-2013 University of British Columbia.
+Copyright (C) 2009-2014 University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2000 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
@@ -183,19 +187,6 @@ my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
 # Image to use for finding the peak value and position
 my $image = $in;
 
-# Fit the peak position - if false then the peak position and signal
-# from KAPPA stats will be used
-my $fitpeak = get_prim_arg($_PRIM_ARGS_, "FITPEAK", 1);
-
-# Is the peak s/n to be calculated?
-my $usesnr = get_prim_arg($_PRIM_ARGS_, "USESNR", 1);
-# Override with a recipe parameter
-$usesnr = $Frm->uhdr("RECPAR_USESNR") if (defined $Frm->uhdr("RECPAR_USESNR"));
-# Set a dummy value for the peak S/N if the user is confident that a
-# bright source exists
-my $peaksn = 10;
-my $mfpeaksn = 1.67 * $peaksn;
-
 # Initial position
 my $initpos = get_prim_arg($_PRIM_ARGS_, "INITPOS", undef);
 
@@ -204,22 +195,9 @@ my $plotfit = get_prim_arg($_PRIM_ARGS_, "PLOTFIT", 0);
 $plotfit = $Frm->uhdr("RECPAR_PLOT_SOURCEFIT")
   if (defined $Frm->uhdr("RECPAR_PLOT_SOURCEFIT"));
 
-# Unset all the flags so that nothing happens if the map has bad
-# values at the peak position
-if ($Frm->tagexists("badpeak")) {
-  $usesnr = 0;
-  $fitpeak = 0;
-  undef $initpos;
-  $plotfit = 0;
-  $peaksn = 0;
-  $mfpeaksn = 0;
-}
-
 # Retrieve the pixel scale
-$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
-my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
-($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
-my $pixscale = 0.5*($pixscale[0] + $pixscale[1]);
+_GET_PIXEL_SCALE_ GROUP=$group IMAGE=$in VERBOSE=0
+my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
 
 # If an initial position is given, copy out a 2x2 arcmin^2 box centred
 # on that position
@@ -227,105 +205,22 @@ if ($initpos) {
   # Use a 2-arcmin image for speed
   my $minmapsize = 120.0;
   my $region = int($minmapsize / $pixscale);
-  # Copy out a box centred on the source if the map is larger than the
-  # minimum
-  if ($region < $dims[0] && $region < $dims[1]) {
-    my ($x, $y) = ($initpos->[0], $initpos->[1]);
-    my $infile = $in. "($x~$region,$y~$region,)";
-    $image = $Obj->inout("_region");
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$infile out=$image");
-    $Obj->push_intermediates($image);
-  }
+  # Copy out a box centred on the source
+  my ($x, $y) = ($initpos->[0], $initpos->[1]);
+  my $infile = $in. "($x~$region,$y~$region,)";
+  $image = $Obj->inout("_region");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$infile out=$image");
+  $Obj->push_intermediates($image);
 }
 
-# User can supply a matched-filtered image to save some time. However,
-# only use an existing matched-filtered image if the current object
-# contains a single file otherwise there is no guarantee the
-# matched-filtered image corresponds to the current image
-unless ($Obj->nfiles == 1 && $Obj->tagretrieve("matchfilt")) {
-  _APPLY_MATCHED_FILTER_ VERBOSE=0 IN=$image
-}
-my $image_mf = $Obj->file;
+# Assess image for a peak
+_ASSESS_IMAGE_ IMAGE=$image GROUP=$group INITPOS=$initpos
 
-if ($usesnr) {
-  # Now find the position of the brightest peak in the map
-  my $image_snr = new ORAC::TempFile;
-  _CALC_SCUBA2_SNR_ IN=$image OUT=$image_snr VERBOSE=0
-  my $results = $_CALC_SCUBA2_SNR_{RESULTS};
-  $peaksn = $results->{MAX} if (defined $results);
-  # Calculate peak SNR of matched-filtered image - if there's a source
-  # then peak S/N should go up by a factor of ~2.
-  my $mf_snr = new ORAC::TempFile;
-  _CALC_SCUBA2_SNR_ IN=$image_mf OUT=$mf_snr VERBOSE=0
-  $results = $_CALC_SCUBA2_SNR_{RESULTS};
-  $mfpeaksn = $results->{MAX} if (defined $results);
-}
-
-my ($peakval, $peakerr, $peaksnr, @xy, $peak, $dpeak, $snr);
-my $posn = \@xy;
-# Choose a S/N cutoff of 3, which will correspond to a peak S/N of ~6
-# in the matched-filtered map. Allow some leeway in this scaling with
-# a matched-filtered peak S/N of 5.
-if ( $peaksn > 3 && $mfpeaksn > 5 ) {
-  orac_warn "Peak S/N is only ".(sprintf "%.1f", $peaksn).": source may not be located accurately\n"
-    if ($peaksn < 6);
-
-  my $point_focus = ($Obj->hdr("OBS_TYPE") =~ /focus|pointing/i) ? 1 : 0;
-  # Find position of max value - restrict search to a 60-arcsec box for
-  # calibrators. Might be worth using the map size as defined in
-  # header to avoid picking up edge pixels for other targets.
-  my $npix = int(60.0 / $pixscale) + 1;
-  my $ndf = ($Cal->iscalsource($Obj->hdr("OBJECT")) || $point_focus)
-    ? $image_mf."(0~$npix,0~$npix,)" : $image_mf;
-  $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
-  my ($ORAC_STATUS, $pkpos) = $Mon{kappa_mon}->get("stats", "maxwcs");
-  # Split into coordinates
-  @xy = split(/\,\s+/, $pkpos);
-
-  # Now find the value in the original image at the maximum
-  $in = $image."($xy[0]~1,$xy[1]~1,)";
-  $Mon{kappa_mon}->obeyw("stats","ndf=$in");
-  ($ORAC_STATUS, $peakval) = $Mon{kappa_mon}->get("stats", "maximum");
-  $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=err");
-  ($ORAC_STATUS, $peakerr) = $Mon{kappa_mon}->get("stats", "maximum");
-
-  # For pointing data processed with the regular reduction recipes,
-  # the maps will not be in offset coordinates. Since the processing
-  # is not concerned with checking offsets, mark these data as
-  # non-pointing data.
-  if ($point_focus) {
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$image_mf mode=get name=skyrefis");
-    ($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-    $point_focus = 0  if (lc($skyrefis) ne "origin");
-  }
-  # For pointing and focus observations, check to see if the peak lies
-  # within 30" of the centre
-  if ($point_focus) {
-    # x, y offsets will be in degrees when processed by a
-    # pointing/focus recipe, but sexagesimal otherwise
-    my ($x, $y) = @xy;
-    if ($x =~ /:/ || $y =~ /:/) {
-      use Astro::Coords;
-      my $coord = Astro::Coords->new( ra => $x, dec => $y, units => "sexagesimal",
-				      type => "J2000");
-      $x = $coord->ra(format => 'deg');
-      $y = $coord->dec(format => 'deg');
-    }
-    my $dr = sprintf "%.1f", (3600 * sqrt($x*$x + $y*$y));
-    if ($dr > 30) {
-      orac_warn "S/N peak is far from centre ($dr arcsec) - source is probably not detected\n";
-      @xy = ();
-      $fitpeak = 0;
-    }
-  }
-} else {
-  orac_warn "Image $in has no significant maximum\n";
-  @xy = ();
-  $fitpeak = 0;
-}
-
-# Fit the peak position if desired
-if ($fitpeak) {
+my ($peakval, $peakerr, $peaksnr, $peak, $dpeak, $snr, $posn);
+# Refine the peak position with a fit if one is present
+if ($_ASSESS_IMAGE_{PEAK}) {
+  $posn = $_ASSESS_IMAGE_{POSITION};
+  my @xy = @$posn;
   # Are we forcing a gaussian fit?
   my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 0);
   # Override with recipe parameter
@@ -369,8 +264,8 @@ if ($fitpeak) {
     # only a little bit higher than this
     $dpeak = $amp[1];
     $snr = $_FIT_SOURCE_{SNR};
-    @xy = @{$_FIT_SOURCE_{POSITION}};
-    orac_print " Fitted peak at $xy[0], $xy[1]\n" if ($verbose);
+    $posn = $_FIT_SOURCE_{POSITION};
+    orac_print " Fitted peak at $posn->[0], $posn->[1]\n" if ($verbose);
     my %fitpars = %_FIT_SOURCE_;
     $_PRIM_ARGS_->{BEAM} = \%fitpars;
 
@@ -385,26 +280,19 @@ if ($fitpeak) {
     }
   } else {
     orac_warn "Fit to source failed - using peak position instead\n";
-    $peak = $peakval;
-    $dpeak = $peakerr;
-    # Return a SNR of 0 if the uncertainty is not defined
-    $snr = ($dpeak && $dpeak > 0) ? $peak / $dpeak : 0;
+    $peak = $_ASSESS_IMAGE_{PEAKVAL};
+    $dpeak = $_ASSESS_IMAGE_{PEAKERR};
     orac_print " Found peak at $posn->[0], $posn->[1]\n" if ($verbose);
   }
   # Having gone to the trouble of finding the peak, store it so it can
   # be used again later
   $Obj->uhdr("MAP_PEAK_POSITION", $posn) if ($posn && @$posn);
-} else {
-  # These will be undef, but return them anyway
-  $peak = $peakval;
-  $dpeak = $peakerr;
-  $snr = $peaksnr;
 }
 
 # Store the result in the hash
 $_PRIM_ARGS_->{PEAK} = $peak;
 $_PRIM_ARGS_->{PEAKERR} = $dpeak;
-$_PRIM_ARGS_->{POSITION} = $posn if @$posn;
+$_PRIM_ARGS_->{POSITION} = $posn if ($posn && @$posn);
 $_PRIM_ARGS_->{SNR} = $snr;
 
 # Restore object to original state
