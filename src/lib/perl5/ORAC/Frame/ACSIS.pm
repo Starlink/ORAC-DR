@@ -267,7 +267,7 @@ sub findgroup {
   my $self = shift;
 
   # Read extra information required for group disambiguation
-  my $restfreq = $self->rest_frequency(0) // '';
+  my $restfreq = $self->rest_frequency(1) // '';
 
   # This class handles ACSIS data and data converted with gsd2acsis
   # DAS data might come with multiple IFFREQs so we include that here.
@@ -361,7 +361,7 @@ to reject).
     $bwmode =~ s/x\d+$// or die 'Failed to process bandwidth mode';
 
     # Determine rest frequency.
-    my $restfreq = $self->rest_frequency(1);
+    my $restfreq = $self->rest_frequency(0);
     return undef unless defined $restfreq;
 
     # Declare sideband variable
@@ -451,7 +451,7 @@ bandwidth mode and first subsystem number.
 sub subsystem_id {
   my $self = shift;
 
-  my $restfreq = $self->rest_frequency(1);
+  my $restfreq = $self->rest_frequency(0);
   die 'Could not determine rest frequency when attempting to ' .
       'make up the subsystem ID' unless defined $restfreq;
   my $bwmode = $self->hdr('BWMODE');
@@ -504,16 +504,16 @@ the nightly association IDs do not change:
 
     my $rf = $self->rest_frequency(0);
 
-The first parameter can be set to a true value to disable rounding when
-the rest frequency is determined by averaging FRQSIGLO and FRQSIGHI.
-This is different from the historical behavior mentioned above, but
-necessary if 1MHz precision is required.
+The first parameter can be set to a true value to allow the rest frequency
+to be determined by averaging FRQSIGLO and FRQSIGHI.  This is just for
+the historical behavior mentioned above, and should not be used if a
+real rest frequency is required.
 
 =cut
 
 sub rest_frequency {
   my $self = shift;
-  my $no_rounding = shift;
+  my $allow_sig_av = shift;
 
   if( defined( $self->hdr( "RESTFREQ" ) ) ) {
     # We can not sprintf this because the version read from
@@ -521,9 +521,9 @@ sub rest_frequency {
     # cause problems when rounding through a database.
     return $self->hdr( "RESTFREQ" );
   } elsif( defined( $self->hdr( "FRQSIGLO" ) ) &&
-           defined( $self->hdr( "FRQSIGHI" ) ) ) {
+           defined( $self->hdr( "FRQSIGHI" ) ) &&
+           $allow_sig_av ) {
     my $sig_av = ($self->hdr( "FRQSIGLO" ) + $self->hdr( "FRQSIGHI" )) / 2;
-    return $sig_av if $no_rounding;
     return sprintf('%.2f', $sig_av);
   } else {
     # Read rest frequency from the WCS
