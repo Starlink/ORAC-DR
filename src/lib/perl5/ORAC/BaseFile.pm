@@ -1005,7 +1005,7 @@ sub product {
     if ( defined $_[0] ) {
       $self->{Product_Comment} = shift;
     } else {
-      $self->{Product_Comment} = "productID";
+      $self->{Product_Comment} = "Pipeline product";
     }
   }
   ;
