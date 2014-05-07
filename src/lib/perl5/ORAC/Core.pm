@@ -61,6 +61,7 @@ use ORAC::Inst::Defn qw/ orac_determine_inst_classes orac_guess_instrument /;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/; # ORAC status varaibles
 use ORAC::Recipe::Parameters;
+use ORAC::LogFile;
 use ORAC::LogHTML;
 
 # Need to use this class so that we can pre-configure the
@@ -232,6 +233,14 @@ sub orac_store_frm_in_correct_grp {
   } else {
     orac_print ("This observation is part of group ".$Grp->name."\n","blue");
   }
+
+  # Write log.group entry.
+  do {
+    my (undef, $num, undef) = split '#', $Grp->name();
+    my $log = new ORAC::LogFile('log.group');
+    $log->header('# Group File');
+    $log->addentry(map {$num . ' ' . $_} $Frm->raw());
+  };
 
   # If we were previously requested to check if the file exists, do so
   # now and erase it if the $resume flag is not set.
