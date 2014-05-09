@@ -19,6 +19,16 @@ the frequency axis.
 Hybrid-mode observations have an additional check done to ensure that
 too many channels are not trimmed.
 
+If any of Arguments LOWER, UPPER, or PERCENT or their recipe-parameter
+equivalents are set, the primitive merely trims to those limits rather
+than using the noise algorithm.  If only one of LOWER or UPPER is set
+the other is set to a default, which depends on the value of the
+ORAC_BACKEND internal header in the current Frame; for ACSIS it is
+2.75%, for DAS it is 7.5%.  If the backend is undefined or has another
+value the default is 10%.  These limits may also be used if the data
+are hybrid or has fewer than five elemnts in either of its first two
+dimensions.
+
 =head1 ARGUMENTS
 
 =over 4
@@ -49,10 +59,7 @@ The percentage of the total frequency range to trim from either
 end. For example, if a cube has 1024 frequency channels, and the
 percentage to trim is 10%, then 102 channels will be trimmed from
 either end.   This argument can be overridden by the
-RECPAR_TRIM_PERCENTAGE uhdr via the recipe parameter system.
-The default depends on the value of the ORAC_BACKEND internal header
-in the current Frame; for ACSIS it is 2.75%, for DAS it is 7.5%.  If
-the backend is undefined or has another value the default is 10%.  []
+RECPAR_TRIM_PERCENTAGE uhdr via the recipe parameter system. [undef]
 
 =item UPPER = REAL (Given)
 
@@ -134,9 +141,9 @@ if ( defined( $backend ) && uc( $backend ) eq "ACSIS" ) {
 # Handle parameters to pass on to _REMOVE_FREQUENCY_ENDS_.
 my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", 3 );
 my $minimum_overlap = get_prim_arg( $_PRIM_ARGS_, "MINIMUM_OVERLAP", 10 );
-my $percent = get_prim_arg( $_PRIM_ARGS_, "PERCENT", $default_percent );
-my $lower = $_PRIM_ARGS_->{LOWER};
-my $upper = $_PRIM_ARGS_->{UPPER};
+my $percent = get_prim_arg( $_PRIM_ARGS_, "PERCENT", undef );
+my $lower = get_prim_arg( $_PRIM_ARGS_, "LOWER", undef );
+my $upper = get_prim_arg( $_PRIM_ARGS_, "UPPER", undef );
 
 if ( $axis != 1 && $axis != 3 ) {
   orac_err "_REMOVE_FREQUENCY_ENDS_ADVANCED_: Spectral AXIS argument must " .
@@ -154,14 +161,19 @@ $upper = ( defined( $Frm->uhdr( "RECPAR_TRIM_PERCENTAGE_UPPER" ) ) ?
              $Frm->uhdr( "RECPAR_TRIM_PERCENTAGE_UPPER" )          :
              $upper );
 
+my $user_range = defined( $lower ) || defined( $upper ) || defined( $percent );
+
 if( defined( $lower ) || defined( $upper ) ) {
+  $lower = ( defined( $lower ) ? $lower : $default_percent );
+  $upper = ( defined( $upper ) ? $upper : $default_percent );
 
-  $lower = ( defined( $lower ) ? $lower : 0 );
-  $upper = ( defined( $upper ) ? $upper : 0 );
-
-} else {
+} elsif ( defined( $percent ) ) {
   $lower = $percent;
   $upper = $percent;
+
+} else {
+  $lower = $default_percent;
+  $upper = $default_percent;
 }
 
 
@@ -170,7 +182,8 @@ if( defined( $lower ) || defined( $upper ) ) {
 # is five or greater.
 _GET_DIMENSIONS_ FILE=$Frm->file(1)
 my $dims = $_GET_DIMENSIONS_{DIMS};
-if ( $dims->[1] < 5 || $dims->[2] < 5 && ! $Frm->uhdr( "ISHYBRID" ) ) {
+if ( $dims->[1] < 5 || $dims->[2] < 5 && ! $Frm->uhdr( "ISHYBRID" ) ||
+     $user_range ) {
 
   _REMOVE_FREQUENCY_ENDS_ LOWER=$lower UPPER=$upper AXIS=$axis
 
