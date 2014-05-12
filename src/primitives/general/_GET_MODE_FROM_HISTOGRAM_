@@ -1,0 +1,163 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_GET_MODE_FROM_HISTOGRAM_ - determine the statistics of an image
+
+=head1 SYNOPSIS
+
+ _GET_MODE_FROM_HISTOGRAM_ NUMBIN=1000
+
+ _GET_MODE_FROM_HISTOGRAM_ NUMBIN=1000 GROUP=1 COMP=ERR
+
+=head1 DESCRIPTION
+
+This primitive calculates the modal value of an image using a simple
+histogram method. The mode is determined from the peak of the
+histogram of values, derived using a user-specified number of bins,
+and is calculated as the mid-point of the bin with the greatest number
+of values.
+
+The result is returned in the primitive hash.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<COMP>
+
+Component of input image to obtain statistics for. Valid values are
+C<DATA>, C<VAR> and C<ERR>. Default is C<DATA>.
+
+=item B<GROUP>
+
+If true, use the current Group file as input, otherwise use the
+current Frame. Default is 0 (false: use current Frame).
+
+=item B<IMAGE>
+
+Input image. Default is determined by the B<GROUP> parameter.
+
+=item B<NUMBIN>
+
+Number of bins to use in the histogram. No default.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+HISTOGRAM
+
+=back
+
+=head1 NOTES
+
+The user must provide the number of bins to use in the calculation.
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_GET_MODE_FROM_HISTOGRAM_>
+contains the following keys:
+
+=over 4
+
+=item MODE
+
+The value of the mode derived from the histogram.
+
+=item HISTOMODE
+
+A flag to indicate that a modal value was successfulyl derived.
+
+=back
+
+The input object is not updated.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
+
+my $maxval;
+
+my $numbin = get_prim_arg($_PRIM_ARGS_, "NUMBIN", undef);
+if ($numbin) {
+  my $numbinmax = 10000;
+  $numbin = $numbinmax if ($numbin > $numbinmax);
+
+  my $comp = lc(get_prim_arg($_PRIM_ARGS_, "COMP", "data"));
+  $comp = "data" unless ($comp eq "err" || $comp eq "var");
+
+  # ORAC::TempFile can't be used to create a file to pass to histogram
+  # but it *can* be used to generate a unique name for histogram so
+  # ensure there won't be any name clashes.
+  my $histfile = new ORAC::TempFile(0);
+  my $histname = $histfile->file;
+  undef $histfile;
+  my $args = "numbin=$numbin range=! device=! logfile=".$histname;
+  $Mon{kappa_mon}->obeyw("histogram","in=$in $args comp=$comp");
+
+  # Read log file, grab lines with "pixel", delete file when done
+  open my $HISTFH, "< $histname"
+    or die "Unable to open file, $histname: $!\n";
+  my (@lines, @values);
+  while (<$HISTFH>) {
+    chomp;
+    push (@lines, $_) if ($_ =~ /pixels/);
+  }
+  close $HISTFH;
+  unlink $histname;
+
+  # Split line on spaces and store the bounds of and the number of
+  # samples in the current bin
+  foreach my $line (@lines) {
+    my @tmpline = split(/\s+/,$line,6);
+    push (@values, [ $tmpline[1], $tmpline[3], $tmpline[4] ]);
+  }
+  # The MODE is just the maximum value
+  my $maxpix = 0;
+  foreach my $lineref (@values) {
+    if ($lineref->[2] > $maxpix) {
+      $maxpix = $lineref->[2];
+      $maxval = 0.5*($lineref->[0] + $lineref->[1]);
+    }
+  }
+} else {
+  orac_err "NUMBIN required to calculate histogram\n";
+}
+
+$_GET_MODE_FROM_HISTOGRAM_{MODE} = $maxval;
+$_GET_MODE_FROM_HISTOGRAM_{HISTOMODE} = (defined $maxval) ? 1 : 0;
