@@ -2,19 +2,19 @@
 
 =head1 NAME
 
-_CALC_SCUBA2_SNR_ - calculate a signal-to-noise ratio image
+_CALC_SNR_IMAGE_ - calculate a signal-to-noise ratio image
 
 =head1 SYNOPSIS
 
- _CALC_SCUBA2_SNR_
+ _CALC_SNR_IMAGE_
 
- _CALC_SCUBA2_SNR_ GROUP=1 STORE=1
+ _CALC_SNR_IMAGE_ GROUP=1 STORE=1
 
 =head1 DESCRIPTION
 
 Creates a signal-to-noise ratio image using the data and variance
 components of a given file. Some basic statistics are reported on
-completion if requested, and the full list of images returned in the
+completion if requested, and the full list of results returned in the
 primitive hash.
 
 =head1 ARGUMENTS
@@ -41,8 +41,7 @@ an output file with the suffix C<_snr>.
 =item B<REGION>
 
 Size of a square region in pixels use to determine the statistics if
-requested. Default is 0 (use the whole image). The region defined by
-the Grp uhdr C<WHITEN_BOX> will override this value if present.
+requested. Default is 0 (use the whole image).
 
 =item B<STATS>
 
@@ -63,7 +62,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-MAKESNR
+MAKESNR, NDFTRACE, SETLABEL
 
 =item ORAC-DR PRIMITIVES
 
@@ -73,7 +72,8 @@ _FIND_IMAGE_STATISTICS_
 
 =head1 OUTPUT DATA
 
-The current object is updated with the SNR image and tagged C<snr>.
+The current object is updated with the SNR image and tagged
+C<snr>. The product is also set to C<snr>.
 
 The primitive hash contains a single new entry with the key C<RESULTS>
 which holds a reference to the hash of results from
@@ -120,7 +120,6 @@ my $Obj = ($group) ? $Grp : $Frm;
 
 my $proceed = 1;
 if ( $group ) {
-  # Wait for the last member - because...?
   $proceed = ($Grp->file_exists) ? 1 : 0;
 }
 
@@ -131,48 +130,43 @@ if ( $proceed ) {
   # Obtain input image - default to current file in given object
   my $in = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
 
-  # Obtain output image name
-  my $out = get_prim_arg($_PRIM_ARGS_, "OUT", scalar($Obj->inout("_snr")));
+  # Output SNR image name
+  my $snrmap = get_prim_arg($_PRIM_ARGS_, "OUT", scalar($Obj->inout("_snr")));
 
-  # Only do this if the file actually has a VARIANCE component.
+  # Only run makesnr if the file actually has a VARIANCE component
   $Mon{ndfpack_mon}->obeyw("ndftrace", "ndf=$in");
   my ($ORAC_STATUS, $hasvar) = $Mon{ndfpack_mon}->get("ndftrace", "variance");
 
   my $results;
   if( $hasvar eq "TRUE" ) {
+    # Use all data by setting minvar=0
+    $Mon{kappa_mon}->obeyw("makesnr","in=$in out=$snrmap minvar=0");
+
     # Return statistics of SNR image?
     my $stats = get_prim_arg($_PRIM_ARGS_, "STATS", 1);
 
-    # Region over which to calculate statistics - override with the
-    # WHITEN_BOX parameter if set
-    my $region = get_prim_arg($_PRIM_ARGS_, "REGION", 0);
-    $region = $Grp->uhdr("WHITEN_BOX")
-      if ($group && defined $Grp->uhdr("WHITEN_BOX"));
-
-    # Use all data by setting minvar=0
-    $Mon{kappa_mon}->obeyw("makesnr","in=$in out=$out minvar=0");
-
     # Report some basic statistics if requested
-    _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0 REGION=$region
-    $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
-
-    if ($verbose) {
-      my $min = sprintf "%5.2f", $results->{MIN};
-      my $max = sprintf "%5.2f", $results->{MAX};
-      my $sigma = sprintf "%5.2f", $results->{SIGMA};
-      my $numgood = $results->{NUMGOOD};
-      my $extra = ($region) ? " (whitened)" : "";
-      orac_print "SNR image range $min to $max: sigma = $sigma from $numgood pixels$extra\n";
+    if ($stats) {
+      my $region = get_prim_arg($_PRIM_ARGS_, "REGION", 0);
+      _FIND_IMAGE_STATISTICS_ IMAGE=$snrmap VERBOSE=0 HISTAT=0 REGION=$region
+      $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+      if ($verbose) {
+	my $min = sprintf "%5.2f", $results->{MIN};
+	my $max = sprintf "%5.2f", $results->{MAX};
+	my $sigma = sprintf "%5.2f", $results->{SIGMA};
+	my $numgood = $results->{NUMGOOD};
+	orac_print "SNR image range $min to $max: sigma = $sigma from $numgood pixels\n";
+      }
     }
 
     # Update PRODUCT and store filenames in object
-    $Obj->force_product_update( "snr", $out );
+    $Obj->force_product_update( "snr", $snrmap );
     $Obj->tagset("snr");
 
     # Set the file label too
-    $Mon{ndfpack_mon}->obeyw("setlabel","ndf=$out label='Signal-to-noise ratio'");
+    $Mon{ndfpack_mon}->obeyw("setlabel","ndf=$snrmap label='Signal-to-noise ratio'");
   } else {
     orac_warn "No SNR created: input file, $in, has no variance component\n";
   }
-  $_CALC_SCUBA2_SNR_{RESULTS} = $results;
+  $_CALC_SNR_IMAGE_{RESULTS} = $results;
 }
