@@ -52,8 +52,8 @@ STATS application. Default is 0 (false).
 
 =item B<HISTO>
 
-Flag to indicate whether to calculate a histogram of values to find
-the sky level via the mode. Default is 0 (false).
+Flag to indicate whether to calculate a histogram of values to
+determine the mode. Default is 0 (false).
 
 =item B<IMAGE>
 
@@ -95,7 +95,7 @@ The following external tasks are used:
 
 =item KAPPA:
 
-HISTAT, HISTOGRAM, STATS
+HISTAT, NDFTRACE, STATS
 
 =back
 
@@ -103,8 +103,6 @@ HISTAT, HISTOGRAM, STATS
 
 Masking of known sources should probably take place before calling
 this primitive.
-
-Will fail if the variance component does not exist.
 
 =head1 OUTPUT DATA
 
@@ -119,11 +117,11 @@ A reference to a hash containing the following keys and values:
 
 =over 4
 
-=item MEAN    - mean level
+=item MEAN    - mean value
 
 =item MODE    - modal value (only if HISTOGRAM or HISTAT are true)
 
-=item MEDIAN  - median
+=item MEDIAN  - median value
 
 =item SIGMA   - standard deviation (only if HISTAT is false)
 
@@ -150,7 +148,7 @@ Unset items are returned as undef.
 
 =item HISTOMODE
 
-A true/false flag to indicate if the HISTO method returned a valid value
+A true/false flag to indicate if the HISTO method returned a valid value.
 
 =back
 
@@ -162,8 +160,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005-2011 University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2005-2011,2014 University of British Columbia.  All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -196,7 +194,6 @@ unless ( defined $in ) {
 # calculated for?
 my $comp = get_prim_arg( $_PRIM_ARGS_, "COMP", "data" );
 
-# Should I be verbose (default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 
 # Optional CLIP argument, default to blank (no clipping)
@@ -213,7 +210,7 @@ my $percentiles = get_prim_arg( $_PRIM_ARGS_, "PERCENTILES", "!" );
 
 # Declare useful variables
 my $ORAC_STATUS;
-my @params = (qw/ mean median numgood numpix numbad minimum maximum total maxwcs maxpos /);
+my @params = (qw/ mean median numgood numpix minimum maximum total maxwcs maxpos /);
 # Add perval if not default
 push (@params, "perval") if ($percentiles ne "!");
 
@@ -236,8 +233,6 @@ my %results;
 if ( $histat ) {
   # Set the HISTO argument to false
   $histo = 0;
-
-  # Check for other parameters for HISTAT
   # Default to MOMENTS method for calculating mode (as in KAPPA docs)
   my $modemethod = get_prim_arg( $_PRIM_ARGS_, "MODE_METHOD", "MOMENTS" );
 
@@ -265,104 +260,51 @@ if ( $histat ) {
 
 # Call KAPPA stats either as chosen or as fallback if histat fails
 if (!$histat) {
-  # Do we want stats to calculate ordered statistics? Default to yes.
+  # Use ordered statistics if the median is required
   my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
   $order = ($order) ? "order" : "noorder";
 
-  # Calculate stats of the masked file to get the mean and the
-  # standard deviation
   my $args = "ndf=$in $order comp=$comp";
   $args .= " percentiles=[$percentiles]" unless ($percentiles eq "!");
   $args .= ($clip eq "") ? "" : " clip=[$clip]";
   $Mon{kappa_mon}->obeyw("stats","$args");
-  push ( @params, "sigma");
+  push (@params, "sigma");
   # Retrieve the values
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("stats", @params);
-
-  # Stats returns sigma = 0 if anything went wrong
+  # Mode is not defined
   $results{mode} = "NaN";
 }
 
-my $avg    = $results{mean};
-my $stdev  = $results{sigma};
-my $sum    = $results{total};
-my $min    = $results{minimum};
-my $max    = $results{maximum};
-my $median = $results{median};
-my $mode   = $results{mode};
-my $ngood  = $results{numgood};
-my $ntotal = $results{numpix};
-my $nbad   = $results{numbad};
-my $perval = $results{perval};
+orac_warn "All pixels in region are bad!\n"
+  if ($verbose && defined $results{numgood} && $results{numgood} == 0);
 
-orac_warn "All pixels in region are bad!\n" if ($ngood == 0 && $verbose);
-my $fracgood = (defined $ntotal && $ntotal > 0) ? $ngood/$ntotal : 0;
-
-# If the user wants to use STATS and wants a modal value as well...
-my $maxval = -1.0e9;
-if ( $histo && $stdev ) {
-  # Now use KAPPA histogram and write results to a file
-  # Determine numbin: calculated from min and max to make sure that
-  # the increment is more or less the same for all images
+# If the user wants to use STATS and also requires a modal value
+my $histomode;
+if ( $histo && defined $results{sigma} && $results{numgood} ) {
+  # Determine numbin from min and max to make sure that the increment
+  # is more or less the same for all images. This method will probably
+  # have issues with outliers and should make use of knowledge about
+  # the image to determine the number of bins.
   my $delta = 1.0e-5;
-  my $numbinmax = 10000;
-  my $numbin = int( ($max - $min)/$delta );
-  $numbin = $numbinmax if ($numbin > $numbinmax);
-
-  # ORAC::TempFile can't be used to create a file to pass to histogram
-  # but it *can* be used to generate a unique name for histogram so
-  # ensure there won't be any name clashes.
-  my $histfile = new ORAC::TempFile(0);
-  my $histname = $histfile->file;
-  undef $histfile;
-  my $args = "numbin=$numbin range=! device=! logfile=".$histname;
-  $Mon{kappa_mon}->obeyw("histogram","in=$in $args comp=$comp");
-
-  # Now analyze results - first open log file with hist results
-  open my $HISTFH, "< $histname"
-    or die "Unable to open file, $histname: $!\n";
-  my (@lines, @values);
-  # Read all the relevant lines, delete file when done
-  while (<$HISTFH>) {
-    chomp;
-    # We only want lines with the word pixels in it
-    push (@lines, $_) if ($_ =~ /pixels/);
-  }
-  close $HISTFH;
-  unlink $histname;
-
-  # Split line on spaces and store the bounds of and the number of
-  # samples in the current bin
-  foreach my $line (@lines) {
-    my @tmpline = split(/\s+/,$line,6);
-    my $lineref = [ $tmpline[1], $tmpline[3], $tmpline[4] ];
-    push (@values, $lineref);
-  }
-  # Now find the maximum value - this is the MODE
-  my $maxpix = 0;
-  foreach my $lineref (@values) {
-    if ($lineref->[2] > $maxpix) {
-      $maxpix = $lineref->[2];
-      $maxval = 0.5*($lineref->[0] + $lineref->[1]);
-    }
-  }
-  $mode = $maxval;
+  my $numbin = int( ($results{maximum} - $results{minimum})/$delta );
+  _GET_MODE_FROM_HISTOGRAM_ IMAGE=$in NUMBIN=$numbin COMP=$comp
+  $results{mode} = $_GET_MODE_FROM_HISTOGRAM_{MODE};
+  $histomode = $_GET_MODE_FROM_HISTOGRAM_{HISTOMODE};
 }
 
-# Store mean DC level, standard deviation and mode in the hash
-$_FIND_IMAGE_STATISTICS_{RESULTS} = { MEAN => $avg,
-				      SIGMA => $stdev,
-				      MODE => $mode,
-				      MEDIAN => $median,
-				      NUMPIX => $ntotal,
-				      NUMGOOD => $ngood,
-				      SUM => $sum,
-				      MAX => $max,
-				      MIN => $min,
-				      PERCENTILES => $perval,
+$_FIND_IMAGE_STATISTICS_{RESULTS} = { MEAN => $results{mean},
+				      SIGMA => $results{sigma},
+				      MODE => $results{mode},
+				      MEDIAN => $results{median},
+				      NUMPIX => $results{numpix},
+				      NUMGOOD => $results{numgood},
+				      SUM => $results{total},
+				      MAX => $results{maximum},
+				      MIN => $results{minimum},
+				      PERCENTILES => $results{perval},
 				      PEAKWCS => $results{maxwcs},
 				      PEAKPOS => $results{maxpos},
 				    };
-$_FIND_IMAGE_STATISTICS_{HISTOMODE} = ($maxval == -1.0e9) ? 0 : 1;
+$_FIND_IMAGE_STATISTICS_{HISTOMODE} = (defined $histomode) ? 1 : 0;
 
 orac_print "Calculated image $comp statistics\n" if $verbose;
