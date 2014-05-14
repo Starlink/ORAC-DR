@@ -786,8 +786,11 @@ sub orac_print_configuration {
         my $host = (split( /\./, hostname))[0]; # only want first part of host
         my $user = ($ENV{USER} ? "_$ENV{USER}" : "" );
         my $inst = lc($ENV{ORAC_INSTRUMENT});
+        # Prevent the PICARD instrument string "<not required>" appearing in
+        # the log file name.
+        $inst = ($inst ne '<not required>') ? ('_' . $inst) : '';
         my $fname = sprintf($logfile_prefix.
-                            "_%04d%02d%02d_%02d%02d%02d_%s_%s%s",
+                            "_%04d%02d%02d_%02d%02d%02d%s_%s%s",
                             $time[5]+1900, $time[4]+1,$time[3],
                             $time[2],$time[1],$time[0],$inst, $host, $user);
         my $path = File::Spec->catfile($ENV{ORAC_LOGDIR}, $fname);
