@@ -61,6 +61,62 @@ use ORAC::Version;
 
       _ADD_PIPELINE_VERSION_
 
+# Write INSTYPE into the header if not present
+
+      my $instype = 'N/A';
+      $instype = $Frm->hdr( "INSTYPE")
+                           if(defined $Frm->hdr( "INSTYPE"));
+#      print "INSTYPE= $instype," .  $Frm->uhdr( "ORAC_INSTRUMENT" ) . "\n";
+
+      my $value = 'UNKNOWN';
+      my %lcogt_cammap = (
+                     'KB72' => '1m0-SciCam-SBIG',
+                     'KB20' => 'ContextCam',
+                     'KB80' => '0m4-SciCam-SBIG',
+                     'KB74' => '1m0-SciCam-SBIG',
+                     'KB22' => 'ContextCam',
+                     'KB78' => '1m0-SciCam-SBIG',
+                     'KB10' => 'ContextCam',
+                     'KB73' => '1m0-SciCam-SBIG',
+                     'KB11' => 'ContextCam',
+                     'KB77' => '1m0-SciCam-SBIG',
+                     'KB15' => 'ContextCam',
+                     'KB70' => '1m0-SciCam-SBIG',
+                     'KB21' => 'ContextCam',
+                     'KB76' => '1m0-SciCam-SBIG',
+                     'KB14' => 'ContextCam',
+                     'KB75' => '1m0-SciCam-SBIG',
+                     'KB12' => 'ContextCam',
+                     'KB05' => '1m0-SciCam-SBIG',
+                     'KB71' => '1m0-SciCam-SBIG',
+                     'KB16' => '0m8-SciCam-SBIG',
+                     'FL01' => '1m0-SciCam-Sinistro',
+                     'FL02' => '1m0-SciCam-Sinistro',
+                     'FL03' => '1m0-SciCam-Sinistro',
+                     'FL04' => '1m0-SciCam-Sinistro',
+                     'EN06' => '2m0-FLOYDS-SciCam',
+                     'EM01' => '2m0-SciCam-Merope',
+                     'FS02' => '2m0-SciCam-Spectral',
+                     'EM03' => '2m0-SciCam-Merope',
+                     'FS03' => '2m0-SciCam-Spectral',
+                   );
+      my $cam = uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) );
+      if (!exists $lcogt_cammap{$cam}) {
+        orac_err "LCOGT camera '$cam' not found in camera type mapping\n";
+      }
+      $value = $lcogt_cammap{$cam};
+
+#      print "value= $value\n";
+      my $string = "string=TRUE";
+      my $pars = "edit=write position=INSSTATE $string";
+      my $key = 'INSTYPE';
+      my $comment = 'Type|of|instrument';
+      $comment =~ s/\|/ /g;
+      $comment = "\'" . $comment . "\'";
+      if ( $instype eq "N/A" ) {
+        $Mon{'ndfpack_mon'}->obeyw("fitsmod","ndf=$file keyword=$key value=$value comment=$comment $pars");
+      }
+
       my $bias_used = $Cal->bias;
 # Check for too long length (67 is max allowed by SUBPAR)
       if ( length($bias_used) > 50 ) {
@@ -246,7 +302,7 @@ use ORAC::Version;
       my $pubprivate;
       my $frmdate;
       $frmdate =  $Frm->hdr( "ORACDATETIME");
-      if ( $tagid =~ /^LCOEPO/ ) {
+      if ( $tagid =~ /^LCOEPO|FTPEPO|HAWEPO/ || $propid =~ /^LCOEPO|FTPEPO|HAWEPO/ ) {
         $pubprivate = 'public';
         $pubdate = $frmdate;
       } elsif ( $propid =~ /^ENG|Engineering/ ) {
@@ -309,7 +365,11 @@ use ORAC::Version;
       if ( defined $ENV{FINAL_DATA_OUT} ) {
         $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
         if ( $Frm->uhdr( "QUICK_LOOK" ) == 1 ) {
-          $final_dest = File::Spec->catfile($final_dest, "quicklook");
+          if ( defined $ENV{QL_DATA_OUT} ) {
+            $final_dest = File::Spec->catfile( $ENV{QL_DATA_OUT} );
+          } else {
+            $final_dest = File::Spec->catfile($final_dest, "quicklook");
+          }
           mkdir $final_dest;
         }
         move($renamefile, $final_dest);
