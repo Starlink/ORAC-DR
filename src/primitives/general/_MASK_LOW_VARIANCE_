@@ -1,0 +1,173 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MASK_LOW_VARIANCE_ - mask out pixels with abnormally-low variance
+
+=head1 SYNOPSIS
+
+ _MASK_LOW_VARIANCE_
+
+ _MASK_LOW_VARIANCE_ CLIP=2,2 IN=$Frm->file OUT=$masked
+
+=head1 DESCRIPTION
+
+This primitive checks the variances of the input image(s) and creates
+an output file with anomalously-low values marked as bad.
+
+The statistics of the reciprocal variance array are calculated,
+clipped successively at 5, 5 and 5 sigma. The maximum value in the
+clipped array is taken to be the threshold for anomalous
+variances. The reciprocal of this maximum is then the minimum variance
+below which the variances in the input file should be marked as bad.
+
+Operates on all files in the current Frame or Group object by default,
+though the user can provide a single pair of input/output names to
+avoid storing the masked files in the current object.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<CLIP>
+
+A comma-separated list of up to 5 numbers specifying the clip levels
+at which to evaluate the statistics. See the documentation for KAPPA
+C<stats> for further details. Default is C<5,5,5>.
+
+=item B<GROUP>
+
+If true, use the current Group file as input, otherwise use the
+current Frame. Default is 0 (false: use current Frame).
+
+=item B<IN>
+
+Optional parameter for input image name.
+
+=item B<OUT>
+
+Optional parameter for output masked image name.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+MATHS, NDFCOPY, THRESH
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+Images that have no outlying variances will be copied to a file of the
+corresponding output name.
+
+=head1 OUTPUT FILES
+
+Produces one output file for each input file with suffix C<_maskv>.
+
+=head1 OUTPUT DATA
+
+The current object is updated with the list of output files and is
+tagged as C<maskvar> unless B<IN> and B<OUT> are specified separately.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Set input/output file name lists
+my $in = get_prim_arg( $_PRIM_ARGS_, "IN", undef );
+my $out = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+my (@in, @out);
+if (defined $in && defined $out) {
+  @in = (ref($in) && ref($in) eq "ARRAY") ? @$in : ($in);
+  @out = (ref($out) && ref($out) eq "ARRAY") ? @$out : ($out);
+} elsif ( ($in && !$out) || (!$in && $out)) {
+  orac_err "IN or OUT defined but not the other\n";
+} else {
+  @in = $Obj->files;
+  @out = map { scalar($Obj->inout("_maskv",$_)) } 1..$Obj->nfiles;
+}
+
+# Have data will proceed
+if (@in && @out) {
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+  # CLIP parameter
+  my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "5,5,5" );
+  $clip = "[$clip]";
+
+  my $wt = ORAC::TempFile->new();
+  foreach my $i (0..$#in) {
+    _FIND_IMAGE_STATISTICS_ IMAGE=$in[$i] ORDER=FALSE VERBOSE=0 COMP=VAR
+    my $npix = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+    my $args = "exp=1/va va=$in[$i] out=$wt";
+    $Mon{kappa_mon}->obeyw("maths","$args");
+    _FIND_IMAGE_STATISTICS_ IMAGE=$wt CLIP=$clip ORDER=FALSE VERBOSE=0
+    my $max_wt = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+    my $ngood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+    my $minvar = ($max_wt > 0) ? 1./$max_wt : 0;
+    if ($minvar == 0) {
+      orac_warn "Unable to determine minimum variance\n";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in[$i] out=$out[$i]");
+    } else {
+      if ($ngood != $npix) {
+	orac_print "Setting variances below ".(sprintf "%g", $minvar). " to bad (".($npix-$ngood)." pixels)\n" if ($verbose);
+	$args = "in=$in[$i] out=$out[$i]  comp=var "
+	  ."thrlo=$minvar thrhi=1e30 newlo=bad newhi=bad";
+	$Mon{kappa_mon}->obeyw("thresh","$args");
+      } else {
+	# copy input to output
+	orac_print "Variance has no outliers - copying input to output\n"
+	  if ($verbose);
+	$Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in[$i] out=$out[$i]");
+      }
+    }
+  }
+
+  unless ($in && $out) {
+    $Obj->files(@out);
+    $Obj->tagset("maskvar");
+  }
+}
