@@ -8,6 +8,9 @@ This primitive attempts to locate the astronomical emission in a spectrum.
 
 It achieves this through the following steps.
 
+- A linear baseline subtraction to avoid the range of values in the
+baseline significantly exceeding the noise in the baseline.  This step
+enables the initial histogram peak to be better defined.
 - An initial 51-pixel kernel Gaussian smooth of the spectrum to reduce
 the noise and make emission stand out.
 
@@ -213,6 +216,7 @@ my $temp4file = new ORAC::TempFile( 0 );
 my $temp5file = new ORAC::TempFile( 0 );
 my $temp6file = new ORAC::TempFile( 0 );
 my $tempmask = new ORAC::TempFile( 0 );
+my $baselined_spectrum = new ORAC::TempFile( 0 );
 my $thresh_spectrum = new ORAC::TempFile( 0 );
 my $detrend_spectrum =  new ORAC::TempFile( 0 );
 my $temp_spectrum = new ORAC::TempFile( 0 );
@@ -245,8 +249,16 @@ my $first = 1;
 $params = "in=$in out=$maskfile scalar=0.0";
 $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
+# Baseline subtract to remove any strong slope that will undermine
+# determination of the histogram limits, i.e. where the range in the
+# baseline significantly exceeds the noise in the baseline.
+my $numbin = 32;
+$params = "in=$in out=$baselined_spectrum subtract auto ";
+$params .= "order=1 axis=spec method=single numbin=$numbin";
+$Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
 # Smooth the spectrum to narrow the histogram peak.
-$params = "in=$in out=$spectrum box=51 fwhm=25";
+$params = "in=$baselined_spectrum out=$spectrum box=51 fwhm=25";
 $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
 
 my $iteration = 0;
@@ -419,7 +431,7 @@ while ( $loop ) {
 # At this point we should have a flatish baseline.  Now use MFITTREND to
 # locate the spectral emission with some borders.  First create the
 # maskfile...
-   my $numbin = 32;
+   $numbin = 32;
    $params = "in=$temp5file out=$detrend_spectrum mask=$current_mask ";
    $params .= "subtract auto order=1 axis=spec method=single numbin=$numbin";
    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
