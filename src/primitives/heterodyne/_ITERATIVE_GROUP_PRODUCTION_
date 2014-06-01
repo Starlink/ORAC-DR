@@ -54,6 +54,10 @@ observations. [25]
 
 The number of iterations to perform. [1]
 
+=item JSATILE = LOGICAL (Given)
+
+If true JSA tiles will be created. [0]
+
 =item LOWER_VELOCITY = REAL (Given)
 
 The requested lower velocity, in km/s to be applied to products
@@ -210,7 +214,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2011-2013 Science and Technology Facilities
+Copyright (C) 2008, 2011-2014 Science and Technology Facilities
 Council.  All Rights Reserved.
 
 =cut
@@ -221,6 +225,7 @@ my $flatfield = get_prim_arg( $_PRIM_ARGS_, "FLATFIELD", 0 );
 my $flatmethod = get_prim_arg( $_PRIM_ARGS_, "FLAT_METHOD", 'sum' );
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $iterations = get_prim_arg( $_PRIM_ARGS_, "ITERATIONS", 1 );
+my $jsatile = get_prim_arg( $_PRIM_ARGS_, "JSATILE", 0 );
 my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $method =  get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
@@ -381,19 +386,32 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
 
+    # Create the observation products for the next iteration.  This will only produce legacy tiles
+    # on the final iteration irrespective of the value of $jsatile.
+    my $do_tiling = ( $iter == $iterations ) & $jsatile;
+    orac_say "Iterations completed.\n\nCreating final Frame products.\n-----------------------------------------\n" if $do_tiling;
+
     foreach my $Frm ( $Grp->members ) {
-       _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
 
-# Want trimmed velocity range for final product?
-       if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
-          _RESTRICT_VELOCITY_RANGE_ GROUP=0 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
-       }
+      # Some code looks to see if JSA_TILES is defined rather than being true.
+      $Frm->uhdr( "JSA_TILES", 1 ) if $do_tiling;
 
+      # Generate the observation cube
+      _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling
+
+      # Want trimmed velocity range for final product?
+      if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
+        _RESTRICT_VELOCITY_RANGE_ GROUP=0 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+      }
+
+      # Tag the observation cube.
       _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=0 FLAG_QUAL_BAD=1
        orac_print "\n";
     }
 
-    _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+    if ( lc( $moments ) ne "none" ) {
+      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+    }
 
     my $writeqa = ( $iter == $iterations );
     _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
@@ -404,9 +422,14 @@ if( $Grp->lastallmembers( $Frm ) ) {
   }
 
   if ( $makegroup ) {
-    orac_say "Iterations completed. Creating final group files.\n";
-    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
+    orac_say "Iterations completed.\n\nCreating final Group products.\n-----------------------------------------\n";
 
+    # Switch on JSA tiling.
+    $Grp->uhdr( "JSA_TILES", $jsatile );
+
+     _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$jsatile
+
+    # Do final baseline subtraction.
     my $tagit = ( ! ( defined( $lower_vel ) || defined( $upper_vel ) ) );
     if( $edges ) {
       _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=$tagit
@@ -416,11 +439,13 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     # Trim final cube, and hence subsequent products from it.
     if ( !$tagit ) {
-       _RESTRICT_VELOCITY_RANGE_ GROUP=1 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
-       _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 FLAG_QUAL_BAD=1
+      _RESTRICT_VELOCITY_RANGE_ GROUP=1 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+      _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 FLAG_QUAL_BAD=1
     }
 
-    _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+    if ( lc( $moments ) ne "none" ) {
+       _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+    }
 
     _CREATE_LV_IMAGE_
 
@@ -453,9 +478,9 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
   # Delete the intermediate files needed for group processing or are
   # archive products.
-  _DELETE_TEMP_FILES_ ALSOGRP=1 KEEP=_raw,_reduced,_cube,_lv
+  my $saved = $jsatile ? "raw,_healpix" : "raw,_reduced,_cube,_lv";
+  _DELETE_TEMP_FILES_ ALSOGRP=1 KEEP=$saved
 }
 
 # Tidy-up output.
 orac_print "\n";
-
