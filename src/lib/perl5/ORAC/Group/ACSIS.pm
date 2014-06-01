@@ -110,15 +110,10 @@ Similar to base class except the frame number is appended to the
 output suffix. The frame number is padded with zeroes to make it three
 digits long.
 
-If the JSA_TILES uhdr is set, it calls inout_jsatile (from ORAC::JSAFile)
-instead.
-
 =cut
 
 sub inout {
   my $self = shift;
-  return $self->inout_jsatile(@_) if $self->uhdr('JSA_TILES');
-
   my $suffix = shift;
   my $number = shift;
   if (defined $number) {
