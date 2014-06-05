@@ -11,10 +11,13 @@ _CALIBRATE_SCUBA2_DATA_
 =head1 DESCRIPTION
 
 This PICARD primitive will calibrate the specified data using either a
-derived or a standard flux conversion factor. The user can request
-that data tagged with a particular tag be calibrated instead of the
-current files. However, the calibrated files will always be stored in
-the current Frame.
+derived or a standard flux conversion factor. If the data are already
+calibrated but the units differ from the desired output units, the
+current calibration will be undone first.
+
+The user can request that data tagged with a particular tag be
+calibrated instead of the current files. However, the calibrated files
+will always be stored in the current Frame.
 
 Requires access to the SCUBA-2 calibration class.
 
@@ -39,13 +42,15 @@ C<USEFCF> is given.
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 2
 
 =item ORAC-DR primitives:
 
 SCUBA2: _CALIBRATE_DATA_
+
+PICARD: _UNCALIBRATE_SCUBA2_DATA_
 
 =back
 
@@ -88,8 +93,22 @@ if ($Frm->hdr("INSTRUME") ne "SCUBA-2") {
   orac_termerr "Input data are not from SCUBA-2\n";
 }
 
-# Skip if the data are already calibrated
-return ORAC__OK if ($Frm->uhdr("DATA_UNITS") =~ /mjy/i);
+# Should the data be calibrated using derived or standard FCFs?
+my $usefcf = ($Frm->uhdr("RECPAR_USEFCF") || $Frm->uhdr("RECPAR_FCF"))
+  ? 1 : 0;
+
+# Retrieve calibration type - override with recipe parameter
+my $caltype = get_prim_arg($_PRIM_ARGS_, "UNITS", "BEAM");
+$caltype = $Frm->uhdr("RECPAR_FCF_CALTYPE")
+  if (defined $Frm->uhdr("RECPAR_FCF_CALTYPE") && $usefcf);
+
+# Skip if the data are already calibrated in the required units
+return ORAC__OK if ($Frm->uhdr("DATA_UNITS") =~ /$caltype/i);
+
+# Undo current calibration if necessary
+if ($Frm->uhdr("DATA_UNITS") ne "pW") {
+  _UNCALIBRATE_SCUBA2_DATA_ VERBOSE=0
+}
 
 # Intro message
 orac_print "\nCalling _CALIBRATE_SCUBA2_DATA_: calibrate data using standard, given or derived FCF\n", "yellow";
@@ -112,18 +131,8 @@ if (defined $Frm->uhdr("PICARD_RESULTS")) {
   %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
 }
 
-# Retrieve calibration type - may override later with recipe parameter
-my $caltype = get_prim_arg($_PRIM_ARGS_, "UNITS", "BEAM");
-
-# Should the data be calibrated using derived or standard FCFs?
-my $usefcf = ($Frm->uhdr("RECPAR_USEFCF") || $Frm->uhdr("RECPAR_FCF"))
-  ? 1 : 0;
-
 # Calibrate using derived FCF is requested
 if ( $usefcf ) {
-  $caltype = $Frm->uhdr("RECPAR_FCF_CALTYPE")
-    if (defined $Frm->uhdr("RECPAR_FCF_CALTYPE"));
-
   # If no FCF has been given and there are existing results then the
   # FCF is obtained from those
   my $fcf;
