@@ -1,0 +1,80 @@
+#+
+# Name:
+#    _CHECK_TAGID_
+#
+# Purpose:
+#    Checks whether the TAG id in the frame header is known to the
+#    science archive.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#
+#
+# Steering Headers:
+#
+# Arguments:
+#
+# Notes:
+#    -  This primitive is suitable for imaging cameras.
+#    -  Processing only occurs for object frames.
+#    -  Email sending requires Mail::Sendmail to be installed
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2014-2014 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+
+# People to send email to if we hit a TAGID problem
+    my $problem_tagid_people = 'tlister@lcogt.net';
+
+
+# Open file of proposal ids that are known to the LCOGT Archive
+    my $tagids_file = $Cal->find_file("lcogt_tagid.txt");
+
+    my $fh_tagids;
+    if ( -e $tagids_file ) {
+      open( $fh_tagids, "<$tagids_file" ) ||
+        orac_throw "tagids file $tagids_file could not be opened.  Error: $!.\n";
+    }
+    my @tagids;
+    @tagids = <$fh_tagids>;
+
+    # Remove trailing blanks and newline.
+    for ( @tagids ) {
+      chomp;
+      s/\s+$//;
+    }
+
+    my $file = $Frm->file(1);
+    my $tagid = $Frm->uhdr( "TAGID" );
+    my $userid = $Frm->hdr( "USERID" );
+    if (grep { $_ eq $tagid } @tagids) {
+      print "Found $tagid in tagids list\n";
+    } else {
+      my $message = "TAGID $tagid was not found in the tagids list";
+      $message = $message . " known to the LCOGT/IPAC Science Archive.";
+      $message =  $message . "\nThe offending frame was ". $file;
+      $message =  $message . "\nThe offending user was ". $userid;
+      orac_warn "$message\n";
+
+# Try and load Sendmail module to send email
+      my $haveemail = eval "use Mail::Sendmail; 1; ";
+      if ( $haveemail ) {
+        my %mail = ( To       => $problem_tagid_people,
+                     From     => 'eng@pipeline.lco.gtn',
+                     Subject  => 'Missing TAGID',
+                     Message  => $message
+                   );
+        sendmail(%mail) or orac_throw $Mail::Sendmail::error;
+
+        orac_throw "Missing TAGID. Mail sent OK.\n";
+      } else {
+        orac_throw "Missing TAGID $tagid but no Mail::Sendmail module.\n";
+      }
+    }
