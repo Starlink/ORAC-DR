@@ -28,6 +28,11 @@ The following arguments are supported:
 
 =over 4
 
+=item B<DATA>
+
+A flag to denote that the data (arguments etc) for the given task
+should be returned. Default is 0 (do not return data).
+
 =item B<GROUP>
 
 If true, use the current Group file as input, otherwise use the
@@ -78,9 +83,22 @@ None.
 
 =head1 OUTPUT DATA
 
-The primitive hash contains the key C<HAS_TASK> which is either 1, if
-the given task was run on the given file, or 0 if not (for any reason,
-including the lack of a history component and errors reading the history).
+The primitive hash contains the following keys:
+
+=over 4
+
+=item C<HAS_TASK>
+
+Will be 1 if the given task was run on the given file, or 0 if not
+(for any reason, including the lack of a history component and errors
+reading the history).
+
+=item C<TASK_DATA>
+
+A string containing the text listing the arguments to the task. It is
+up to the user to parse this information.
+
+=back
 
 =head1 AUTHOR
 
@@ -114,10 +132,12 @@ my $Obj = ($group) ? $Grp : $Frm;
 my $file = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
 my $task = get_prim_arg($_PRIM_ARGS_, "TASK", undef);
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+my $rtn_task_data = get_prim_arg($_PRIM_ARGS_, "DATA", 0);
 
 if ($task) {
   use NDF;
   my $has_task = 0;
+  my $task_data;
   my $status = &NDF::SAI__OK();
   # Begin new ERR and NDF contexts
   err_begin($status);
@@ -135,6 +155,16 @@ if ($task) {
 	if ($value =~ /$task/io) {
 	  $task = $value;
 	  $has_task = 1;
+	  # Store the task input parameters if requested
+	  if ($rtn_task_data) {
+	    # Redirect STDOUT to a log file for this block
+	    open (my $STDOLD, '>&', STDOUT);
+	    my $logfile = ORAC::TempFile->new();
+	    open(STDOUT, ">>", $logfile->file) || orac_err "Unable to redirect STDOUT: $!\n";
+	    ndf_hout($ndf, $rec, $status);
+	    open (STDOUT, '>&', $STDOLD);
+	    $task_data = join("\n", read_file_list($logfile));
+	  }
 	  last;
 	}
       }
@@ -158,4 +188,5 @@ if ($task) {
   orac_say "$task ran on $file" if ($has_task && $verbose);
 
   $_CHECK_HISTORY_{HAS_TASK} = $has_task;
+  $_CHECK_HISTORY_{TASK_DATA} = $task_data if ($task_data);
 }
