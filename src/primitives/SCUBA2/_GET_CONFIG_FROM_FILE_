@@ -1,0 +1,119 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_GET_CONFIG_FROM_FILE_ - Retrieve name of makemap config file from history
+
+=head1 SYNOPSIS
+
+ _GET_CONFIG_FROM_FILE_
+
+=head1 DESCRIPTION
+
+Searches the history component for the file tagged C<newimage> for the
+makemap C<CONFIG> parameter and returns that string.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item ORAC-DR primitives:
+
+_CHECK_HISTORY_
+
+=back
+
+=head1 OUTPUT DATA
+
+The primitive hash contains the following keys:
+
+=over 4
+
+=item CONFIG
+
+Config string provided to SMURF makemap. Returned only if a config
+string could be identified.
+
+=item FILE
+
+Name of the file for which the history was searched. Always returned.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+Does run on the Group file as it cannot be guaranteed that it was
+created from files all processed with the same config.
+
+May include extra parameters if they were givne in addition to a file
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+if ($Frm->tagexists("newimage")) {
+  $Frm->tagset("get_config");
+  $Frm->tagretrieve("newimage");
+
+  _CHECK_HISTORY_ TASK=makemap DATA=1
+  if ($_CHECK_HISTORY_{HAS_TASK}) {
+    my $task_data = $_CHECK_HISTORY_{TASK_DATA};
+    my @lines = split("\n", $task_data);
+    my $check = 0;
+    my $confline;
+    foreach my $line (@lines) {
+      $check = 1 if ($line =~ /Parameters:/);
+      if ($check) {
+	$line =~ s/^\s+//;
+	if ($line =~ /CONFIG/) {
+	  $confline = $line;
+	} elsif ($confline) {
+	  # Grab the next line just to be sure unless it starts with
+	  # something that looks like a parameter
+	  $confline .= $line unless ($line =~ /^[A-Z]+=/);
+	  # End here because the config will probably not extend over
+	  # more than two lines
+	  last;
+	}
+      }
+    }
+    # Now we have the line with the config in it split on the carat
+    # and pick out the filename portion in the case that a full path
+    # has been provided
+    my ($stuff, $config) = split(/\^/, $confline, 2);
+    (undef, undef, $config) = File::Spec->splitpath($config);
+    $_GET_CONFIG_FROM_FILE_{CONFIG} = $config;
+  }
+  $_GET_CONFIG_FROM_FILE_{FILE} = $Frm->file;
+  $Frm->tagretrieve("get_config");
+}
