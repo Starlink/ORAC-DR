@@ -128,65 +128,81 @@ if ( $proceed ) {
   $units = $Frm->uhdr("RECPAR_CALUNITS")
     if (defined $Frm->uhdr("RECPAR_CALUNITS"));
 
-  my $fcf = get_prim_arg($_PRIM_ARGS_, "FCF",
-			 $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units));
+  my $fcf = get_prim_arg($_PRIM_ARGS_, "FCF", undef);
 
-  # Multiplication factor - convert to mJy
-  my $mult = 1000.0;
-  my $pre = 'm';  # for mJy
-  # Retrieve uncalibrated map units
-  my $templatefile = $Obj->file;
-  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$templatefile");
-  my ($ORAC_STATUS, $uncalunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
-
-  # Units
-  my $unitstr = $pre .( $units eq 'ARCSEC' ? "Jy/arcsec**2/$uncalunits" :
-			"Jy/beam/$uncalunits" );
-
-  # Strip out the `per uncalunits' from the units string to get the
-  # calibrated units string
-  my $calunitstr = $unitstr;
-  $calunitstr =~ s/\/$uncalunits//;
-
-  orac_printp "Calibrating data in $calunitstr\n";
-  # Loop over all files in the object
-  for my $i (1..$Obj->nfiles) {
-    my $file = $Obj->file($i);
-
-    # Use the given FCF value to calibrate the data in Jy per
-    # units. Multiply by the relevant factor above to get mJy.
-    my $gain = $fcf * $mult / $filt_corr;
-
-    # Retrieve input and output names - just append in PICARD
-    my ($in, $out) = $Frm->uhdr('JSA_TILES')
-                   ? $Obj->inout_jsatile('cal', $i)
-                   : $Obj->inout("_cal", $i);
-
-    # Multiply by the gain
-    my $args = "scalar=$gain";
-    $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
-
-    orac_print "Multiplying $in by $gain $unitstr\n";
-
-    # Change the units
-    $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$calunitstr");
-
-    # Store the FCF in the FITS header
-    my $fitshdr = new Astro::FITS::Header::NDF( File => $out );
-    my $index = $fitshdr->sizeof + 1;
-    my $newitem = new Astro::FITS::Header::Item( Keyword => "FCF",
-						 Value => $gain,
-						 Comment => "[$calunitstr/$uncalunits] Flux conversion factor" );
-    if (defined $fitshdr->value("FCF")) {
-      $fitshdr->append($newitem);
-    } else {
-      $fitshdr->insert($index, $newitem);
+  if (!$fcf) {
+    $fcf = $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units);
+    if (!$fcf) {
+      # If no default FCF then the input data do not have ORACUT
+      # defined. Issue an error message, set ORACUT and try again.
+      orac_err "Unable to determine FCF - input file is probably a coadd or mosaic\n";
+      orac_err "Data should be calibrated before coadding/mosaicking\n";
+      _SET_ORACUT_FROM_DATEOBS_ GROUP=$group
+      $fcf = $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units);
     }
-    $fitshdr->writehdr( File => $out );
-
-    # Update file
-    $Obj->file($i, $out);
   }
-  $Obj->product($calproduct);
-  $Obj->tagset($calproduct);
+
+  # Proceed with calibration if an FCF exists
+  if ($fcf) {
+    # Multiplication factor - convert to mJy
+    my $mult = 1000.0;
+    my $pre = 'm';		# for mJy
+    # Retrieve uncalibrated map units
+    my $templatefile = $Obj->file;
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$templatefile");
+    my ($ORAC_STATUS, $uncalunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
+
+    # Units
+    my $unitstr = $pre .( $units eq 'ARCSEC' ? "Jy/arcsec**2/$uncalunits" :
+			  "Jy/beam/$uncalunits" );
+
+    # Strip out the `per uncalunits' from the units string to get the
+    # calibrated units string
+    my $calunitstr = $unitstr;
+    $calunitstr =~ s/\/$uncalunits//;
+
+    orac_printp "Calibrating data in $calunitstr\n";
+    # Loop over all files in the object
+    for my $i (1..$Obj->nfiles) {
+      my $file = $Obj->file($i);
+
+      # Use the given FCF value to calibrate the data in Jy per
+      # units. Multiply by the relevant factor above to get mJy.
+      my $gain = $fcf * $mult / $filt_corr;
+
+      # Retrieve input and output names - just append in PICARD
+      my ($in, $out) = $Frm->uhdr('JSA_TILES')
+	? $Obj->inout_jsatile('cal', $i)
+	  : $Obj->inout("_cal", $i);
+
+      # Multiply by the gain
+      my $args = "scalar=$gain";
+      $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
+
+      orac_print "Multiplying $in by $gain $unitstr\n";
+
+      # Change the units
+      $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$calunitstr");
+
+      # Store the FCF in the FITS header
+      my $fitshdr = new Astro::FITS::Header::NDF( File => $out );
+      my $index = $fitshdr->sizeof + 1;
+      my $newitem = new Astro::FITS::Header::Item( Keyword => "FCF",
+						   Value => $gain,
+						   Comment => "[$calunitstr/$uncalunits] Flux conversion factor" );
+      if (defined $fitshdr->value("FCF")) {
+	$fitshdr->append($newitem);
+      } else {
+	$fitshdr->insert($index, $newitem);
+      }
+      $fitshdr->writehdr( File => $out );
+
+      # Update file
+      $Obj->file($i, $out);
+    }
+    $Obj->product($calproduct);
+    $Obj->tagset($calproduct);
+  } else {
+    orac_err "Unable to determine a suitable FCF - data are left uncalibrated\n";
+  }
 }
