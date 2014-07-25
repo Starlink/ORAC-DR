@@ -1,0 +1,115 @@
+=head1 NAME
+
+_SHIFT_TO_BASE_POSITIONS_ - Adjusts the WCS for shifts in the base positions.
+
+=head1 DESCRIPTION
+
+This primitive applies shifts to the SKY domain WCS Frame of each
+group member within the current cycle.  The shifts are the
+relative base positions with respect to the first group member.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The new WCS Frame is called SKYBASE.  It has a Frame type of SKYFRAME.
+On exit the group members' current WCS Frame is the new SKYBASE.
+
+=item *
+
+The shifts are derived from the ORAC_RA_BASE and ORAC_DEC_BASE
+internal headers converted to radians.
+
+=item *
+
+This primitive assumes that the offsets are small enough that a Cartesian
+approximation is adequate to find the offsets.
+
+=item *
+
+This primitive assumes that there will be a SKY Domain present in the
+Group NDFs.
+
+=back
+
+=head1 TASKS
+
+KAPPA: WCSADD, WCSFRAME
+
+=head1 REQUIRED PERL MODULES
+
+Math::Trig
+ORAC::General
+
+=head1 AUTHORS
+
+Malcolm J. Currie <mjc@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+use Math::Trig qw/ deg2rad /;
+use ORAC::General qw/ cosdeg /;
+
+if ( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+
+# Obtain the reference base position of the first Frame in the
+# entire Group.
+   my $tempFrm = $Grp->frame(0);
+   my $ndf = $tempFrm->file();
+   my $rabase_ref = $tempFrm->uhdr( "ORAC_RA_BASE" );
+   my $decbase_ref = $tempFrm->uhdr( "ORAC_DEC_BASE" );
+   orac_say "Reference file $ndf has base position ($rabase_ref,$decbase_ref) degrees";
+
+# Retrieve the current cycle number from the headers.
+   my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+   $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select only those members in the current cycle.
+   my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+   foreach $Frm ( $cycleGrp->members ) {
+
+# Obtain the base positions for the current Frame.  These are in
+# decimal degrees.
+      my $rabase = $Frm->uhdr( "ORAC_RA_BASE" );
+      my $decbase = $Frm->uhdr( "ORAC_DEC_BASE" );
+
+# Find the offsets from the reference position in radians.  This
+# assumes that the shifts are small that a Cartesian approximation
+# is valid.  Note the sense of the subtractions needed for the
+# shifts in WCSADD.
+      my $ra_off_deg = $rabase_ref - $rabase;
+      my $dec_off_deg = $decbase_ref - $decbase;
+      my $ra_off = deg2rad( $ra_off_deg );
+      my $dec_off = deg2rad( $dec_off_deg );
+
+# Create a new WCS SkyFrame with the offsets applied.  The basis Frame
+# is SKY.
+      $ndf = $Frm->file();
+      my $params = "ndf=$ndf maptype=shift shift=[$ra_off,$dec_off] ";
+      $params .= "attrs=! frame=sky domain=skybase frmtype=skyframe";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$params" );
+
+#  Report the progress using friendly units.
+      my $ra_off_arcsec = sprintf( "%.2f", 3600.0 * $ra_off_deg * cosdeg( $decbase ) );
+      my $dec_off_arcsec = sprintf( "%.2f", 3600.0 * $dec_off_deg );
+      
+      orac_say "Apply base shift of ($ra_off_arcsec,$dec_off_arcsec) arcsec to $ndf";
+   }
+}
+
+# Tidy up output.
+orac_print "\n";
