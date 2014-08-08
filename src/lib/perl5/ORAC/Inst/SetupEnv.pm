@@ -197,12 +197,15 @@ sub orac_calc_instrument_settings {
 			 'FL02' => 'lsc',
 			 'FL03' => 'lsc',
 			 'FL04' => 'lsc',
+                         'FL07' => 'lsc',
                          'EF02' => 'cpt',
                          'EF03' => 'cpt',
                          'EF04' => 'cpt',
                          'EF06' => 'lsc',
                          'EF07' => 'lsc',
                          'EF08' => 'lsc',
+                         'EF09' => 'coj',
+                         'EF10' => 'coj',
                        );
 
     # Split into instrument and camera code
