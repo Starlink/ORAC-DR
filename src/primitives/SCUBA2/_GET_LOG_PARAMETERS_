@@ -30,7 +30,8 @@ object. Default is 0 (use the current Frame).
 
 =item B<PARLIST>
 
-Define the amount of information returned. May be C<FULL> or C<BRIEF>.
+Define the amount of information returned. May be C<FULL>, C<FULLER>
+or C<BRIEF>.
 
 =back
 
@@ -76,16 +77,21 @@ Mean elevation in degrees for duration of observation
 
 =item *
 
+Mean airmass for duration of observation (FULLER only)
+
+=item *
+
+Mean transmission along line of sight for duration of observation
+(FULLER only)
+
+=item *
+
 Mean zenith optical depth at 225 GHz for duration of observation
 
 =item *
 
 Mean zenith tau corresponding to the current filter for duration of
 observation
-
-=item *
-
-Mean seeing in arcsec for duration of observation
 
 =back
 
@@ -105,8 +111,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
 Tim Jenness <lt>t.jenness@jach.hawaii.eduE<gt>
 
 Copyright (C) 2008-2009 Science & Technology Facilities Council.
-Copyright (C) 2008,2013 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2008,2013-2014 the University of British Columbia.
+All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -167,27 +173,61 @@ $mode = sprintf "%-11s", $mode;
 # Filter System
 my $filter = $Obj->uhdr("ORAC_FILTER");
 
-if ( $paramlist eq "FULL" ) {
+my @briefpar = ($uttime, $hst, $obsnum);
 
+if ( $paramlist eq "BRIEF" ) {
+  $_GET_LOG_PARAMETERS_{PARAMS} = \@briefpar;
+} else {
   # Average of start and end elevation
   my $el = "**";
-  if (defined $Obj->uhdr('ORAC_ELEVATION_START') &&
-      defined $Obj->uhdr('ORAC_ELEVATION_END') ) {
-    $el = ($Obj->uhdr('ORAC_ELEVATION_START') + $Obj->uhdr('ORAC_ELEVATION_END'))/ 2.0;
+  if ( defined $Obj->uhdr('ORAC_ELEVATION_START') &&
+       defined $Obj->uhdr('ORAC_ELEVATION_END') ) {
+    $el = 0.5 * ($Obj->uhdr('ORAC_ELEVATION_START') +
+		 $Obj->uhdr('ORAC_ELEVATION_END'));
     $el = sprintf "%2d", $el;
   }
 
   # Get tau for the current filter
   my $tau = "*****";
-  my $tau225 = "*****";
-  my $wvmtau = 0.5 * ( $Obj->hdrval("WVMTAUST",0) + $Obj->hdrval("WVMTAUEN",-1) );
-  if ($wvmtau) {
-    my ($tauval, $status) = JCMT::Tau::SCUBA2::get_tau($filter, 'CSO', $wvmtau);
-    $tau = sprintf "%5.3f", $tauval if defined $tauval;
-    $tau225 = sprintf "%5.3f", $wvmtau;
+  my ($airmass, $trans);
+  my $wvmtau = 0.5 * ( $Obj->hdrval("WVMTAUST",0) +
+		       $Obj->hdrval("WVMTAUEN",-1) );
+  my $tau225 = (defined $wvmtau) ? (sprintf "%5.3f", $wvmtau) : "*****";
+  if ($paramlist eq "FULL") {
+    if ($wvmtau) {
+      my ($tauval, $status) = JCMT::Tau::SCUBA2::get_tau($filter, 'CSO', $wvmtau);
+      $tau = sprintf "%5.3f", $tauval if defined $tauval;
+    }
+  } else {
+    # OK so airmass and transmission are also needed - mean
+    # transmission is not simply derived from mean airmass * mean tau,
+    # though it's probably close enough in most cases
+    if ( defined $Obj->uhdr('ORAC_AIRMASS_START') &&
+	 defined $Obj->uhdr('ORAC_AIRMASS_END') ) {
+      $airmass = 0.5 * ($Obj->uhdr('ORAC_AIRMASS_START') +
+			$Obj->uhdr('ORAC_AIRMASS_END'));
+      $airmass = sprintf "%.2f", $airmass;
+    }
+    $trans = "****";
+    if ( defined $Obj->hdrval("WVMTAUST",0) &&
+	 defined $Obj->hdrval("WVMTAUEN",-1) &&
+	 defined $airmass) {
+      my ($taust, $status) = JCMT::Tau::SCUBA2::get_tau($filter, 'CSO',
+							$Obj->hdrval("WVMTAUST",0));
+      (my $tauen, $status) = JCMT::Tau::SCUBA2::get_tau($filter, 'CSO',
+							$Obj->hdrval("WVMTAUEN",-1));
+      if (defined $taust && defined $tauen) {
+	my $transt = exp(-$taust * $Obj->uhdr("ORAC_AIRMASS_START"));
+	my $tranen = exp(-$tauen * $Obj->uhdr("ORAC_AIRMASS_END"));
+	$trans = sprintf "%5.3f", (0.5 * ($transt + $tranen));
+	$tau = sprintf "%5.3f", (0.5*($taust+$tauen));
+      }
+    }
+    $airmass  = "****" unless (defined $airmass);
   }
+  my @fullpar = (@briefpar, $src, $mode, $filter, $el);
+  push(@fullpar, $airmass, $trans) if ($paramlist ne "FULL");
+  push(@fullpar, $tau225, $tau);
 
-  $_GET_LOG_PARAMETERS_{PARAMS} = [$uttime, $hst, $obsnum, $src, $mode, $filter, $el, $tau225, $tau];
-} else {
-  $_GET_LOG_PARAMETERS_{PARAMS} = [$uttime, $hst, $obsnum];
+  $_GET_LOG_PARAMETERS_{PARAMS} = \@fullpar;
 }
