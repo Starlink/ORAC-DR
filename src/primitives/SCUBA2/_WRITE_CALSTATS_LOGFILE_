@@ -1,0 +1,165 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_WRITE_CALSTATS_LOGFILE_ - write logfile with results from calibrator analysis
+
+=head1 SYNOPSIS
+
+ _WRITE_CALSTATS_LOGFILE_
+
+=head1 DESCRIPTION
+
+Write out a log file with results obtained as part of analyzing a
+calibrator. The log file includes the fitted and measured fluxes and
+the FCFs derived from those values, plus an estimate of the beam
+parameters.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item ORAC-DR PRIMITIVES:
+
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+The log file, C<log.calstats> is created.
+
+=head1 LOGFILE FORMAT
+
+The log file contains the following additional entries (see
+L<_ADD_LOG_ENTRY_|_ADD_LOG_ENTRY_> for details of the common entries):
+
+=over 4
+
+=item Radius
+
+Radius of aperture (arcsec) used for photometry
+
+=item Flux_ap
+
+Flux (pW) estimated from aperture photometry
+
+=item Err_ap
+
+Uncertainty (pW) in above value
+
+=item Noise
+
+Noise (pW) in uncalibrated map
+
+=item FCFasec
+
+C<ARCSEC> flux conversion factor (Jy/arcsec**2/pW)
+
+=item FCFasec_err
+
+Uncertainty in above value
+
+=item FCFbeam
+
+C<ARCSEC> flux conversion factor (Jy/beam/pW)
+
+=item FCFbeam_err
+
+Uncertainty in above value
+
+=item FCFmatch
+
+C<BEAMMATCH> flux conversion factor (Jy/pW)
+
+=item FCFmatch_err
+
+Uncertainty in above value
+
+=item FWHMmain
+
+FWHM (arcsec) of main beam component
+
+=item Error_beam
+
+FWHM (arcsec) of secondary (error) beam component if derived (C<NaN>
+if no error beam could be fitted)
+
+=back
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+if ($Cal->iscalsource($Frm->hdr("OBJECT"))) {
+  my %hdr = %{$Cal->thing};
+  my (%fcf, %fluxes);
+  my @units = qw/ARCSEC BEAM BEAMMATCH/;
+  foreach my $units (@units) {
+    $hdr{UNITS} = $units;
+    my $match = $Cal->gainsindex->choosebydt('ORACTIME', \%hdr, 0);
+    my $entry = $Cal->gainsindex->indexentry($match);
+    $fcf{$units} = {FCF => $entry->{GAIN}, FCFERR => $entry->{GAINERR}};
+    %fluxes = ( FLUX => $entry->{FLUX}, FLUXERR => $entry->{FLUXERR})
+      if ($units eq "ARCSEC");
+  }
+
+  $Frm->tagset("calstats");
+  # The calibration entries were written for the file straight out of
+  # the map-maker so reetrieve this
+  $Frm->tagretrieve("newimage");
+  _FIND_IMAGE_STATISTICS_ VERBOSE=0 COMP=ERR
+  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  $Frm->tagretrieve("calstats");
+
+  my $printval = sub {
+    my $value = shift;
+    return (defined $value) ? (sprintf "%.4f", $value) : "NaN";
+  };
+
+  my $logtype = "calstats";
+  my @params = qw/ Radius Flux_ap Err_ap Noise FCFasec FCFasec_err FCFbeam FCFbeam_err FCFmatch FCFmatch_err FWHMmain Error_beam /;
+  my @values = ($Frm->uhdr("FCF_APERTURE_RADIUS"),
+		$printval->($fluxes{FLUX}), $printval->($fluxes{FLUXERR}),
+		(sprintf "%.5f", $results->{MEDIAN}),
+		(map { $printval->($fcf{$_}->{FCF}),
+			 $printval->($fcf{$_}->{FCFERR})} @units),
+		$printval->($Cal->fwhm_fit), $printval->($Cal->fwhm_err)
+	       );
+
+  _ADD_LOG_ENTRY_ PARLIST=FULLER PARAMS=\@params ENTRIES=\@values GROUP=0 LOGFILE=$logtype
+}
