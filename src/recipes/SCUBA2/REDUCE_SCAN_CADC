@@ -1,0 +1,188 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+REDUCE_SCAN - Process SCAN-mode data
+
+=head1 DESCRIPTION
+
+This is the default recipe for processing SCAN data.
+
+Raw data are passed to the map maker which are processed using the
+default config file (unless the source is a calibrator) to produce a
+an image. FCFs are derived if the source is a calibrator. This image
+is calibrated in mJy/beam, displayed and tagged as a reduced
+product. A coadd is created and displayed after all the individual
+observations have been processed. The noise properties of the coadd
+are calculated and written to a log file, C<log.noise>. The NEFD
+properties of each image produced by makemap and the coadd are written
+to another log file, C<log.nefd>.
+
+Finally, the CUPID task C<findclumps> is run using the C<fellwalker>
+algorithm to create a source catalogue.
+
+=head1 NOTES
+
+=over 2
+
+=item *
+
+If given data from multiple sources, each source will be processed in
+full in turn.
+
+=item *
+
+The noise level and NEFD are stored in C<log.noise> and C<log.nefd>
+respectively. The noise and NEFD are calculated for each image as well
+as for the final coadd.
+
+=item *
+
+For large amounts of data this recipe will spend a long time not
+updating the ORAC-DR window. Check to see that C<makemap> is still
+processing by running C<top> or C<ps>. (Running with -log sf is
+recommended.)
+
+=item *
+
+Alternative configuration parameters for the iterative map-maker may
+be specified using the recipe parameters outlined below.
+
+=item *
+
+Flux conversion factors are derived if the source is a calibrator.
+
+=item *
+
+To reduce the chance of spurious source detections, the group coadd is
+trimmed to the map size specified in the FITS header before running
+the source finder. This may not work as intended if the coadd contains
+maps with different centres.
+
+=item *
+
+The output catalogue, if created will have the extension C<.FIT>. A
+clump file with suffix C<_clmp> will also be created.
+
+=item *
+
+This recipe can handle data from multiple sources and will correctly
+coadd maps, taking into account the EXP_TIME and WEIGHTS components.
+
+=back
+
+=head1 DISPLAY
+
+The Frame image is displayed in Gaia window 1.
+
+The Group image is displayed in Gaia window 2; its variance is
+displayed in window 3.
+
+=head1 AVAILABLE PARAMETERS
+
+The following recipe parameters can be set via the --recpars option:
+
+=over 2
+
+=item FINDCLUMPS_CFG
+
+Name of a config file for use with the CUPID C<findclumps> task. The
+file must exist in the current working directory,
+C<$FINDCLUMPS_CONFIG_DIR> or C<$ORAC_DATA_OUT>.
+
+=item MAKEMAP_CONFIG
+
+Name of a config file for use with the SMURF C<makemap> task. The file
+must exist in the current working directory, C<$MAKEMAP_CONFIG_DIR>,
+C<$ORAC_DATA_OUT>, C<$ORAC_DATA_CAL> or C<$STARLINK_DIR/share/smurf>.
+
+=item MAKEMAP_PIXSIZE
+
+Size of the pixels in the output map. If not specified, the recipe
+uses the appropriate default value. Note that the timeseries will be
+downsampled to match this scale during the map-making process.
+
+=item MAKEMAP_REF
+
+Name of a reference image (NDF format) to use to define the output
+pixel grid. The NDF can be either 2D or 3D and the spatial WCS frame
+will be extracted.
+
+=back
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008-2011,2013 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Standard introduction
+_SCUBA2_HELLO_
+
+# Set steering parameters
+_REDUCE_SCAN_STEER_
+
+# Create a map with the iterative map-maker using all available data.
+_MAKEMAP_FRAME_
+
+# The next few steps are no-ops for non-calibrators. First, determine
+# the beam size.
+_FIND_BEAM_SIZE_ LOGFILE=0
+
+# Second, derive FCFs - the image is trimmed and (optionally) has a
+# background subtracted before calculating FCFs. However, the original
+# file created by _MAKEMAP_FRAME_ is stored again on completion.
+_CALCULATE_FCFS_
+
+# Write log file with calibrator results
+_WRITE_CALSTATS_LOGFILE_
+
+# Now proceed for all sources - calibrate the data using default FCFs
+_CALIBRATE_DATA_
+
+# Tag the calibrated map as a reduced product
+_TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GRAPHIC=1
+
+# Determine the median noise from the variance in the image
+_CALC_IMAGE_NOISE_ METHOD=VARIANCE GROUP=0
+
+# Calculate an NEFD from the current Frame
+_CALCULATE_NEFD_ GROUP=0
+
+# Create the Group image once the last Frame has been processed. Use
+# nearest-neighbour resampling by default to ensure a robust noise
+# estimate. Images are combined using inverse-variance weighting.
+_MAKE_MOSAIC_GROUP_BATCH_
+
+# Tag the group coadd as a reduced product
+_TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 GRAPHIC=1
+
+# Determine the median noise from the variance in the image
+_CALC_IMAGE_NOISE_ METHOD=VARIANCE GROUP=1
+
+# Calculate an NEFD from the current Group
+_CALCULATE_NEFD_ GROUP=1
+
+# Delete any temporary files, keeping only the current files and
+# calibrated data
+_DELETE_TEMP_FILES_ KEEP=_reduced ALSOGRP=1
