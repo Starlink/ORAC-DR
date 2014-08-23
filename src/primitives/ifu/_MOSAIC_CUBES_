@@ -92,54 +92,55 @@ if ( ! defined( $Grp->uhdr("CREATED") ) ) {
 
   orac_print "Coadding $in to $groupfile by $method method.\n";
 
-  # Get a list of the group members so far, and use those that
-  # have the $mosaic_input uhdr set to 1.
-  my $subgrp = $Grp->subgrp($mosaic_input => 1);
-
+  # Get a list of the group members within the current quad, unless it
+  # is the final Frame,  and use those that have the $mosaic_input uhdr 
+  # set to 1.  This is done to avoid an ever-growing processing time on
+  # each quad.
+  my $quadno = $Frm->uhdr( "QUAD_NUMBER" );
+  my $subgrp = $Grp->subgrp( $mosaic_input => 1, QUAD_NUMBER => $quadno );
   my @members = $subgrp->members;
 
   # We want to combine all of the members of $subgrp into the
   # output file. These need to be written into a temporary file
-  # so that the command-line for makemos doesn't get too large.
-  my $inputlist = "inlist.list$$";
-  unlink( $inputlist );
-  open( my $fh_inlist, ">$inputlist" ) ||
-    orac_throw "Unable to open $inputlist to create a list of frames to coadd. Error: $!\n";
-  foreach my $member (@members) {
+  # so that the command-line for MAKEMOS doesn't get too large.
+  # It is also a small efficiency gain to change WCS Frames in a single
+  # invocation.
+  my @files;
+  push @files, $groupfile;
+  foreach my $member ( @members ) {
 
     # Retrieve the filename from the quad combination step.
     $member->tagretrieve( $mosaic_input );
-    my $file = $member->file;
-    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$file frame=PIXEL" );
-    print $fh_inlist $file, "\n";
+    push @files, $member->file;
   }
 
-  close( $fh_inlist );
+  my $inputlist = write_file_list( @files );
+  $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=^$inputlist frame=PIXEL" );
 
   # Set the optimal number of overlaps to be the number of jittered
   # frames minus one.
-  my $optov = scalar( @members ) - 1;
-
-  # Delete the existing output file.
-  unlink( $groupfile );
+  my $optov = scalar( @members );
 
   # Set up CCDPACK.
   my $param = "saturate=no preserve=yes genvar=yes restore=no logto=terminal adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
   my $ORAC_STATUS = $Mon{ "ccdpack_res" }->control( "par_reset" );
   $Mon{'ccdpack_res'}->obeyw( "ccdsetup", "$param accept" );
 
-  $param = "in=^$inputlist out=$groupfile method=$method zero cmpvar=no usevar=yes optov=$optov";
-  $Mon{'ccdpack_reg'}->obeyw("makemos", "$param");
+  my $out = new ORAC::TempFile( 0 );
 
-  # Delete the list of input files.
-  unlink( $inputlist );
+  $param = "in=^$inputlist out=$out method=$method zero cmpvar=no usevar optov=$optov";
+  $Mon{'ccdpack_reg'}->obeyw( "makemos", "$param" );
+
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupfile title=$groupfile" );
 
   # Reset the WCS to AXIS.
+  my @filesout;
   foreach my $member (@members) {
     $member->tagretrieve( 'FORM_DATACUBE_RESULT' );
-    my $file = $member->file;
-    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$file frame=AXIS" );
+    push @filesout, $member->file;
   }
+  $inputlist = write_file_list( @filesout );
+  $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=^$inputlist frame=AXIS" );
   $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$groupfile frame=AXIS" );
 
   # Need to know how many pairs are in the group
