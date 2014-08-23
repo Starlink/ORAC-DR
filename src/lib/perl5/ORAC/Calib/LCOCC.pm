@@ -219,7 +219,7 @@ sub mask {
 
 =head1 REVISION
 
-$Id: LCOCC.pm 5833 2012-06-17 04:19:19Z tlister $
+$Id$
 
 =head1 AUTHORS
 

@@ -34,7 +34,7 @@ use ORAC::Group::UKIRT;
 # Set inheritance
 use base qw/ ORAC::Group::UKIRT /;
 
- '$Revision: 7427 $ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+ '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 =head1 PUBLIC METHODS
 
@@ -90,7 +90,7 @@ L<ORAC::Group>, L<ORAC::Group::NDF>
 
 =head1 REVISION
 
-$Id: LCOSBIG.pm 7427 2008-02-15 00:28:37Z timj $
+$Id$
 
 =head1 AUTHORS
 

@@ -267,7 +267,7 @@ sub mask {
 
 =head1 REVISION
 
-$Id: LCOSBIG.pm 6078 2012-09-05 22:17:28Z tlister $
+$Id$
 
 =head1 AUTHORS
 
