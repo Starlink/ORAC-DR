@@ -77,25 +77,25 @@ my $obsnum = $Frm->number;
 # Get the group file name. Use the raw one here, as subsequent steps
 # will update the ->file and we want none of that here.
 my $groupfile = $Grp->raw . "_cube";
-$Grp->file($groupfile);
+$Grp->file( $groupfile );
 
-# Check the Grp uhdr "CREATED".
-if ( ! defined( $Grp->uhdr("CREATED") ) ) {
+# Determine whether the group file (mosaic) needs to be created.
+if ( ! defined( $Grp->uhdr( "CREATED" ) ) ) {
 
-   # Create the group file by copying the sky subtracted pair into it
+   # Create the group file by copying the sky-subtracted pair into it.
    orac_print "Creating group $groupfile with $in.\n";
-   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile title=$groupfile");
-   $Grp->uhdr("CREATED", 1);
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$groupfile title=$groupfile" );
+   $Grp->uhdr( "CREATED", 1 );
 
 } else {
+
   # The group file does exist. Coadd the current pair into it.
 
   orac_print "Coadding $in to $groupfile by $method method.\n";
 
-  # Get a list of the group members within the current quad, unless it
-  # is the final Frame,  and use those that have the $mosaic_input uhdr 
-  # set to 1.  This is done to avoid an ever-growing processing time on
-  # each quad.
+  # Get a list of the group members within the current quad, and use those
+  # that have the $mosaic_input uhdr set to 1.  This is done to avoid an
+  # ever-growing processing time on each quad.
   my $quadno = $Frm->uhdr( "QUAD_NUMBER" );
   my $subgrp = $Grp->subgrp( $mosaic_input => 1, QUAD_NUMBER => $quadno );
   my @members = $subgrp->members;
@@ -117,17 +117,19 @@ if ( ! defined( $Grp->uhdr("CREATED") ) ) {
   my $inputlist = write_file_list( @files );
   $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=^$inputlist frame=PIXEL" );
 
-  # Set the optimal number of overlaps to be the number of jittered
-  # frames minus one.
+  # Set the optimal number of overlaps to be the number of cubes to
+  # mosaic minus one, plus one for the grand mosaic.
   my $optov = scalar( @members );
 
   # Set up CCDPACK.
-  my $param = "saturate=no preserve=yes genvar=yes restore=no logto=terminal adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
+  my $param = "saturate=no preserve genvar restore=no logto=terminal adc=! ";
+  $param .= "rnoise=! bounds=! direction=! deferred=! ndfnames save=no";
   my $ORAC_STATUS = $Mon{ "ccdpack_res" }->control( "par_reset" );
   $Mon{'ccdpack_res'}->obeyw( "ccdsetup", "$param accept" );
 
+  # Make the mosaic in a temporary file and then copy it to the grand
+  # mosaic.
   my $out = new ORAC::TempFile( 0 );
-
   $param = "in=^$inputlist out=$out method=$method zero cmpvar=no usevar optov=$optov";
   $Mon{'ccdpack_reg'}->obeyw( "makemos", "$param" );
 
@@ -143,7 +145,7 @@ if ( ! defined( $Grp->uhdr("CREATED") ) ) {
   $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=^$inputlist frame=AXIS" );
   $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$groupfile frame=AXIS" );
 
-  # Need to know how many pairs are in the group
+  # Need to know how many pairs are in the group.
   my $nobs = scalar( @{ scalar($Grp->coadds) } ) + 1;
 
   # Report to the user.
@@ -173,9 +175,9 @@ if ( ! defined( $Grp->uhdr("CREATED") ) ) {
   _SET_GROUP_FITS_ITEM_ KEY=$utendkey[0] VALUE=$utend
 }
 
-# Update the group object
-$Grp->coaddspush($obsnum);
-$Grp->file($groupfile);
+# Update the group object.
+$Grp->coaddspush( $obsnum );
+$Grp->file( $groupfile );
 $Grp->readhdr;
 
 # Display if necessary.
