@@ -1,0 +1,158 @@
+#+
+# Name:
+#    _FLAT_QC_
+#
+# Purpose:
+#    To perform Quality Control on flat fields produced by this pipeline
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive looks for the separate master flat fields produces in each filter at
+#    both the start and the end of a single night of data.
+#    It performs the following tests:
+#       * If morning and evening twilight master flats were produced:
+#           - Compare the am/pm masters and check the RMS of the residuals is within bounds
+#             (implementation of J. Eastman's IDL algorithm).
+#
+# Arguments:
+#
+# Notes:
+#
+# Tasks:
+#    FIGARO: IDIV; KAPPA: STATS
+#
+# Output Data:
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#    RAS: Rachel Street (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+use File::Copy;
+use Data::Dumper;
+
+
+# Data Selection
+# ==============
+#
+# $masterflat1flat and $masterflat2flat
+if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
+       $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKYFLAT" ||
+       $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMBERT-FLAT" ) &&
+       $Frm->uhdr( "MAKE_FLAT" ) ) {
+
+        my $index = $Cal->GenericIndex("flat");
+        #my $entryref = $Cal->GenericIndexAccessor( "flat", [qw/ ORAC_FILTER ORAC_XBINNING ORAC_YBINNING /], @_ );
+        #print Dumper $index;
+        #my @keys = $index->indexkeys();
+        #foreach my $k ( @keys ) {
+        #    my $r = $index->indexref->{$k};
+        #    print "$k  $r\n";
+        #}
+        my $filter = $Frm->uhdr( "ORAC_FILTER" );
+        my $xbin = $Frm->uhdr( "ORAC_XBINNING" );
+        my $ybin = $Frm->uhdr( "ORAC_YBINNING" );
+        my $date = $Frm->hdr( "DAY-OBS" );
+        my $masterflat1 = $Cal->flat;
+        orac_print "Master flat 1= $masterflat1\n";
+
+        orac_print "Testing calibration frames for DATE=$date FILTER=$filter BINNING=$xbin $ybin\n";
+        my @entries = $index->scanindex( ':ID' => '/^flat/', ORAC_FILTER => $filter, ORAC_XBINNING => $xbin, ORAC_YBINNING => $ybin );
+        orac_print "No. of entries=" . scalar(@entries) . "\n";
+        my $masterflat2 = '';
+        if ( @entries >= 2 ) {
+          #print "Have enough entries\n";
+          #$masterflat2 = $entries[-1];
+          #print Dumper $masterflat2;
+          #$masterflat1 = $entries[-2];
+
+          my @keys = $index->indexkeys();
+          foreach my $filename ( @keys ) {
+              my $binstr = "bin" . $xbin . "x" . $ybin;
+              my $filterstr = "_" . $filter;
+              if ( $filter eq 'gp' && $filename =~ /$date/ ) {
+                  print  "Matching $date, $filterstr, $binstr from $filename\n";
+                  print ($filename =~ /$date/);
+                  print "\n";
+                  print ($filename =~ /$filterstr/);
+                  print "\n";
+                  print ($filename =~ /$binstr/ );
+                  print "\n";
+                  print "end tests\n";
+              }
+
+              if ( $filename =~ /$date/ && $filename =~ /$filterstr/ && $filename =~ /$binstr/ ) {
+
+                  #my @entries = $index->scanindex( ':ID' => "/^$filename/", ORAC_FILTER => $filter, ORAC_XBINNING => $xbin, ORAC_YBINNING => $ybin );
+                  my @entries = $index->scanindex( ':ID' => "/^$filename/" );
+                  #print "Looking for $filename, $filter, $xbin, $ybin, got " . scalar(@entries) . "\n";
+                  my $flat_filename = $filename . '.sdf';
+
+                  if ( @entries > 0 && $masterflat2 eq '' ) {
+                      my $test;
+                      $test = $Cal->find_file($flat_filename);
+                      if ( $masterflat1 ne $test ) {
+                          $masterflat2 = $test;
+                          orac_print "Got $flat_filename as second masterflat\n";
+                      }
+                  #} elsif ( @entries > 0 && $masterflat1 eq '') {
+                  #    $masterflat1 = $Cal->find_file($flat_filename);
+                  #    print "Got $flat_filename as masterflat1\n";
+                  } elsif ( @entries == 0 ) {
+                      orac_print "Index returned zero entries for this filter and binning\n";
+                  }
+              #} else {
+                  #print "Filename $filename does not contain date $date\n";
+              }
+          }
+
+        }
+        #print Dumper @entries;
+
+        if ( $masterflat1 ne '' && $masterflat2 ne '' ) {
+            orac_print "masterflat1=$masterflat1, masterflat2=$masterflat2\n";
+
+            # Declare name of difference flat
+            my $diff = "difflat_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $Frm->uhdr( "ORAC_FILTER");
+
+            # Boundary conditions for tests
+            # AM/PM test
+            my $sigma_max = 0.01;
+            my $sigma_min = 0.0;
+
+            # Compute the division of the am-pm master flat fields:
+            my $param1 = "in1=$masterflat1 in2=$masterflat2 out=$diff";
+            $Mon{ "kappa_mon" }->obeyw( "sub", "$param1" );
+
+            # Compute statistics on the divided frame:
+            $param1 = "ndf=$diff";
+            $Mon{ "kappa_mon" }->obeyw( "stats", "$param1" );
+
+            # Extract the statistical properties:
+            ( my $ORAC_STATUS, my $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+            ( $ORAC_STATUS, my $sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
+            orac_print "Sigma = $sigma\n";
+
+            # Test statistical properties against permitted boundaries.
+            # If flats are acceptable, leave both masterflat1 and masterflat2 in the flat index.
+            # Otherwise, remove them from it to prevent them being used.
+            # This will force the pipeline to look into its library.
+            if ($sigma <= $sigma_min || $sigma > $sigma_max) {
+
+                # Remove this flat by deleting it from the index.flat file using the new
+                # ORAC::Index remove method
+                my $ok1 = $index->remove($masterflat1);
+                my $ok2 = $index->remove($masterflat2);
+                orac_print "$masterflat1 and $masterflat2 failed flat field QC.  Removed them from flat index\n";
+
+            }
+            _DELETE_A_FRAME_ FRAME=$diff
+        }
+
+    }

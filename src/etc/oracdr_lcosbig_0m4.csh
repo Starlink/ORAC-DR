@@ -67,7 +67,7 @@
 #        Original Version based on oracdr_lcosbig.csh
 
 #  Revision:
-#     $Id: oracdr_lcosbig_0m4.csh 5197 2012-03-22 16:58:14Z tlister $
+#     $Id$
 
 #  Copyright:
 #     Copyright (C) 2012 Las Cumbres Observatory Global Telescope Inc.  All

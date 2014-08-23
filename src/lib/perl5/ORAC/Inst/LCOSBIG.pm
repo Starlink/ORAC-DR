@@ -23,7 +23,7 @@ Algorithm engine definitions can be found in C<ORAC::Inst::Defn>.
 use Carp;
 use strict;
 use vars qw/$VERSION/;
-'$Revision: 4278 $ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 use base qw/ ORAC::Inst /;
 
@@ -113,7 +113,7 @@ L<ORAC::Inst::LCOSPECTRAL>,  L<ORAC::Inst::IRCAM>
 
 =head1 REVISION
 
-$Id: LCOSBIG.pm 4278 2009-11-11 02:13:32Z tal $
+$Id$
 
 =head1 AUTHORS
 

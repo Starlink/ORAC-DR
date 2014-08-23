@@ -10,7 +10,7 @@
 #
 # Description:
 #    This primitive makes self flats from the current group, one for
-#    each distinct observation filter.  For eacg flat it uses a
+#    each distinct observation filter.  For each flat it uses a
 #    median to combine the frames pixel by pixel, and then divides the
 #    resultant image by its mean form the flat field.  The primitive
 #    files the resultant flat in its calibration index.
@@ -120,6 +120,10 @@ use File::Copy;
 # Determine whether or not to clean the data before combination.
        my $clean = $_MAKE_FLAT_FROM_GROUP_{CLEAN};
        $clean = defined( $clean ) ? $clean : 1;
+       if ($clean) { orac_print "Making flats with cleaning switch ON\n";
+       } else {
+       orac_print "Making flats with cleaning switch OFF\n";
+       }
 
 # Obtain the value for the combination method.
        my $method = ( $_MAKE_FLAT_FROM_GROUP_{METHOD} || "broadened" );
@@ -272,9 +276,9 @@ use File::Copy;
 # Assign the other parameters.
              my ( $param1, $param2 );
              if ( $clean ) {
-                $param2 = "method=$method sigmas=2.0 reset accept";
+                $param2 = "method=$method sigmas=3.0 reset accept";
              } else {
-                $param2 = "clean=f method=$method sigmas=2.0 reset accept";
+                $param2 = "clean=f method=$method sigmas=3.0 reset accept";
              }
 
 # Assign the remaining parameters.  Note that output flat is hardwired.
@@ -321,6 +325,7 @@ use File::Copy;
                 } else {
                   $bias_used = $bias_values[1];
                 }
+                $bias_used =~ s/[.]sdf//;
 #                print "bias2=$bias_used\n";
               }
 
@@ -336,6 +341,7 @@ use File::Copy;
                 } else {
                   $dark_used = $dark_values[1];
                 }
+                $dark_used =~ s/[.]sdf//;
 #                print "dark2=$dark_used\n";
               }
               my $flat_used = 'N/A';
@@ -343,9 +349,16 @@ use File::Copy;
               my $mask_used = $Cal->mask;
 # Check for too long length (67 is max allowed by SUBPAR)
               if ( length($mask_used) > 50 ) {
-                my @bpm_values = split('oracdr/', $mask_used);
-                $mask_used = $bpm_values[1];
-        #       print "mask=$mask_used\n";
+                my @mask_values = split('oracdr/', $mask_used);
+# No 'oracdr/' found in filename, must be local not from cal/. Resplit on '/'.
+                if ( $#mask_values == 0 ) {
+                  @mask_values = split('/', $mask_used);
+                  $mask_used = $mask_values[-1];
+                } else {
+                  $mask_used = $mask_values[1];
+                }
+                $mask_used =~ s/[.]sdf//;
+  #              print "mask=$mask_used\n";
               }
               my $fringe_used = 'N/A'; #$Cal->fringe;
         #      print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
@@ -397,7 +410,28 @@ use File::Copy;
 #      orac_print "Recipe=$recipe\n";
               _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
 
-# Convert flat frame to FITS
+# Set the ASN_TYPE to prevent warning in _CREATE_GRAPHIC_FROM_FILE_
+              $Frm->uhdr( "ASN_TYPE", 'pub');
+
+# A little callback
+              my $create_graphic = sub {
+                my $out = shift;
+                  _CREATE_GRAPHIC_FROM_FILE_ FILE=$out XRES=512 YRES=512 TYPE=PNG
+              };
+
+# Create graphic file
+              $create_graphic->( $file );
+              my $pngfile = $file . '.png';
+
+# If we have a final destination environment var. set, move files there.
+              my $final_dest;
+              if ( defined $ENV{FINAL_DATA_OUT} ) {
+                $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
+                move($pngfile, $final_dest);
+                orac_print "Moving ". $pngfile . " to final data place=" . $final_dest . "\n";
+              }
+
+# Convert masterflat frame to FITS
               _CONVERT_TO_FITS_
               my $fitsflatframe = $_CONVERT_TO_FITS_{FILENAME};
 

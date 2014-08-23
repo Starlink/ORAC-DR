@@ -73,7 +73,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('elp1m008-kb74-');
+  $self->rawfixedpart('lsc1m009-kb73-');
   $self->rawsuffix('.fits');
   $self->rawformat('FITS');
   $self->format('NDF');
@@ -228,6 +228,11 @@ sub findgroup {
       	 uc( $self->hdr( "OBSTYPE" ) ) ne 'DARK') {
 	 $hdrgrp .= "_" . $self->hdr( "FILTER" );
     }
+    # For biases and darks, add the molecule number
+    if ( uc( $self->hdr( "OBSTYPE" ) ) eq 'BIAS' or
+	 uc( $self->hdr( "OBSTYPE" ) ) eq 'DARK') {
+	 $hdrgrp .= "_" . $self->hdr( "MOLNUM" );
+    }
     # Add DATE-OBS if we *are* doing a science observation,
     # to ensure that they are not combined into groups
     if ( uc( $self->hdr( "OBSTYPE" ) ) eq 'EXPOSE' ) {
@@ -349,7 +354,7 @@ Tim Jenness (timj@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012 Las Cumbres Observatory Global Telescope Inc.
+Copyright (C) 2013 Las Cumbres Observatory Global Telescope Inc.
 All Rights Reserved.
 
 =cut

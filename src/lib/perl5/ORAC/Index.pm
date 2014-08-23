@@ -1125,6 +1125,19 @@ sub scanindex {
   return @match;
 }
 
+=item B<remove>
+
+Remove an item from an index file
+
+=cut
+
+sub remove {
+  my $self = shift;
+  my $name = shift;
+  delete $self->indexref->{$name};
+  $self->writeindex;
+  }
+
 =item B<_sanity_check>
 
 Make sure that the rules and index entry are consistent.

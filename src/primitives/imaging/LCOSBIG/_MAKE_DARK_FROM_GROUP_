@@ -151,6 +151,8 @@ use File::Copy;
 #       print "Groupname1=$groupname\n";
         $groupname =~ s/DARK//;
 #       print "Groupname2=$groupname\n";
+        $groupname =~ s/_\d*$//;
+#	print "Groupname3=$groupname\n";
         my $out = "dark_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . $groupname;
 #       print "darkname=$out\n";
 
@@ -172,10 +174,11 @@ use File::Copy;
 
         _CLIPPED_STATS_
         my $darkmean = $_CLIPPED_STATS_{MEAN};
+        orac_print "Mean of masterdark=$darkmean\n";
 
 # Check the mean in the masterdark is positive and not too large
 #
-        if ( $darkmean > 0.0 && $darkmean < 0.1 ) {
+        if ( $darkmean > 0.0 && $darkmean < 0.17 ) {
 
 # Set the current dark in the calibration object.
 #          _FILE_DARK_ FILE=$out
@@ -211,6 +214,7 @@ use File::Copy;
               } else {
                 $bias_used = $bias_values[1];
               }
+              $bias_used =~ s/[.]sdf//;
 #              print "bias=$bias_used\n";
             }
             my $dark_used = 'N/A';
@@ -219,9 +223,16 @@ use File::Copy;
             my $mask_used = $Cal->mask;
 # Check for too long length (67 is max allowed by SUBPAR)
             if ( length($mask_used) > 50 ) {
-              my @bpm_values = split('oracdr/', $mask_used);
-              $mask_used = $bpm_values[1];
-#              print "mask=$mask_used\n";
+              my @mask_values = split('oracdr/', $mask_used);
+# No 'oracdr/' found in filename, must be local not from cal/. Resplit on '/'.
+              if ( $#mask_values == 0 ) {
+                @mask_values = split('/', $mask_used);
+                $mask_used = $mask_values[-1];
+              } else {
+                $mask_used = $mask_values[1];
+              }
+              $mask_used =~ s/[.]sdf//;
+  #              print "mask=$mask_used\n";
             }
             my $fringe_used = 'N/A';
 #            print "bias=$bias_used, dark=$dark_used, flat=$flat_used, shut=$shut_used, mask=$mask_used\n";
@@ -273,6 +284,28 @@ use File::Copy;
 #      orac_print "Recipe=$recipe\n";
             _SET_FILE_FITS_ITEM_ FILE=$file KEY=PCRECIPE VALUE=$recipe COMMENT=Processing|Recipes|required/used
 
+# Set the ASN_TYPE to prevent warning in _CREATE_GRAPHIC_FROM_FILE_
+              $Frm->uhdr( "ASN_TYPE", 'pub');
+
+# A little callback
+              my $create_graphic = sub {
+                my $out = shift;
+                  _CREATE_GRAPHIC_FROM_FILE_ FILE=$out XRES=512 YRES=512 TYPE=PNG
+              };
+
+# Create graphic file
+              $create_graphic->( $file );
+              my $pngfile = $file . '.png';
+
+# If we have a final destination environment var. set, move files there.
+              my $final_dest;
+              if ( defined $ENV{FINAL_DATA_OUT} ) {
+                $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
+                move($pngfile, $final_dest);
+                orac_print "Moving ". $pngfile . " to final data place=" . $final_dest . "\n";
+              }
+
+# Convert masterdark frame to FITS
             _CONVERT_TO_FITS_
             my $fitsdarkframe = $_CONVERT_TO_FITS_{FILENAME};
 

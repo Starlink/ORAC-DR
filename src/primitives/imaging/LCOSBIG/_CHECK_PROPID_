@@ -1,0 +1,95 @@
+#+
+# Name:
+#    _CHECK_PROPID_
+#
+# Purpose:
+#    Checks whether the proposal id in the frame header is known to the
+#    science archive.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#
+#
+# Steering Headers:
+#
+# Arguments:
+#
+# Notes:
+#    -  This primitive is suitable for imaging cameras.
+#    -  Processing only occurs for object frames.
+#    -  Email sending requires Mail::Sendmail to be installed
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2013-2013 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+
+# Whether we are testing the propid list from the ProposalDB (set to '1') or
+# the list from the LCOGT/IPAC Science Archive.
+    my $test_proposaldb = 0;
+
+# People to send email to if we hit a PROPID problem
+    my $problem_propid_people = 'tlister@lcogt.net';
+    if ( $test_proposaldb ) {
+      $problem_propid_people = 'tlister@lcogt.net';
+#      $problem_propid_people = 'tlister@lcogt.net,esaunders@lcogt.net,zwalker@lcogt.net';
+    }
+
+# Open file of proposal ids that are known to the LCOGT Archive
+    my $propids_file = $Cal->find_file("lcogt_propid.txt");
+    if ( $test_proposaldb ) {
+      $propids_file = $Cal->find_file("proposal_list");
+    }
+
+    my $fh_propids;
+    if ( -e $propids_file ) {
+      open( $fh_propids, "<$propids_file" ) ||
+        orac_throw "propids file $propids_file could not be opened.  Error: $!.\n";
+    }
+    my @propids;
+    if ( $test_proposaldb ) {
+      @propids  = split(',', <$fh_propids>);
+    } else {
+      @propids = <$fh_propids>;
+    }
+    # Remove trailing blanks and newline.
+    for ( @propids ) {
+      chomp;
+      s/\s+$//;
+    }
+
+    my $file = $Frm->file(1);
+    my $propid = $Frm->uhdr( "PROPID" );
+    if (grep { $_ eq $propid } @propids) {
+      print "Found $propid in propids list\n";
+    } else {
+      my $message = "PROPID $propid was not found in the propids list";
+      if ( $test_proposaldb ) {
+        $message = $message . " obtained from the ProposalDB.";
+      } else {
+        $message = $message . " obtained from the LCOGT/IPAC Science Archive.";
+      }
+      $message =  $message . "\nThe offending frame was ". $file;
+      orac_warn "$message\n";
+
+# Try and load Sendmail module to send email
+      my $haveemail = eval "use Mail::Sendmail; 1; ";
+      if ( $haveemail ) {
+        my %mail = ( To       => $problem_propid_people,
+                     From     => 'eng@pipeline.lco.gtn',
+                     Subject  => 'Missing PROPID',
+                     Message  => $message
+                   );
+        sendmail(%mail) or orac_throw $Mail::Sendmail::error;
+
+        orac_throw "Missing PROPID. Mail sent OK. Log says:\n" . $Mail::Sendmail::log;
+      } else {
+        orac_throw "Missing PROPID $propid but no Mail::Sendmail module.\n";
+      }
+    }

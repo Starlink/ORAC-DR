@@ -41,8 +41,8 @@
 #  Examples:
 #     oracdr_lcosbig
 #        Will set the variables assuming the current UT date.
-#     oracdr_lcosbig 20120314
-#        Use UT data 20120314
+#     oracdr_lcosbig 20120314 kb75
+#        Use UT data 20120314 for camera kb75
 
 #  Notes:
 #     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR
@@ -65,19 +65,24 @@
 #  History:
 #     10 Nov 2009 (tlister)
 #        Original Version based on oracdr_lcospectral.csh
+#     25 Feb 2013 (tlister)
+#        Modified to read and pass camera code from cmdline.
 
 #  Revision:
-#     $Id: oracdr_lcosbig.csh 5197 2012-03-22 16:58:14Z tlister $
+#     $Id$
 
 #  Copyright:
-#     Copyright (C) 2011-2012 Las Cumbres Observatory Global Telescope Inc.  All
+#     Copyright (C) 2011-2013 Las Cumbres Observatory Global Telescope Inc.  All
 #     Rights Reserved.
 
 #-
 
-#Allegedly this is all that's needed now...
+if ( $#argv != 2 ) then
+  echo "Wrong number of command line arguments"
+  exit (-1)
+endif
 
-setenv ORAC_INSTRUMENT LCOSBIG
+setenv ORAC_INSTRUMENT LCOSBIG-$argv[2]
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
