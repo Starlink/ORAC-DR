@@ -1552,7 +1552,7 @@ a reference to a cleanup subroutine. See L<"HELPER TASKS">.
 =item MESSYS
 
 The name of the message system required to contact the engine.
-See L<"orac_messys_description">.
+See C<orac_messys_description> below for details.
 
 =back
 
