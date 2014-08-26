@@ -307,6 +307,8 @@ sub embed {
 
 }
 
+=back
+
 =begin __PRIVATE__
 
 =head2 Internal Methods

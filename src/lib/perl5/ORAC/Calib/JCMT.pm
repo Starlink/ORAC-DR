@@ -102,6 +102,8 @@ sub isplanet {
   return 0;
 }
 
+=back
+
 =head2 Support Methods
 
 Each of the methods above has a support implementation to obtain

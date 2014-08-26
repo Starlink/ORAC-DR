@@ -594,7 +594,7 @@ sub secondary_calibrator_fluxes {
   return (defined $ismap && $ismap) ? %ASECFLUXES : %BEAMFLUXES;
 }
 
-
+=back
 
 =head2 Index Methods
 
