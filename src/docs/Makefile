@@ -47,7 +47,7 @@ sun230/sun230.tex: sun230/sun230.pl sun230/sun230_master.tex
 sun233/sun233.pdf sun233/sun233.htx.build: $(SUN233_CLASSES)
 
 $(SUN233_CLASSES): sun233/mkinclude.csh
-	cd $(@D); ORAC_PERL5LIB=$(ORAC_DIR)/lib/perl5 csh $(<F)
+	cd $(@D); ORAC_PERL5LIB=$(ORAC_DIR)/lib/perl5 ./$(<F)
 
 %.pdf: %.tex
 	cd $(@D); $(PDFLATEX) $(<F)
