@@ -52,11 +52,16 @@ exist or if FILE is one-dimensional.
 
 =item XRES = INTEGER (Given)
 
-The number of pixels along the x-axis of the output graphic file. [64]
+The number of pixels along the x-axis of the output graphic file.
+This can be a comma-seapatated list to produce graphic files at a
+series of sizes.   [64]
 
 =item YRES = INTEGER (Given)
 
-The number of pixels along the y-axis of the output graphic file. [64]
+The number of pixels along the y-axis of the output graphic file.
+This can be a comma-seapatated list to produce graphic files at a
+series of sizes.  If it is undefined a square graphic is assumed
+using XRES to set the size.  [undef]
 
 =back
 
@@ -70,9 +75,8 @@ This primitive is suitable only for one-dimensional and two-dimensional input fi
 
 =item *
 
-The graphic file will have the same root filename as the input file,
-unless the OUTROOT argument is given,
-with the appropriate file extension.
+Each graphic file will have the same root filename as the input file,
+unless the OUTROOT argument is given, with the appropriate file extension.
 
 A polarisation vector overlay graphic file has an additional "_vector"
 between the root name and the number of pixels.
@@ -135,6 +139,9 @@ Rights Reserved.
 use ORAC::Bounds qw/ retrieve_bounds /;
 
 
+# Arguments
+# ==========
+
 my $file = get_prim_arg( $_PRIM_ARGS_, 'FILE', undef );
 if( ! defined( $file ) ) {
   orac_throw "Programming error: Must supply FILE parameter to _CREATE_GRAPHIC_FROM_FILE_.";
@@ -152,203 +159,250 @@ my $product = get_prim_arg( $_PRIM_ARGS_, 'PRODUCT', $file_product );
 my $productID = get_prim_arg( $_PRIM_ARGS_, 'PRODUCTID', undef );
 my $type = uc( get_prim_arg( $_PRIM_ARGS_, 'TYPE', 'GIF' ) );
 my $xres = get_prim_arg( $_PRIM_ARGS_, 'XRES', 64 );
-my $yres = get_prim_arg( $_PRIM_ARGS_, 'YRES', 64 );
-my $outroot = get_prim_arg($_PRIM_ARGS_, 'OUTROOT', $file);
+my $yres = get_prim_arg( $_PRIM_ARGS_, 'YRES', undef );
+$yres = $xres if ( !defined( $yres ) );
+my $outroot = get_prim_arg( $_PRIM_ARGS_, 'OUTROOT', $file );
 
-my ( $outfile, $outvecfile );
+
+# Convert list of X resolutions an array.
+if ( ref( $xres ) eq 'ARRAY' ) { $xres = join( ",", @{ $xres } ) }
+my @resx = split( ',', $xres );
+if ( ref( $yres ) eq 'ARRAY' ) { $yres = join( ",", @{ $yres } ) }
+my @resy = split( ',', $yres );
+
+my $nx = scalar( @resx );
+my $ny = scalar( @resy );
+if ( $nx > $ny ) {
+   for ( my $i = $ny + 1; $i <= $nx; $i++ ) {
+       $resx[ $i - 1 ] = $resy[ $i - 1 ];
+   }
+} elsif ( $ny > $nx ) {
+   for ( my $i = $nx + 1; $i <= $ny; $i++ ) {
+       $resy[ $i - 1 ] = $resx[ $i - 1 ];
+   }
+}
+
+# Check for abnormal data
+# =======================
+
+# Use STATS to flag if this is not a frame with constant values.
+# Set min and max to some range, since a 0-range stretch can
+# crash the display routines.
+my $zerorange = 0;
+$Mon{kappa_mon}->obeyw( "stats", "ndf=$file" );
+my ( $ORAC_STATUS, $sigma ) = $Mon{kappa_mon}->get( "stats", "sigma" );
+( $ORAC_STATUS, my $max ) = $Mon{kappa_mon}->get( "stats", "maximum" );
+( $ORAC_STATUS, my $min ) = $Mon{kappa_mon}->get( "stats", "minimum" );
+if ( $sigma == 0 ) {
+   $min += -1;
+   $max +=  1;
+   $zerorange = 1;
+   orac_warn "...All pixels in ${file} have the same value.";
+}
+
+# Check to see if we're one-dimensional or two-dimensional.
+_GET_DIMENSIONS_ FILE=$file
+my $dims = $_GET_DIMENSIONS_{DIMS};
+my @nondegen = grep { $_ != 1 } @$dims;
+
+if ( $#nondegen > 1 ) {
+   orac_warn "Programming error: cannot create graphic from file that's not one- or two-dimensional.\n";
+   return ORAC__OK;
+}
+
+# Create the graphic
+# ==================
+
+for ( my $i = 0; $i < $nx; $i++ ) {
+   my ( $exif, $outfile, $outvecfile, $params );
+   my $xres = $resx[ $i ];
+   my $yres = $resy[ $i ];
 
 # Only do this processing if we have KAPPA v1.10 or greater.
-if( starversion_gt( 'KAPPA', 'v1.10-0' ) ) {
+   if ( starversion_gt( 'KAPPA', 'v1.10-0' ) ) {
 
-  # Use stats to flag if this is not a frame with constant values.
-  # Set min and max to some range, since a 0-range stretch can
-  # crash the display routines.
-  my $zerorange = 0;
-  $Mon{kappa_mon}->obeyw("stats","ndf=$file");
-  my $ORAC_STATUS;
-  ($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
-  ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
-  ($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
-  if ($sigma == 0) {
-    $min += -1;
-    $max +=  1;
-    $zerorange = 1;
-    orac_warn "...All pixels in ${file} have the same value.";
-  }
-
-  if( $addres ) {
-    if( $xres == $yres ) {
-      $outfile = "${outroot}_$xres." . lc( $type );
-      $outvecfile = "${outroot}_vector_$xres." . lc( $type );
-    } else {
-      $outfile = "${outroot}_${xres}x${yres}." . lc( $type );
-      $outvecfile = "${outroot}_vector_${xres}x${yres}." . lc( $type );
-    }
-  } else {
-    $outfile = join ".", $outroot, lc( $type );
-    $outvecfile = join ".", $outroot, "_vector", lc( $type );
-  }
-
-  # Set the x- and y-resolution. This needs to be done via an
-  # environment variable, which has a different name depending on what
-  # type of file we're writing.
-  my $xresenv = "PGPLOT_" . $type . "_WIDTH";
-  my $yresenv = "PGPLOT_" . $type . "_HEIGHT";
-
-  $Mon{'kapview_mon'}->control( "setenv", "$xresenv=$xres" );
-  $Mon{'kapview_mon'}->control( "setenv", "$yresenv=$yres" );
-
-  # Check to see if we're one-dimensional or two-dimensional.
-  _GET_DIMENSIONS_ FILE=$file
-  my $dims = $_GET_DIMENSIONS_{DIMS};
-  my @nondegen = grep { $_ != 1 } @$dims;
-  if( $#nondegen == 0 ) {
-
-    my $minmax = "";
-    $minmax = "ybot=${min} ytop=${max}" if ($zerorange);
-
-    my $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram $minmax";
-    $Mon{'kapview_mon'}->obeyw( "linplot", "$params" );
-
-  } elsif( $#nondegen == 1 ) {
-
-    my $minmax = "faint";
-    $minmax = "scale low=${min} high=${max}" if ($zerorange);
-
-    my $lut = $Frm->uhdr('MAKE_GREYSCALE_THUMBNAILS') ? 'grey' : 'bgyrw';
-    my $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no mode=${minmax} lut=$ENV{KAPPA_DIR}/${lut}_lut.sdf reset";
-    $Mon{'kapview_mon'}->obeyw( "display", "$params" );
-
-    # Assume that if vectors are supplied that POLPACK monolith was used
-    # to create it and is active.
-    if ( defined( $vector_file ) ) {
-       $params = "cat=$vector_file device=\"$outvecfile" . "/$type\" noclear noaxes nokey";
-       $Mon{'polpack_mon'}->control('setenv', "PGPLOT_${type}_WIDTH=$xres");
-       $Mon{'polpack_mon'}->control('setenv', "PGPLOT_${type}_HEIGHT=$yres");
-       $Mon{'polpack_mon'}->obeyw( "polplot", "$params" );
-    }
-
-  } else {
-    orac_warn "Programming error: cannot create graphic from file that's not one- or two-dimensional.\n";
-    return ORAC__OK;
-  }
-
-  orac_say "$file to $outfile: Created graphic.";
-
-  # Try to load the Image::ExifTool module to add a header.
-  my $isok = eval "use Image::ExifTool qw/ :Public /; 1; ";
-  if( $isok ) {
-    orac_say " Adding EXIF header to $outfile.";
-
-    my @keywords;
-
-    # Get the FITS header so we can add the ASN_TYPE.
-    my $hdr = new Astro::FITS::Header::NDF( File => $file );
-
-    # We will need some headers for JSA preview generation
-    # so store them in the PNG file
-    for my $k (qw/ asn_type asn_id backend instrume obsid utdate project survey tilenum /) {
-      my $value = $hdr->value( uc($k) );
-      push(@keywords, "jsa:$k=$value") if defined $value;
-    }
-
-    # Get the RA/Dec.
-    my $bounds = retrieve_bounds( $file );
-    my ( $ra, $dec );
-    if ( defined $bounds->{'centre'} ) {
-      $ra = $bounds->{'centre'}->ra->degrees;
-      $dec = $bounds->{'centre'}->dec->degrees;
-
-       if ( defined $ra && defined $dec ) {
-         push @keywords, "astro:RA=$ra";
-         push @keywords, "astro:Dec=$dec";
-       }
-    }
-
-    if( defined( $hdr->value( "OBJECT" ) ) ) {
-      push @keywords, "astro:name=" . $hdr->value( "OBJECT" );
-    }
-
-    if ( defined( $product ) ) {
-      push @keywords, "jsa:product=" . $product;
-    }
-
-    if ( defined( $productID ) && length( $productID ) ) {
-      push @keywords, "jsa:productID=" . $productID;
-    }
-
-    if (defined $Frm->uhdr('ISHYBRID')) {
-      push @keywords, 'jsa:isHybrid=' . ($Frm->uhdr('ISHYBRID')
-                                         ? 'true' : 'false');
-    }
-
-    if ( $#nondegen == 1 && defined $dec ) {
-
-      # Retrieve the orientation.
-      my $lbound = $_GET_DIMENSIONS_{LBOUND};
-      my $ubound = $_GET_DIMENSIONS_{UBOUND};
-      my $wcs = $Frm->read_wcs( $file );
-      my $skytemplate = Starlink::AST::SkyFrame->new( "" );
-      $skytemplate->Set( 'MaxAxes' => 3,
-                         'MinAxes' => 1 );
-      my $skyframe = $wcs->FindFrame( $skytemplate, "" );
-      $skyframe->Set( 'system' => 'ICRS' );
-
-      my $cen_x = 0.5 + ( $lbound->[0] + $ubound->[0] ) / 2;
-      my $cen_y = 0.5 + ( $lbound->[1] + $ubound->[1] ) / 2;
-
-      # Add an arcminute to the central Dec position, then find which
-      # pixel that's at, then find the angle.
-      my $dec_new = $bounds->{'centre'}->dec->radians + 0.000290888209;
-      my @new_pos = $skyframe->TranP( 0,
-                                      [ $bounds->{'centre'}->ra->radians ],
-                                      [ $dec_new ] );
-
-      # Calculate the angle.
-      my $x = $new_pos[0]->[0] - $cen_x;
-      my $y = $new_pos[1]->[0] - $cen_y;
-      my $angle = atan2( $y, $x );
-      my $angle_deg = $angle * 180 / ( atan2( 1, 1 ) * 4 );
-
-      # Handle quadrant.
-      if( $x < 0 ) {
-        if( $y < 0 ) {
-          $angle_deg = 90 - $angle_deg;
-        } else {
-          $angle_deg = 450 - $angle_deg;
-        }
+      if ( $addres ) {
+         if ( $xres == $yres ) {
+            $outfile = "${outroot}_$xres." . lc( $type );
+            $outvecfile = "${outroot}_vector_$xres." . lc( $type );
+         } else {
+            $outfile = "${outroot}_${xres}x${yres}." . lc( $type );
+            $outvecfile = "${outroot}_vector_${xres}x${yres}." . lc( $type );
+         }
       } else {
-        $angle_deg = 90 - $angle_deg;
+         $outfile = join ".", $outroot, lc( $type );
+         $outvecfile = join ".", $outroot, "_vector", lc( $type );
       }
-      push @keywords, "astro:orientation=$angle_deg";
 
-      # Find the pixel scale of the original NDF, then scale the pixel
-      # scale accordingly.
-      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
-      my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
-      my $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
-                                $fpixscale[1] * $fpixscale[1] );
-      my $longest_file = ( $nondegen[0] > $nondegen[1] ? $nondegen[0] : $nondegen[1] );
-      my $longest_img = ( $xres > $yres ? $xres : $yres );
-      my $pixscale_new = $longest_file * $pixscale_orig / $longest_img;
-      push @keywords, "astro:pixelScale=$pixscale_new";
+# Set the x- and y-resolution. This needs to be done via an
+# environment variable, which has a different name depending on what
+# type of file we're writing.
+      my $xresenv = "PGPLOT_" . $type . "_WIDTH";
+      my $yresenv = "PGPLOT_" . $type . "_HEIGHT";
 
-    }
+      $Mon{'kapview_mon'}->control( "setenv", "$xresenv=$xres" );
+      $Mon{'kapview_mon'}->control( "setenv", "$yresenv=$yres" );
 
-    # Write the EXIF information.
-    my $exif = new Image::ExifTool;
-    foreach my $keyword ( @keywords ) {
-      $exif->SetNewValue( Keywords => $keyword );
-    }
-    $exif->WriteInfo( $outfile );
-    $exif->WriteInfo( $outvecfile ) if (defined $vector_file)
-        && -e $outvecfile;
+      if ( $#nondegen == 0 ) {
 
-#  my $url = "http://www.worldwidetelescope.org/wwtweb/ShowImage.aspx?scale=$pixscale_new&name=" . $hdr->value( "OBJECT" ) . "&imageurl=http://www.jach.hawaii.edu/~bradc/images/$outfile&ra=$ra&dec=$dec&rotation=$angle_deg&x=" . ( int( $xres / 2 )) . "&y=" . ( int( $yres / 2 ) );
-#
-#  print "URL: $url\n";
+         my $minmax = "";
+         $minmax = "ybot=${min} ytop=${max}" if ( $zerorange );
 
-  } else {
-    orac_warn "Could not load Image::ExifTool: $@\n";
-  }
+         $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram $minmax";
+         $Mon{'kapview_mon'}->obeyw( "linplot", "$params" );
+
+      } elsif ( $#nondegen == 1 ) {
+
+         my $minmax = "faint";
+         $minmax = "scale low=${min} high=${max}" if ( $zerorange );
+
+         my $lut = $Frm->uhdr('MAKE_GREYSCALE_THUMBNAILS') ? 'grey' : 'bgyrw';
+         $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no ";
+         $params .= "mode=${minmax} lut=$ENV{KAPPA_DIR}/${lut}_lut.sdf reset";
+         $Mon{'kapview_mon'}->obeyw( "display", "$params" );
+
+# Assume that if vectors are supplied that POLPACK monolith was used
+# to create it and is active.
+         if ( defined( $vector_file ) ) {
+            $params = "cat=$vector_file device=\"$outvecfile" . "/$type\" noclear noaxes nokey";
+            $Mon{'polpack_mon'}->control( 'setenv', "PGPLOT_${type}_WIDTH=$xres" );
+            $Mon{'polpack_mon'}->control( 'setenv', "PGPLOT_${type}_HEIGHT=$yres" );
+            $Mon{'polpack_mon'}->obeyw( "polplot", "$params" );
+         }
+
+      }
+
+      orac_say "$file to $outfile: Created graphic.";
+
+# Assemble metadata to write to the graphic file
+# ===============================================
+
+# Since the metadata are the same for each graphic, only form the list
+# of keywords once.
+      if ( $i == 0 ) {
+
+# Try to load the Image::ExifTool module to add a header.
+         my $isok = eval "use Image::ExifTool qw/ :Public /; 1; ";
+
+# Check that we have made a graphic.
+         if ( ! $isok ) {
+            orac_warn "Could not load Image::ExifTool: $@\n";
+
+         } else {
+            my @keywords;
+
+# JSA metadata
+# ------------
+
+# Get the FITS header so we can add various JSA headers.
+            my $hdr = new Astro::FITS::Header::NDF( File => $file );
+
+# We will need some headers for JSA preview generation, so store them in
+# the PNG file.
+            for my $k (qw/ asn_type asn_id backend instrume obsid utdate project survey tilenum /) {
+               my $value = $hdr->value( uc($k) );
+               push( @keywords, "jsa:$k=$value" ) if defined $value;
+            }
+
+# Write keywords for other headers.
+            if ( defined( $hdr->value( "OBJECT" ) ) ) {
+               push @keywords, "astro:name=" . $hdr->value( "OBJECT" );
+            }
+
+            if ( defined( $product ) ) {
+               push @keywords, "jsa:product=" . $product;
+            }
+
+            if ( defined( $productID ) && length( $productID ) ) {
+                push @keywords, "jsa:productID=" . $productID;
+            }
+
+            if ( defined $Frm->uhdr( 'ISHYBRID' ) ) {
+               push @keywords, 'jsa:isHybrid=' .
+                               ( $Frm->uhdr( 'ISHYBRID' ) ? 'true' : 'false' );
+            }
+
+# WCS metadata
+# ------------
+
+# Get the RA/Dec.
+            my $bounds = retrieve_bounds( $file );
+            my ( $ra, $dec );
+            if ( defined $bounds->{'centre'} ) {
+               $ra = $bounds->{'centre'}->ra->degrees;
+               $dec = $bounds->{'centre'}->dec->degrees;
+
+               if ( defined $ra && defined $dec ) {
+                  push @keywords, "astro:RA=$ra";
+                  push@keywords, "astro:Dec=$dec";
+               }
+            }
+
+# Retrieve the orientation.
+            if ( $#nondegen == 1 && defined $dec ) {
+               my $lbound = $_GET_DIMENSIONS_{LBOUND};
+               my $ubound = $_GET_DIMENSIONS_{UBOUND};
+               my $wcs = $Frm->read_wcs( $file );
+               my $skytemplate = Starlink::AST::SkyFrame->new( "" );
+               $skytemplate->Set( 'MaxAxes' => 3,
+                                  'MinAxes' => 1 );
+               my $skyframe = $wcs->FindFrame( $skytemplate, "" );
+               $skyframe->Set( 'system' => 'ICRS' );
+
+               my $cen_x = 0.5 + ( $lbound->[0] + $ubound->[0] ) / 2;
+               my $cen_y = 0.5 + ( $lbound->[1] + $ubound->[1] ) / 2;
+
+# Add an arcminute to the central Dec position, then find in which
+# pixel that is located, then derive the angle.
+               my $dec_new = $bounds->{'centre'}->dec->radians + 0.000290888209;
+               my @new_pos = $skyframe->TranP( 0,
+                                               [ $bounds->{'centre'}->ra->radians ],
+                                               [ $dec_new ] );
+
+# Calculate the angle.
+               my $x = $new_pos[0]->[0] - $cen_x;
+               my $y = $new_pos[1]->[0] - $cen_y;
+               my $angle = atan2( $y, $x );
+               my $angle_deg = $angle * 180 / ( atan2( 1, 1 ) * 4 );
+
+# Handle the quadrant.
+               if ( $x < 0 ) {
+                  if ( $y < 0 ) {
+                     $angle_deg = 90 - $angle_deg;
+                  } else {
+                     $angle_deg = 450 - $angle_deg;
+                  }
+               } else {
+                  $angle_deg = 90 - $angle_deg;
+               }
+               push @keywords, "astro:orientation=$angle_deg";
+
+# Find the pixel scale of the original NDF, then scale the pixel scale
+# accordingly.
+               $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+               my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+               my $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
+                                         $fpixscale[1] * $fpixscale[1] );
+               my $longest_file = ( $nondegen[0] > $nondegen[1] ? $nondegen[0] : $nondegen[1] );
+               my $longest_img = ( $xres > $yres ? $xres : $yres );
+               my $pixscale_new = $longest_file * $pixscale_orig / $longest_img;
+               push @keywords, "astro:pixelScale=$pixscale_new";
+
+            }
+
+# Write the EXIF information.
+            $exif = new Image::ExifTool;
+            foreach my $keyword ( @keywords ) {
+               $exif->SetNewValue( Keywords => $keyword );
+            }
+         }
+
+         orac_say " Adding EXIF header to $outfile.";
+
+
+         $exif->WriteInfo( $outfile );
+         $exif->WriteInfo( $outvecfile ) if ( defined $vector_file )
+                                              && -e $outvecfile;
+      }
+   }
 }
