@@ -1179,12 +1179,12 @@ soon to make a new map, the raw data are flatfielded and left on disk
 (suffix \verb+_ff+). These files will be deleted once a new image is
 made.
 
-The new image is combined with the existing coadd (if
-appropriate). Note that the summit pipeline coadds images for a given
-source across multiple observations so fainter features will be
-revealed as the integration time increases. If a new image was not
-created during the latest pass through the recipe then all flatfielded
-data files needed to create a map are left on disk.
+The new image is combined with the existing coadd (if appropriate) and
+a new NEFD image is calculated. Note that the summit pipeline coadds
+images for a given source across multiple observations so fainter
+features will be revealed as the integration time increases. If a new
+image was not created during the latest pass through the recipe then
+all flatfielded data files needed to create a map are left on disk.
 
 \subsection{Science pipeline}
 
@@ -1798,70 +1798,6 @@ exists already.
 
 This section covers some aspects of the SCUBA-2 pipeline in detail.
 
-\subsection{Source-fitting}
-
-\KAPPA\ \task{beamfit} is the main task used for fitting sources in
-order to calculate beam size, pointing offsets and flux conversion
-factors (FCFs). Where possible, the pipeline attempts to fit a
-realistic beam using two gaussian components as determined in
-\cite{scuba2calpaper}. The criterion is that the peak signal-to-noise
-ratio (SNR) must exceed \snrmin.
-
-When estimating the beam size, \task{beamfit} always assumes a
-gaussian profile whether or not it is fitting two components. For
-calculating pointing offsets, the peak position is most important and
-the choice of profile has no effect on the result. FCF calculations
-will use a two-component gaussian if possible (for the BEAM FCF only),
-otherwise the fit profile is left as a free parameter.
-
-
-\subsection{FCF calculations}
-
-The pipeline calculates three FCFs to convert the uncalibrated data in
-pW to astronomically-meaningful units:
-\begin{itemize}
-\item ARCSEC -- calibrate maps in surface brightness units,
-  Jy\,arcsec$^{-2}$;
-\item BEAM -- calibrate maps in Jy\,beam$^{-1}$;
-\item BEAMMATCH -- calibrate maps processed with the matched filter in
-  Jy.
-\end{itemize}
-
-The ARCSEC FCF is calculated using aperture photometry
-(\task{autophotom}) on a calibrator. The primary aperture is 30$''$ in
-radius (at both wavelengths) with a sky annulus defined within
-1.5--2.0 times the aperture radius. The known total flux of the source
-is divided by the measured background-corrected flux to yield the
-ARCSEC FCF in Jy\,arcsec$^{-2}$\,pW$^{-1}$.
-
-The BEAM FCF is obtained from the ratio of the known peak flux to the
-fitted source peak to give the FCF in units of
-Jy\,beam$^{-1}$\,pW$^{-1}$. The fitted peak is derived from
-\KAPPA\ \task{beamfit}. If the source is a known calibrator and has a
-SNR exceeding \snrmin\ the map is fitted by two superposed gaussians
-to mimic the realistic telescope beam. The fallback position is that a
-single component is fitted if the SNR is less than \snrmin, but it is
-\textit{not} constrained to be a gaussian in order to fit the peak
-more accurately.
-
-The BEAMMATCH FCF is obtained from the ratio of the known total flux
-to the fitted source peak in an image processed by the matched filter,
-to give the FCF in units of Jy\,pW$^{-1}$. \KAPPA\ \task{beamfit} is
-used to fit a single component, though the fit is not constrained to
-be a gaussian in order to estimate the peak as accurately as
-possible. For point sources it should yield the same value as the BEAM
-FCF. However, it is rarely used to calibrate data directly; the
-application of a matched filter is carried out on images calibrated
-with the BEAM FCF.
-
-The combination of these FCFs can be used to assess telescope
-performance. The ratio of the BEAM FCF to the ARCSEC FCF provides an
-estimate of the effective solid angle of the telescope beam which can
-be compared with the standard value derived in
-\cite{scuba2calpaper}. If the telescope is well focussed, the two
-should agree to within the calibration uncertainty. However, if the
-focus is not optimal, the BEAM/ARCSEC ratio will yield a larger value.
-
 \subsection{Matched filter}
 
 The standard matched filter used by the SCUBA-2 pipeline is based on a
@@ -1895,8 +1831,147 @@ pixel, $i$, in the NEFD image is given by:
 Since this image is calculated from components internal to the image,
 the NEFD image is written as an additional NDF component under the
 same extension as the exposure time and weights, i.e.\,
-\verb+MORE.SMURF.NEFD+. Note that the calculation will overwrite
-any existing component of the same name.
+\verb+MORE.SMURF.NEFD+. Note that the calculation will overwrite any
+existing component of the same name.
+
+\subsection{Source-fitting}
+
+\KAPPA\ \task{beamfit} is the main task used for fitting sources in
+order to calculate beam size, pointing offsets and flux conversion
+factors (FCFs). Where possible, the pipeline attempts to fit a
+realistic beam using two (circular) gaussian components as determined
+in \cite{scuba2calpaper}. The criterion is that the peak
+signal-to-noise ratio (SNR) must exceed \snrmin.
+
+When estimating the beam size, \task{beamfit} always assumes a
+gaussian profile whether or not it is fitting two components. Fits to
+the beam are always carried out in an Az-El coordinate frame so that
+fits may be analyzed for systematic elongations.
+
+For calculating pointing offsets, the peak position is most important
+and the choice of profile has no effect on the result. FCF
+calculations will use a two-component gaussian if possible (for the
+BEAM FCF only), otherwise the fit profile is left as a free parameter.
+
+\subsection{FCF calculations}
+
+The pipeline calculates three FCFs to convert the uncalibrated data in
+pW to astronomically-meaningful units:
+\begin{itemize}
+\item ARCSEC -- calibrate maps in surface brightness units,
+  Jy\,arcsec$^{-2}$;
+\item BEAM -- calibrate maps in Jy\,beam$^{-1}$;
+\item BEAMMATCH -- calibrate maps processed with the matched filter in
+  Jy.
+\end{itemize}
+All three of these FCFs are calculated in the
+\verb+_FIND_CALIBRATION_MAP_+ primitive with the detailed calculation
+of each carried out in the primitives specified below.
+
+The combination of these FCFs can be used to assess telescope
+performance. The ratio of the BEAM FCF to the ARCSEC FCF provides an
+estimate of the effective solid angle of the telescope beam which can
+be compared with the standard value derived in
+\cite{scuba2calpaper}. If the telescope is well focussed, the two
+should agree to within the calibration uncertainty. However, if the
+focus is not optimal, the BEAM/ARCSEC ratio will yield a larger value.
+
+Maps of calibrators are made with 1$''$ pixels at both 850- and
+450\,$\mu$m which allows the fitting areas to be defined in terms of pixels.
+
+\subsubsection{ARCSEC}
+
+The ARCSEC FCF is calculated using aperture photometry
+(\task{autophotom}) on a calibrator (using the
+\verb+_APERTURE_PHOTOMETRY_+ primitive). The primary aperture is
+30$''$ in radius (at both wavelengths) with a sky annulus defined
+within 1.25--2.0 times the aperture radius. The known total flux of
+the source is divided by the measured background-corrected flux to
+yield the ARCSEC FCF in Jy\,arcsec$^{-2}$\,pW$^{-1}$.
+
+The \task{autophotom} task is called with the following parameters:
+\begin{verbatim}
+biasle=0 centro padu=1 photon=3 positive skyest=2 nousemags nousemask
+\end{verbatim}
+The input file defining the source position and aperture properties
+contains the following lines:
+\begin{quote}
+\verb+1 +$x$ $y$\verb+ 0.0 0.0 0.0 0.0 OK +$r_{\rm ap}$\verb+ 0.0 0.0 annulus circle+\\
+\verb+#ANN 1 1.25 2.0+
+\end{quote}
+where $x$ and $y$ are the RA and Dec of the source (obtained from the
+\verb+skyref+ WCS attribute) and $r_{\rm ap}$ is the radius of the
+aperture in pixels.
+
+The signal sum, $S$, is obtained from the \verb+SIGNAL+ entry (column
+7) in the output file, which is converted to a total flux
+(pW\,arcsec$^2$) using the pixel area, $F = S A_{\rm pix}$. The
+uncertainty in this flux is derived from the \verb+MAG+ and
+\verb+MAGERR+ entries (columns 4 and 5 respectively). With the
+\verb+nousemags+ parameter, these values are counts, rather than
+magnitudes and are thus a mean count ($\mu$) and uncertainty in that
+value ($\delta \mu$). Then $\delta F = F \mu/\delta\mu$ (also in
+pW\,arcsec$^2$).
+
+\subsubsection{BEAM}
+
+The BEAM FCF is obtained from the ratio of the known peak flux to the
+fitted source peak to give the FCF in units of
+Jy\,beam$^{-1}$\,pW$^{-1}$. The fitted peak is derived from \KAPPA\
+\task{beamfit} called from the \verb+_FIT_SOURCE_+ primitive. If the
+source has a SNR exceeding \snrmin\ the map is fitted by two
+superposed gaussians to mimic the realistic telescope beam. The
+fallback position is that a single (non-gaussian) component is fitted
+if the SNR is less than \snrmin.
+
+The arguments to \task{beamfit} for a single component fit are:
+\begin{verbatim}
+gauss=false mode=interface variance=false fitarea=25 fixback=0
+\end{verbatim}
+and for a two-component fit (850-$\mu$m example):
+\begin{verbatim}
+gauss=true mode=interface variance=false fitarea=25 fixback=0 beams=2 \
+  ampratio=0.0204081632653061 fwhm='13,48' fixpos circular nopolar nofixfwhm
+\end{verbatim}
+where the values of the \verb+fwhm+ and \verb+ampratio+ parameters are
+those for the corresponding wavelength as quoted in
+\cite{scuba2calpaper}.
+
+The \verb+pos+ parameter is set to either (0,0) for planets or the RA
+and Dec of the reference position for stationary sources. For a
+two-component fit, the \verb+pos2+ parameter is the same as
+\verb+pos+.
+
+The peak of the fit and its uncertainty are used to estimate the FCF
+and the corresponding uncertainty directly. \task{beamfit} also
+returns an estimate of the RMS deviation between the map and the fit;
+however, since the FCF is derived from the peak of the fit, the
+uncertainty in that value is preferred for estimating the uncertainty
+in the FCF (although in practice the two tend to be similar).
+
+\subsubsection{BEAMMATCH}
+
+The BEAMMATCH FCF is obtained from the ratio of the known total flux
+to the fitted source peak in an image processed by the matched filter,
+to give the FCF in units of Jy\,pW$^{-1}$. \KAPPA\ \task{beamfit} is
+used to fit a single component, though the fit is not constrained to
+be a gaussian in order to estimate the peak as accurately as
+possible. For point sources it should yield the same value as the BEAM
+FCF. However, it is rarely used to calibrate data directly; the
+application of a matched filter is usually carried out on images
+calibrated with the BEAM FCF.
+
+The \task{beamfit} arguments for deriving the BEAMMATCH FCF are:
+\begin{verbatim}
+gauss=false mode=interface variance=false fitarea=20 fixback=0
+\end{verbatim}
+A smaller fit area is used in order to limit the influence on the fit
+of the negative dip associated with the matched filter. The \verb+pos+
+parameter is the same as that used for the BEAM FCF.
+
+As with the BEAM FCF, the uncertainty in the peak of the fit is used
+to directly estimate the uncertainty in this FCF.
+
 
 
 \begin{thebibliography}{}
