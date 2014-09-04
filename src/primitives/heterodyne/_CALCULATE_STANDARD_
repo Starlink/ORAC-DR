@@ -54,7 +54,7 @@ Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009, 2013 Science and Technology Facilities Council.  All
+Copyright (C) 2009, 2013, 2014 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
@@ -63,7 +63,7 @@ Rights Reserved.
 my $retrieve = get_prim_arg( $_PRIM_ARGS_, "RETRIEVE", 1 );
 
 # Set up some variables that will be used for calibration information.
-my ( $low, $high, $cal_integ, $cal_peak );
+my ( $low, $high, @flbnd, @fubnd, $cal_integ, $cal_peak );
 ( my $molecule = $Frm->hdr( "MOLECULE" ) ) =~ s/[\s\-]//g;
 ( my $transition = $Frm->hdr( "TRANSITI" ) ) =~ s/\s//g;
 ( my $object = $Frm->hdr( "OBJECT" ) ) =~ s/\s//g;
@@ -98,15 +98,15 @@ if( ! $retrieve ) {
 my $file = $Frm->file;
 my $temp1 = new ORAC::TempFile( 0 );
 
-# Check that the velcoity range lies within the current spectral range.
+# Check that the velocity range lies within the current spectral range.
 # This is to cater for errors in the tuning.
 my $know_range = defined( $low ) && defined( $high );
 my $use_range = 1;
+my $ORAC_STATUS;
 if ( $know_range ) {
-
   $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$file" );
-  my ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
-  ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+  ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+  ( $ORAC_STATUS, @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
 
   $use_range = ( $low  >= $flbnd[2] && $low  <= $fubnd[2] ) &&
                ( $high >= $flbnd[2] && $high <= $fubnd[2] );
@@ -118,6 +118,13 @@ if ( $know_range ) {
             "located between $low and $high km/s lies beyond the spectral range " .
             "($lower to $upper km/s).  Flux and peak measurement will not be " .
             "made.\n" if ( !$use_range );
+
+} else {
+  $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$file(1,1,~90\%)" );
+  ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+  ( $ORAC_STATUS, @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+  $low = sprintf( "%.2f", $flbnd[2] );
+  $high = sprintf( "%.2f", $fubnd[2] );
 }
 
 if ( $use_range ) {
