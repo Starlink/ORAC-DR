@@ -6,11 +6,15 @@ _REMOVE_FLAT_FIELD_ITERATE_ - Remove flat-field effects iteratively.
 
 =head1 DESCRIPTION
 
-This primitive removes a global flat-field from a baselined
-time-series cube.  It generates spectral cubes for each receptor
-individually, then collapses each cube along the frequency and time
-axes to form a composite spectrum for each receptor.  Then it has a
-choice of methods to analyse them (see Argument METHOD).
+This primitive first evaluates the receptor-to-receptor responses of
+one or more baselined time-series cubes.  Then it applies the relative
+sensitivities to flat field those same cubes.  It segregates a group
+of cubes by observation date, and derives a flat field for each date.
+To derive the relative responses the primitive generates spectral
+cubes for each receptor individually, then collapses each cube along
+the frequency and time axes to form a composite spectrum for each
+receptor.  Then it has a choice of methods to analyse them (see
+Argument METHOD).
 
 The first sums the flux over a velocity range for each individual
 receptor (Curtis, Richer & Buckle 2009) integrating over all the
@@ -22,7 +26,7 @@ the data and the flat field for the bright parts seemed not to be the
 same as near the background.
 
 The second selects signal above the median plus four standard
-deviations, particurlarly when there are multiple lines.  This offers
+deviations, particularly when there are multiple lines.  This offers
 a simple means to exclude the noisy baseline and reduce the
 uncertainty in the relative data values in each receptor.  It then
 normalizes the flux in the receptors to the tracking receptor's flux.
@@ -120,8 +124,8 @@ The flat-fielded time-series cube with suffix _ff.
 
 =head1 TASKS
 
-KAPPA: BLOCK, CDIV, COLLAPSE, DIV, MATHS, MANIC, NDFCOPY, NDFTRACE, PASTE,
-SETUNITS, STATS, THRESH.
+KAPPA: BLOCK, CDIV, CHPIX, COLLAPSE, DIV, MANIC, MATHS, MSTATS, NDFCOPY,
+NDFTRACE, PASTE, SETUNITS, SETVAR, STATS, THRESH.
 
 =head1 REQUIRED PERL MODULES
 
@@ -133,7 +137,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012-2013 Science and Technology Facilities Council.  All
+Copyright (C) 2012-2014 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
@@ -194,6 +198,10 @@ orac_say "$underline\n";
 # Select objects to analyse and flat field.
 # =========================================
 
+# We want to combine data taken on the same night to improve the
+# signal-to-noise in the derived receptor performances, and also use
+# the same ratios for both directions in a basket weave.
+my $MAX_RECEPTOR = 16;
 my $isok = eval { require JCMT::ACSIS::Array; 1; };
 if ( ! $isok ) {
    orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
@@ -201,12 +209,16 @@ if ( ! $isok ) {
 } else {
 
    my @Objs;
+   my @dategrps;
+   my $singleGrp;
    if ( $group == 0 ) {
-      push @Objs, $Frm;
+      $singleGrp->push( $Frm );
+      push @dategrps, $singleGrp;
    } elsif ( $group == 1 ) {
-      push @Objs, $Grp;
+      $singleGrp->push( $Grp );
+      push @dategrps, $singleGrp;
    } elsif ( $group == 2 ) {
-      @Objs = $Grp->members;
+      @dategrps = $Grp->subgrps( "ORAC_UTDATE" );
    }
 
 # Only do this if we're not doing a Group, or if we are doing a
@@ -214,55 +226,98 @@ if ( ! $isok ) {
    if ( $group != 1 ||
         ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       my $params;
+      my $firstobs = 1;
+      my $ORAC_STATUS;
 
       orac_say "Detector gain correction";
+
+# Loop over the different UT dates.
+# =================================
+      foreach my $Grp ( @dategrps ) {
+         @Objs = $Grp->members;
+         my $number_on_date = scalar( @Objs );
+         my @mean_spectra;
+         my ( $in, $nval, $nreceptor, $ref, $units );
+         my ( $array, $lbound, $ubound );
+
+# Create temporary file name for each observation's mean spectra.
+         foreach my $f ( 0.. $number_on_date - 1 ) {
+            $mean_spectra[ $f ]  = new ORAC::TempFile( 0 );
+         }
 
 # Obtain required attributes of each object
 # =========================================
 
 # Each object (group or observation) may comprise more than one file.
-      OBJECT: foreach my $Obj ( @Objs ) {
-         my $in = $Obj->file;
-         orac_say "Processing observation: $in.";
-         my $nval;
+         my $obs = -1;
+         OBJECT: foreach my $Obj ( @Objs ) {
+            $obs++;
+            $in = $Obj->file;
+            orac_say "Processing observation: $in.";
 
 # Determine valid spectral range.  This will either be the regular central 85%,
 # or to user-defined final velocity limits, whichever is more extensive.
-         my $wcs_spec_bounds = '';
-         my ( $lower_spect, $upper_spect );
-         if ( ! ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
-                 $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ) {
-            _GET_SPECTRAL_LIMITS_ FILE=$in TRIM_PERCENT=85
-            $lower_spect = $_GET_SPECTRAL_LIMITS_{LBOUND};
-            $upper_spect = $_GET_SPECTRAL_LIMITS_{UBOUND};
-            $wcs_spec_bounds = "$lower_spect:$upper_spect";
-         }
+            my $wcs_spec_bounds = '';
+            my ( $lower_spect, $upper_spect );
+            if ( ! ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
+                     $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ) {
+               _GET_SPECTRAL_LIMITS_ FILE=$in TRIM_PERCENT=85
+               $lower_spect = $_GET_SPECTRAL_LIMITS_{LBOUND};
+               $upper_spect = $_GET_SPECTRAL_LIMITS_{UBOUND};
+               $wcs_spec_bounds = "$lower_spect:$upper_spect";
+            }
 
 # Find the reference receptor's name.
-         my $ref = ( defined( $reference_receptor ) ?
-                     $reference_receptor            :
-                     $Obj->hdr( "REFRECEP" ) );
+            if ( $firstobs ) {
+               $ref = ( defined( $reference_receptor ) ?
+                        $reference_receptor            :
+                        $Obj->hdr( "REFRECEP" ) );
 
 # Retrieve the units of the input cube.
-         $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in fullframe" );
-         my( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+               $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in fullframe" );
+              ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+            }
 
 # Retrieve bounds of input cube needed to create out flat-field sub-files.
-         my $first_file = $in;
-         _GET_DIMENSIONS_ FILE=$first_file
-         my $lbound = $_GET_DIMENSIONS_{LBOUND};
-         my $ubound = $_GET_DIMENSIONS_{UBOUND};
+            my $first_file = $in;
+            _GET_DIMENSIONS_ FILE=$first_file
+            $lbound = $_GET_DIMENSIONS_{LBOUND};
+            $ubound = $_GET_DIMENSIONS_{UBOUND};
 
-# Obtain the number of receptors.
-         my $array = new JCMT::ACSIS::Array( File => $first_file );
-         my @receptors = $array->receptors;
-         my $nreceptor = scalar( @receptors );
+# Obtain the number of receptors.  Assume that this will not change
+# during a night.
+            $array = new JCMT::ACSIS::Array( File => $first_file );
+            my @receptors = $array->receptors;
+            $nreceptor = scalar( @receptors );
+
+            my $tempfile = new ORAC::TempFile( 0 );
+            my $tempfile2 = new ORAC::TempFile( 0 );
 
 # Form the array to store the mean spectrum for each receptor.
-# The values are irrelevant as they will be pasted over later.
-         my $mean_spectra = new ORAC::TempFile( 0 );
-         $params = "in=$first_file($wcs_spec_bounds,,1) out=$mean_spectra trim trimwcs";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+# NDFCOPY is needed first as MANIC seems not to deal with the revised
+# WCS correctly leaving a dangling WCS axis.  This in turn causes
+# COLLAPSE to fail when the input NDF is supplied with a section,
+# because there's no corresponding pixel axis when it is passing a
+# section.  The NDFCOPY removes the time WCS axis.  MANIC merely
+# reshapes and sets the bounds of the second axis.
+            $params = "in=$first_file($wcs_spec_bounds,,1) ";
+            $params .= "out=$tempfile trim trimwcs";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+            $params = "in=$tempfile axes=[1,0] ";
+            $params .= "out=$tempfile2 lbound=1 ubound=$MAX_RECEPTOR";
+            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Fill this mean-spectrum array with bad values to allow for any
+# receptor disabled during observing or failed to pass quality control
+# during reduction.
+            $params = "in=$tempfile2 out=$mean_spectra[$obs] newval=Bad ";
+            $params .= "section=','";
+            $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+# Create a VARIANCE component filled with bad values.
+            $params = "ndf=$mean_spectra[$obs] variance=Data";
+            $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
 # Analyse by receptor
 # ===================
@@ -270,96 +325,130 @@ if ( ! $isok ) {
 # One reason for this is reduce the data volume; the raw data were
 # divided to avoid demanding too much storage or memory at any one
 # time.
-         my @time_bounds;
-         for ( my $r = 1; $r <= $nreceptor; $r++ ) {
-            my $no_times = 0;
+            my @time_bounds;
+            for ( my $r = 1; $r <= $nreceptor; $r++ ) {
+               my $no_times = 0;
 
 # Set up some temporary files.
-            my $fulltimes = new ORAC::TempFile( 0 );
-            my $temp0file = new ORAC::TempFile( 0 );
-            my $temp1file = new ORAC::TempFile( 0 );
-            my $temp2file = new ORAC::TempFile( 0 );
-            my $temp3file = new ORAC::TempFile( 0 );
+               my $fulltimes = new ORAC::TempFile( 0 );
+               my $temp0file = new ORAC::TempFile( 0 );
+               my $temp1file = new ORAC::TempFile( 0 );
+               my $temp2file = new ORAC::TempFile( 0 );
+               my $temp3file = new ORAC::TempFile( 0 );
+               my $tempvar = new ORAC::TempFile( 0 );
 
 # Combine all the subfiles for the current receptor.
 # --------------------------------------------------
-            my $receptor = $array->receptor( $r );
-            if ( $r == 1 ) {
-               orac_print "Concatenate time series for receptor $receptor";
-            } elsif ( $r == $nreceptor ) {
-               orac_print ", $receptor.\n";
-            } else {
-               orac_print ", $receptor";
-            }
+               my $receptor = $array->receptor( $r );
+               if ( $r == 1 ) {
+                  orac_print "Concatenate time series for receptor $receptor";
+               } elsif ( $r == $nreceptor ) {
+                  orac_print ", $receptor.\n";
+               } else {
+                  orac_print ", $receptor";
+               }
 
-            my $insub;
-            if ( $Obj->nfiles > 1 ) {
-               foreach my $i ( 1 .. $Obj->nfiles ) {
-                  $insub = $Obj->file( $i );
+               my $insub;
+               if ( $Obj->nfiles > 1 ) {
+                  foreach my $i ( 1 .. $Obj->nfiles ) {
+                     $insub = $Obj->file( $i );
 
 # We need the dimensions of the input file for later.
-                  my ( $lbnd, $ubnd, $dims, $nel );
-                  if ( $r == 1 ) {
-                     _GET_DIMENSIONS_ FILE=$insub
-                     $lbnd = $_GET_DIMENSIONS_{LBOUND};
-                     $ubnd = $_GET_DIMENSIONS_{UBOUND};
-                     $dims = $_GET_DIMENSIONS_{DIMS};
-                     $nel = $ubnd->[0] - $lbnd->[0] + 1;
-                     push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
-                     $no_times += $ubnd->[2] - $lbnd->[2] + 1;
-                  }
+                     my ( $lbnd, $ubnd, $dims, $nel );
+                     if ( $r == 1 ) {
+                        _GET_DIMENSIONS_ FILE=$insub
+                        $lbnd = $_GET_DIMENSIONS_{LBOUND};
+                        $ubnd = $_GET_DIMENSIONS_{UBOUND};
+                        $dims = $_GET_DIMENSIONS_{DIMS};
+                        $nel = $ubnd->[0] - $lbnd->[0] + 1;
+                        push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
+                        $no_times += $ubnd->[2] - $lbnd->[2] + 1;
+                     }
 
 # Concatenate the spectra for the receptor.
 # -----------------------------------------
 
-# Form a profile for each receptor throughout a whole observation.  The
-# whole gives a better handle on the normal non-linearity level.
-                  if ( $i == 1 ) {
-                     $params = "in=$insub($wcs_spec_bounds,$r,) out=$fulltimes";
-                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+# Form a profile for each receptor throughout a whole observation.
+                     if ( $i == 1 ) {
+                        $params = "in=$insub($wcs_spec_bounds,$r,) out=$fulltimes";
+                        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-                  } else {
+                     } else {
 
-# Shift the origin on the time during concatenation.  Exclode the very
-# noisy peripheries.
-                     my $time_origin = $time_bounds[-2] - 1;
-                     $params = "shift=[0,0,$time_origin] ";
-                     $params .= "in=$fulltimes p1=$insub($wcs_spec_bounds,$r,) out=$temp0file";
-                     $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+# Shift the origin of the time and receptor index during concatenation.
+# Exclude the very noisy peripheries.
+                        my $time_origin = $time_bounds[-2] - 1;
+                        $params = "shift=[0,0,$time_origin] ";
+                        $params .= "in=$fulltimes p1=$insub($wcs_spec_bounds,$r,) out=$temp0file";
+                        $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
 # Ready for the next slice to concatenate.  Another, but brave, way
 # is to make the input and output the same on PASTE.
-                     $params = "in=$temp0file out=$fulltimes";
-                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+                        $params = "in=$temp0file out=$fulltimes";
+                        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+                     }
                   }
-               }
 
 # No concatenation is required so avoid unnecessary processing.
-            } else {
-               $insub = $Obj->file( 1 );
-               $fulltimes = "$insub($wcs_spec_bounds,$r,)";
-            }
+               } else {
+                  $insub = $Obj->file( 1 );
+                  $fulltimes = "$insub($wcs_spec_bounds,$r,)";
+               }
 
 # Collapse along the time axis.  Use a clipped mean to exclude single
 # spectra with strongly negative values.
-            my $params = "in=$fulltimes out=$temp1file estimator=cmean wlim=0.0 axis=3";
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+               my $params = "in=$fulltimes out=$temp1file estimator=cmean wlim=0.0 axis=3";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Reduce the noise by smoothing.
-            $params = "in=$temp1file out=$temp2file box=[25,1] estimator=mean";
-            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+               $params = "in=$temp1file out=$temp2file box=[25,1] estimator=mean";
+               $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+# There is no variance available.  We shall need this to weight
+# observations during a night, if conditions have changed or an
+# observation was interrupted and broken into parts.  This is only
+# approximation, but should be adequate.
+               $params = "ia=$temp1file ib=$temp2file out=$tempvar ";
+               $params .= "exp='(IA-IB)**2'";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Insert the errors just found into the smoothed spectrum copying from
+# the DATA_ARRAY to VARIANCE components.
+               $params = "ndf=$temp2file from=$tempvar comp=Data";
+               $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
 # Store the smoothed mean spectrum for later analysis.
-            $params = "in=$mean_spectra p1=$temp2file out=$temp3file";
-            $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+               my $ri = substr( $receptor, 1, 2 ) + 1;
+               my $receptor_offset = $ri - $r;
+               $params = "shift=[0,$receptor_offset] ";
+               $params .= "in=$mean_spectra[$obs] p1=$temp2file out=$temp3file";
+               $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
-            $params = "in=$temp3file out=$mean_spectra";
-            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+               $params = "in=$temp3file out=$mean_spectra[$obs]";
+               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            }
          }
 
+# Average the spectra for all the observations on the date, weighting by
+# the errors to allow for the different signal-to-noise ratios between
+# observations.
+         my $mean_spectra_by_date;
+         $mean_spectra_by_date = new ORAC::TempFile( 0 );
+         if ( $number_on_date > 1 ) {
+            my $inlist = write_file_list( @mean_spectra );
+            $params = "in=^$inlist out=$mean_spectra_by_date estimator=wmean";
+            $Mon{'kappa_mon'}->obeyw( "mstats", "$params" );
+
+         } else {
+            $mean_spectra_by_date = $mean_spectra[ 0 ];
+         }
+
+# At this point mean_spectra_by_date contains the mean spectra for all
+# observations being reduced from the current date.  There is one
+# spectrum per receptor.
 
 # Obtain the pixel bounds of the trimmed spectra.
-         _GET_DIMENSIONS_ FILE=$mean_spectra
+         _GET_DIMENSIONS_ FILE=$mean_spectra_by_date
          my $trim_lbnd = $_GET_DIMENSIONS_{LBOUND};
          my $trim_ubnd = $_GET_DIMENSIONS_{UBOUND};
          my $lower_bound = $trim_lbnd->[0];
@@ -388,7 +477,7 @@ if ( ! $isok ) {
 
 # Apply the previous iterations to the fit.
             if ( $first ) {
-               $params = "in=$mean_spectra out=$spectfile";
+               $params = "in=$mean_spectra_by_date out=$spectfile trim trimwcs";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
 # Grow the vector ratios into an array with the dimensions of the mean
@@ -401,7 +490,7 @@ if ( ! $isok ) {
 # Apply the ratio to the spectra.
                $params = "in1=$spectfile in2=$temp9file out=$temp4file";
                $Mon{'kappa_mon'}->obeyw( "div", "$params" );
-               $params = "in=$temp4file out=$spectfile";
+               $params = "in=$temp4file out=$spectfile trim trimwcs";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
             }
 
@@ -415,7 +504,8 @@ if ( ! $isok ) {
 # First the non-iterative simple approach, summing over the line.
             if ( $sum ) {
 
-# Collapse along the velocity axis giving the mean emission.
+# Collapse along the velocity axis giving the mean emission.  We do
+# not care if some are entirely bad. (wlim=0).
                $params = "in=$spectfile($flat_range,,) out=$temp6file estimator=mean wlim=0.0 axis=1";
                $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
@@ -457,7 +547,7 @@ if ( ! $isok ) {
             $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file" );
             ( $ORAC_STATUS, $nval ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
-# Extract the smean value for the reference receptor.
+# Extract the mean value for the reference receptor.
             my $array = new JCMT::ACSIS::Array( File => $temp6file );
             my $pixel = $array->pixel( $ref );
             $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file($pixel)" );
@@ -522,10 +612,14 @@ if ( ! $isok ) {
 
 # Report the receptor ratios.  It does seem a little clunky to have to call
 # STATS for every element.  LOOK only outputs a single value to a parameter.
+# Along ther way derive the index within the mean_spectra array for the
+# receptor.  The receptors run from H00 to H15, but the indices are 1 to
+# MAX_RECEPTOR (16).
             my %flat_ratio;
             for ( my $i = 1; $i <= $nval; $i++ ) {
                my $receptor = $array->receptor( $i );
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($i)" );
+               my $ri = substr( $receptor, 1, 2 ) + 1;
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri)" );
                ( $ORAC_STATUS, my $ratio ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
                $flat_ratio{$receptor} = $ratio;
             }
@@ -545,25 +639,29 @@ if ( ! $isok ) {
             $params .= "]";
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-            foreach my $i ( 1 .. $Obj->nfiles ) {
-               my ( $in, $out ) = $Obj->inout( "_ff", $i );
+# Apply the flat field to each file in each observation for the
+# current night.
+            foreach my $Obj ( @Objs ) {
+               foreach my $i ( 1 .. $Obj->nfiles ) {
+                  my ( $in, $out ) = $Obj->inout( "_ff", $i );
 
 # Divide this ratio cube into the input cube, creating the flat-fielded
 # output.
-               $params = "in1=$in in2=$ratiocube out=$out";
-               $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+                  $params = "in1=$in in2=$ratiocube out=$out";
+                  $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
 # Set the units back to what they were.
-               $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
+                  $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
 
 # Update the Object.
-               $Obj->file( $i, $out );
+                  $Obj->file( $i, $out );
 
 # Request that the output file be removed upon completion of group processing.
-               $Grp->push_intermediates( $out );
+                  $Grp->push_intermediates( $out );
 
-               orac_say "$in to $out:";
-               orac_say " Removed flat-field.\n";
+                  orac_say "$in to $out:";
+                  orac_say " Removed flat-field.\n";
+               }
             }
          }
       }
