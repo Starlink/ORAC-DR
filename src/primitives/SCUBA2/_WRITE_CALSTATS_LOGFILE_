@@ -134,31 +134,43 @@ if ($Cal->iscalsource($Frm->hdr("OBJECT"))) {
     my $match = $Cal->gainsindex->choosebydt('ORACTIME', \%hdr, 0);
     my $entry = $Cal->gainsindex->indexentry($match);
     $fcf{$units} = {FCF => $entry->{GAIN}, FCFERR => $entry->{GAINERR}};
-    %fluxes = ( FLUX => $entry->{FLUX}, FLUXERR => $entry->{FLUXERR})
-      if ($units eq "ARCSEC");
+    if ($units eq "ARCSEC") {
+      $fluxes{FLUX} = $entry->{FLUX};
+      $fluxes{FLUXERR} = $entry->{FLUXERR};
+    } elsif ($units eq "BEAM") {
+      $fluxes{PEAK} = $entry->{FLUX};
+    }
   }
 
   $Frm->tagset("calstats");
   # The calibration entries were written for the file straight out of
-  # the map-maker so reetrieve this
+  # the map-maker so retrieve this
   $Frm->tagretrieve("newimage");
-  _FIND_IMAGE_STATISTICS_ VERBOSE=0 COMP=ERR
+  # Find the stats within the same region as the aperture used for the
+  # total flux calculation - this can be used directly because
+  # calibrator maps have a pixel scale of 1 arcsec
+  my $region =  2 * $Frm->uhdr("FCF_APERTURE_RADIUS");
+  _FIND_IMAGE_STATISTICS_ VERBOSE=0 REGION=$region
+  my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+  _FIND_IMAGE_STATISTICS_ VERBOSE=0 COMP=ERR REGION=$region
   my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
   $Frm->tagretrieve("calstats");
 
   my $printval = sub {
     my $value = shift;
-    return (defined $value) ? (sprintf "%.4f", $value) : "NaN";
+    my $n = (@_) ? $_[0]."f" : "4f";
+    return (defined $value) ? (sprintf "%.$n", $value) : "NaN";
   };
 
   my $logtype = "calstats";
-  my @params = qw/ Radius Flux_ap Err_ap Noise FCFasec FCFasec_err FCFbeam FCFbeam_err FCFmatch FCFmatch_err FWHMmain Error_beam /;
-  my @values = ($Frm->uhdr("FCF_APERTURE_RADIUS"),
-		$printval->($fluxes{FLUX}), $printval->($fluxes{FLUXERR}),
-		(sprintf "%.5f", $results->{MEDIAN}),
+  my @params = qw/ Flux_ap Err_ap Noise Peak_obs Peak_fit FCFasec FCFasec_err FCFbeam FCFbeam_err FCFmatch FCFmatch_err FWHMmain FWHMerr Error_beam/;
+  my @values = ($printval->($fluxes{FLUX}), $printval->($fluxes{FLUXERR}),
+		$printval->($results->{MEDIAN}, 5),
+		$printval->($peak, 5), $printval->($fluxes{PEAK}, 5),
 		(map { $printval->($fcf{$_}->{FCF}),
 			 $printval->($fcf{$_}->{FCFERR})} @units),
-		$printval->($Cal->fwhm_fit), $printval->($Cal->fwhm_err)
+		$printval->($Cal->fwhm_fit, 2), $printval->($Cal->fwhm_err, 2),
+		$printval->()
 	       );
 
   _ADD_LOG_ENTRY_ PARLIST=FULLER PARAMS=\@params ENTRIES=\@values GROUP=0 LOGFILE=$logtype
