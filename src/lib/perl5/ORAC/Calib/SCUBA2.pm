@@ -372,9 +372,8 @@ sub beamfit {
     # Store fitted FWHM for main and error beams
     $beamfit{FWHM} = sqrt($beamfit{BeamA}*$beamfit{BeamB});
     $self->{BeamFit} = \%beamfit;
-    $self->fwhm_fit;
-    $self->errbeam({BeamA => $majfwhm[2], BeamAErr => $majfwhm[3]})
-      if ($beamfit{BeamComp} == 2);
+    $self->fwhm_fit($beamfit{FWHM});
+    $self->errbeam({BeamA => $majfwhm[2], BeamAErr => $majfwhm[3]});
   }
 
   return $self->{BeamFit};
@@ -382,12 +381,11 @@ sub beamfit {
 
 =item B<errbeam>
 
-The current estimated fractional error beam as a percentage of the
-total as given in the C<beampar> results. Must be given and returns a
-hash reference with the keys C<BeamA> and C<BeamAErr>.
+The current estimated FWHM of the error beam (and its uncertainty) as
+given in the C<beampar> results. Must be given and returns a hash
+reference with the keys C<BeamA> and C<BeamAErr>.
 
   $Cal->errbeam({BeamA => $fwhm, BeamAErr => $fwhm_err});
-
   my $errbeam = $Cal->errbeam;
 
 =cut
@@ -396,7 +394,7 @@ sub errbeam {
   my $self = shift;
   if (@_) {
     $self->{ErrBeamFit} = shift;
-    $self->fwhm_err;
+    $self->fwhm_err($self->{ErrBeamFit}->{BeamA});
   }
   return $self->{ErrBeamFit};
 }
@@ -405,17 +403,15 @@ sub errbeam {
 
 Returns the FWHM of the current estimate of the error beam.
 
+  $Cal->fwhm_err($fwhm_err);
   my $fwhm_err = $Cal->fwhm_err;
 
 =cut
 
 sub fwhm_err {
   my $self = shift;
-  if (!defined $self->{FWHMerr}) {
-    if ($self->errbeam) {
-      my $errbeam = $self->errbeam;
-      $self->{FWHMerr} = $errbeam->{BeamA};
-    }
+  if (@_) {
+    $self->{FWHMerr} = shift;
   }
   return $self->{FWHMerr};
 }
@@ -423,12 +419,10 @@ sub fwhm_err {
 =item B<fwhm_fit>
 
 Retrieve the fitted beam full-width-at-half-maximum (FWHM). Returns
-the geometric mean of the major/minor axes of the fit. With no
-arguments this method will store the values derived from an existing
-fit if present.
+the geometric mean of the major/minor axes of the fit.
 
   my $fitted_fwhm = $Cal->fwhm_fit;
-  $Cal->fwhm_fit();
+  $Cal->fwhm_fit($fwhm);
 
 If the complete beam parameters are required, the B<beamfit>
 method should be used instead. Returns undef if no fit parameters have
@@ -438,12 +432,8 @@ been stored.
 
 sub fwhm_fit {
   my $self = shift;
-  # Auto-set if not defined
-  if ( !$self->{FWHMfit} ) {
-    if ($self->beamfit) {
-      my $beampar = $self->beamfit;
-      $self->{FWHMfit} = $beampar->{FWHM};
-    }
+  if (@_) {
+    $self->{FWHMfit} = shift;
   }
   return $self->{FWHMfit};
 }
