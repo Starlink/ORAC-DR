@@ -1,0 +1,137 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_WRITE_MAPSTATS_LOGFILE_ - write logfile with results from image analysis
+
+=head1 SYNOPSIS
+
+ _WRITE_MAPSTATS_LOGFILE_
+
+=head1 DESCRIPTION
+
+Write out a log file with results obtained from analyzing a reduced
+map. The log file includes the RMS noise, NEFD and exposure time.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item ORAC-DR PRIMITIVES:
+
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+The log file, C<log.mapstats> is created.
+
+=head1 LOGFILE FORMAT
+
+The log file contains the following additional entries (see
+L<_ADD_LOG_ENTRY_|_ADD_LOG_ENTRY_> for details of the common entries):
+
+=over 4
+
+=item t_elapsed
+
+Elapsed time for observation (sec)
+
+=item t_exp
+
+Median exposure time over mapped area (sec)
+
+=item rms
+
+Median noise over mapped area obtained from the error component (mJy/beam)
+
+=item nefd
+
+Median Noise Equivlanet Flux Density over mapped area (mJy/beam sec**0.5)
+
+=item mapsize
+
+Requested map height/width (arcsec)
+
+=item pixscale
+
+Pixel scale (arcsec)
+
+=item project
+
+Project ID
+
+=back
+
+=head1 NOTES
+
+Only runs on C<reduced> data files.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+if ($Frm->tagexists("reduced")) {
+  $Frm->tagset("mapstats");
+  $Frm->tagretrieve("reduced");
+  # All checks should be carried out on the reduced file
+  _GET_PIXEL_SCALE_ VERBOSE=0
+  my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
+  my $mapsize = $Frm->hdr("MAP_HGHT");
+  my $pixregion = sprintf "%d", ($mapsize / $pixscale);
+  _FIND_IMAGE_STATISTICS_ REGION=$pixregion COMP=ERR VERBOSE=0
+  my $rms = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+  my $image = $Frm->file .".more.smurf.exp_time";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0
+  my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+  $image = $Frm->file .".more.smurf.nefd";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0
+  my $nefd = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+  $Frm->tagretrieve("mapstats");
+
+  my $printval = sub {
+    my $value = shift;
+    my $n = (@_) ? $_[0]."f" : "4f";
+    return (defined $value) ? (sprintf "%.$n", $value) : "NaN";
+  };
+
+  my $logtype = "mapstats";
+  my @params = qw/ t_elapsed t_exp rms nefd mapsize pixscale project /;
+  my @values = ( $Frm->uhdr("DURATION_SCIENCE"), $printval->($texp, 2),
+		 $printval->($rms, 2), $printval->($nefd, 2),
+		 $mapsize, $printval->($pixscale, 1),
+		 $Frm->hdr("PROJECT")
+	       );
+  _ADD_LOG_ENTRY_ PARLIST=FULLER PARAMS=\@params ENTRIES=\@values GROUP=0 LOGFILE=$logtype
+}
