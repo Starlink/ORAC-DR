@@ -1,0 +1,168 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CAN_FIT_TWOCOMP_ - determine if a two-component fit can be attempted
+
+=head1 SYNOPSIS
+
+ _CAN_FIT_TWOCOMP_
+
+ _CAN_FIT_TWOCOMP_ GROUP=1
+
+ _CAN_FIT_TWOCOMP_ IMAGE=$image BOX=25
+
+=head1 DESCRIPTION
+
+This primitive carries out an assessment of whether a two-component
+fit can be attempted on the given image. A two component fit can be
+attempted if the following criteria are met:
+
+=over 4
+
+=item *
+
+The source is a calibrator (but not Jupiter);
+
+=item *
+
+If specified, the recipe parameter C<FIT_GAUSSIAN> is equal to two;
+
+=item *
+
+The signal-to-noise ratio exceeds a minimum value, currently 100.
+
+=back
+
+If the file is the output from the matched filter then a value of
+false is returned regardless of the signal-to-noise ratio.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<BOX>
+
+Size of square area in pixels in which to calculate image
+statistics. Should be at least as large as the desired fitting
+area. Default is 15.
+
+=item B<GROUP>
+
+If true, the Group is queried rather than the Frame. Default is false
+(0).
+
+=item B<IMAGE>
+
+Name of image to fit source. Default depends on B<GROUP> above. Must be
+a file name, not an NDF section.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (print messages).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used.
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+The given file must be associated with the current Frame or Group in
+order for the matched-filter check to succeed.
+
+=head1 OUTPUT DATA
+
+The following keys are returned in the primitive hash if a
+two-component fit can be attempted.
+
+=over 4
+
+=item THING
+
+A flag to indicate whether a two-component fit can be attempted.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 the University of British Columbia.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Input image - default to current Frm file
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
+
+# Should we be verbose? (Default to yes)
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Should beamfit attempt a two-component fit? Assume yes if the object
+# is a calibrator
+my $twocpt = ($Cal->iscalsource($Obj->hdr("OBJECT")) &&
+	      $Frm->hdr("OBJECT") !~ /^jupiter/i) ? 1 : 0;
+# Override with FIT_GAUSSIAN recipe parameter. A value of 0 means that
+# beamfit has free rein with the falloff parameter, but it's unlikely
+# that a two-component non-gaussian fit will be carried out. Therefore
+# only carry out a two-component gaussian fit if explicitly requested.
+if (defined $Frm->uhdr("RECPAR_FIT_GAUSSIAN")) {
+  $twocpt = ($Frm->uhdr("RECPAR_FIT_GAUSSIAN") == 2) ? 1 : 0;
+}
+
+# But always fit only a single component for matched-filtered images
+$twocpt = 0
+  if (defined $Obj->product && $Obj->product eq "Matched-filtered");
+
+# If all the other tests have passed, finally check for minimum S/N
+if ($twocpt) {
+  my $box = get_prim_arg($_PRIM_ARGS_, "BOX", 25);
+  use constant MINSNR => 100;
+  _FIND_IMAGE_STATISTICS_ IMAGE=$in COMP=data VERBOSE=0 REGION=$box
+  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  my $peak = $results->{MAX};
+  _FIND_IMAGE_STATISTICS_ IMAGE=$in COMP=err VERBOSE=0 REGION=$box
+  $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
+  my $noise = $results->{MEDIAN};
+  orac_warn "Unable to determine noise from image\n" unless ($noise);
+  my $snr = ($noise > 0) ? $peak/$noise : 0;
+  $twocpt = 0 if ($snr < MINSNR);
+}
+
+$_PRIM_ARGS_->{TWOCOMP} = $twocpt;

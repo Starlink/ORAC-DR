@@ -63,6 +63,11 @@ will implies C<BEAMFIT>.
 A flag to denote whether the primitive should return the results of
 the fit as a new NDF. Default is 0 (no).
 
+=item B<TWOCOMP>
+
+A flag to indicate that a two-component gaussian fit should be
+attempted. Default is false, only attempt a single-component fit (0).
+
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
@@ -219,21 +224,7 @@ my $use_beamfit = ($fit_method eq "beamfit") ? 1 : 0;
 # Is a calibrator being fitted?
 my $calsource = $Cal->iscalsource($Obj->hdr("OBJECT"));
 
-# Should beamfit attempt a two-component fit? Assume yes if the object
-# is a calibrator
-my $twocpt = ($use_beamfit && $calsource &&
-	      $Frm->hdr("OBJECT") !~ /^jupiter/i) ? 1 : 0;
-# Override with FIT_GAUSSIAN recipe parameter. A value of 0 means that
-# beamfit has free rein with the falloff parameter, but it's unlikely
-# that a two-component non-gaussian fit will be carried out. Therefore
-# only carry out a two-component gaussian fit if explicitly requested.
-if (defined $Frm->uhdr("RECPAR_FIT_GAUSSIAN")) {
-  $twocpt = ($Frm->uhdr("RECPAR_FIT_GAUSSIAN") == 2) ? 1 : 0;
-}
-
-# But always fit only a single component for matched-filtered images
-$twocpt = 0
-  if (defined $Obj->product && $Obj->product eq "Matched-filtered");
+my $twocpt = get_prim_arg($_PRIM_ARGS_, "TWOCOMP", 0);
 
 # Sanitise parameters
 if ($use_beamfit) {
@@ -253,19 +244,6 @@ if ($use_beamfit) {
   $box_default = 15;
 }
 my $box = get_prim_arg($_PRIM_ARGS_, "BOX", $box_default);
-
-# Check for S/N > minimum within an area twice the fitting region
-if ($twocpt) {
-  use constant MINSNR => 100;
-  _FIND_IMAGE_STATISTICS_ IMAGE=$in COMP=data VERBOSE=0 REGION=$box
-  my $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
-  my $peak = $results->{MAX};
-  _FIND_IMAGE_STATISTICS_ IMAGE=$in COMP=err VERBOSE=0 REGION=$box
-  $results = $_FIND_IMAGE_STATISTICS_{RESULTS};
-  my $noise = $results->{MEDIAN};
-  my $snr = ($noise > 0) ? $peak/$noise : 0;
-  $twocpt = 0 if ($snr < MINSNR);
-}
 
 # Check that we have enough good values in the image before attempting
 # to fit the source
