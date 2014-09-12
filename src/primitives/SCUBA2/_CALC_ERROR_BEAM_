@@ -1,0 +1,150 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_ERROR_BEAM_ - Estimate proportion of total power in the error beam
+
+=head1 SYNOPSIS
+
+  _CALC_ERROR_BEAM_
+
+  _CALC_ERROR_BEAM_ IMAGE=$image XYPOS=\@xy
+
+  _CALC_ERROR_BEAM_ GROUP=1
+
+=head1 DESCRIPTION
+
+Estimate the proportion of the total power in the error beam via
+aperture photometry. The method calculates the total flux within the
+given aperture (default 30 arcsec) and again within an aperture equal
+in size to the FWHM. The fraction of the total that lies outside the
+FWHM aperture is reported as the error beam contribution. The result
+is stored in the calibration system.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 4
+
+=item B<GROUP>
+
+Flag to indicate whether the primitive is to process the Group
+image. Default is 0 (false), which will use the current stacked Frame
+image.
+
+=item B<IMAGE>
+
+Name of an image to analyze. Overrides the default choice determined
+by the B<GROUP> parameter.
+
+=item B<VERBOSE>
+
+A flag to denote whether feedback should be given to the user. Default
+is 1 (yes).
+
+=item <XYPOS>
+
+Array reference containing the X,Y positions of the source. Default
+value will be (0,0) for images in offset coordinates or the C<SkyRef>
+WCS attribute.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_APERTURE_PHOTOMETRY_, _GET_PIXEL_SCALE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The estimate of the fractional contribution of the error beam is
+stored in the calibration system.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 University of British Columbia.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+use constant APERTURE_RADIUS => 30.0;
+
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE",
+		       ($group) ? $Grp->file : $Frm->file);
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+my $srcpos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef);
+
+unless ($srcpos) {
+  my @srcpos;
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+  my ($ORAC_STATUS, $offset) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  my $initpos;
+  if ( lc($offset) eq "origin") {
+    @srcpos = (0.0, 0.0);
+  } else {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyref");
+    ($ORAC_STATUS, my $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+    @srcpos = split(/\, /,$skyref,2);
+  }
+  $srcpos = \@srcpos;
+}
+
+# Calculate the total flux witin the aperture
+my $inner0 = 1.25;
+my $outer0 = 2.0;
+_APERTURE_PHOTOMETRY_ INNER=$inner0 OUTER=$outer0 XYPOS=$srcpos
+my $totalflux = $_APERTURE_PHOTOMETRY_{SUM};
+
+# Calculate the flux within the FWHM aperture but use the *same* sky
+# annulus. This requires scaling the values according to the FWHM and
+# pixel size.
+_GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+my $radius = 0.5 * ($Cal->fwhm)[0] / $_GET_PIXEL_SCALE_{PIXSCALE};
+
+my $scale = APERTURE_RADIUS / $radius;
+my $inner = $inner0 * $scale;
+my $outer = $outer0 * $scale;
+_APERTURE_PHOTOMETRY_ RADIUS=$radius INNER=$inner OUTER=$outer XYPOS=$srcpos
+my $mainflux = $_APERTURE_PHOTOMETRY_{SUM};
+
+# Report fraction and store in calibration system
+my $errfrac = sprintf "%.3f", (1 - ($mainflux / $totalflux));
+orac_print "Error beam fraction = $errfrac ($in)\n" if ($verbose);
+$Cal->errfrac($errfrac);
