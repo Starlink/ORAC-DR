@@ -291,6 +291,7 @@ sub new {
     $obj->{ErrBeamFit} = undef;     # Current fit to error beam (hash ref)
     $obj->{FWHMfit} = undef;        # Most recent fitted mean FWHM (scalar)
     $obj->{FWHMerr} = undef;        # Most recent fitted FWHM of error beam (scalar)
+    $obj->{ErrFrac} = undef;        # Most recent estimate of error beam fraction
   }
 
   # Specify default tausys
@@ -397,6 +398,23 @@ sub errbeam {
     $self->fwhm_err($self->{ErrBeamFit}->{BeamA});
   }
   return $self->{ErrBeamFit};
+}
+
+=item B<errfrac>
+
+Fractional power in the error beam as determined from aperture photometry.
+
+  $Cal->errfrac($errfrac);
+  my $errfrac = $Cal->errfrac;
+
+=cut
+
+sub errfrac {
+  my $self = shift;
+  if (@_) {
+    $self->{ErrFrac} = shift;
+  }
+  return $self->{ErrFrac};
 }
 
 =item B<fwhm_err>
