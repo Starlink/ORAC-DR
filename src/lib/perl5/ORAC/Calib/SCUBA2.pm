@@ -227,18 +227,24 @@ $ASECFLUXES{HLTAUB} = $ASECFLUXES{HLTAU};
 $BEAMFLUXES{MWC349A} = $BEAMFLUXES{MWC349};
 $ASECFLUXES{MWC349A} = $ASECFLUXES{MWC349};
 
-# JCMT beam parameters from SCUBA-2 calibration paper
+# JCMT beam parameters from SCUBA-2 calibration paper. FRAC1 and FRAC2
+# are the proportion of the flux contained within the primary and
+# error beams respectively.
 my %BEAMPAR = (	'850' => {
 			  FWHM1 => 13.0,
 			  FWHM2 => 48.0,
 			  AMP1 => 0.98,
-			  AMP2 => 0.02
+			  AMP2 => 0.02,
+			  FRAC1 => 0.43,
+			  FRAC2 => 0.57
 			 },
 		'450' => {
 			  FWHM1 => 7.9,
 			  FWHM2 => 25.0,
 			  AMP1 => 0.94,
-			  AMP2 => 0.06
+			  AMP2 => 0.06,
+			  FRAC1 => 0.33,
+			  FRAC2 => 0.67
 			 }
 	      );
 
@@ -468,8 +474,8 @@ Return the telescope beam parameters for the current wavelength. See
 the C<beamfit> method for the results of the most recent fit to the
 beam.
 
-Returns a hash reference with the keys C<FWHM1>, C<FWHM2>, C<AMP1> and
-C<AMP2>.
+Returns a hash reference with the keys C<FWHM1>, C<FWHM2>, C<AMP1>,
+C<AMP2>, C<FRAC1> and C<FRAC2>.
 
   my $telescope_beam = $Cal->beam;
 
@@ -526,6 +532,29 @@ sub beamarea {
   # Note that this is actually a function of aperture diameter
   # but we currently do not have enough information for that.
   return $BEAMAREA{$self->subinst()};
+}
+
+=item B<beamfrac>
+
+Return the fractional power in each component of the beam as an array
+or array reference. May also take parameter to return either the main
+or error beam fraction.
+
+  my ($main, $err) = $Cal->beamfrac;
+  my $err = $Cal->beamfrac("err");
+
+=cut
+
+sub beamfrac {
+  my $self = shift;
+  if (@_) {
+    my $cpt = ($_[0] =~ /err/) ? "FRAC2" : "FRAC1";
+    return $BEAMPAR{$self->subinst}->{$cpt};
+  } else {
+    my $main = $BEAMPAR{$self->subinst}->{FRAC1};
+    my $err  = $BEAMPAR{$self->subinst}->{FRAC2};
+    return (wantarray) ? ($main, $err) : [$main, $err];
+  }
 }
 
 =item B<default_fcfs>
