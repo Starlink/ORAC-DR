@@ -51,6 +51,11 @@ file. May be C<FULL>, C<FULLER>, C<BRIEF> or C<NONE>. C<NONE> is
 supported to allow generic results to be logged. Default is
 C<FULL>. See the entry on log file format below.
 
+=item B<UNITS>
+
+An array reference containing the units for the values to be
+written. No default.
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -170,12 +175,14 @@ if ( !defined $logfile ) {
 # Entries and corresponding names
 my $entries = get_prim_arg($_PRIM_ARGS_, "ENTRIES", undef);
 my $params  = get_prim_arg($_PRIM_ARGS_, "PARAMS", undef);
+my $units  = get_prim_arg($_PRIM_ARGS_, "UNITS", undef);
 
-my (@entries, @params);
+my (@entries, @params, @units);
 if ( $entries && $params ) {
   # These arrays should be the same size
   @entries = @{ $entries };
   @params = @{ $params };
+  @units = @{ $units } if ($units);
 } else {
   orac_warn "No log file entries specified - skipping log file entry\n";
   return ORAC__OK;
@@ -207,23 +214,30 @@ my $usegroup = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0);
 # Write header to logfile
 my $time = gmtime();
 
-# Entry names - define base list and add given names
-my $entry_names;
+# Entry names and units - define base list and add given names
+my ($entry_names, $logunits);
 if ($paramlist eq "BRIEF") {
   $entry_names = "UT   HST  Obs  ";
+  $logunits = "(YYYYMMDD.frac) (YYYY-MM-DDThh:mm:ss) () ";
 } elsif ($paramlist =~ /^full/i) {
   $entry_names = "UT   HST  Obs  Source  Mode  Filter  El  ";
-  $entry_names .= "Airmass  Trans  " if ($paramlist eq "FULLER");
+  $logunits = "(YYYYMMDD.frac) (YYYY-MM-DDThh:mm:ss) () () () (um) (deg) ";
+  if ($paramlist eq "FULLER") {
+    $entry_names .= "Airmass  Trans  ";
+    $logunits .= " () () ";
+  }
   $entry_names .= "Tau225  Tau  ";
+  $logunits .= " () () ";
 }
 
 $entry_names .= join("  ",@params);
+$logunits .= join("  ",@units);
 
 # Create the log file object - define the actual name to use
 $logfile = "log." . $logfile;
 my $log = new ORAC::LogFile($logfile);
 $log->header("# $logtitle - created on $time UT",
-	     "#\n# $entry_names",
+	     "#\n# $logunits", "# $entry_names",
 	    );
 
 # Create list of values to write in log file
