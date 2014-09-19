@@ -102,32 +102,48 @@ USA.
 
 =cut
 
+# Default settings
+my $proceed = 1;
+my $group = 0;
 my $tag = "reduced";
-if ($Frm->uhdr("PICARD")) {
+
+# Specific overrides
+if ($Frm->uhdr("SUMMIT")) {
+  $group = 1;
+  $proceed = 0 if ($Grp->product && $Grp->product eq "oldimage");
+  $tag = "newimage";
+} elsif ($Frm->uhdr("PICARD")) {
+  # PICARD always uses the Frame object - calib or newimage tags
   $tag = ($Frm->tagexists("calib")) ? "calib" : "newimage";
 }
+my $Obj = ($group) ? $Grp : $Frm;
+# Need the check for proceed in here to make sure that Grp processing
+# in the SUMMIT pipeline works as intended
+$proceed = 0 if ($proceed && !$Obj->tagexists($tag));
 
-if ($Frm->tagexists($tag)) {
-  $Frm->tagset("mapstats");
-  $Frm->tagretrieve($tag);
-  # All checks should be carried out on the reduced file
-  _GET_PIXEL_SCALE_ VERBOSE=0
+if ($proceed) {
+  orac_print "Writing results to log.mapstats...\n";
+  $Obj->tagset("mapstats");
+  $Obj->tagretrieve($tag);
+  # All checks should be carried out on the reduced file or the new
+  # image in the SUMMIT pipeline
+  _GET_PIXEL_SCALE_ VERBOSE=0 GROUP=$group
   my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
   my $mapsize = $Frm->hdr("MAP_HGHT");
   my $pixregion = sprintf "%d", ($mapsize / $pixscale);
-  _FIND_IMAGE_STATISTICS_ REGION=$pixregion COMP=ERR VERBOSE=0
+  _FIND_IMAGE_STATISTICS_ REGION=$pixregion COMP=ERR VERBOSE=0 GROUP=$group
   my $rms = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-  my $image = $Frm->file .".more.smurf.exp_time";
-  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0
+  my $image = $Obj->file .".more.smurf.exp_time";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0 GROUP=$group
   my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-  _COMPONENT_EXISTS_ COMPONENT=more.smurf.nefd FILE=$Frm->file
+  _COMPONENT_EXISTS_ COMPONENT=more.smurf.nefd FILE=$Obj->file
   if (!$_COMPONENT_EXISTS_{EXISTS}) {
-    _CALCULATE_NEFD_ GROUP=0 LOGFILE=0
+    _CALCULATE_NEFD_ GROUP=$group LOGFILE=0
   }
-  $image = $Frm->file .".more.smurf.nefd";
-  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0
+  $image = $Obj->file .".more.smurf.nefd";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0 GROUP=$group
   my $nefd = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-  $Frm->tagretrieve("mapstats");
+  $Obj->tagretrieve("mapstats");
 
   my $printval = sub {
     my $value = shift;
@@ -138,7 +154,7 @@ if ($Frm->tagexists($tag)) {
     return (sprintf "%.$n", $value);
   };
 
-  my $t_elapsed = $Frm->uhdr("DURATION_SCIENCE");
+  my $t_elapsed = $Obj->uhdr("DURATION_SCIENCE");
   # Fall back on the DATE-OBS/DATE-END headers if no science duration stored
   unless ($t_elapsed) {
     my $st = DateTime::Format::ISO8601->parse_datetime($Frm->hdr("DATE-OBS"));
@@ -146,6 +162,13 @@ if ($Frm->tagexists($tag)) {
     my $duration = $en - $st;
     $t_elapsed = ($duration->in_units("minutes") * 60) +
       $duration->in_units("seconds");
+    # This block is only reached in PICARD so check to see if the
+    # given file is a coadd
+    my $task = "wcsmosaic,makemos";
+    _CHECK_HISTORY_ TASK=$task GROUP=0 VERBOSE=0
+    if ($_CHECK_HISTORY_{HAS_TASK}) {
+      orac_err "Input file appears to be a coadd: t_elapsed will be incorrect\n";
+    }
   }
 
   my $logtype = "mapstats";
@@ -156,5 +179,5 @@ if ($Frm->tagexists($tag)) {
 		 $mapsize, $printval->($pixscale, 1),
 		 $Frm->hdr("PROJECT")
 	       );
-  _ADD_LOG_ENTRY_ PARLIST=FULLER PARAMS=\@params ENTRIES=\@values UNITS=\@units GROUP=0 LOGFILE=$logtype
+  _ADD_LOG_ENTRY_ PARLIST=FULLER PARAMS=\@params ENTRIES=\@values UNITS=\@units GROUP=$group LOGFILE=$logtype
 }
