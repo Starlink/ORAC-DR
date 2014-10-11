@@ -106,7 +106,8 @@ receptors will be flagged.
 
 =item * 'list'
 
-A colon-separated list of receptor names can be supplied.
+A colon-separated list of receptor names can be supplied.  This list
+can be in combination with one of the other options.
 
 =back
 
@@ -119,7 +120,7 @@ sub bad_receptors {
   my $self = shift;
   # Use the automatically created method
   my $br = $self->bad_receptorscache(map { uc($_) } @_);
-  return (defined $br ? $br : "INDEXORMASTER" );
+  return ( defined $br ? $br : "INDEXORMASTER" );
 }
 
 =item B<bad_receptorsindex>
@@ -158,8 +159,20 @@ sub bad_receptors_list {
   # Array to hold the bad receptors.
   my @bad_receptors = ();
 
+  # Protect agaianst the case where the user provides a list and one of the
+  # other options separated by a comma rather than a colon.
+  if ( $sys =~ /ARRAY/ ) {
+     orac_throw( "Syntax error in bad_receptors calibration specification.  " .
+                 "Elements should be separated by colons.\n" );
+  }
+
+  my $usefile = index( $sys, 'FILE' ) != -1 ;
+  my $useindex = index( $sys, 'INDEX' ) != -1;
+  my $usemaster = index( $sys, 'MASTER' ) != -1;
+  my $uselist = ( $sys =~ /H\d\d/ ) ? 1 : 0;
+
   # Go through each system.
-  if( $sys eq 'INDEX' or $sys eq 'MASTER' or $sys eq 'INDEXORMASTER' ) {
+  if ( $useindex || $usemaster ) {
 
     # We need to set up some temporary headers for LOFREQ_MIN and
     # LOFREQ_MAX. The "thing" method contains the merged uhdr and hdr,
@@ -173,7 +186,7 @@ sub bad_receptors_list {
     my @master_bad = ();
     my @index_bad = ();
 
-    if( $sys =~ /MASTER/ ) {
+    if ( $usemaster ) {
 
       my $brposition = $self->bad_receptorsindex->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
 
@@ -188,7 +201,7 @@ sub bad_receptors_list {
       }
     }
 
-    if ( $sys =~ /INDEX/ ) {
+    if ( $useindex ) {
 
       # This one also has a modified SURVEY_BR, so set that based on
       # the SURVEY header.
@@ -227,7 +240,7 @@ sub bad_receptors_list {
     my %seen = map { $_, 1 } @master_bad, @index_bad;
     @bad_receptors = keys %seen;
 
-  } elsif( $sys eq 'FILE' ) {
+  } elsif ( $usefile ) {
 
     # Look for bad receptors in the bad_receptors.lis file.
     my $file = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "bad_receptors.lis" );
@@ -239,11 +252,25 @@ sub bad_receptors_list {
         @bad_receptors = split( /\s+/, $list );
       }
     }
+  }
 
-  } else {
+  if ( $uselist ) {
+
+    # Remove other options and delimiters.
+    $sys =~ s/INDEXORMASTER//;
+    $sys =~ s/INDEX//;
+    $sys =~ s/MASTER//;
+    $sys =~ s/FILE//;
+    $sys =~ s/,//;
+    $sys =~ s/::/:/;
 
     # Look for bad receptors in $sys itself.
-    @bad_receptors = split /:/, $sys;
+    my @list_bad = split /:/, $sys;
+
+    # Merge the list recptor with those from other sources.
+    my %seen = map { $_, 1 } @bad_receptors, @list_bad;
+    @bad_receptors = keys %seen;
+
   }
 
   return @bad_receptors;
@@ -313,10 +340,11 @@ allowed synonym for "calname".
 =head1 AUTHORS
 
 Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2009 Science and Technology Facilities Council.
+Copyright (C) 2007-2009, 2014 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
