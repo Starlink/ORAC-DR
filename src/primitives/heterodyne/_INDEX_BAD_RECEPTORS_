@@ -4,9 +4,12 @@ _INDEX_BAD_RECEPTORS_
 
 =head1 DESCRIPTION
 
-This primitive identifies receptors whose data are entirely bad for
-an observation, but are not flagged as bad, and records such receptors
-in the bad_receceptor index.
+This primitive identifies receptors whose data are entirely or nearly
+completely bad for an observation, but are not flagged as bad, and
+records such receptors in the bad_receptor index.
+
+For hybrid data a receptor is rejected if any of its subbands is
+mostly or entirely bad.
 
 =head1 ARGUMENTS
 
@@ -20,7 +23,7 @@ in the bad_receceptor index.
 
 =item *
 
-This primitive is suitable for ACSIS timeseries data.
+This primitive is suitable for ACSIS time-series data.
 
 =item *
 
@@ -32,7 +35,7 @@ This primitive is suitable for spectral-line observations.
 
 =head1 TASKS
 
-KAPPA: STATS.
+KAPPA: NDFCOPY, PASTE, STATS.
 
 =head1 REQUIRED PERL MODULES
 
@@ -115,13 +118,15 @@ my $no_times = 0;
 my @time_bounds;
 my ( $in, $params, $ORAC_STATUS );
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
-   $in = $Frm->file( $i );
-   _GET_DIMENSIONS_ FILE=$in
-   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
-   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
-   push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
-   $no_times += $ubnd->[2] - $lbnd->[2] + 1;
+if ( ! $Frm->uhdr( "ISHYBRID" ) ) {
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      $in = $Frm->file( $i );
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+      push @time_bounds, $lbnd->[2] + $no_times, $ubnd->[2] + $no_times;
+      $no_times += $ubnd->[2] - $lbnd->[2] + 1;
+   }
 }
 
 my $pasted = new ORAC::TempFile( 0 );
@@ -134,46 +139,65 @@ my $array = new JCMT::ACSIS::Array( File => $in );
 my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
 @receptors = sort @receptors;
 
-foreach my $receptor ( @receptors ) {
-   my $pixel = $array->pixel( $receptor );
+if ( $Frm->uhdr( "ISHYBRID" ) ) {
+   foreach my $receptor ( @receptors ) {
+      my $pixel = $array->pixel( $receptor );
 
 # Concatenate the subscans for the current receptor.
-   foreach my $i ( 1 .. $Frm->nfiles ) {
+      foreach my $i ( 1 .. $Frm->nfiles ) {
 
 # Form a profile for each receptor throughout a whole observation.  The
 # whole gives a better handle on the normal non-linearity level.
-      $in = $Frm->file( $i );
-      if ( $i == 1 ) {
-         $params = "in=$in($spec_percent,$pixel,) out=$pasted";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         $in = $Frm->file( $i );
+         if ( $i == 1 ) {
+            $params = "in=$in($spec_percent,$pixel,) out=$pasted";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-      } else {
+         } else {
 
 # Shift the origin on the time axis during concatenation.
-         my $time_origin = $time_bounds[-2] - 1;
-         $params = "shift=[0,0,$time_origin] ";
-         $params .= "in=$pasted p1=$in($spec_percent,$pixel,) out=$tempfile";
-         $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+            my $time_origin = $time_bounds[-2] - 1;
+            $params = "shift=[0,0,$time_origin] ";
+            $params .= "in=$pasted p1=$in($spec_percent,$pixel,) out=$tempfile";
+            $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
 # Ready for the next subscan to concatenate.  Another, but brave, way
 # is to to make the input and output the same on PASTE.
-         $params = "in=$tempfile out=$pasted";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            $params = "in=$tempfile out=$pasted";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         }
       }
-   }
 
 # Check that the receptor is not completely bad.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$pasted" );
-   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-   ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$pasted" );
+      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
 
 # Report the findings.
-   orac_print( "  Receptor $receptor" );
-   if ( $numbad >= 0.999 * $numpix ) {
-      orac_say(" has mostly or entirely bad data." );
-      push @bad_receptors, $receptor;
+      orac_print( "  Receptor $receptor" );
+      if ( $numbad >= 0.999 * $numpix ) {
+         orac_say(" has mostly or entirely bad data." );
+         push @bad_receptors, $receptor;
+      } else {
+         orac_say( " is valid." );
+      }
+
+# In hybrid mode each subband needs to be tested independently, not
+# concatenated subscans.
    } else {
-      orac_say( " is valid." );
+
+# Check that the receptor for this subscan is not completely bad.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_percent,$pixel,)" );
+      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+
+      orac_print( "  Receptor $receptor  subband $i" );
+      if ( $numbad >= 0.999 * $numpix ) {
+         orac_say(" has mostly or entirely bad data." );
+         push @bad_receptors, $receptor;
+      } else {
+         orac_say( " is valid." );
+      }
    }
 }
 
