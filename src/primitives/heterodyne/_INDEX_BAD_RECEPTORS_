@@ -83,7 +83,7 @@ my $apply = ( defined( $Frm->uhdr( "RECPAR_INDEX_BAD_RECEPTORS" ) ) ?
             1 );
 
 # Obtain the fraction of bad pixels for the receptor to be deemed bad.
-my fracdef = 0.9;
+my $fracdef = 0.9;
 my $fracbad = ( defined( $Frm->uhdr( "RECPAR_FRACTION_BAD" ) ) ?
               $Frm->uhdr( "RECPAR_FRACTION_BAD" )              :
               $fracdef );
@@ -132,7 +132,9 @@ my $no_times = 0;
 my @time_bounds;
 my ( $in, $params, $ORAC_STATUS );
 
-if ( ! $Frm->uhdr( "ISHYBRID" ) ) {
+if ( $Frm->uhdr( "ISHYBRID" ) ) {
+   $in = $Frm->file( 1 );
+} else {
    foreach my $i ( 1 .. $Frm->nfiles ) {
       $in = $Frm->file( $i );
       _GET_DIMENSIONS_ FILE=$in
@@ -153,16 +155,17 @@ my $array = new JCMT::ACSIS::Array( File => $in );
 my @receptors = grep{ my $x=$_; not grep { $x =~ /\Q$_/i} @baddets} $array->receptors;
 @receptors = sort @receptors;
 
-if ( $Frm->uhdr( "ISHYBRID" ) ) {
-   foreach my $receptor ( @receptors ) {
-      my $pixel = $array->pixel( $receptor );
+foreach my $receptor ( @receptors ) {
+   my $pixel = $array->pixel( $receptor );
 
 # Concatenate the subscans for the current receptor.
-      foreach my $i ( 1 .. $Frm->nfiles ) {
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      $in = $Frm->file( $i );
+
+      if ( ! $Frm->uhdr( "ISHYBRID" ) ) {
 
 # Form a profile for each receptor throughout a whole observation.  The
 # whole gives a better handle on the normal non-linearity level.
-         $in = $Frm->file( $i );
          if ( $i == 1 ) {
             $params = "in=$in($spec_percent,$pixel,) out=$pasted";
             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
@@ -180,37 +183,37 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
             $params = "in=$tempfile out=$pasted";
             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
          }
-      }
 
 # Check that the receptor is not completely bad.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$pasted" );
-      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$pasted" );
+         ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+         ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
 
 # Report the findings.
-      orac_print( "  Receptor $receptor" );
-      if ( $numbad >= $fracbad * $numpix ) {
-         orac_say(" has mostly or entirely bad data." );
-         push @bad_receptors, $receptor;
-      } else {
-         orac_say( " is valid." );
-      }
+         orac_print( "  Receptor $receptor" );
+         if ( $numbad >= $fracbad * $numpix ) {
+            orac_say(" has mostly or entirely bad data." );
+            push @bad_receptors, $receptor;
+         } else {
+            orac_say( " is valid." );
+         }
 
 # In hybrid mode each subband needs to be tested independently, not
 # concatenated subscans.
-   } else {
+      } else {
 
 # Check that the receptor for this subscan is not completely bad.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_percent,$pixel,)" );
-      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_percent,$pixel,)" );
+         ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+         ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
 
-      orac_print( "  Receptor $receptor  subband $i" );
-      if ( $numbad >= $fracbad * $numpix ) {
-         orac_say(" has mostly or entirely bad data." );
-         push @bad_receptors, $receptor;
-      } else {
-         orac_say( " is valid." );
+         orac_print( "  Receptor $receptor  subband $i" );
+         if ( $numbad >= $fracbad * $numpix ) {
+            orac_say(" has mostly or entirely bad data." );
+            push @bad_receptors, $receptor;
+         } else {
+            orac_say( " is valid." );
+         }
       }
    }
 }
@@ -242,6 +245,11 @@ if ( scalar( @bad_receptors ) > 0 ) {
 
    $Cal->bad_receptors_qa_index->add( $first_file_in, \%recep_hash );
 
+# Do not want to attempt to merge hybrid subbands if any of them is
+# suspect.
+   if ( $Frm->uhdr( "ISHYBRID" ) ) {
+      _MASK_RECEPTORS_ RECEPTORS=\@bad_receptors_uniq
+   }   
 }
 
 # Tidy-up output.
