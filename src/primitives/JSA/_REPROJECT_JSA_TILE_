@@ -1,0 +1,73 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_REPROJECT_JSA_TILE - reproject a JSA tile to tangent-plane
+
+=head1 DESCRIPTION
+
+This primitive takes a JSA tile and reprojects it to tangent-plane
+projection.  If the file does not look like a JSA tile (projection
+is not HEALPix or TILENUM is undefined) then nothing is done.
+
+If a reprojection occurs then the new file is placed into the
+frame.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+use JCMT::MapArea;
+
+orac_termerr('Received a frame with the wrong number of files')
+    unless $Frm->nfiles() == 1;
+
+my ($in, $out) = $Frm->inout('_tan');
+
+# Determine whether this looks like a JSA tile or not.
+my $hdr = $Frm->hdr();
+$Mon{'ndfpack_mon'}->obeyw('wcsattrib', "ndf=$in mode=get name=projection");
+(undef, my $projection) = $Mon{'ndfpack_mon'}->get('wcsattrib', 'value');
+
+if (($projection eq 'HEALPix') and (defined $hdr->{'TILENUM'})) {
+    orac_say("File looks like a JSA tile: $in");
+
+    my ($ra, $dec, $rad) = JCMT::MapArea::radec_radius(header => $hdr);
+
+    # Convert radius to arc minutes for jsajoin.  SCUBA-2 maps, especially
+    # daisy observations, are much larger than the MAP_WDTH and HGHT
+    # headers suggest, so increase by a factor of 2.
+    $rad = 2.0 * $rad / 60.0;
+
+    orac_say("Reprojecting with center $ra $dec");
+
+    system($ENV{'SMURF_DIR'} . '/jsajoin.py',
+           "CENTRE1=\"$ra\"",
+           "CENTRE2=\"$dec\"",
+           "RADIUS=$rad",
+           'SYSTEM=ICRS',
+           "TILES=$in",
+           "OUT=$out");
+
+    if ($?) {
+        orac_termerr('jsajoin exited with code ' . ($? >> 8))
+    }
+
+    $Frm->files($out);
+}
