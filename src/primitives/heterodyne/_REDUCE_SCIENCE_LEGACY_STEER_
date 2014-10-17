@@ -54,215 +54,161 @@ MA 02111-1307, USA.
 
 =cut
 
-# Verify recipe parameters.
-ORAC::Recipe::Parameters::verify_parameters( \%RECPARS, [ 'BASELINE_LINEARITY',
-                                                          'BASELINE_LINEARITY_CLIP',
-                                                          'BASELINE_LINEARITY_LINEWIDTH',
-                                                          'BASELINE_LINEARITY_MINRMS',
-                                                          'BASELINE_LINEARITY_RMS_THRESHOLD',
-                                                          'BASELINE_LINEARITY_SCALELENGTH',
-                                                          'BASELINE_ORDER',
-                                                          'CHUNKSIZE',
-                                                          'CREATE_MOMENTS_USING_SNR',
-                                                          'CUBE_MAXSIZE',
-                                                          'CUBE_WCS',
-                                                          'FINAL_LOWER_VELOCITY',
-                                                          'FINAL_UPPER_VELOCITY',
-                                                          'FLATFIELD',
-                                                          'FLAT_LOWER_VELOCITY',
-                                                          'FLAT_METHOD',
-                                                          'FLAT_MINIMUM_SNR',
-                                                          'FLAT_UPPER_VELOCITY',
-                                                          'HIGHFREQ_INTERFERENCE',
-                                                          'HIGHFREQ_INTERFERENCE_EDGE_CLIP',
-                                                          'HIGHFREQ_INTERFERENCE_THRESH_CLIP',
-                                                          'HIGHFREQ_RINGING',
-                                                          'HIGHFREQ_RINGING_MIN_SPECTRA',
-                                                          'INDEX_BAD_RECEPTORS',
-                                                          'LOWFREQ_INTERFERENCE',
-                                                          'LOWFREQ_INTERFERENCE_EDGE_CLIP',
-                                                          'LOWFREQ_INTERFERENCE_THRESH_CLIP',
-                                                          'LV_AXIS',
-                                                          'LV_ESTIMATOR',
-                                                          'LV_IMAGE',
-                                                          'MOMENTS',
-                                                          'MOMENTS_LOWER_VELOCITY',
-                                                          'MOMENTS_UPPER_VELOCITY',
-                                                          'PIXEL_SCALE',
-                                                          'REBIN',
-                                                          'RESTRICT_LOWER_VELOCITY',
-                                                          'RESTRICT_UPPER_VELOCITY',
-                                                          'SPREAD_FWHM_OR_ZERO',
-                                                          'SPREAD_METHOD',
-                                                          'SPREAD_WIDTH',
-                                                          'TILE',
-                                                          'TRIM_PERCENTAGE',
-                                                          'TRIM_PERCENTAGE_LOWER',
-                                                          'TRIM_PERCENTAGE_UPPER' ] ) ;
-
-if( scalar keys %RECPARS >= 1 ) {
-  orac_say( "\nRecipe parameter overrides:", "yellow" );
-}
+orac_say( "\nRecipe parameter overrides:", "yellow" );
 
 # This variable is used to reform comma-separated lists turned into
 # stringified array reference.  (Currently not used.)
 my $commasep;
 
+# Determine if this is a wide or narrow bandwidth observation.  There
+# are different recipe parameters for below 1000Mhz, and 100Mhz and
+# above.
+my $bwmode = defined( $Frm->hdr( "BWMODE" ) ) ? $Frm->hdr( "BWMODE" ) : "250MHzx4096";
+$bwmode =~ s/MHzx\d+$//;
+my $wide = $bwmode > 999;
+
 # Put recipe parameters into our uhdr.
+my $baseline_order = 1;
+$Frm->uhdr( "RECPAR_BASELINE_ORDER", 1 );
+orac_say( " Setting baseline order to .", "yellow" );
 
-if ( defined( $RECPARS{'BASELINE_ORDER'} ) ) {
-  $Frm->uhdr( "RECPAR_BASELINE_ORDER", $RECPARS{'BASELINE_ORDER'} );
-  orac_say( " Setting baseline order to $RECPARS{'BASELINE_ORDER'}.", "yellow" );
+my $chunksize = 10000;
+$Frm->uhdr( "RECPAR_CHUNKSIZE", $chunksize );
+orac_say( " Maximum chunksize to form group cube is ${chunksize}MB.", "yellow" );
+
+my $final_lower_velocity = $wide ? -160 : -80;
+$Frm->uhdr( "RECPAR_FINAL_LOWER_VELOCITY", $final_lower_velocity );
+orac_say( " Restricting lower velocity bound of final products to $final_lower_velocity km/s.", "yellow" );
+
+my $final_upper_velocity = $wide ? 160 : 80;
+$Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY", $final_upper_velocity );
+orac_say( " Restricting upper velocity bound of final products to $final_upper_velocity km/s.", "yellow" );
+
+my $flatfield = 0;
+$Frm->uhdr( "RECPAR_FLATFIELD", $flatfield  );
+orac_say( " Turning off flat-fielding.", "yellow" );
+
+my $fraction_bad = 0.5;
+$Frm->uhdr( "RECPAR_FRACTION_BAD", $fraction_bad );
+orac_say( " Setting maximum fraction of bad values allowed in an " .
+          "observation or subscan to $fraction_bad.", "yellow" );
+
+my $moments = "integ";
+$Frm->uhdr( "RECPAR_MOMENTS", $moments );
+my $str = " Will create $moments moments map.";
+
+my $trim_percentage = 2.75;
+$Frm->uhdr( "RECPAR_TRIM_PERCENTAGE", $trim_percentage );
+orac_say( " Setting spectral trimming to $trim_percentage percent.", "yellow" );
+
+
+# High-frequency interference
+# ===========================
+
+# This assumes that default is true without setting the corresponding
+# recipe parameter.
+my $highfreq_interference = 1;
+$Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE", $highfreq_interference );
+orac_say( " Will detect and mask spectra with high-frequency interference.", "yellow" );
+
+if ( $highfreq_interference ) {
+   my $highfreq_interference_edge_clip = "2.0,2.0,2.5,3.0";
+   $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_EDGE_CLIP", $highfreq_interference_edge_clip );
+   orac_say( "    Setting clipping levels to determine dispersion in noise profile to $highfreq_interference_edge_clip standard deviations.", "yellow" );
+
+   my $highfreq_interference_thresh_clip = 4.0;
+   $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP", $highfreq_interference_thresh_clip );
+   orac_say( "    Setting clipping level to select bad spectra to $highfreq_interference_thresh_clip standard deviations.", "yellow" );
+
+   my $highfreq_ringing = 0;
+   $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING", $highfreq_ringing );
+   orac_say( "    No filtering of spectra with ringing.", "yellow" );
 }
 
-if ( defined( $RECPARS{'CHUNKSIZE'} ) ) {
-  $Frm->uhdr( "RECPAR_CHUNKSIZE", $RECPARS{'CHUNKSIZE'} );
-  orac_say( " Maximum chunksize to form group cube is $RECPARS{'CHUNKSIZE'}MB.", "yellow" );
+# Low-frequency inteference
+# =========================
+
+# This assumes that default is true without setting the corresponding
+# recipe parameter.
+my $lowfreq_interference = 1;
+$Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE", $lowfreq_interference );
+orac_say( " Will detect and mask spectra with low-frequency interference.", "yellow" );
+
+my $lowfreq_interference_edge_clip = "2.0,2.0,2.5,3.0";
+if ( $lowfreq_interference ) {
+   $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP", $lowfreq_interference_edge_clip );
+   orac_say( "    Setting clipping levels to determine dispersion in noise profile to $lowfreq_interference_edge_clip standard deviations.", "yellow" );
+
+   my $lowfreq_interference_thresh_clip = 3.0;
+   $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_THRESH_CLIP", $lowfreq_interference_thresh_clip );
+   orac_say( "    Setting clipping level to select bad spectra to $lowfreq_interference_thresh_clip standard deviations.", "yellow" );
 }
 
-if ( defined( $RECPARS{'CREATE_MOMENTS_USING_SNR'} ) ) {
-  $Frm->uhdr( "RECPAR_MOMENTS_SNR", $RECPARS{'CREATE_MOMENTS_USING_SNR'} );
-  orac_say( " Will create signal-to-noise cube for moments map creation.", "yellow" );
+# The bad-baseline detections assume that the receptors supplied are
+# not full of bad values.  So set a flag to hunt for such bad receptors
+# that are not in the bad_receptors index, and add them to the index.
+# Without the bad-baseline filtering the QA stage will pick these up.
+# Other primitives may have set this flag already, so OR the current
+# value with the existing value.
+my $indexbad = $lowfreq_interference || $highfreq_interference;
+if ( defined( $Frm->uhdr( "INDEX_BAD_RECEPTORS" ) ) ) {
+   $indexbad = $indexbad || $Frm->uhdr( "INDEX_BAD_RECEPTORS" );
+}
+$Frm->uhdr( "INDEX_BAD_RECEPTORS", $indexbad );
+
+
+# Baseline linearity for whole receptors
+# ======================================
+
+# This assumes that default is true without setting the corresponding
+# recipe parameter.
+my $linearity = 1;
+$Frm->uhdr( "RECPAR_BASELINE_LINEARITY", $linearity );
+orac_say( " Rejects receptors with mostly or all non-linear baselines.", "yellow" );
+
+if ( $linearity ) {
+   my $baseline_linearity_clip = "2.0,2.3,3.0";
+   $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_CLIP", $baseline_linearity_clip );
+
+   orac_say( "    Setting baseline clipping levels to $baseline_linearity_clip standard deviations.", "yellow" );
+
+   my $baseline_linearity_rms = 0.08;
+   $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_MINRMS", $baseline_linearity_rms );
+   orac_say( "    Setting minimum rms non-linearity to $baseline_linearity_rms.", "yellow" );
+
+   my $baseline_linearity_linewidth = "auto";
+   $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH", $baseline_linearity_linewidth  );
+   if ( lc( $baseline_linearity_linewidth ) =~ /auto/ ) {
+      orac_say( "    Masking emission automatically.", "yellow" );
+   } else {
+      orac_say( "    Masking emission at $baseline_linearity_linewidth km/s.", "yellow" );
+   }
+
+   my $baseline_linearity_scalelength = 101;
+   $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH", $baseline_linearity_scalelength );
+   orac_say( "    Setting smoothing scalength to $baseline_linearity_scalelength pixels.", "yellow" );
+
 }
 
-if ( defined( $RECPARS{'CUBE_WCS'} ) ) {
-  $Frm->uhdr( "RECPAR_SYSTEM", uc( $RECPARS{'CUBE_WCS'} ) );
-  orac_say( " Setting cube coordinate system to $RECPARS{'CUBE_WCS'}.", "yellow" );
-}
+# MAKECUBE parameters
+# ===================
+my $pixel_scale = 6.44;
+$Frm->uhdr( "RECPAR_PIXSIZE", $pixel_scale );
+orac_say( " Setting pixel scale to $pixel_scale arcseconds per pixel.", "yellow" );
 
-if ( defined( $RECPARS{'FINAL_LOWER_VELOCITY'} ) ) {
-  $Frm->uhdr( "RECPAR_FINAL_LOWER_VELOCITY", $RECPARS{'FINAL_LOWER_VELOCITY'} );
-  orac_say( " Restricting lower velocity bound of final products to $RECPARS{'FINAL_LOWER_VELOCITY'} km/s.", "yellow" );
-}
+my $rebin = $wide ? 1.0 : 0.1;
+$Frm->uhdr( "RECPAR_REBIN", $rebin );
+orac_say( " Will rebin final cubes to $rebin km/s resolution.", "yellow" );
 
-if ( defined( $RECPARS{'FINAL_UPPER_VELOCITY'} ) ) {
-  $Frm->uhdr( "RECPAR_FINAL_UPPER_VELOCITY", $RECPARS{'FINAL_UPPER_VELOCITY'} );
-  orac_say( " Restricting upper velocity bound of final products to $RECPARS{'FINAL_UPPER_VELOCITY'} km/s.", "yellow" );
-}
+my $spread_method = "sincsinc";
+$Frm->uhdr( "RECPAR_SPREAD_METHOD", uc( $spread_method ) );
+orac_say( " Setting MAKECUBE spread method to $spread_method.", "yellow" );
 
-# Whether or not to flatfield and associated parameters.
-_SET_FLATFIELD_RECPARS_
+my $spread_width = 0;
+$Frm->uhdr( "RECPAR_PARAM1", $spread_width );
+orac_say( " Setting MAKECUBE spread width to $spread_width arcseconds.", "yellow" );
 
-# Remove spectra with high-frequency interference?
-_SET_HIGHFREQ_INTERFERENCE_RECPARS_
-
-# Bad-baseline non-linearity parameters.
-_SET_BAD_BASELINE_RECPARS_
-
-if ( defined( $RECPARS{'LV_IMAGE'} ) ) {
-  $Frm->uhdr( "RECPAR_LV_IMAGE", $RECPARS{'LV_IMAGE'} );
-  if ( $RECPARS{'LV_IMAGE'} ) {
-    orac_say( " Creating LV images.", "yellow" );
-
-    if ( defined( $RECPARS{'LV_AXIS'} ) ) {
-      $Frm->uhdr( "RECPAR_LV_AXIS", $RECPARS{'LV_AXIS'} );
-      orac_say( "    Collapsing the $RECPARS{'LV_AXIS'} axis.", "yellow" );
-    }
-
-    if ( defined( $RECPARS{'LV_ESTIMATOR'} ) ) {
-      $Frm->uhdr( "RECPAR_LV_ESTIMATOR", $RECPARS{'LV_ESTIMATOR'} );
-      orac_say( "    Using the $RECPARS{'LV_ESTIMATOR'} statistic.", "yellow" );
-    }
-  }
-}
-
-if ( defined( $RECPARS{'MOMENTS'} ) ) {
-  my $moments = $RECPARS{'MOMENTS'};
-  if ( ref( $moments ) eq 'ARRAY' ) {
-    $moments = join ",", @$moments;
-  }
-  $Frm->uhdr( "RECPAR_MOMENTS", $moments );
-  my $str = " Will create $moments moments map";
-  if ( ref( $RECPARS{'MOMENTS'} ) eq 'ARRAY' ) {
-    $str .= "s";
-  }
-  $str .= ".";
-  orac_say( $str, "yellow" );
-}
-
-if ( defined( $RECPARS{'MOMENTS_LOWER_VELOCITY'} ) ) {
-  $Frm->uhdr( "RECPAR_MOMENTS_LOWER", $RECPARS{'MOMENTS_LOWER_VELOCITY'} );
-  orac_say( " Restricting lower velocity bound for moments maps to $RECPARS{'MOMENTS_LOWER_VELOCITY'} km/s.", "yellow" );
-}
-
-if ( defined( $RECPARS{'MOMENTS_UPPER_VELOCITY'} ) ) {
-  $Frm->uhdr( "RECPAR_MOMENTS_UPPER", $RECPARS{'MOMENTS_UPPER_VELOCITY'} );
-  orac_say( " Restricting upper velocity bound for moments maps to $RECPARS{'MOMENTS_UPPER_VELOCITY'} km/s.", "yellow" );
-}
-
-if ( defined( $RECPARS{'PIXEL_SCALE'} ) ) {
-  $Frm->uhdr( "RECPAR_PIXSIZE", $RECPARS{'PIXEL_SCALE'} );
-  orac_say( " Setting pixel scale to $RECPARS{'PIXEL_SCALE'} arcseconds per pixel.", "yellow" );
-}
-
-if ( defined( $RECPARS{'REBIN'} ) ) {
-  my $rebin = $RECPARS{'REBIN'};
-  if ( ref( $rebin ) eq 'ARRAY' ) {
-    $rebin = join ",", @$rebin;
-  }
-  $Frm->uhdr( "RECPAR_REBIN", $rebin );
-  orac_say( " Will rebin final cubes to $rebin km/s resolution.", "yellow" );
-}
-
-if ( defined( $RECPARS{'RESTRICT_LOWER_VELOCITY'} ) ) {
-  $Frm->uhdr( "RECPAR_RESTRICT_LOWER", $RECPARS{'RESTRICT_LOWER_VELOCITY'} );
-  orac_say( " Restricting lower velocity bound to $RECPARS{'RESTRICT_LOWER_VELOCITY'} km/s.", "yellow" );
-}
-
-if ( defined( $RECPARS{'RESTRICT_UPPER_VELOCITY'} ) ) {
-  $Frm->uhdr( "RECPAR_RESTRICT_UPPER", $RECPARS{'RESTRICT_UPPER_VELOCITY'} );
-  orac_say( " Restricting upper velocity bound to $RECPARS{'RESTRICT_UPPER_VELOCITY'} km/s.", "yellow" );
-}
-
-if ( defined( $RECPARS{'SPREAD_METHOD'} ) ) {
-  $Frm->uhdr( "RECPAR_SPREAD_METHOD", uc( $RECPARS{'SPREAD_METHOD'} ) );
-  orac_say( " Setting MAKECUBE spread method to $RECPARS{'SPREAD_METHOD'}.", "yellow" );
-}
-
-if ( defined( $RECPARS{'SPREAD_WIDTH'} ) ) {
-  $Frm->uhdr( "RECPAR_PARAM1", $RECPARS{'SPREAD_WIDTH'} );
-  orac_say( " Setting MAKECUBE spread width to $RECPARS{'SPREAD_WIDTH'} arcseconds.", "yellow" );
-}
-
-if ( defined( $RECPARS{'SPREAD_FWHM_OR_ZERO'} ) ) {
-  $Frm->uhdr( "RECPAR_PARAM2", $RECPARS{'SPREAD_FWHM_OR_ZERO'} );
-  orac_say( " Setting MAKECUBE spread FWHM or zero to $RECPARS{'SPREAD_FWHM_OR_ZERO'} arcseconds.", "yellow" );
-}
-
-if ( defined( $RECPARS{'TILE'} ) ) {
-  $Frm->uhdr( "RECPAR_TILE", $RECPARS{'TILE'} );
-  if ( $RECPARS{'TILE'} ) {
-    orac_say( " Disabling tiling in MAKECUBE.", "yellow" );
-  } else {
-    if ( defined( $RECPARS{'CUBE_MAXSIZE'} ) ) {
-      $Frm->uhdr( "RECPAR_CUBE_MAXSIZE", $RECPARS{'CUBE_MAXSIZE'} );
-      orac_say( " Maximum tile size is $RECPARS{'CUBE_MAXSIZE'}MB.", "yellow" );
-    }
-  }
-}
-
-my $lower_trim = 0;
-if ( defined( $RECPARS{'TRIM_PERCENTAGE_LOWER'} ) ) {
-  $Frm->uhdr( "RECPAR_TRIM_PERCENTAGE_LOWER", uc( $RECPARS{'TRIM_PERCENTAGE_LOWER'} ) );
-  orac_say( " Setting lower spectral trimming to $RECPARS{'TRIM_PERCENTAGE_LOWER'} percent.", "yellow" );
-  $lower_trim = 1;
-}
-
-my $upper_trim = 0;
-if ( defined( $RECPARS{'TRIM_PERCENTAGE_UPPER'} ) ) {
-  $Frm->uhdr( "RECPAR_TRIM_PERCENTAGE_UPPER", uc( $RECPARS{'TRIM_PERCENTAGE_UPPER'} ) );
-  orac_say( " Setting upper spectral trimming to $RECPARS{'TRIM_PERCENTAGE_UPPER'} percent.", "yellow" );
-  $upper_trim = 1;
-}
-
-if ( !( $lower_trim || $upper_trim ) ) {
-  if ( defined( $RECPARS{'TRIM_PERCENTAGE'} ) ) {
-    $Frm->uhdr( "RECPAR_TRIM_PERCENTAGE", uc( $RECPARS{'TRIM_PERCENTAGE'} ) );
-    orac_say( " Setting spectral trimming to $RECPARS{'TRIM_PERCENTAGE'} percent.", "yellow" );
-  }
-}
-
-if ( scalar keys %RECPARS >= 1 ) {
-  orac_say "";
-}
+my $spread_fwhm_or_zero = 2;
+$Frm->uhdr( "RECPAR_PARAM2", $spread_fwhm_or_zero );
+orac_say( " Setting MAKECUBE spread to zero to $spread_fwhm_or_zero arcseconds.", "yellow" );
 
