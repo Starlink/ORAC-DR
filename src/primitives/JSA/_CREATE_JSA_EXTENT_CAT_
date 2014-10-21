@@ -1,0 +1,132 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_JSA_EXTENT_CAT_ - Create a JSA extent catalogue.
+
+=head1 DESCRIPTION
+
+This primitive takes an input map and produces a JSA output extent
+catalogue of that map.
+
+The current frame will containt the 'extent' sdf -- the clump file
+produced by ORAC-DR -- after running this recipe. It will also be
+tagged as 'extent'. The original frame will be tagged as "emission".
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+
+# Only continue if there is only 1 file in the frame.
+orac_termerr('Received a frame with the wrong number of files')
+  unless $Frm->nfiles() == 1;
+
+# Tag the original file so it can be achieved.
+_SET_TAG_ TAG=emission
+
+# Get the file
+my ($file) = $Frm->files();
+
+
+# Holder for intermediate files that should be tidied up
+my @intermediates = ();
+
+orac_say("Identifying regions of emission in $file." );
+
+#TODO If we want to use beam size to determine the object minpix/ or use
+#the built in FWHM for cupid we will need to get the pixel size here
+#and use a look up to get the 'standard' SCUBA2/HARP beamsize for
+#this waveband. Currently not implemented.
+
+# Set up the names of the files.
+my $snr = $Frm->inout("_snr");
+my $clumps = $Frm->inout("_extents_snr");
+my $outcat = $Frm->inout("_extents.FITS");
+my $out = $Frm->inout("_extents");
+my $log = $Frm->inout("_extents.log");
+my $fc_param = "jsa_extent.par";
+
+# Create the SNR file.
+_CALC_SNR_IMAGE_ OUT=$snr STATS=0 GROUP=0
+orac_say("Created SNR map from $file." );
+
+# Create catalogue from SNR map.
+my $minheight = "5*RMS";
+my $mindip = "1000*RMS";
+my $noise = "3*RMS";
+my $minpix = "9";
+
+# Write out config.
+open my $fc_h, ">", $fc_param;
+print $fc_h "FellWalker.AllowEdge=1\n";
+print $fc_h "FellWalker.FwhmBeam=0\n";
+print $fc_h "FellWalker.MaxBad=0.05\n";
+print $fc_h "FellWalker.Noise=$noise\n";
+print $fc_h "FellWalker.FlatSlope=0\n";
+print $fc_h "FellWalker.MinHeight=$minheight\n";
+print $fc_h "FellWalker.MinDip=$mindip\n";
+print $fc_h "FellWalker.CleanIter=2\n";
+print $fc_h "FellWalker.MinPix=$minpix\n";
+close $fc_h;
+
+my $params = "in=$snr rms=1.0 config='^$fc_param' " .
+  "method=fellwalker out=$clumps deconv=no logfile=$log wcspar=True outcat=! shape=poly";
+
+$Mon{'cupid_mon'}->obeyw("findclumps", $params);
+
+my ($ORAC_STATUS, $nclumps) = $Mon{cupid_mon}->get("findclumps", "nclumps");
+orac_say("$nclumps contiguous regions of detecteded emission were" .
+	   " identified in the SNR map.");
+
+# Allow files to be tidied up.
+push @intermediates, $clumps;
+
+# Extract catalogue from original file so it is in flux units.
+my $ecparams = "mask=$clumps data=$file out=$out deconv=False" .
+  " jsacat=$outcat outcat=! wcspar=True shape=poly fwhmbeam=0";
+
+$Mon{'cupid_mon'}->obeyw("extractclumps", "$ecparams");
+orac_say("$nclumps contiguous regions of detected emission" .
+	 " were extracted  from the DATA map.");
+
+# Add an ID column with appropriate object names.
+# Get path to stilts
+my $stilts_path = File::Spec->catfile( $ENV{STARLINK_DIR}, "starjava", "bin", "stilts" );
+# Stilts command to create the column name
+my $stilts_arguments = "$stilts_path tpipe in=" . "$outcat" . " cmd=\' addcol ID -before \$1  \"\\\"JCMTPX_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\"\' omode=out out=stilts_$outcat ofmt=FITS-PLUS";
+
+
+system($stilts_arguments);
+orac_say('Added ID column to output extent catalogue');
+
+# Push intermediates to frame
+$Frm->push_intermediates(@intermediates);
+
+# Push the output clump into the current frame.
+$Frm->files($out);
+
+# Tag the current state clump file
+_SET_TAG_ TAG=extent
+
+# Push the output extent catalogue into the current frame.
+$Frm->files($outcat);
+_SET_TAG_ TAG=extent_cat
+
+
