@@ -29,14 +29,17 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 =cut
 
-no warnings qw/redefine/;
-
 orac_termerr('Received a frame with the wrong number of files')
   unless $Frm->nfiles() == 1;
 
 # Determine the association ID.
 do {
-  my (undef, $tempfrm, undef) = create_suitable_frame($Frm);
+  # To compute the ASNID we need to determine the backend so
+  # that we can use the corresponding frame class -- the PICARD
+  # frame class doesn't know about JSA public association IDs.
+  _DETERMINE_CLASSES_ GROUP_NAME=association
+  my $tempfrm = $_DETERMINE_CLASSES_{'FRAME'};
+
   my ($file) = $Frm->files();
   $tempfrm->configure([$file]);
   my $asnid = $tempfrm->jsa_pub_asn_id();
@@ -64,7 +67,10 @@ foreach my $subgrp ($Grp->subgrps(qw/TILENUM JSA_PUB_ASN_ID/)) {
 
   do {
     # Create new temporary frame containing the files for this tile.
-    my ($prefix, $Frm, $Grp) = create_suitable_frame($frames[0]);
+    _DETERMINE_CLASSES_ GROUP_NAME=coadd
+    my ($prefix, $Frm, $Grp) = map {$_DETERMINE_CLASSES_{$_}}
+                               qw/GROUP_PREFIX FRAME GROUP/;
+
     my @files = map {$_->files()} @frames;
     $Frm->configure(\@files);
     $Frm->uhdr('DATA_UNITS', $data_units);
@@ -96,37 +102,3 @@ foreach my $subgrp ($Grp->subgrps(qw/TILENUM JSA_PUB_ASN_ID/)) {
 }
 
 $Grp->push_intermediates(@intermediates);
-
-# To compute the ASNID we need to determine the backend so
-# that we can use the corresponding frame class -- the PICARD
-# frame class doesn't know about JSA public association IDs.
-# Also select the filename prefix at the same time.
-sub create_suitable_frame {
-  my $Obj = shift;
-  my $backend = $Obj->uhdr('ORAC_BACKEND');
-  my ($prefix, $frmclass, $grpclass);
-
-  if ($backend eq 'SCUBA-2') {
-    $prefix = 'gs';
-    require 'ORAC/Frame/SCUBA2.pm';
-    require 'ORAC/Group/SCUBA2.pm';
-    $frmclass = 'ORAC::Frame::SCUBA2';
-    $grpclass = 'ORAC::Group::SCUBA2';
-  }
-  elsif ($backend eq 'ACSIS') {
-    $prefix = 'ga';
-    require 'ORAC/Frame/ACSIS.pm';
-    require 'ORAC/Group/ACSIS.pm';
-    $frmclass = 'ORAC::Frame::ACSIS';
-    $grpclass = 'ORAC::Group::ACSIS';
-  }
-  else {
-    orac_termerr("Unknown backend: ${backend}\n");
-  }
-
-  my $tmpfrm = $frmclass->new();
-  my $tmpgrp = $grpclass->new('coadd');
-  $tmpgrp->push($tmpfrm);
-
-  return ($prefix, $tmpfrm, $tmpgrp);
-}
