@@ -1,0 +1,123 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_COPY_JSA_HEADERS_TO_FITS_FILE_ - copies headers into FITS files
+
+=head1 DESCRIPTION
+
+This primitive is for copying headers which are required for the JSA
+into FITS files which lack them.  It contains a list of headers to
+copy.  These headers are taken from the file specified by the
+IN argument and written to the file specified by the OUT argument.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP
+
+Whether to operate on the current Frame or Group object. Defaults to
+Frame.
+
+=item IN
+
+The SDF file from which to read the headers.
+
+=item OUT
+
+The FITS file into which to write the headers.
+
+=item PRODUCT
+
+Product name to set for the new file.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+use Astro::FITS::Header::CFITSIO;
+use Astro::FITS::Header::NDF;
+
+my %keep = map {$_ => 1} qw/
+    TELESCOP
+    OBSGEO-X
+    OBSGEO-Y
+    OBSGEO-Z
+
+    INSTRUME
+    BACKEND
+    INBEAM
+    FILTER
+    RESTFREQ
+    BWMODE
+    SUBSYSNR
+
+    PROJECT
+    TILENUM
+/;
+
+# TODO: add support for provenance headers:
+#    PRVCNT
+#    PRV1 ...
+#    OBSCNT
+#    OBS1 ...
+#    FILEID
+
+my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
+my $product = get_prim_arg($_PRIM_ARGS_, 'PRODUCT', undef);
+
+my $in = get_prim_arg($_PRIM_ARGS_, 'IN', undef);
+orac_termerr('_COPY_JSA_HEADERS_TO_FITS_FILE_: IN not specified')
+    unless defined $in;
+
+my $out = get_prim_arg($_PRIM_ARGS_, 'OUT', undef);
+orac_termerr('_COPY_JSA_HEADERS_TO_FITS_FILE_: OUT not specified')
+    unless defined $out;
+
+# Initialize with headers already present in the file.
+my $hdr_out = new Astro::FITS::Header::CFITSIO(File => $out);
+
+# Add selected headers from the IN file.
+do {
+    my $hdr_in = new Astro::FITS::Header::NDF(File => $in);
+    $hdr_out->append([grep {exists $keep{$_->keyword()}} $hdr_in->allitems()]);
+};
+
+# Use "collate_headers" to obtain standard headers for the IN file.  This
+# needs specific classes (which inherit from JSAFile) rather than the PICARD
+# classes.
+do {
+    _DETERMINE_CLASSES_ GROUP_NAME=collate
+    my $Frm = $_DETERMINE_CLASSES_{'FRAME'};
+    my $Grp = $_DETERMINE_CLASSES_{'GROUP'};
+    my $Obj = $group ? $Grp : $Frm;
+    $Frm->configure($in);
+    if ($group) {
+        $Grp->files($in);
+        $Grp->asn_id($Frm->jsa_pub_asn_id());
+    }
+    $Obj->product($product) if defined $product;
+    $hdr_out->append($Obj->collate_headers($in));
+};
+
+# Write the updated header to the file.
+$hdr_out->writehdr(File => $out);
