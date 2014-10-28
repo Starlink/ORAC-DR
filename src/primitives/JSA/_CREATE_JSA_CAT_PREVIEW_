@@ -1,0 +1,77 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_JSA_CAT_PREVIEW_ - create JSA style 'peaks' catalogues.
+
+=head1 DESCRIPTION
+
+This primitive takes in input maps, and extent masks, and a JSA peak
+catalogue, and produces preview images in sizes 1024, 256 and 64.
+
+
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+fbut WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+orac_say('Attempting to make preview images');
+# Find the clump mask.
+_RETRIEVE_TAG_ TAG=extent
+my ($extent) = $Frm->files();
+
+# Find the peak catalogue.
+_RETRIEVE_TAG_ TAG=peaks_cat
+my ($peakcat) = $Frm->files();
+
+# Retrieve the emisison map
+_RETRIEVE_TAG_ TAG=emission
+my ($emission) = $Frm->files();
+
+
+# Holder for intermediate files
+my @intermediates = ();
+
+# Create an appropriate peak cataloge
+# Stilts is used for dealing with catalogs.
+my $stilts_path = File::Spec->catfile( $ENV{STARLINK_DIR}, "starjava", "bin", "stilts" );
+
+my $kappa_peaks = 'kappa_peaks.txt';
+
+system("$stilts_path tpipe in=$peakcat cmd=\'addskycoords -epoch 2000 -inunit deg -outunit sex icrs icrs PEAK1 PEAK2 RA Dec; delcols \"ID PEAK1 PEAK2 CEN1 CEN2 SIZE1 SIZE2 SUM PEAK VOLUME SHAPE PARENT_EXTENT\"\' omode=out ofmt=ascii out=$kappa_peaks");
+
+# Create a 2d map so that listmake doesn't complain.
+my $temp2dmap = $emission . "_temp2d";
+$Mon{ndfpack_mon}->obeyw('ndfcopy', "in=$emission out=$temp2dmap trimwcs=True trim=True");
+
+my $listmake_params = "mode=file file=$kappa_peaks ndf=$temp2dmap outcat=kappa_peaks.FIT describe=True";
+
+push @intermediates, "$kappa_peaks";
+push @intermediates, "$temp2dmap";
+
+$Mon{kappa_mon}->obeyw( "listmake", "$listmake_params" );
+$kappa_peaks = "kappa_peaks.FIT";
+orac_say("Created $kappa_peaks");
+push @intermediates, "$kappa_peaks";
+
+$Frm->uhdr( "MAKE_GREYSCALE_THUMBNAILS", 1 );
+
+_CREATE_GRAPHIC_FROM_FILE_ FILE=$emission TYPE=PNG EXTENTS=$extent POINTCAT=$kappa_peaks XRES=64,256,1024 ADDRES=1
+
+$Frm->push_intermediates(@intermediates);
