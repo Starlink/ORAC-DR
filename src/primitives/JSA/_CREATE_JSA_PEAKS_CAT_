@@ -34,135 +34,150 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 
 # Find an emission and extent file from the frame.
+my ($extent, $extent_cat);
 _RETRIEVE_TAG_ TAG=extent
-my ($extent) = $Frm->files();
-_RETRIEVE_TAG_ TAG=extent_cat
-my ($extent_cat) = $Frm->files();
-_RETRIEVE_TAG_ TAG=emission
+my $tag_status = $_RETRIEVE_TAG_{STATUS};
+if ( $tag_status) {
+    $extent = $Frm->files();
+    _RETRIEVE_TAG_ TAG=extent_cat THROW=true
+    $extent_cat = $Frm->files();
+}
+_RETRIEVE_TAG_ TAG=emission THROW=true
 my ($emission) = $Frm->files();
 
-# Holder for intermediate files that should be tidied up.
-my @intermediates = ();
 
-orac_say("Identifying peaks of emission in $emission" .
-	 " using extent clumps from  $extent." );
+
+if ( $tag_status)
+{
+    # Holder for intermediate files that should be tidied up.
+    my @intermediates = ();
+
+    orac_say("Identifying peaks of emission in $emission" .
+             " using extent clumps from  $extent." );
 
 
 # Set up the fellwalker params.
-my $minheight = "5*RMS";
-my $mindip    = "5*RMS";
-my $noise     = "3*RMS";
-my $minpix    = "9";
+    my $minheight = "5*RMS";
+    my $mindip    = "5*RMS";
+    my $noise     = "3*RMS";
+    my $minpix    = "9";
 
 # Write out config.
-my $fc_param = "jsa_peak.par";
-open my $fc_h, ">", $fc_param;
-print $fc_h "FellWalker.AllowEdge=1\n";
-print $fc_h "FellWalker.FwhmBeam=0\n";
-print $fc_h "FellWalker.MaxBad=1.0\n";
-print $fc_h "FellWalker.Noise=$noise\n";
-print $fc_h "FellWalker.FlatSlope=0\n";
-print $fc_h "FellWalker.MinHeight=$minheight\n";
-print $fc_h "FellWalker.MinDip=$mindip\n";
-print $fc_h "FellWalker.CleanIter=1\n";
-print $fc_h "FellWalker.MinPix=$minpix\n";
-close $fc_h;
-my $cupidparams = "config='^$fc_param' method=fellwalker deconv=no";
+    my $fc_param = "jsa_peak.par";
+    open my $fc_h, ">", $fc_param;
+    print $fc_h "FellWalker.AllowEdge=1\n";
+    print $fc_h "FellWalker.FwhmBeam=0\n";
+    print $fc_h "FellWalker.MaxBad=1.0\n";
+    print $fc_h "FellWalker.Noise=$noise\n";
+    print $fc_h "FellWalker.FlatSlope=0\n";
+    print $fc_h "FellWalker.MinHeight=$minheight\n";
+    print $fc_h "FellWalker.MinDip=$mindip\n";
+    print $fc_h "FellWalker.CleanIter=1\n";
+    print $fc_h "FellWalker.MinPix=$minpix\n";
+    close $fc_h;
+    my $cupidparams = "config='^$fc_param' method=fellwalker deconv=no";
 
 
 # Need to go through each clump in $extent.
 # Array to hold peak catalogues.
-my @peakcats = ();
-my @parentextents = ();
+    my @peakcats = ();
+    my @parentextents = ();
 
 # Stilts is used for dealing with catalogs.
-my $stilts_path = File::Spec->catfile( $ENV{STARLINK_DIR}, "starjava", "bin", "stilts" );
+    my $stilts_path = File::Spec->catfile( $ENV{STARLINK_DIR}, "starjava", "bin", "stilts" );
 
 # Find out how many clumps there are.
-$Mon{'kappa_mon'}->obeyw("stats", "$extent");
-(my $ORAC_STATUS, my $nclumps) = $Mon{kappa_mon}->get("stats", "maximum");
+    $Mon{'kappa_mon'}->obeyw("stats", "$extent");
+    (my $ORAC_STATUS, my $nclumps) = $Mon{kappa_mon}->get("stats", "maximum");
 
 
 
-my $peakcat = $Frm->inout("_peaks.FITS");
-orac_say("output file is $peakcat");
+    my $peakcat = $Frm->inout("_peaks.FITS");
+    orac_say("output file is $peakcat");
 
 # Now create each one as an ndf.
-for (my $i = 1; $i <= $nclumps; $i++)
-  {
-    # Create a postage stamp of just this clumps.
-    my $postage = $Frm->inout("_$i" . "_clump");
+    for (my $i = 1; $i <= $nclumps; $i++)
+    {
+        # Create a postage stamp of just this clumps.
+        my $postage = $Frm->inout("_$i" . "_clump");
 
-    orac_say("Finding peaks for clump $i.");
-    my $clumpstring = "$extent.more.CUPID.CLUMPS($i)";
-    my $params = "ref=$clumpstring in=$emission out=$postage";
-    $Mon{'kappa_mon'}->obeyw("copybad", "$params");
+        orac_say("Finding peaks for clump $i.");
+        my $clumpstring = "$extent.more.CUPID.CLUMPS($i)";
+        my $params = "ref=$clumpstring in=$emission out=$postage";
+        $Mon{'kappa_mon'}->obeyw("copybad", "$params");
 
-    # Mark the postage stamp of this clump as an intermediate.
-    push @intermediates, $postage;
+        # Mark the postage stamp of this clump as an intermediate.
+        push @intermediates, $postage;
 
-    # Read the median noise from this file.
-    $Mon{'kappa_mon'}->obeyw("stats", "$postage order=True comp=ERR");
-    my ($ORAC_STATUS, $medrms) = $Mon{kappa_mon}->get("stats", "median");
+        # Read the median noise from this file.
+        $Mon{'kappa_mon'}->obeyw("stats", "$postage order=True comp=ERR");
+        my ($ORAC_STATUS, $medrms) = $Mon{kappa_mon}->get("stats", "median");
 
-    # Set up file names.
-    my $outclumps = $Frm->inout("_$i" . "_peak");
-    my $jsacat = $Frm->inout("_$i" . "_peak.FITS");
-    my $log = $Frm->inout("_$i" . "_peak.log");
+        # Set up file names.
+        my $outclumps = $Frm->inout("_$i" . "_peak");
+        my $jsacat = $Frm->inout("_$i" . "_peak.FITS");
+        my $log = $Frm->inout("_$i" . "_peak.log");
 
-    # Perform the clumpfinding
-    $Mon{'cupid_mon'}->obeyw("findclumps", "in=$postage out=$outclumps jsacat=$jsacat log=$log outcat=! rms=$medrms $cupidparams");
+        # Perform the clumpfinding
+        $Mon{'cupid_mon'}->obeyw("findclumps", "in=$postage out=$outclumps jsacat=$jsacat log=$log outcat=! rms=$medrms $cupidparams");
 
-    ($ORAC_STATUS, my $nclumps) = $Mon{cupid_mon}->get("findclumps","nclumps");
-    orac_say("$nclumps peak" .
-	   " identified inside island $i.");
+        ($ORAC_STATUS, my $nclumps) = $Mon{cupid_mon}->get("findclumps","nclumps");
+        orac_say("$nclumps peak" .
+                 " identified inside island $i.");
 
-    # Get the ID of the parent extent.
-    chomp(my $parent_extent_id =`$stilts_path tpipe in=stilts_$extent_cat cmd='keepcols ID;select index==$i' omode=out ofmt=csv-nohead`);
-
-
-    # Clean up various files
-    push @intermediates, $log;
-    if (-e $jsacat) {
-
-	# Save the peak catalogues and the parent extents for the
-	# concatenation stage.
-	push @peakcats, $jsacat;
-	push @parentextents, $parent_extent_id;
-
-	# Mark the catalogues as intermediaries.
-	push @intermediates, $jsacat;
-
-	}
-
-    push @intermediates, $outclumps;
-  }
+        # Get the ID of the parent extent.
+        chomp(my $parent_extent_id =`$stilts_path tpipe in=stilts_$extent_cat cmd='keepcols ID;select index==$i' omode=out ofmt=csv-nohead`);
 
 
-# Concatenate the peak catalogues
+        # Clean up various files
+        push @intermediates, $log;
+        if (-e $jsacat) {
 
-# Assemble the stilts command line for tcatn.
-my $inlist = "";
-my $incmd = "";
-my $counter = 0;
-for my $p (0..$#peakcats){
-    $counter = $p + 1;
-    $inlist="$inlist" ."in$counter=$peakcats[$p] ";
+            # Save the peak catalogues and the parent extents for the
+            # concatenation stage.
+            push @peakcats, $jsacat;
+            push @parentextents, $parent_extent_id;
 
-    $incmd = "$incmd" . " icmd$counter=\'addcol ID -before \$1  \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\"; addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\"\' ";
+            # Mark the catalogues as intermediaries.
+            push @intermediates, $jsacat;
+
+        }
+
+        push @intermediates, $outclumps;
+    }
+
+    # Concatenate the peak catalogues
+
+    # Assemble the stilts command line for tcatn.
+    my $inlist = "";
+    my $incmd = "";
+    my $counter = 0;
+    for my $p (0..$#peakcats){
+        $counter = $p + 1;
+        $inlist="$inlist" ."in$counter=$peakcats[$p] ";
+
+        $incmd = "$incmd" . " icmd$counter=\'addcol ID -before \$1  \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\"; addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\"\' ";
+
+    }
+
+    # Number of input files.
+    $counter = $#peakcats+1;
+
+    my $stilts_arguments = "$stilts_path tcatn $inlist $incmd out=$peakcat nin=$counter";
+
+    system($stilts_arguments);
+
+    orac_say("Concatenated individual peak catalogues into $peakcat");
+    $Frm->push_intermediates(@intermediates);
+
+    # Push the output peaks catalogue into the current frame.
+    $Frm->files($peakcat);
+    _SET_TAG_ TAG=peaks_cat
 
 }
 
-# Number of input files.
-$counter = $#peakcats+1;
+else {
 
-my $stilts_arguments = "$stilts_path tcatn $inlist $incmd out=$peakcat nin=$counter";
+    orac_say("No extents were found, so not searching for peaks.");
 
-system($stilts_arguments);
-
-orac_say("Concatenated individual peak catalogues into $peakcat");
-$Frm->push_intermediates(@intermediates);
-
-# Push the output peaks catalogue into the current frame.
-$Frm->files($peakcat);
-_SET_TAG_ TAG=peaks_cat
+}
