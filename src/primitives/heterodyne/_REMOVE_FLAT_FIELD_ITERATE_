@@ -134,7 +134,7 @@ The flat-fielded time-series cube with suffix _ff.
 =head1 TASKS
 
 KAPPA: BLOCK, CDIV, CHPIX, COLLAPSE, DIV, MANIC, MATHS, MSTATS, NDFCOPY,
-NDFTRACE, PASTE, SETUNITS, SETVAR, STATS, THRESH.
+NDFTRACE, PASTE, SETUNITS, SETVAR, STATS, THRESH, TRANDAT.
 
 =head1 REQUIRED PERL MODULES
 
@@ -644,18 +644,47 @@ if ( ! $isok ) {
             $iter++;
          }
 
-# Grow the vector of receptor ratios into a cube.
-         if ( $derive_flat ) {
-            $params = "in=$ratiofile out=$ratiocube axes=[0,1,0] lbound=[";
-            $params .= join( ',', $lbound->[0], $lbound->[2] );
-            $params .= "] ubound=[";
-            $params .= join( ',', $ubound->[0], $ubound->[2] );
-            $params .= "]";
-            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
-
 # Apply the flat field to each file in each observation for the
 # current night.
+         if ( $derive_flat ) {
             foreach my $Obj ( @Objs ) {
+
+# Obtain the receptors present in the current observation.  Note we
+# assume that different subscans are not treated differently in QA
+# and interference filtering.
+               $in = $Obj->file;
+               $array = new JCMT::ACSIS::Array( File => $in );
+               my @receptors = $array->receptors;
+               $nreceptor = scalar( @receptors );
+
+# Extract the relative fluxes for the current observation.
+               my @ratios;
+               foreach ( @receptors ) {
+                  if ( defined( $_ ) ) {
+                     push @ratios, $flat_ratio{$_};
+                  } else {
+                     push @ratios, 1.0;
+                  }
+               }
+
+               my $ratiolist = 'ratio.list';
+               open ( my $fh, '>', $ratiolist ) or
+                 orac_err "Could not open file $ratiofile\n";
+               print $fh join( "\n", @ratios );
+               close $fh;
+               $params = "auto freename=$ratiolist dtype=_REAL ";
+               $params .= " shape=$nreceptor ndf=$ratiofile";
+               $Mon{'kappa_mon'}->obeyw( "trandat", "$params" );
+               unlink $ratiolist;
+
+# Grow the vector of receptor ratios into a cube.
+               $params = "in=$ratiofile out=$ratiocube axes=[0,1,0] lbound=[";
+               $params .= join( ',', $lbound->[0], $lbound->[2] );
+               $params .= "] ubound=[";
+               $params .= join( ',', $ubound->[0], $ubound->[2] );
+               $params .= "]";
+               $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
                foreach my $i ( 1 .. $Obj->nfiles ) {
                   my ( $in, $out ) = $Obj->inout( "_ff", $i );
 
