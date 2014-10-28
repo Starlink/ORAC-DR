@@ -2,14 +2,15 @@
 
 =head1 NAME
 
-_CREATE_JSA_CAT_PREVIEW_ - create JSA style 'peaks' catalogues.
+_CREATE_JSA_CAT_PREVIEW_ - create JSA catalog preview images.
 
 =head1 DESCRIPTION
 
 This primitive takes in input maps, and extent masks, and a JSA peak
 catalogue, and produces preview images in sizes 1024, 256 and 64.
 
-
+The preview image files will have to be stuck on top of each other with
+something like image magick.
 
 =head1 COPYRIGHT
 
@@ -31,47 +32,63 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 =cut
 
-orac_say('Attempting to make preview images');
-# Find the clump mask.
+# Check if any extents or peaks were found
+my $extent = "";
+my $peakcat = "";
 _RETRIEVE_TAG_ TAG=extent
-my ($extent) = $Frm->files();
+my $tag_status_extent = $_RETRIEVE_TAG_{STATUS};
+if ( $tag_status_extent) {
+  $extent = $Frm->files();
+}
 
-# Find the peak catalogue.
 _RETRIEVE_TAG_ TAG=peaks_cat
-my ($peakcat) = $Frm->files();
+my $tag_status_peak = $_RETRIEVE_TAG_{STATUS};
+if ( $tag_status_peak) {
+  $peakcat = $Frm->files();
+}
 
-# Retrieve the emisison map
-_RETRIEVE_TAG_ TAG=emission
+_RETRIEVE_TAG_ TAG=emission THROW=true
 my ($emission) = $Frm->files();
 
-
-# Holder for intermediate files
-my @intermediates = ();
-
-# Create an appropriate peak cataloge
-# Stilts is used for dealing with catalogs.
-my $stilts_path = File::Spec->catfile( $ENV{STARLINK_DIR}, "starjava", "bin", "stilts" );
-
-my $kappa_peaks = 'kappa_peaks.txt';
-
-system("$stilts_path tpipe in=$peakcat cmd=\'addskycoords -epoch 2000 -inunit deg -outunit sex icrs icrs PEAK1 PEAK2 RA Dec; delcols \"ID PEAK1 PEAK2 CEN1 CEN2 SIZE1 SIZE2 SUM PEAK VOLUME SHAPE PARENT_EXTENT\"\' omode=out ofmt=ascii out=$kappa_peaks");
-
-# Create a 2d map so that listmake doesn't complain.
-my $temp2dmap = $emission . "_temp2d";
-$Mon{ndfpack_mon}->obeyw('ndfcopy', "in=$emission out=$temp2dmap trimwcs=True trim=True");
-
-my $listmake_params = "mode=file file=$kappa_peaks ndf=$temp2dmap outcat=kappa_peaks.FIT describe=True";
-
-push @intermediates, "$kappa_peaks";
-push @intermediates, "$temp2dmap";
-
-$Mon{kappa_mon}->obeyw( "listmake", "$listmake_params" );
-$kappa_peaks = "kappa_peaks.FIT";
-orac_say("Created $kappa_peaks");
-push @intermediates, "$kappa_peaks";
-
+# We want greyscale backgrounds so the catalogs are visible.
 $Frm->uhdr( "MAKE_GREYSCALE_THUMBNAILS", 1 );
 
-_CREATE_GRAPHIC_FROM_FILE_ FILE=$emission TYPE=PNG EXTENTS=$extent POINTCAT=$kappa_peaks XRES=64,256,1024 ADDRES=1
+my $kappa_peaks = "";
+if  ($tag_status_extent) {
 
-$Frm->push_intermediates(@intermediates);
+  orac_say('Attempting to make preview images for extent catalog');
+  _CREATE_GRAPHIC_FROM_FILE_ FILE=$emission TYPE=PNG EXTENTS=$extent XRES=64,256,1024 ADDRES=1
+
+
+}
+  # Holder for intermediate files
+my @intermediates = ();
+
+if ($tag_status_peak) {
+  # Create an appropriate peak cataloge
+  # Stilts is used for dealing with catalogs.
+  my $stilts_path = File::Spec->catfile( $ENV{STARLINK_DIR}, "starjava", "bin", "stilts" );
+
+  $kappa_peaks = 'kappa_peaks.txt';
+
+  system("$stilts_path tpipe in=$peakcat cmd=\'addskycoords -epoch 2000 -inunit deg -outunit sex icrs icrs PEAK1 PEAK2 RA Dec; delcols \"ID PEAK1 PEAK2 CEN1 CEN2 SIZE1 SIZE2 SUM PEAK VOLUME SHAPE PARENT_EXTENT\"\' omode=out ofmt=ascii out=$kappa_peaks");
+
+  # Create a 2d map so that listmake doesn't complain.
+  my $temp2dmap = $emission . "_temp2d";
+  $Mon{ndfpack_mon}->obeyw('ndfcopy', "in=$emission out=$temp2dmap trimwcs=True trim=True");
+
+  my $listmake_params = "mode=file file=$kappa_peaks ndf=$temp2dmap outcat=kappa_peaks.FIT describe=True";
+
+  push @intermediates, "$kappa_peaks";
+  push @intermediates, "$temp2dmap";
+
+  $Mon{kappa_mon}->obeyw( "listmake", "$listmake_params" );
+  $kappa_peaks = "kappa_peaks.FIT";
+  orac_say("Created $kappa_peaks");
+  push @intermediates, "$kappa_peaks";
+
+  $Frm->push_intermediates(@intermediates);
+
+  _CREATE_GRAPHIC_FROM_FILE_ FILE=$emission TYPE=PNG POINTCAT=$kappa_peaks XRES=64,256,1024 ADDRES=1
+}
+
