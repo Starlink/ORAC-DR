@@ -36,24 +36,26 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 # Find an emission and extent file from the frame.
 my ($extent, $extent_cat);
 _RETRIEVE_TAG_ TAG=extent
+
 my $tag_status = $_RETRIEVE_TAG_{STATUS};
 if ( $tag_status) {
-    $extent = $Frm->files();
+    ($extent) = $Frm->files();
     _RETRIEVE_TAG_ TAG=extent_cat THROW=true
-    $extent_cat = $Frm->files();
+    ($extent_cat) = $Frm->files();
 }
+
 _RETRIEVE_TAG_ TAG=emission THROW=true
 my ($emission) = $Frm->files();
 
 
 
-if ( $tag_status)
+if ($tag_status)
 {
     # Holder for intermediate files that should be tidied up.
     my @intermediates = ();
 
     orac_say("Identifying peaks of emission in $emission" .
-             " using extent clumps from  $extent." );
+             " using extents from $extent." );
 
 
 # Set up the fellwalker params.
@@ -90,8 +92,6 @@ if ( $tag_status)
     $Mon{'kappa_mon'}->obeyw("stats", "$extent");
     (my $ORAC_STATUS, my $nclumps) = $Mon{kappa_mon}->get("stats", "maximum");
 
-
-
     my $peakcat = $Frm->inout("_peaks.FITS");
     orac_say("output file is $peakcat");
 
@@ -126,7 +126,7 @@ if ( $tag_status)
                  " identified inside island $i.");
 
         # Get the ID of the parent extent.
-        chomp(my $parent_extent_id =`$stilts_path tpipe in=stilts_$extent_cat cmd='keepcols ID;select index==$i' omode=out ofmt=csv-nohead`);
+        chomp(my $parent_extent_id =`$stilts_path tpipe in=$extent_cat cmd='keepcols ID;select index==$i' omode=out ofmt=csv-nohead`);
 
 
         # Clean up various files
@@ -155,8 +155,14 @@ if ( $tag_status)
     for my $p (0..$#peakcats){
         $counter = $p + 1;
         $inlist="$inlist" ."in$counter=$peakcats[$p] ";
-
-        $incmd = "$incmd" . " icmd$counter=\'addcol ID -before \$1  \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\"; addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\"\' ";
+	my $id = "addcol ID -before \$1 \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\";";
+	my $parent = "addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\";";
+	my $ra = "replacecol -name RA -desc \"RA of peak pixel\" PEAK1 PEAK1;";
+	my $dec = "replacecol -name DEC -desc \"Dec of peak pixel\" PEAK2 PEAK2;";
+	my $peak = "replacecol -name PEAK_FLUX PEAK PEAK;";
+	my $deletecol = "delcols \"CEN1 CEN2 SIZE1 SIZE2 SUM VOLUME SHAPE\";";
+	$incmd = "$incmd" . " icmd$counter=\'$id $parent $ra $dec $peak $deletecol\'";
+#        $incmd = "$incmd" . " icmd$counter=\'addcol ID -before \$1  \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\"; addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\"\' ";
 
     }
 
@@ -171,8 +177,10 @@ if ( $tag_status)
     $Frm->push_intermediates(@intermediates);
 
     # Push the output peaks catalogue into the current frame.
-    $Frm->files($peakcat);
-    _SET_TAG_ TAG=peaks_cat
+    if (-e $peakcat){
+      $Frm->files($peakcat);
+      _SET_TAG_ TAG=peaks_cat
+    }
 
 }
 
