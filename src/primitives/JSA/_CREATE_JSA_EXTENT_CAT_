@@ -13,6 +13,16 @@ The current frame will containt the 'extent' sdf -- the clump file
 produced by ORAC-DR -- after running this recipe. It will also be
 tagged as 'extent'. The original frame will be tagged as "emission".
 
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP
+
+Whether to operate on the group or not.
+
+=back
+
 =head1 COPYRIGHT
 
 Copyright (C) 2014 Science and Technology Facilities Council.
@@ -33,16 +43,19 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 =cut
 
+# Determine on which object to work.
+my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
+my $Obj = $group ? $Grp : $Frm;
 
-# Only continue if there is only 1 file in the frame.
-orac_termerr('Received a frame with the wrong number of files')
-  unless $Frm->nfiles() == 1;
+# Only continue if there is only 1 file in the object.
+orac_termerr('Received an object with the wrong number of files')
+  unless $Obj->nfiles() == 1;
 
 # Tag the original file so it can be achieved.
-_SET_TAG_ TAG=emission
+_SET_TAG_ TAG=emission GROUP=$group
 
 # Get the file
-my ($file) = $Frm->files();
+my $file = $Obj->file(1);
 
 
 # Holder for intermediate files that should be tidied up
@@ -56,15 +69,22 @@ orac_say("Identifying regions of emission in $file." );
 #this waveband. Currently not implemented.
 
 # Set up the names of the files.
-my $snr = $Frm->inout("_snr");
-my $clumps = $Frm->inout("_extents_snr");
-my $outcat = $Frm->inout("_extents.FITS");
-my $out = $Frm->inout("_extents");
-my $log = $Frm->inout("_extents.log");
+my $jsa_tiles = $Obj->uhdr('JSA_TILES') // 0;
+
+my $snr    =  $jsa_tiles ? $Obj->inout_jsatile('snr', 1)
+                         : $Obj->inout('_snr');
+my $clumps =  $jsa_tiles ? $Obj->inout_jsatile('snr_extent', 1)
+                         : $Obj->inout('_snr_extent');
+my $outcat = ($jsa_tiles ? $Obj->inout_jsatile('extent', 1)
+                         : $Obj->inout('_extent')) . '.fits';
+my $out    =  $jsa_tiles ? $Obj->inout_jsatile('extent-mask', 1)
+                         : $Obj->inout('extent-mask');
+
+my $log = $Obj->inout('extent') . '.log';
 my $fc_param = "jsa_extent.par";
 
 # Create the SNR file.
-_CALC_SNR_IMAGE_ OUT=$snr STATS=0 GROUP=0
+_CALC_SNR_IMAGE_ OUT=$snr STATS=0 GROUP=$group
 orac_say("Created SNR map from $file." );
 
 # Create catalogue from SNR map.
@@ -135,17 +155,15 @@ if ($nclumps > 0){
     orac_say('Added ID column to output extent catalogue');
 
     # Push intermediates to frame
-    $Frm->push_intermediates(@intermediates);
+    $Obj->push_intermediates(@intermediates);
 
     # Push the output clump into the current frame.
-    $Frm->files($out);
+    $Obj->files($out);
     # Tag the current state clump file
-    _SET_TAG_ TAG=extent
+    _SET_TAG_ TAG=extent GROUP=$group
 
-    # Push the output extent catalogue into the current frame.
-    $Frm->files($outcat);
-    _SET_TAG_ TAG=extent_cat
-
+    # Push the output extent catalogue into the uhdr.
+    $Obj->uhdr('JSA_EXTENT_CAT', $outcat);
 }
 
 

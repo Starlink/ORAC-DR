@@ -12,6 +12,16 @@ JSA style 'peaks' catalogue for each input file.
 It uses stilts to concatenate the peak catalaogues for each extent
 island, and also to add in the IDs and the IDS of the parent extent.
 
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP
+
+Whether to operate on the group or not.
+
+=back
+
 =head1 COPYRIGHT
 
 Copyright (C) 2014 Science and Technology Facilities Council.
@@ -32,20 +42,24 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 =cut
 
+# Determine on which object to work.
+my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
+my $Obj = $group ? $Grp : $Frm;
 
 # Find an emission and extent file from the frame.
 my ($extent, $extent_cat);
-_RETRIEVE_TAG_ TAG=extent
+_RETRIEVE_TAG_ TAG=extent GROUP=$group
 
 my $tag_status = $_RETRIEVE_TAG_{STATUS};
 if ( $tag_status) {
-    ($extent) = $Frm->files();
-    _RETRIEVE_TAG_ TAG=extent_cat THROW=true
-    ($extent_cat) = $Frm->files();
+    $extent = $Obj->file();
+    $extent_cat = $Obj->uhdr('JSA_EXTENT_CAT');
+    orac_termerr('Extent tag found but no JSA_EXTENT_CAT uhdr')
+        unless defined $extent_cat;
 }
 
-_RETRIEVE_TAG_ TAG=emission THROW=true
-my ($emission) = $Frm->files();
+_RETRIEVE_TAG_ TAG=emission THROW=1 GROUP=$group
+my $emission = $Obj->file();
 
 
 
@@ -92,14 +106,16 @@ if ($tag_status)
     $Mon{'kappa_mon'}->obeyw("stats", "$extent");
     (my $ORAC_STATUS, my $nclumps) = $Mon{kappa_mon}->get("stats", "maximum");
 
-    my $peakcat = $Frm->inout("_peaks.FITS");
+    my $jsa_tiles = $Obj->uhdr('JSA_TILES') // 0;
+    my $peakcat = ($jsa_tiles ? $Obj->inout_jsatile('peak', 1)
+                              : $Obj->inout('_peaks')) . '.fits';
     orac_say("output file is $peakcat");
 
 # Now create each one as an ndf.
     for (my $i = 1; $i <= $nclumps; $i++)
     {
         # Create a postage stamp of just this clumps.
-        my $postage = $Frm->inout("_$i" . "_clump");
+        my $postage = $Obj->inout("_$i" . "_clump");
 
         orac_say("Finding peaks for clump $i.");
         my $clumpstring = "$extent.more.CUPID.CLUMPS($i)";
@@ -114,9 +130,9 @@ if ($tag_status)
         my ($ORAC_STATUS, $medrms) = $Mon{kappa_mon}->get("stats", "median");
 
         # Set up file names.
-        my $outclumps = $Frm->inout("_$i" . "_peak");
-        my $jsacat = $Frm->inout("_$i" . "_peak.FITS");
-        my $log = $Frm->inout("_$i" . "_peak.log");
+        my $outclumps = $Obj->inout("_$i" . "_peak");
+        my $jsacat = $Obj->inout("_$i" . "_peak.FITS");
+        my $log = $Obj->inout("_$i" . "_peak.log");
 
         # Perform the clumpfinding
         $Mon{'cupid_mon'}->obeyw("findclumps", "in=$postage out=$outclumps jsacat=$jsacat log=$log outcat=! rms=$medrms $cupidparams");
@@ -174,12 +190,11 @@ if ($tag_status)
     system($stilts_arguments);
 
     orac_say("Concatenated individual peak catalogues into $peakcat");
-    $Frm->push_intermediates(@intermediates);
+    $Obj->push_intermediates(@intermediates);
 
-    # Push the output peaks catalogue into the current frame.
+    # Push the output peaks catalogue into the uhdr.
     if (-e $peakcat){
-      $Frm->files($peakcat);
-      _SET_TAG_ TAG=peaks_cat
+        $Obj->uhdr('JSA_PEAK_CAT', $peakcat);
     }
 
 }

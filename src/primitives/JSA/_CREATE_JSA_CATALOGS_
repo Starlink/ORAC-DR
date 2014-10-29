@@ -1,0 +1,80 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_CREATE_JSA_CATALOGS_ - Create JSA-style catalogs
+
+=head1 DESCRIPTION
+
+This primitive takes a set of maps and produces JSA style 'extent' and
+'peak' catalogs for each of them.  It uses stilts to manipulate
+catalogs produced by CUPID FINDCLUMPS.
+
+NOT YET IMPLEMENTED: cross-references between maps.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see L<http://www.gnu.org/licenses/>.
+
+=cut
+
+orac_termerr('Received a frame with the wrong number of files')
+    unless $Frm->nfiles() == 1;
+
+# Determine whether this looks like a JSA tile or not.
+my $in = $Frm->file();
+my $hdr = $Frm->hdr();
+$Mon{'ndfpack_mon'}->obeyw('wcsattrib', "ndf=$in mode=get name=projection");
+(undef, my $projection) = $Mon{'ndfpack_mon'}->get('wcsattrib', 'value');
+
+my $jsa_tiles = 0;
+if (($projection eq 'HEALPix') and (defined $hdr->{'TILENUM'})) {
+    orac_say("File looks like a JSA tile: $in");
+    $jsa_tiles = 1;
+}
+else {
+    orac_say("File does not look like a JSA tile: $in");
+}
+
+my @intermediates;
+
+do {
+    # Create temporary frame and group of the appropriate class.
+    _DETERMINE_CLASSES_ GROUP_NAME=cat
+    my ($Frm, $Grp) = map {$_DETERMINE_CLASSES_{$_}} qw/FRAME GROUP/;
+
+    # Set up the frame.
+    $Frm->configure([$in]);
+
+    # Set up the group.
+    $Grp->files($in);
+    $Grp->jsa_filename_bits(1);
+    $Grp->asn_id($Frm->jsa_pub_asn_id());
+    $Grp->uhdr('JSA_TILES', $jsa_tiles);
+
+
+    _CREATE_JSA_EXTENT_CAT_ GROUP=1
+
+    _CREATE_JSA_PEAKS_CAT_ GROUP=1
+
+    _CREATE_JSA_CAT_PREVIEW_ GROUP=1
+
+
+    @intermediates = $Grp->intermediates();
+};
+
+$Grp->push_intermediates(@intermediates);
