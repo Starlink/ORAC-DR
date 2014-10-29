@@ -198,6 +198,15 @@ if ( $nx > $ny ) {
    }
 }
 
+
+# Suggest possible locations for image magick convert?
+my $IMCONVERT = "/usr/local/bin/convert";
+unless (-e $IMCONVERT) {
+  $IMCONVERT = "/usr/bin/convert";
+  unless (-e $IMCONVERT) {
+    $IMCONVERT = "";
+  }
+}
 # Check for abnormal data
 # =======================
 
@@ -297,10 +306,9 @@ for ( my $i = 0; $i < $nx; $i++ ) {
          $minmax = "scale low=${min} high=${max}" if ( $zerorange );
 
          my $lut = $Frm->uhdr('MAKE_GREYSCALE_THUMBNAILS') ? 'grey' : 'cubehelix0';
+	 # Set badcol to be background.
          my $badcol = 0;
-         if ( $lut eq 'cubehelix0' ) {
-           $badcol = 0;
-         }
+
          $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no badcol=$badcol ";
          $params .= "mode=${minmax} lut=$ENV{KAPPA_DIR}/${lut}_lut.sdf reset";
          $Mon{'kapview_mon'}->obeyw( "display", "$params" );
@@ -322,16 +330,19 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 # Find out how many clumps there are.
 	   $Mon{'kappa_mon'}->obeyw("stats", "$extents");
 	   (my $ORAC_STATUS, my $nclumps) = $Mon{kappa_mon}->get("stats", "maximum");
-
-	   orac_say("\"$outclumpfile=$i/$type\"");
-	   for ( my $i = 1; $i <= $nclumps; $i++ ){
-	      $params = "labpos=! mode=good clear=no style='color=red' device=\"$outclumpfile-$i/$type\"";
-	     $Mon{'kapview_mon'}->obeyw("contour",  "ndf='$extents.more.cupid.clumps\($i\)' $params");
-
+	   # Create a temp file to hold the clump mask with bad pixels
+	   # set to 0 for contouring.
+	   my $nomagic = new ORAC::TempFile;
+	   $Mon{'kappa_mon'}->obeyw('nomagic', "in=$extents out=$nomagic repval=0");
+	   $params = "labpos=! mode=linear firstcnt=0.5 stepcnt=1 ncont=$nclumps clear=no style='color=red' device=\"$outclumpfile/$type\" key=false";
+	   $Mon{'kapview_mon'}->obeyw("contour", "ndf=$nomagic $params");
+	   if ($IMCONVERT){
+	     system("$IMCONVERT $outclumpfile -transparent gray90 $outclumpfile");
+	     system("$IMCONVERT $outfile $outclumpfile -composite $outclumpfile");
 	   }
+
 	 }
 
-	 orac_say($ENV{ADAM_DIR});
 
 # If a peaks catalogues was given, plot the peaks.
 	 if ( defined( $pointcat) ) {
@@ -343,9 +354,17 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 	   $Mon{'kappa_mon'}->control("setenv", "PGPLOT_FOREGROUND=BLACK");
 	   $Mon{'kappa_mon'}->control("setenv","PGPLOT_BACKGROUND=GRAY90");
 
-	   $params = "incat=$pointcat plot=mark marker=5 device=\"$outcatfile/$type\" style='size=1,color=green' frame=sky";
+	   $params = "incat=$pointcat plot=mark marker=5 device=\"$outcatfile/$type\" style='size=3,color=red,width=3' frame=sky";
 
 	   $Mon{'kappa_mon'}->obeyw("listshow", "$params");
+	   # Overlay the peaks on the map
+	   if ($IMCONVERT) {
+	     system("$IMCONVERT $outcatfile -transparent gray90 $outcatfile");
+
+	     system("$IMCONVERT $outfile $outcatfile -composite $outcatfile");
+
+	   }
+
 	 }
        }
 
@@ -482,6 +501,10 @@ for ( my $i = 0; $i < $nx; $i++ ) {
          $exif->WriteInfo( $outfile );
          $exif->WriteInfo( $outvecfile ) if ( defined $vector_file )
                                               && -e $outvecfile;
+	 $exif->WriteInfo( $outclumpfile ) if (defined $outclumpfile)
+	                                       && -e $outclumpfile;
+	 $exif->WriteInfo( $outcatfile ) if (defined $outcatfile)
+	                                       && -e $outcatfile;
       }
    }
 }
