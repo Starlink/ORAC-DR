@@ -87,8 +87,8 @@ my $outcat = ($jsa_tiles ? $Obj->inout_jsatile('extent', 1)
 my $out    =  $jsa_tiles ? $Obj->inout_jsatile('extent-mask', 1)
                          : $Obj->inout('extent-mask');
 
-my $log = $Obj->inout('extent') . '.log';
-my $fc_param = "jsa_extent.par";
+my $log = new ORAC::TempFile;
+my $fc_param = new ORAC::TempFile;
 
 # Create the SNR file.
 _CALC_SNR_IMAGE_ OUT=$snr STATS=0 GROUP=$group
@@ -115,7 +115,8 @@ print $fc_h "FellWalker.MaxJump=0\n";
 close $fc_h;
 
 my $params = "in=$snr rms=1.0 config='^$fc_param' " .
-  "method=fellwalker out=$clumps deconv=no logfile=$log wcspar=True outcat=! shape=poly";
+  "method=fellwalker out=$clumps deconv=no logfile=$log " .
+  "wcspar=True outcat=! shape=poly";
 
 $Mon{'cupid_mon'}->obeyw("findclumps", $params);
 
@@ -131,12 +132,9 @@ push @intermediates, $clumps;
 # If any clumps of emission were found, carry on.
 if ($nclumps > 0){
 
-    # Temporary catalogue file before being fixed up.
-    my $tempoutcat = "temp-$outcat";
-    push @intermediates, $tempoutcat;
     # Extract catalogue from original file so it is in flux units.
     my $ecparams = "mask=$clumps data=$file out=$out deconv=False" .
-        " jsacat=$tempoutcat outcat=! wcspar=True shape=poly fwhmbeam=0";
+        " jsacat=$outcat outcat=! wcspar=True shape=poly fwhmbeam=0";
 
     $Mon{'cupid_mon'}->obeyw("extractclumps", "$ecparams");
     orac_say("$nclumps contiguous regions of detected emission" .
@@ -157,11 +155,11 @@ if ($nclumps > 0){
     my $area = "replacecol -name AREA VOLUME VOLUME;";
 
 
-    push @intermediates, $tempoutcat;
-    my $stilts_com = "$stilts_path tpipe in=$tempoutcat cmd=\'$id $ra $dec $deletecol $area $flux\' omode=out out=$outcat ofmt=FITS-PLUS";
-
+    # Full stilts command.
+    my $stilts_com = "$stilts_path tpipe in=$outcat cmd=\'$id $ra $dec $deletecol $area $flux\' omode=out out=$outcat ofmt=FITS-PLUS";
 
     system($stilts_com);
+
     orac_say('Added ID column to output extent catalogue');
 
     # Push intermediates to frame
