@@ -188,7 +188,11 @@ sub asn_id {
 =item B<product_id>
 
 Retrieves the product identifier. This is a combination
-of the current product and the subsystem.
+of the current product and the subsystem.  In some cases
+the first part of the product ID should not be based on
+the current product by default.  In this case the
+set_product_id_prefix method can be used to set an alternative
+which is used in preference to the product.
 
  $productID = $obj->product_id();
 
@@ -208,9 +212,9 @@ sub product_id {
   my $self = shift;
   my $product = shift;
 
-  # Get the current product if we did not have an override
-  $product = $self->product()
-    unless defined $product;
+  # Get the current product if we did not have an override or a set
+  # product ID prefix.
+  $product //= $self->get_product_id_prefix() // $self->product();
 
   # Get the subsystem identifier
   my $subsys;
@@ -227,6 +231,28 @@ sub product_id {
   }
 
   return $product . "-" . $subsys;
+}
+
+=item B<set_product_id_prefix>
+
+Sets the current product ID prefix.
+
+=cut
+
+sub set_product_id_prefix {
+  my $self = shift;
+  $self->{'Product_ID_Prefix'} = shift;
+}
+
+=item B<get_product_id_prefix>
+
+Gets the current product ID prefix.
+
+=cut
+
+sub get_product_id_prefix {
+  my $self = shift;
+  return $self->{'Product_ID_Prefix'};
 }
 
 =item B<jsa_filename_bits>

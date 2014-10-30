@@ -156,7 +156,7 @@ sub collate_headers {
     # If the product was set, try also to include the product ID
     # header.
     if ($self->can('product_id')) {
-      my $productID = $self->product_id($product);
+      my $productID = $self->product_id();
       push @items, new Astro::FITS::Header::Item(Keyword => 'PRODID',
                                                  Value   => $productID,
                                                  Comment => 'Product ID',
