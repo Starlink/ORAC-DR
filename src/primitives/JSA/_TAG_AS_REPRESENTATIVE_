@@ -30,6 +30,12 @@ Whether to display the current Group or Frame (see GROUP) file.  [1]
 A file to be plotted in the background of the preview image.  For example
 an emission map on top of which catalog objects should be plotted.
 
+=item PREVIEW_ONLY = LOGICAL (Given)
+
+Suppress actual processing of the input file and instead only generate
+the preview image.  This is useful when a preview is required for a
+plane which does not have any SDF product files.
+
 =item FILE = STRING (Given)
 
 By default the file to tag comes from either the current Frame or
@@ -40,6 +46,11 @@ supplied, then this file overrides the GROUP argument. ['']
 
 Whether to operate on the current Group or Frame. Defaults to
 Frame. [0]
+
+=item POINTCAT = STRING (Given)
+
+Point catalog for plotting.  (Applies only when PREVIEW_BACKGROUND is
+given.)
 
 =item PRODUCT = STRING (Given)
 
@@ -110,6 +121,8 @@ my $comment = get_prim_arg( $_PRIM_ARGS_, "COMMENT", "Pipeline product" );
 my $update = ( $_PRIM_ARGS_->{UPDATE} ? 1 : 0 );
 my $vector_file = get_prim_arg( $_PRIM_ARGS_, 'VECTOR_FILE', undef );
 my $preview_background = get_prim_arg( $_PRIM_ARGS_, 'PREVIEW_BACKGROUND', undef );
+my $preview_only = get_prim_arg( $_PRIM_ARGS_, 'PREVIEW_ONLY', 0 );
+my $point_cat = get_prim_arg( $_PRIM_ARGS_, 'POINTCAT', undef );
 
 $product = defined( $product ) ? $product : $suffix;
 
@@ -121,9 +134,15 @@ my ( $in, $out ) = $jsa_tiles ? $Obj->inout_jsatile($suffix, 1)
 
 $in = $file if ( defined( $file ) );
 
-$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
-
-orac_print "$in to $out:\n Tagged as representative.\n\n";
+unless ($preview_only) {
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+  orac_print "$in to $out:\n Tagged as representative.\n\n";
+}
+else {
+  # For the sake of generating the previews, consider the output (file to
+  # be plotted) to just be the input.
+  $out = $in;
+}
 
 # Product identifier for the header.  If there is a product ID prefix in play
 # then we must use it rather than forcing the use of the product name as the
@@ -134,14 +153,16 @@ my $productID = $Obj->can("product_id")
     ? $Obj->product_id($Obj->get_product_id_prefix() // $product)
     : "";
 my $productIDcomment = 'Product ID';
-_SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$product COMMENT=$comment
-if ($productID) {
-  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODID VALUE=$productID COMMENT=$productIDcomment
+unless ($preview_only) {
+  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$product COMMENT=$comment
+  if ($productID) {
+    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODID VALUE=$productID COMMENT=$productIDcomment
+  }
 }
 
 # If we are also processing a FITS vector file, then attempt to do the
 # equivalent FITS header operation to it too.
-if ( defined $vector_file ) {
+if ( defined $vector_file and not $preview_only ) {
   my $status = 0;
   my $fitsvector = Astro::FITS::CFITSIO::open_file( $vector_file, READWRITE,
                                                     $status );
@@ -154,7 +175,7 @@ if ( defined $vector_file ) {
   }
 }
 
-if ( $display ) {
+if ( $display and not $preview_only ) {
   _DISPLAY_FILE_ FILE=$out GROUP=$group
 }
 
@@ -162,13 +183,25 @@ if ( defined( $vector_file ) ) {
   _CREATE_GRAPHIC_FROM_FILE_ FILE=$out ADDRES=1 XRES=64,256,1024 TYPE=PNG PRODUCT=$product PRODUCTID=$productID VECTOR_FILE=$vector_file
 
 } elsif (defined $preview_background) {
-  _CREATE_GRAPHIC_FROM_FILE_ FILE=$preview_background TYPE=PNG EXTENTS=$out XRES=64,256,1024 ADDRES=1 SIGHIGH=5 SIGLOW=2 PRODUCT=$product PRODUCTID=$productID
+  # This is currently only used for JSA catalog previews.  In this case we
+  # want one preview for a plane which contains multiple products.  Therefore
+  # make an image OUTROOT based on the product ID prefix.
+  my $outroot = $jsa_tiles
+    ? $Obj->inout_jsatile($Obj->get_product_id_prefix(), 1)
+    : $Obj->inout($Obj->get_product_id_prefix());
+
+  if (defined $point_cat) {
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$preview_background TYPE=PNG EXTENTS=$out POINTCAT=$point_cat XRES=64,256,1024 ADDRES=1 SIGHIGH=5 SIGLOW=2 PRODUCT=$product PRODUCTID=$productID OUTROOT=$outroot
+  }
+  else {
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$preview_background TYPE=PNG EXTENTS=$out XRES=64,256,1024 ADDRES=1 SIGHIGH=5 SIGLOW=2 PRODUCT=$product PRODUCTID=$productID OUTROOT=$outroot
+  }
 
 } else {
   _CREATE_GRAPHIC_FROM_FILE_ FILE=$out ADDRES=1 XRES=64,256,1024 TYPE=PNG PRODUCT=$product PRODUCTID=$productID
 }
 
-if( $update ) {
+if( $update and not $preview_only ) {
   $Obj->force_product_update( $product, $out );
   $Obj->tagset( $suffix );
 }
