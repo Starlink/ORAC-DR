@@ -76,6 +76,18 @@ This can be a comma-seapatated list to produce graphic files at a
 series of sizes.  If it is undefined a square graphic is assumed
 using XRES to set the size.  [undef]
 
+=item SIGHIGH = FLOAT (Given)
+
+The number of standard deviations above the mean to set scale high
+to when plotting using display. Only used if SIGLOW is also given.
+Display will usually use mode=faint otherwise.
+
+=item SIGLOW = FLOAT (Given)
+
+The number of standard deviations below the mean to set scale low
+to when plotting using display. Only used if SIGLOW is also given.
+Display will usually use mode=faint otherwise.
+
 =back
 
 =head1 NOTES
@@ -180,6 +192,10 @@ my $outroot = get_prim_arg( $_PRIM_ARGS_, 'OUTROOT', $file );
 my $extents = get_prim_arg( $_PRIM_ARGS_, 'EXTENTS', undef);
 my $pointcat = get_prim_arg( $_PRIM_ARGS_, 'POINTCAT', undef);
 
+# Get plotting options
+my $siglow = get_prim_arg( $_PRIM_ARGS_, 'SIGLOW', undef);
+my $sighigh = get_prim_arg( $_PRIM_ARGS_, 'SIGHIGH', undef);
+
 # Convert list of X resolutions an array.
 if ( ref( $xres ) eq 'ARRAY' ) { $xres = join( ",", @{ $xres } ) }
 my @resx = split( ',', $xres );
@@ -218,6 +234,7 @@ $Mon{kappa_mon}->obeyw( "stats", "ndf=$file" );
 my ( $ORAC_STATUS, $sigma ) = $Mon{kappa_mon}->get( "stats", "sigma" );
 ( $ORAC_STATUS, my $max ) = $Mon{kappa_mon}->get( "stats", "maximum" );
 ( $ORAC_STATUS, my $min ) = $Mon{kappa_mon}->get( "stats", "minimum" );
+( $ORAC_STATUS, my $mean ) = $Mon{kappa_mon}->get( "stats", "mean" );
 if ( $sigma == 0 ) {
    $min += -1;
    $max +=  1;
@@ -302,16 +319,33 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 
       } elsif ( $#nondegen == 1 ) {
 
-         my $minmax = "faint";
+	my $minmax = "faint";
+	if ((defined $siglow) && (defined $sighigh)){
+	  my $low = $mean - $siglow * $sigma;
+	  my $high = $mean + $sighigh * $sigma;
+	  $minmax = "scale low=$low high=$high";
+	}
+
          $minmax = "scale low=${min} high=${max}" if ( $zerorange );
 
          my $lut = $Frm->uhdr('MAKE_GREYSCALE_THUMBNAILS') ? 'grey' : 'cubehelix0';
+	 my $neg = $Frm->uhdr('INVERT_GREYSCALE_THUMBNAILS') ? 1 : 0;
 	 # Set badcol to be background.
          my $badcol = 0;
+	 if ($neg) {
+	   $Mon->{'kapview_mon'}->obeyw("lutable", "device=\"$outfile/$type\" coltab=negative mapping=linear");
+	   # If using a negative lut, set badcol to be 1
+	   $badcol = 1;
+	 }
 
          $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no badcol=$badcol ";
-         $params .= "mode=${minmax} lut=$ENV{KAPPA_DIR}/${lut}_lut.sdf reset";
+         $params .= "mode=${minmax} ";
+	 unless ($neg) {
+	   $params .= "lut=$ENV{KAPPA_DIR}/${lut}_lut.sdf ";
+	 }
+	 $params .= "reset";
          $Mon{'kapview_mon'}->obeyw( "display", "$params" );
+
 
 	 rename("pgplot.png", "$outfile.$type");
 
@@ -334,17 +368,20 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 	   # set to 0 for contouring.
 	   my $nomagic = new ORAC::TempFile;
 	   $Mon{'kappa_mon'}->obeyw('nomagic', "in=$extents out=$nomagic repval=0");
-	   $params = "labpos=! mode=linear firstcnt=0.5 stepcnt=1 ncont=$nclumps clear=no style='color=red' device=\"$outclumpfile/$type\" key=false";
-	   $Mon{'kapview_mon'}->obeyw("contour", "ndf=$nomagic $params");
+	   $params = "labpos=! mode=linear firstcnt=0.5 stepcnt=1 " .
+	     "ncont=$nclumps clear=no style='color=red' " .
+	     "device=\"$outclumpfile/$type\" key=false";
+	   $Mon{'kapview_mon'}->obeyw("contour", "ndf=$nomagic $params QUIET");
 	   if ($IMCONVERT){
 	     system("$IMCONVERT $outclumpfile -transparent gray90 $outclumpfile");
 	     system("$IMCONVERT $outfile $outclumpfile -composite $outclumpfile");
+	     }
 	   }
 
-	 }
 
 
-# If a peaks catalogues was given, plot the peaks.
+
+	# If a peaks catalogues was given, plot the peaks.
 	 if ( defined( $pointcat) ) {
 	   $Mon{'kappa_mon'}->control("setenv", "$xresenv=$xres" );
 	   $Mon{'kappa_mon'}->control("setenv", "$yresenv=$yres" );
@@ -360,8 +397,12 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 	   # Overlay the peaks on the map
 	   if ($IMCONVERT) {
 	     system("$IMCONVERT $outcatfile -transparent gray90 $outcatfile");
-
-	     system("$IMCONVERT $outfile $outcatfile -composite $outcatfile");
+	     if ((defined $outclumpfile) && -e $outclumpfile) {
+	       system("$IMCONVERT $outclumpfile $outcatfile -composite $outcatfile");
+	     }
+	     else{
+	       system("$IMCONVERT $outfile $outcatfile -composite $outcatfile");
+	     }
 
 	   }
 
