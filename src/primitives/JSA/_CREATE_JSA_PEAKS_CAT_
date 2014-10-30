@@ -42,6 +42,9 @@ along with this program.  If not, see L<http://www.gnu.org/licenses/>.
 
 =cut
 
+use File::Temp;
+
+
 # Determine on which object to work.
 my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
 my $Obj = $group ? $Grp : $Frm;
@@ -193,7 +196,6 @@ if ($tag_status)
     system($stilts_arguments);
 
     orac_say("Concatenated individual peak catalogues into $peakcat");
-    $Obj->push_intermediates(@intermediates);
 
     # Add JSA FITS headers to the catalog.
     _COPY_JSA_HEADERS_TO_FITS_FILE_ IN=$emission OUT=$peakcat GROUP=$group PRODUCT=peak-cat
@@ -207,6 +209,28 @@ if ($tag_status)
     foreach(@peakcats){
 	unlink $_;
     }
+
+    # Create preview images.
+    my $kappa_peaks = new ORAC::TempFile;
+    # Create a fits catalogue that listmake won't complain about...
+    system("$stilts_path tpipe in=$peakcat cmd=\'addskycoords -epoch 2000 -inunit deg -outunit sex icrs icrs RA DEC RA2000 Dec2000; delcols \"ID RA DEC PEAK_FLUX PARENT_EXTENT\"\' omode=out ofmt=ascii out=$kappa_peaks");
+
+    # Create a 2d map so that listmake doesn't complain.
+    my $temp2dmap = $jsa_tiles ? $Obj->inout_jsatile('temp2dmap', 1)
+                               : $Obj->inout('_temp2dmap');
+    $Mon{ndfpack_mon}->obeyw('ndfcopy', "in=$emission out=$temp2dmap trimwcs=True trim=True");
+    push @intermediates, $temp2dmap;
+
+    my $listshowobj = new File::Temp(TEMPLATE => 'kappa_peaks_XXXXXX',
+                                     SUFFIX => '.fits');
+    my $listshowcat = $listshowobj->filename();
+    my $listmake_params = "mode=file file=$kappa_peaks ndf=$temp2dmap outcat=$listshowcat describe=True";
+
+    $Mon{kappa_mon}->obeyw( "listmake", "$listmake_params" );
+
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$emission TYPE=PNG EXTENTS=$extent POINTCAT=$listshowcat XRES=64,256,1024 ADDRES=1 SIGHIGH=5 SIGLOW=2
+
+    $Obj->push_intermediates(@intermediates);
 }
 
 else {
