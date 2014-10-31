@@ -364,20 +364,38 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 # Find out how many clumps there are.
 	   $Mon{'kappa_mon'}->obeyw("stats", "$extents");
 	   (my $ORAC_STATUS, my $nclumps) = $Mon{kappa_mon}->get("stats", "maximum");
+
 	   # Create a temp file to hold the clump mask with bad pixels
 	   # set to 0 for contouring.
 	   my $nomagic = new ORAC::TempFile;
 	   $Mon{'kappa_mon'}->obeyw('nomagic', "in=$extents out=$nomagic repval=0");
-	   $params = "labpos=! mode=linear firstcnt=0.5 stepcnt=1 " .
-	     "ncont=$nclumps clear=no style='color=red' " .
+
+
+           # Kappa will not let you produce more than 50 contours in one go, so
+           # Will have to divide the contour numbers up into clumps of 50.
+           use POSIX;
+           my $nruns = ceil($nclumps / 50);
+           my $ncont = 50; # KAPPA doesn't care if this larger than
+                           # the number of contours.
+           my $firstcnt;
+
+           for (my $i=0; $i <=$nruns; $i++){
+             $firstcnt = 0.5 + $i * 50;
+             $params = "labpos=! mode=linear firstcnt=$firstcnt stepcnt=1 " .
+	     "ncont=$ncont clear=no style='color=red' " .
 	     "device=\"$outclumpfile/$type\" key=false";
-	   $Mon{'kapview_mon'}->obeyw("contour", "ndf=$nomagic $params QUIET");
-	   if ($IMCONVERT){
-	     system("$IMCONVERT $outclumpfile -transparent gray90 $outclumpfile");
-	     system("$IMCONVERT $outfile $outclumpfile -composite $outfile");
+
+             if ($IMCONVERT){
+               $Mon{'kapview_mon'}->obeyw("contour", "ndf=$nomagic $params QUIET");
+               system("$IMCONVERT $outclumpfile -transparent gray90 $outclumpfile");
+               system("$IMCONVERT $outfile $outclumpfile -composite $outfile");
+             }
+           }
+           if ($IMCONVERT){
              unlink $outclumpfile;
-	     }
-	   }
+           }
+         }
+
 
 
 
