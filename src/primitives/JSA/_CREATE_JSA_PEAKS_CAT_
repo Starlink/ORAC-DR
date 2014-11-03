@@ -170,68 +170,73 @@ if ($tag_status)
         push @intermediates, $outclumps;
     }
 
-    # Concatenate the peak catalogues
+    # Concatenate the peak catalogues, if any were found.
 
-    # Assemble the stilts command line for tcatn.
-    my $inlist = "";
-    my $incmd = "";
-    my $counter = 0;
-    for my $p (0..$#peakcats){
-        $counter = $p + 1;
-        $inlist="$inlist" ."in$counter=$peakcats[$p] ";
-	my $id = "addcol ID -before \$1 \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\";";
-	my $parent = "addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\";";
-	my $ra = "replacecol -name RA -desc \"RA of peak pixel\" PEAK1 PEAK1;";
-	my $dec = "replacecol -name DEC -desc \"Dec of peak pixel\" PEAK2 PEAK2;";
-	my $peak = "replacecol -name PEAK_FLUX PEAK PEAK;";
-	my $deletecol = "delcols \"CEN1 CEN2 SIZE1 SIZE2 SUM VOLUME SHAPE\";";
-	$incmd = "$incmd" . " icmd$counter=\'$id $parent $ra $dec $peak $deletecol\'";
+    if (@peakcats && ($#peakcats > 0)) {
+        # Assemble the stilts command line for tcatn.
+        my $inlist = "";
+        my $incmd = "";
+        my $counter = 0;
+        for my $p (0..$#peakcats){
+            $counter = $p + 1;
+            $inlist="$inlist" ."in$counter=$peakcats[$p] ";
+            my $id = "addcol ID -before \$1 \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\";";
+            my $parent = "addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\";";
+            my $ra = "replacecol -name RA -desc \"RA of peak pixel\" PEAK1 PEAK1;";
+            my $dec = "replacecol -name DEC -desc \"Dec of peak pixel\" PEAK2 PEAK2;";
+            my $peak = "replacecol -name PEAK_FLUX PEAK PEAK;";
+            my $deletecol = "delcols \"CEN1 CEN2 SIZE1 SIZE2 SUM VOLUME SHAPE\";";
+            $incmd = "$incmd" . " icmd$counter=\'$id $parent $ra $dec $peak $deletecol\'";
+          }
+
+        # Number of input files.
+        $counter = $#peakcats+1;
+
+        my $stilts_arguments = "$stilts_path tcatn $inlist $incmd out=$peakcat nin=$counter ofmt=fits-basic";
+
+        system($stilts_arguments);
+
+        orac_say("Concatenated individual peak catalogues into $peakcat");
+
+        # Add JSA FITS headers to the catalog.
+        _COPY_JSA_HEADERS_TO_FITS_FILE_ IN=$emission OUT=$peakcat GROUP=$group PRODUCT=peak-cat
+
+        # Push the output peaks catalogue into the uhdr.
+        if (-e $peakcat) {
+          $Obj->uhdr('JSA_PEAK_CAT', $peakcat);
+        }
+
+        # Delete the intermediate .fit files.
+        foreach (@peakcats) {
+          unlink $_;
+        }
+
+        # Create preview images.
+        my $kappa_peaks = new ORAC::TempFile;
+
+        # Create a fits catalogue that listmake won't complain about...
+        system("$stilts_path tpipe in=$peakcat cmd=\'addskycoords -epoch 2000 -inunit deg -outunit sex icrs icrs RA DEC RA2000 Dec2000; delcols \"ID RA DEC PEAK_FLUX PARENT_EXTENT\"\' omode=out ofmt=ascii out=$kappa_peaks");
+
+        # Create a 2d map so that listmake doesn't complain.
+        my $temp2dmap = $jsa_tiles ? $Obj->inout_jsatile('temp2dmap', 1)
+          : $Obj->inout('_temp2dmap');
+        $Mon{ndfpack_mon}->obeyw('ndfcopy', "in=$emission out=$temp2dmap trimwcs=True trim=True");
+        push @intermediates, $temp2dmap;
+
+        my $listshowobj = new File::Temp(TEMPLATE => 'kappa_peaks_XXXXXX',
+                                         SUFFIX => '.fits');
+        my $listshowcat = $listshowobj->filename();
+        my $listmake_params = "mode=file file=$kappa_peaks ndf=$temp2dmap outcat=$listshowcat describe=True";
+
+        $Mon{kappa_mon}->obeyw( "listmake", "$listmake_params" );
+
+        # Use "_TAG_AS_REPRESENTATIVE_" in PREVIEW_ONLY mode to generate the
+        # preview with the required JSA product headers.
+        _TAG_AS_REPRESENTATIVE_ FILE=$extent PREVIEW_ONLY=1 DISPLAY=0 GROUP=$group PRODUCT=peak-cat PREVIEW_BACKGROUND=$emission POINTCAT=$listshowcat
     }
-
-    # Number of input files.
-    $counter = $#peakcats+1;
-
-    my $stilts_arguments = "$stilts_path tcatn $inlist $incmd out=$peakcat nin=$counter";
-
-    system($stilts_arguments);
-
-    orac_say("Concatenated individual peak catalogues into $peakcat");
-
-    # Add JSA FITS headers to the catalog.
-    _COPY_JSA_HEADERS_TO_FITS_FILE_ IN=$emission OUT=$peakcat GROUP=$group PRODUCT=peak-cat
-
-    # Push the output peaks catalogue into the uhdr.
-    if (-e $peakcat){
-        $Obj->uhdr('JSA_PEAK_CAT', $peakcat);
+    else {
+        orac_say("No peaks found in any islands for this map; no peak catalog created.");
     }
-
-    # Delete the intermediate .fit files.
-    foreach(@peakcats){
-	unlink $_;
-    }
-
-    # Create preview images.
-    my $kappa_peaks = new ORAC::TempFile;
-    # Create a fits catalogue that listmake won't complain about...
-    system("$stilts_path tpipe in=$peakcat cmd=\'addskycoords -epoch 2000 -inunit deg -outunit sex icrs icrs RA DEC RA2000 Dec2000; delcols \"ID RA DEC PEAK_FLUX PARENT_EXTENT\"\' omode=out ofmt=ascii out=$kappa_peaks");
-
-    # Create a 2d map so that listmake doesn't complain.
-    my $temp2dmap = $jsa_tiles ? $Obj->inout_jsatile('temp2dmap', 1)
-                               : $Obj->inout('_temp2dmap');
-    $Mon{ndfpack_mon}->obeyw('ndfcopy', "in=$emission out=$temp2dmap trimwcs=True trim=True");
-    push @intermediates, $temp2dmap;
-
-    my $listshowobj = new File::Temp(TEMPLATE => 'kappa_peaks_XXXXXX',
-                                     SUFFIX => '.fits');
-    my $listshowcat = $listshowobj->filename();
-    my $listmake_params = "mode=file file=$kappa_peaks ndf=$temp2dmap outcat=$listshowcat describe=True";
-
-    $Mon{kappa_mon}->obeyw( "listmake", "$listmake_params" );
-
-    # Use "_TAG_AS_REPRESENTATIVE_" in PREVIEW_ONLY mode to generate the
-    # preview with the required JSA product headers.
-    _TAG_AS_REPRESENTATIVE_ FILE=$extent PREVIEW_ONLY=1 DISPLAY=0 GROUP=$group PRODUCT=peak-cat PREVIEW_BACKGROUND=$emission POINTCAT=$listshowcat
-
     $Obj->push_intermediates(@intermediates);
 }
 
