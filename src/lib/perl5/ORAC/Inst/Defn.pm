@@ -497,12 +497,6 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::PICARD";
 
-  } elsif ( $inst eq 'LCOSPECTRAL' ) {
-    $groupclass = "ORAC::Group::LCOSPECTRAL";
-    $frameclass = "ORAC::Frame::LCOSPECTRAL";
-    $calclass = "ORAC::Calib::LCOSPECTRAL";
-    $instclass = "ORAC::Inst::LCOSPECTRAL";
-
   } elsif ( $inst eq 'LCOSBIG' ) {
     $groupclass = "ORAC::Group::LCOSBIG";
     $frameclass = "ORAC::Frame::LCOSBIG";
@@ -536,6 +530,24 @@ sub orac_determine_inst_classes {
   } elsif ( $inst eq 'LCOFLI' ) {
     $groupclass = "ORAC::Group::LCOSBIG";
     $frameclass = "ORAC::Frame::LCOFLI";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
+
+  } elsif ( $inst eq 'LCOFLOYDS' ) {
+    $groupclass = "ORAC::Group::LCOFLOYDS";
+    $frameclass = "ORAC::Frame::LCOFLOYDS";
+    $calclass = "ORAC::Calib::LCOFLOYDS" ;
+    $instclass = "ORAC::Inst::LCOFLOYDS";
+
+  } elsif ( $inst eq 'LCOMEROPE' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOMEROPE";
+    $calclass = "ORAC::Calib::LCOSBIG";
+    $instclass = "ORAC::Inst::LCOSBIG";
+
+  } elsif ( $inst eq 'LCOSPECTRAL' ) {
+    $groupclass = "ORAC::Group::LCOSBIG";
+    $frameclass = "ORAC::Frame::LCOSPECTRAL";
     $calclass = "ORAC::Calib::LCOSBIG";
     $instclass = "ORAC::Inst::LCOSBIG";
 
@@ -756,11 +768,6 @@ sub orac_determine_recipe_search_path {
   } elsif ($inst =~ /^PICARD/) {
     push( @path, File::Spec->catdir( $root, "PICARD" ) );
 
-  } elsif ($inst eq 'LCOSPECTRAL') {
-    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
-    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
-    push( @path, $imaging_root );
-
   } elsif ($inst eq 'LCOSBIG') {
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
@@ -797,6 +804,25 @@ sub orac_determine_recipe_search_path {
   } elsif ($inst eq 'LCOFLI') {
     push( @path, File::Spec->catdir( $root, "LCOFLI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOFLI" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
+  } elsif ($inst eq 'LCOFLOYDS') {
+    push( @path, File::Spec->catdir( $root, "LCOFLOYDS" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "LCOFLOYDS" ) );
+    push( @path, $spectro_root );
+
+  } elsif ($inst eq 'LCOMEROPE') {
+    push( @path, File::Spec->catdir( $root, "LCOMEROPE" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOMEROPE" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+
+  } elsif ($inst eq 'LCOSPECTRAL') {
+    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
     push( @path, $imaging_root );
@@ -990,13 +1016,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $het_root );
     push( @path, $jsa_root );
     push( @path, $general_root );
-    # Setups for LCOSBIG and LCOSPECTRAL
-
-  } elsif ($inst eq 'LCOSPECTRAL') {
-    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
-    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
-    push( @path, $imaging_root );
-    push( @path, $general_root );
+    # Setups for LCOSBIG and other LCOGT instruments
 
   } elsif ($inst eq 'LCOSBIG') {
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
@@ -1039,6 +1059,28 @@ sub orac_determine_primitive_search_path {
   } elsif ($inst eq 'LCOFLI') {
     push( @path, File::Spec->catdir( $root, "LCOFLI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOFLI" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOFLOYDS') {
+    push( @path, File::Spec->catdir( $root, "LCOFLOYDS" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "LCOFLOYDS" ) );
+    push( @path, $spectro_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOMEROPE') {
+    push( @path, File::Spec->catdir( $root, "LCOMERPE" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOMEROPE" ) );
+    push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'LCOSPECTRAL') {
+    push( @path, File::Spec->catdir( $root, "LCOSPECTRAL" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "LCOSPECTRAL" ) );
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
     push( @path, $imaging_root );
@@ -1171,9 +1213,6 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'spex' ) );
     push( @path, $general_ir_root );
 
-  } elsif( $inst eq 'LCOSPECTRAL' ) {
-    push( @path, File::Spec->catdir( $root, 'lcospectral' ) );
-
   } elsif( $inst eq 'LCOSBIG' ) {
     push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
     push( @path, File::Spec->catdir( $root, 'general-optical') );
@@ -1198,6 +1237,20 @@ sub orac_determine_calibration_search_path {
 
   } elsif( $inst eq 'LCOFLI' ) {
     push( @path, File::Spec->catdir( $root, 'lcofli' ) );
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOFLOYDS' ) {
+    push( @path, File::Spec->catdir( $root, 'lcofloyds' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOMEROPE' ) {
+    push( @path, File::Spec->catdir( $root, 'lcomerope' ) );
+    push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
+    push( @path, File::Spec->catdir( $root, 'general-optical') );
+
+  } elsif( $inst eq 'LCOSPECTRAL' ) {
+    push( @path, File::Spec->catdir( $root, 'lcospectral' ) );
     push( @path, File::Spec->catdir( $root, 'lcosbig' ) );
     push( @path, File::Spec->catdir( $root, 'general-optical') );
 
@@ -1325,6 +1378,11 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon /;
 
+  } elsif ($inst eq 'LCOFLOYDS') {
+
+    @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
+      ccdpack_red ccdpack_reg atools_mon /;
+      
   } elsif ($inst =~ /^LCO/) {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
@@ -1503,6 +1561,21 @@ sub orac_configure_for_instrument {
 
     # Instrument
     $ENV{"ORAC_INSTRUMENT"} = "LCOFLI";
+
+  } elsif ( $instrument eq "LCOFLOYDS" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOFLOYDS";
+
+  } elsif ( $instrument eq "LCOMEROPE" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOMEROPE";
+
+  } elsif ( $instrument eq "LCOSPECTRAL" ) {
+
+    # Instrument
+    $ENV{"ORAC_INSTRUMENT"} = "LCOSPECTRAL";
 
   } else {
     orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");
