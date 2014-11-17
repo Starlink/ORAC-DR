@@ -11,6 +11,11 @@ emission regions using a previously-defined mask (see
 _CREATE_BASELINE_MASK_), and then collapses the resulting cube along
 the frequency axis using the RMS estimator.
 
+It also determines the noise in the baseline regions as a 3-sigma
+clipped mean (to remove residual spikes).  It stores this noise
+value in internal header RMS_MAP for later logging, and in the
+input file's actual FITS header of the same name too.
+
 =head1 ARGUMENTS
 
 =over 4
@@ -235,6 +240,18 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
         }
 
         orac_say "Created noise map in $out.";
+
+        # Find the overall RMS of the object.
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out clip=3" );
+        my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+        $Obj->uhdr( "RMS_MAP", $mean );
+        my $sp_mean = sprintf( "%.4f", $mean );
+
+        foreach my $i ( 1 .. $Obj->nfiles ) {
+           my $in = $Obj->file( $i );
+          _SET_FILE_FITS_ITEM_ FILE=$in KEY=RMS_MAP VALUE=$sp_mean
+          _SET_FILE_FITS_ITEM_ FILE=$out KEY=RMS_MAP VALUE=$sp_mean
+        }
 
         _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=noise
         $Obj->sync_headers;
