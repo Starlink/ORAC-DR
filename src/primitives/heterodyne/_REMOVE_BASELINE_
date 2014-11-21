@@ -25,20 +25,36 @@ Percentage of the full range to fit on either edge of the spectrum. [0]
 
 Whether or not to operate on the current Group object. [0]
 
-=item ORDER = INTEGER (Given)
+=item LOWER = REAL (Given)
 
-The order of the fit to use for the baseline. Zero (the default) is a
-constant, one is linear, etc. [1]
+Array of lower limits of baseline regions in km/s.  It should be
+supplied with upper limits too (cf. UPPER).  The number velocities
+should be the same as supplied in UPPER, but if not the largest
+complete set of pairs will be used.  The limits are ignored if EDGES
+is defined and positive.
 
 =item METHOD = STRING (Given)
 
 The method used to define the baseline regions in automatic mode. The
 allowed values are 'region', 'single', and 'global'. This is not used
-if the EDGES argument is defined. ['region']
+if the EDGES or LOWER or UPPER argument is defined.  ['region']
+
+=item ORDER = INTEGER (Given)
+
+The order of the fit to use for the baseline. Zero (the default) is a
+constant, one is linear, etc. [1]
 
 =item TAG = LOGICAL (Given)
 
 Whether or not to tag the resulting cubes as 'reduced'. [0]
+
+=item UPPER = REAL (Given)
+
+Array of upper limits of baseline regions in km/s.  It should be
+supplied with lower limits too (cf. LOWER).  The number velocities
+should be the same as supplied in LOWER, but if not the largest
+complete set of pairs will be used. The limits are ignored if EDGES is
+defined and positive.
 
 =back
 
@@ -93,9 +109,11 @@ All Rights Reserved.
 my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", undef );
 my $edges = get_prim_arg( $_PRIM_ARGS_, "EDGES", 0 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $ref_lower = get_prim_arg( $_PRIM_ARGS_, "LOWER", undef );
 my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "REGION" ) );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
+my $ref_upper = get_prim_arg( $_PRIM_ARGS_, "UPPER", undef );
 
 # Write a heading to structure the commentary.
 orac_say "\n\nBaseline removal";
@@ -192,7 +210,12 @@ if( ! $group ||
         $params .= " clip=$clip";
       }
 
-      # Add ranges parameter, if necessary.
+      # Decide whether or not the baseline regions are already known.
+      my $preset_bounds = defined( $ref_lower ) && defined( $ref_upper );
+
+      # Add ranges parameter, if necessary.   First define baseline
+      # regions if edge trimming has been selected.
+      my @regions;
       if( $edges ) {
         my $extent = $fubnd[2] - $flbnd[2];
         my $low1 = $flbnd[2] ;
@@ -200,6 +223,24 @@ if( ! $group ||
         my $low2 = $fubnd[2] - ( $extent * $edges / 100 ) ;
         my $high2 = $fubnd[2] ;
         $params .= " ranges='$low1,$high1,$low2,$high2' auto=false";
+
+      # Set the ranges from the supplied lower and upper bounds.
+      # This does assume that there will not be many baseline regions.
+      # It's fine if MFITTREND can accept more ranges otherwise mask first.
+      } elsif ( $preset_bounds ) {
+        my @lower = @$ref_lower;
+        my @upper = @$ref_upper;
+
+        my $range_param;
+        my $nrange = min( scalar( @lower ), scalar( @upper ) );
+        for ( my $i = 0; $i < $nrange; $i++ ) {
+           $range_param .= "$lower[$i],$upper[$i]";
+           push @regions, $lower[$i];
+           push @regions, $upper[$i];
+           $range_param .= "," unless ( $i == $nrange - 1 );
+        }
+        $params .= " ranges='$range_param' auto=false";
+
       } else {
         $params .= " auto";
       }
@@ -207,12 +248,15 @@ if( ! $group ||
       # Run MFITTREND.
       $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
-      # Report to user.
+      # Report to user.  Note ARANGES output parameter is only written
+      # in automatic mode.
       orac_print "$in to $out:\n";
       orac_print " Removed baseline using $order-order polynomial.\n";
 
       if( $method eq 'REGION' && ! $edges ) {
-        ( $ORAC_STATUS, my @regions ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+        if ( ! $preset_bounds ) {
+           ( $ORAC_STATUS, @regions ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+        }
         push( @bl_regions, \@regions );
         orac_print " Baseline regions: [";
         orac_print join ",", ( grep { defined } map { $_ % 2 ? undef : join ":", $regions[$_], $regions[$_+1] } 0..$#regions );
