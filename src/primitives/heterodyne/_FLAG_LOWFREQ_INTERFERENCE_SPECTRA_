@@ -56,6 +56,13 @@ receptor should be rejected by L<_MASK_BAD_BASELINE_LINEARITY_>.
 
 =over 4
 
+=item BASELINE_REGIONS = REAL (Given)
+
+A comma-separated list of velocity ranges each in the format v1:v2, from
+where the baseline should be tested for linearity.  It is only used
+if LINEWIDTH (or its corresonpding recipe parameter) has value "base".
+[undef]
+
 =item EDGE_CLIP = STRING (Given)
 
 The standard deviation to clip iteratively the summed non-linearity
@@ -68,16 +75,33 @@ uhdr via the recipe parameter system.  ["2.0,2.0,2.5,3.0"]
 
 =item LINEWIDTH = STRING (Given)
 
-This specifies the location of spectral-line emission.  It can be
-either "auto", which requests that the emission be found
-automatically; or it is the extent(s) of the source spectral line(s)
-measured in km/s, supplied in a comma-separated list.  For the latter
-each range may be given as bounds separated by a colon; or as a single
-value being the width about zero.  For instance "-20:50" would excise
-the region -20 to +50 km/s, and "30" would exclude the -15 to +15 km/s
-range. This argument can be overridden by the
-RECPAR_BASELINE_LINEARITY_LINEWIDTH uhdr via the recipe parameter
-system.  ["auto"]
+This specifies the location of spectral-line emission or the regions
+to analyse for bad baselines.  It can be:
+
+=over 4
+
+=item *
+
+"auto", which requests that the emission be found automatically;
+
+=item *
+
+"base" meaning test the portions of the spectrum defined by
+argument BASELINE_REGIONS; or
+
+=item *
+
+it is the extent(s) of the source spectral line(s) measured in km/s,
+supplied in a comma-separated list.  For this last option, each range
+may be given as bounds separated by a colon; or as a single value
+being the width about zero.  For instance "-20:50" would excise the
+region -20 to +50 km/s, and "30" would exclude the -15 to +15 km/s
+range.
+
+=back
+
+This argument can be overridden by the RECPAR_BASELINE_LINEARITY_LINEWIDTH
+uhdr via the recipe parameter system.  ["auto"]
 
 =item MIN_SPECTRA = INTEGER (Given)
 
@@ -178,7 +202,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011-2013 Science & Technology Facilities Council.
+Copyright (C) 2011-2014 Science & Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -214,6 +238,7 @@ if ( ! $apply ) { goto RETURN }
 # Handle arguments.
 # =================
 
+my $b_regions = get_prim_arg( $_PRIM_ARGS_, "BASELINE_REGIONS", undef );
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
 my $emission_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "auto" );
@@ -222,6 +247,12 @@ my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
 
 
 # Handle recipe parameter overrides.
+$b_regions = ( defined( $Frm->uhdr( "RECPAR_BASELINE_REGIONS" ) ) ?
+             $Frm->uhdr( "RECPAR_BASELINE_REGIONS" )              :
+             $b_regions );
+my @regions;
+if ( ref( $b_regions ) eq 'ARRAY' ) { @regions = @{ $b_regions } }
+
 $edge_clip = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP" ) ) ?
              $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_EDGE_CLIP" )              :
              $edge_clip );
@@ -252,10 +283,42 @@ my @clips = split( ',', $edge_clip );
 # Deal with the various options specifying the emission regions.
 my $auto_emission = 0;
 my $emission_count = 0;
+my $user_region = 0;
 my ( @allbounds, @emission_bounds );
+my ( @baseline_bounds );
 
 if ( lc( $emission_mask ) eq 'auto' ) {
    $auto_emission = 1;
+
+} elsif ( lc( $emission_mask ) =~ /base/ ) {
+
+# Validate baseline-region syntax and conveet from baseline bounds to
+# emission bounds leaving tokens for the first and last bounds.
+   if ( defined( $b_regions ) ) {
+      foreach ( @regions ) {
+         if ( /:/ ) {
+            my ( $lowvel, $uppvel ) = split( ":", $_ );
+            $user_region = 1;
+            push @baseline_bounds, $lowvel;
+            push @baseline_bounds, $uppvel;
+         } else {
+            $user_region = 0;
+            last;
+         }
+      }
+
+      if ( ! $user_region ) {
+         orac_err "Supplied baseline extents have invalid format\n" .
+                  "Syntax is <lower1>:<upper1>,<lower2>:<upper2>,...\n";
+      }
+
+# Sort so there lower and upper bounds can be tacked on, if necessary.
+# Assume that the user has not set overlapping bounds.
+      @baseline_bounds = sort { $a <=> $b } @baseline_bounds;
+      push @emission_bounds, "lb";
+      push @emission_bounds, @baseline_bounds;
+      push @emission_bounds, "ub";
+   }
 
 # Generate a comma-separated list if this has been turned into a stringified
 # ARRAY reference.
@@ -453,7 +516,7 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
       if ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
            $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) { $spec_bounds = "" }
 
-# Apply threshold to exclude spikes in the spectra.  Not some early
+# Apply threshold to exclude spikes in the spectra.  Note some early
 # spectra had a large bias, hence filter around the median.
       my $semirange = 20;
       $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in($spec_bounds,,) order" );
@@ -511,6 +574,20 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
          $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
       } elsif ( ! $auto_emission ) {
+
+# Substitute the spectral bounds for the dummy values so that the
+# emission is deemed to extend to the edges.
+         if ( $user_region ) {
+            my $direction = ( $ubnd->[0] - $lbnd->[0] ) / abs( $ubnd->[0] - $lbnd->[0] );
+            if ( $direction > 0 ) {
+               $emission_bounds[0] = $lbnd->[0];
+               $emission_bounds[-1] = $ubnd->[0];
+            } else {
+               $emission_bounds[0] = $ubnd->[0];
+               $emission_bounds[-1] = $lbnd->[0];
+            }
+         }
+
          orac_say( "  Masking the following velocity ranges to exclude astronomical lines:" );
          orac_say "  " . join ",", ( grep { defined } map { $_ % 2 ? undef : join ":",
                   $emission_bounds[$_], $emission_bounds[$_+1]}0..$#emission_bounds );
