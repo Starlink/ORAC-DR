@@ -73,7 +73,7 @@ Return or set the filename for QA parameters.
 
 sub qaparams {
   my $self = shift;
-  my $qaparamsfile = $self->GenericIndexAccessor( "qaparams", 0, 0, 1, 1, @_ );
+  my $qaparamsfile = $self->GenericIndexAccessor( "qaparams", 0, 0, 1, 0, @_ );
   # Find this file on disk because it will not be in ORAC_DATA_OUT
   return $self->find_file( $qaparamsfile );
 }
