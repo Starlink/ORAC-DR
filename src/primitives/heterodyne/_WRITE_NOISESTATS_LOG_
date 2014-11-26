@@ -5,9 +5,10 @@ _WRITE_NOISESTATS_LOG_
 =head1 DESCRIPTION
 
 This primitive writes the log file of the noise statistics comprising
-columns for the file name, the median Tsys, the array RMS, and the map
-RMS (from the baseline noise).  The log file takes the form of a table
-with labelled columns.
+the median Tsys, the array RMS, and the map RMS (from the baseline
+noise).  The log file takes the form of a space-separated table with
+labelled columns.  Additional columns are included for correlation
+purposes; see the notes for details.
 
 =head1 ARGUMENTS
 
@@ -31,8 +32,61 @@ processing, only the additional statistics are appended.
 
 =item *
 
-The information is obtained from the C<MEDTSYS>, C<RMS_VAR>, and
-C<RMS_MAP> headers.
+The full set of columns and from which headers the values originate is
+listed below in column order.
+
+=over 4
+
+=item Start time
+
+C<DATE-OBS>
+
+=item Observation number
+
+C<ORAC_OBSERVATION_NUMBER>
+
+=item Exposure time
+
+C<EXP_TIME>
+
+=item Approximate mean airmass
+
+C<ORAC_AIRMASS_START> and C<ORAC_AIRMASS_END>
+
+=item Mean Tau (water vapour)
+
+C<WVMTAUST> and C<WVMTAUEN>
+
+=item Filename
+
+C<$Obj-E<gt>file>
+
+=item Median system temperature (Tsys)
+
+C<MEDTSYS>
+
+=item RMS from the variance (derived from Tsys the array)
+
+C<RMS_VAR>
+
+=item RMS from the baseline noise
+
+C<RMS_MAP>
+
+=item Units applicable to the noise measurements
+
+NDF unit (any spaces replace by underscore)
+
+=item Label applicable to the noise measurements
+
+NDF label (any spaces replace by underscore)
+
+=back
+
+=item
+
+The string C<null> appears in the table should a value not be
+available.
 
 =back
 
@@ -48,7 +102,7 @@ The log file F<$ORAC_DATA_OUT/log.noisestats>.
 
 =head1 TASKS
 
-None.
+KPPA; NDFTRACE
 
 =head1 REQUIRED PERL MODULES
 
@@ -65,34 +119,98 @@ Rights Reserved.
 
 =cut
 
+# Preliminaries
+# =============
+
 # Handle arguments.
 my $Obj = get_prim_arg( $_PRIM_ARGS_, "OBJ", $Frm );
 
 # Start a log file.
 my $log = new ORAC::LogFile( 'log.noisestats' );
 
+# Create the heading.
+# ===================
+
+# Obtain the current time.
+my $time = gmtime();
+
 # Write the header if not already present.
-my $fileformat = "A30";
-my $filehead =  pack( $fileformat, "File" );
-my $header = "$filehead   median Tsys   RMS_baseline    RMS_mean";
-$log->header( $header );
+my $filehead = pack( "A32", "File" );
+my $UThead = pack( "A18", "UT" );
+
+my $title = "Noise statistic created at $time UT";
+my $field_names = "$UThead Obs  Exp_time Airmass   tau $filehead median Tsys   RMS_baseline    RMS_mean Units        Label";
+
+$log->header( "# $title",
+               "# $field_names",
+             );
 
 # Obtain the relevant parameters.
-my $name = pack( $fileformat, $Obj->file );
+# ===============================
+
+# UT start time to the nearest second.
+my $utstart = $Obj->hdr( "DATE-OBS" );
+my $utstring = "null" . " " x 14;
+if ( defined $utstart ) {
+   my @ut = split( /:/, $utstart );
+   $utstring = sprintf '%5s', $ut[0] . ":" . $ut[1] . ":" . $ut[2];
+}
+
+# Observation number.
+my $obsnum = defined( $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ) ) ?
+             sprintf "%4d", $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ) :
+             "null";
+
+# The mean airmass is strictly not the average of the start and end
+# values, but is sufficiently accurate here.
+my $airmass = "   null";
+if ( defined $Obj->uhdr( "ORAC_AIRMASS_START" ) &&
+     defined $Obj->uhdr( "ORAC_AIRMASS_END" ) ) {
+   $airmass = 0.5 * ( $Obj->uhdr( "ORAC_AIRMASS_START" ) +
+                      $Obj->uhdr( "ORAC_AIRMASS_END" ) );
+   $airmass = sprintf "%7.3f", $airmass;
+}
+
+my $tau = " null";
+if ( defined $Obj->hdrval( "WVMTAUST", 0 ) &&
+     defined $Obj->hdrval( "WVMTAUEN", -1 ) ) {
+   my $taust = $Obj->hdrval( "WVMTAUST", 0 );
+   my $tauen = $Obj->hdrval( "WVMTAUEN", -1 );
+   $tau = sprintf "%5.3f", ( 0.5 * ( $taust + $tauen ) );
+}
+
+my $exptime = "  null  ";
+if ( defined $Obj->hdr( "EXP_TIME" ) ) {
+   $exptime = sprintf "%8.3f", $Obj->hdr( "EXP_TIME" );
+}
+
+my $name = pack( "A30", $Obj->file );
 my $medtsys = defined( $Obj->hdr( "MEDTSYS" ) ) ?
               sprintf( "%12.3f", $Obj->hdr( "MEDTSYS" ) ) :
-              " " x 12;
+              " " x 8 . "null";
 
 my $rms_map = defined( $Obj->uhdr( "RMS_MAP" ) ) ?
               sprintf( "%14.4f", $Obj->uhdr( "RMS_MAP" ) ) :
-              " " x 14;
+              " " x 5 . "null" . " " x 5;
 
-my $rms_mean = " " x 14;
+my $rms_mean = " " x 10 . "null";
 if ( defined( $Obj->uhdr( "RMS_MEAN" ) ) ) {
    $rms_mean = sprintf( "%14.4f", $Obj->uhdr( "RMS_MEAN" ) );
-   $rms_mean = " " x 14 if ( $rms_mean == 0 );
+   $rms_mean = " " x 5 . "null" . " " x 5 if ( $rms_mean == 0 );
 }
 
+my $ndf = $Obj->file;
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$ndf" );
+my ( $ORAC_STATUS, $rmslabel ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "label" );
+( $ORAC_STATUS, my $rmsunits ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+
+# In a space-separated table we cannot have spaces in the label or units.
+$rmslabel =~ s/\s/_/g;
+$rmsunits =~ s/\s/_/g;
+$rmsunits = pack( "A12", $rmsunits );
+
 # Write them to a new line in the log file.
-my $logentry ="$name$medtsys$rms_map$rms_mean";
+# =========================================
+
+my $logentry = "$utstring $obsnum  $exptime $airmass $tau $name$medtsys$rms_map$rms_mean  $rmsunits $rmslabel";
 $log->addentry( $logentry );
