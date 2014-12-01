@@ -248,9 +248,11 @@ if ( ! $isok ) {
    if ( $group != 1 ||
         ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       my $params;
+      my $useref;
       my $firstobs = 1;
       my $ORAC_STATUS;
-      my ( %flat_ratio, %full_flat_ratio );
+      my ( %flat_ratio, %flat_ratio_error );
+      my ( %full_flat_ratio, %full_flat_ratio_error );
 
       orac_say "Detector gain correction";
 
@@ -259,7 +261,7 @@ if ( ! $isok ) {
       foreach my $Grp ( @dategrps ) {
          @Objs = $Grp->members;
          my $number_on_date = scalar( @Objs );
-         my @mean_spectra;
+         my ( @obsnums, @mean_spectra );
          my ( $in, $nval, $nreceptor, $ref, $units );
          my ( $array, $lbound, $ubound );
 
@@ -277,6 +279,7 @@ if ( ! $isok ) {
             $obs++;
             $in = $Obj->file;
             orac_say "Processing observation: $in.";
+            push @obsnums, $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" );
 
 # Determine valid spectral range.  This will either be the regular central 85%,
 # or to user-defined final velocity limits, whichever is more extensive.
@@ -589,6 +592,9 @@ if ( ! $isok ) {
                   next OBJECT;
                }
                orac_say "  Using the reserve reference receptor: $reserve_ref.";
+               $useref = $reserve_ref;
+            } else {
+               $useref = $ref;
             }
 
 # Obtain the mean value for the reference receptor or its reserve.
@@ -645,7 +651,12 @@ if ( ! $isok ) {
                   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri)" );
                   ( $ORAC_STATUS, my $ratio ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
                   $full_flat_ratio{$receptor} = $ratio;
+                  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri) comp=error" );
+                  ( $ORAC_STATUS, my $ratio_error ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+                  $full_flat_ratio_error{$receptor} = $ratio_error;
+
                   $flat_ratio{$receptor} = $ratio if ( uc($ratio) ne "BAD" );
+                  $flat_ratio_error{$receptor} = $ratio_error if ( uc($ratio_error) ne "BAD" );
                }
             }
 
@@ -718,6 +729,9 @@ if ( ! $isok ) {
                }
             }
          }
+
+# Log the flat field.
+         _WRITE_FLATFIELD_LOG_ RATIO=\%flat_ratio ERROR=\%flat_ratio_error REF=$useref OBSNUMBERS=\@obsnums
       }
    }
 }
