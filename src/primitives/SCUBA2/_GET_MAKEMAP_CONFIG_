@@ -96,7 +96,9 @@ my $syscfg;
 # Define a basic default config file
 if ( $Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT") ) {
   my $ql = ($Frm->uhdr("QUICKLOOK")) ? 1 : 0;
-  my $config_type = "normal";
+  # Use the base dimmconfig unless it is overwritten by specific
+  # MAKEMAP_CONFIG_TYPE uhdr.
+  my $config_type = "base";
   my $pipeline = $ql ? "ql" : "summit";
 
   # The QL pipeline only creates images for pointing and focus
@@ -112,19 +114,27 @@ if ( $Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT") ) {
 	  $Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "bright_compact"
 	 );
   }
-  # Retrieve pipeline-specific default
+  # Retrieve pipeline-specific default.
   $syscfg = $Cal->makemap_config( pipeline => $pipeline,
 				  config_type => $config_type );
-} else {
-  # Default config file
-  $syscfg = $Cal->makemap_config( config_type => $Frm->uhdr("MAKEMAP_CONFIG_TYPE") );
+} else { # For the regular pipeline (not quicklook, not summit).
+
+  # Get the requested CONFIG_TYPE and the appropriate dimmconfig.
+  # Use jsa_generic rather than base if nothing is defined.
+  if ( defined $Frm->uhdr("MAKEMAP_CONFIG_TYPE") ) {
+    $syscfg = $Cal->makemap_config( config_type => $Frm->uhdr("MAKEMAP_CONFIG_TYPE") );
+    orac_say("MAKEMAP_CONFIG_TYPE is " . $Frm->uhdr("MAKEMAP_CONFIG_TYPE") );
+  } else {
+    $syscfg = $Cal->makemap_config( config_type => 'jsa_generic' );
+    orac_say("No specific MAKEMAP_CONFIG_TYPE set: using default of jsa_generic");
+  }
 
   # Of course, it could have any old name so check that the file
   # actually exists...
   unless ( -e $syscfg ) {
-    orac_warn "Requested config file of type '".
-      $Frm->uhdr("MAKEMAP_CONFIG_TYPE")."' does not exist - using system default\n";
-    $syscfg = $Cal->makemap_config;
+    orac_warn "Requested MAKEMAP_CONFIG_TYPE '".
+      $Frm->uhdr("MAKEMAP_CONFIG_TYPE")."' does not exist: using system default type jsa_generic.\n";
+    $syscfg = $Cal->makemap_config( config_type => 'jsa_generic' );
   }
 }
 # Pointing observations of OMC1 need to have extra parameters added
@@ -138,7 +148,7 @@ if ($Frm->hdr("OBJECT") eq "OMC1" && $Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "point
 # the string is too long
 
 # Change high-pass filter to 200" for DAISY mapping of extended sources
-if ($Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "bright_extended"
+if ( (defined $Frm->uhdr("MAKEMAP_CONFIG_TYPE")) and $Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "bright_extended"
         and $Frm->hdr("SCAN_PAT") =~ /daisy/i) {
   orac_warn("Daisy observation with bright_extended:\n" .
             "    adding flt.filt_edge_largescale=200\n");
