@@ -130,6 +130,7 @@ if ( $Frm->uhdr("QUICKLOOK") || $Frm->uhdr("SUMMIT") ) {
 # Pointing observations of OMC1 need to have extra parameters added
 if ($Frm->hdr("OBJECT") eq "OMC1" && $Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "pointing") {
   $syscfg .= ",ast.zero_snr=5,ast.zero_circle=<undef>";
+  orac_warn("Pointing observation of OMC-1: adding ,ast.zero_snr=5,ast.zero_circle=<undef> to dimmconfig\n");
 }
 
 # Now modify the config for particular conditions - just append
@@ -146,11 +147,18 @@ if ($Frm->uhdr("MAKEMAP_CONFIG_TYPE") eq "bright_extended"
 
 # For Mars pointing and focus observations, disable common-mode
 # flagging of bolometers because it's so bright
-$syscfg .= ",com.noflag=1" if ($Frm->hdr("OBJECT") =~ /mars/i &&
-			       $Frm->hdr("OBS_TYPE") =~ /point|focus/i);
+if ($Frm->hdr("OBJECT") =~ /mars/i && $Frm->hdr("OBS_TYPE") =~ /point|focus/i){
+  $syscfg .= ",com.noflag=1";
+  orac_warn("Pointing or focus observation of Mars: " .
+            "disabling common-mode bolometer flagging (com.noflag=1).\n");
+
+}
 # Disable EXT model for focus observations only
-$syscfg .= ",modelorder=(com,gai,flt,ast,noi)"
-  if ($Frm->hdr("OBS_TYPE") =~ /focus/i);
+if ($Frm->hdr("OBS_TYPE") =~ /focus/i) {
+  $syscfg .= ",modelorder=(com,gai,flt,ast,noi)";
+  orac_warn("Focus observation: disabling EXT mode by addding " .
+            " ,modelorder=(com,gai,flt,ast,noi) to dimmconfig\n");
+}
 
 # A specified config file over-rides the default
 my $configfile = $syscfg;
@@ -158,15 +166,18 @@ my $config = $Frm->uhdr("RECPAR_MAKEMAP_CONFIG")
   if ( defined $Frm->uhdr("RECPAR_MAKEMAP_CONFIG") );
 
 if ( defined $config ) {
+  orac_say("User has requested config $config; checking if this exists");
   use File::Spec;
   # Test for an absolute path
   my $abs = File::Spec->file_name_is_absolute( $config );
   if ( $abs ) {
     # Use this file if it exists
     $configfile = $config if ( -e $config );
+    orac_say("User requested $configfile exists.")
   } else {
     # OK not an absolute path - check in current working dir, and
     # other known locations if necessary. Use the first match.
+    orac_say("User requested $configfile is not absolute path: searching for file.");
     use Cwd;
     my $configdir = File::Spec->catdir($ENV{STARLINK_DIR}, "share", "smurf");
     my @locations = ( getcwd(), $ENV{MAKEMAP_CONFIG_DIR}, $ENV{ORAC_DATA_OUT},
@@ -191,6 +202,7 @@ if ( defined $config ) {
 # If we're doing fakemap processing, add the relevant parameters
 # to the config file
 if (defined $Frm->uhdr("FAKEMAP")) {
+  orac_say("FAKEMAP processing requested: adjusting dimmconfig.");
   # Create a local config referencing the current config and adding fakemap params
   use File::Basename qw/basename/;
   my $tmpconfig = File::Spec->catfile($ENV{ORAC_DATA_OUT}, basename($configfile) ."_copy");
@@ -205,3 +217,4 @@ if (defined $Frm->uhdr("FAKEMAP")) {
 }
 
 $_GET_MAKEMAP_CONFIG_{CONFIG} = $configfile;
+orac_say("Makemap is using dimmconfig file $configfile", "yellow");
