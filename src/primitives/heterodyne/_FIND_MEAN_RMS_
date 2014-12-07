@@ -1,0 +1,217 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_FIND_MEAN_RMS_
+
+=head1 DESCRIPTION
+
+This primitive obtains and stores the mean RMS for reduced ACSIS cubes.
+It finds the mean RMS for the entire observation after masking
+out emission lines. These values are then printed and stored for later
+use.
+
+=head1 ARGUMENTS
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object.  [1]
+
+=item METHOD = STRING (Given)
+
+How to detect and mask out emission so as to not confuse matters when
+the RMS is determined. 'NARROW' tells the primitive to mask out the
+central 10% of the bandpass. 'STANDARD' tells the primitive to mask
+out the central 25% of the bandpass. 'WIDE' tells the primitive to
+mask out the central 50% of the bandpass. 'AUTO' tells the pipeline to
+use MFITTREND to attempt to automatically find emission and mask that
+out.  ['AUTO']
+
+=head1 OUTPUT DATA
+
+None
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS time-series data.
+
+=item *
+
+If the observed object is located in the JCMT Pointing Catalogue, then
+the line velocity and width is used to mask out the emission
+line, provided it lies within the observed spectral range.
+
+=item *
+
+The array RMS value is written to current Frame's C<RMS_MEAN> internal
+header for later logging.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, CHPIX, MFITTREND, NDFTRACE, STATS.
+
+=head1 AUTHORS
+
+Malcolm J. Currie <mjc@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Handle parameters.
+my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "AUTO" ) );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 1 );
+
+# Figure out what we're doing with groups/frames.
+my @objs;
+if ( $group == 0 ) {
+   push @objs, $Frm;
+} elsif ( $group == 1 ) {
+   push @objs, $Grp;
+} elsif ( $group == 2 ) {
+   @objs = $Grp->members;
+} else {
+   orac_throw "Programming error: GROUP parameter to _FIND_MEAN_RMS_ must be 0, 1, or 2";
+}
+
+my $ORAC_STATUS;
+
+# Loop through all the objects.
+foreach my $Obj ( @objs ) {
+   my ( $centre, $range, $lline, $uline, @flbnd, @fubnd );
+   my ( $rms, $numgood );
+   my $rmssum = 0.0;
+   my $numsum = 0.0;
+
+# Retrieve the JCMT pointing catalogue and look up the current
+# object.  If it is defined, then we use the line velocity and width
+# to mask out the line, then use the remaining (hopefully line-free)
+# regions to determine the RMS.  If the object isn't defined, then
+# we'll fit a linear baseline and use the masking from MFITTREND to
+# mask out lines.
+   use Astro::Catalog;
+   my $object = $Obj->uhdr( "ORAC_OBJECT" );
+   my $poicat = $Cal->find_file( "poi.dat" );
+   my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
+                                     File => $poicat );
+   my $result = $jcmtcat->popstarbyid( $object );
+   if ( defined( $result ) &&
+        defined( $result->misc ) &&
+        defined( $result->misc->{'velocity_range'} ) ) {
+
+      $range = $result->misc->{'velocity_range'};
+      $centre = $result->coords->rv;
+
+# Check that the velocity range lies within the data.  It will
+# be the same for all the files, which will only cover different
+# spatial regions.
+      my $in = $Obj->file;
+      $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$in" );
+      $lline = $centre - $range * 0.5;
+      $uline = $centre + $range * 0.5;
+
+      ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+      ( $ORAC_STATUS, @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+   }
+
+   foreach my $i ( 1 .. $Obj->nfiles ) {
+      my $in = $Obj->file( $i );
+      orac_print "Calculating RMS values for $in.\n";
+
+      my $temp1file = new ORAC::TempFile( 0 );
+      my $temp2file = new ORAC::TempFile( 0 );
+      my $temp3file = new ORAC::TempFile( 0 );
+      my $temp4file = new ORAC::TempFile( 0 );
+
+      if ( defined( $centre ) && defined( $range ) ) {
+
+# Mask the spectral line using the catalogue information.
+         if ( ( $lline >= $flbnd[2] && $lline <= $fubnd[2] ) ||
+              ( $uline >= $flbnd[2] && $uline <= $fubnd[2] ) ) {
+            my $params = "in=$in out=$temp1file section=',,$centre~$range' newval=bad";
+            $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+         } else {
+            $temp1file = $in;
+         }
+
+      } else {
+         $temp1file = $in;
+      }
+
+      if ( $method eq 'AUTO' ) {
+
+# Find the input NDF's bounds.
+         _GET_DIMENSIONS_
+         my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+         my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+
+# Fit and subtract a background from the spectrum.  Spectral axis
+# is the third.
+         my $params = "in=$temp1file out=$temp2file mask=$temp3file order=1 subtract";
+         $params .= " modifyin=false rmsclip=! axis=spec auto method=single";
+         $params .= " numbin=" . ( int( ( $ubnd[2] - $lbnd[2] + 1 ) / 4 ) );
+         $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+# Mask out the baselined file.
+         $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp2file in2=$temp3file out=$temp4file" );
+
+      } else {
+
+         my $centmask = 25;
+         if ( $method eq 'NARROW' ) {
+            $centmask = 10;
+         } elsif( $method eq 'WIDE' ) {
+            $centmask = 50;
+         }
+
+# Mask out the requested central portion.
+         my $params = "in=$temp1file out=$temp4file section=',,~$centmask\%' newval=bad";
+         $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+      }
+
+# Get the standard deviation across the cube.  At this point the noisy
+# borders are trimmed so can be compared with _QA_SENSITIVITY_VARIATION_
+# rms values for the individual time-series cubes.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+      ( $ORAC_STATUS, $rms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+      ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+      $rmssum += $numgood * $rms;
+      $numsum += $numgood;
+   }
+
+   my $rmsmean = $rmssum / $numsum;
+   $Obj->uhdr( "RMS_MEAN", $rmsmean );
+}
+
+# Tidy-up output.
+orac_print "\n";
