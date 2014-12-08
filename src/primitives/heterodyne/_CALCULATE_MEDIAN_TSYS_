@@ -130,31 +130,44 @@ foreach my $Obj ( @objs ) {
 # intermediates for later tidying.
    my $speccube = $Obj->file;
    orac_print "Calculating median Tsys value for $speccube.\n";
-   foreach my $i ( 1 .. $Obj->nfiles ) {
-      my ( $tile, $varout ) = $Obj->inout( "_var", $i );
 
-      $params= "in=$tile out=$varout comp=variance";
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-      push @var, $varout;
-      $Obj->push_intermediates( $varout );
+   my ( $temp_eff, $temp_var );
+   my $compvar = "";
+   if ( $Obj->nfiles > 1 ) {
 
-      push @efftime_ndf, "$in" . ".MORE.SMURF.EFF_TIME";
-   }
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+         my ( $tile, $varout ) = $Obj->inout( "_var", $i );
+
+         $params= "in=$tile out=$varout comp=variance";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         push @var, $varout;
+         $Obj->push_intermediates( $varout );
+
+         push @efftime_ndf, "$in" . ".MORE.SMURF.EFF_TIME";
+      }
 
 # Paste the effective-time arrays.
-   my $temp_eff = new ORAC::TempFile( 0 );
-   _PASTE_FILES_ FILES=\@efftime_ndf OUT=$temp_eff
+      $temp_eff = new ORAC::TempFile( 0 );
+      _PASTE_FILES_ FILES=\@efftime_ndf OUT=$temp_eff
+
+# Paste the variance arrays.
+      $temp_var = new ORAC::TempFile( 0 );
+      _PASTE_FILES_ FILES=\@var OUT=$temp_var
+
+# It is a single tile so no pasting is required.  Use the
+# relevant arrays directly.
+   } else {
+      $temp_eff = $speccube . ".MORE.SMURF.EFF_TIME";
+      $temp_var = $speccube;
+      $compvar = " comp=error";
+   }
 
 # Obtain the median eff_time.
    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_eff order" );
    ( $ORAC_STATUS, my $median_eff_time ) = $Mon{'kappa_mon'}->get( "stats", "median" );
 
-# Paste the variance arrays.
-   my $temp_var = new ORAC::TempFile( 0 );
-   _PASTE_FILES_ FILES=\@var OUT=$temp_var
-
 # Obtain the median variance.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_var  order" );
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_var$compvar order" );
    ( $ORAC_STATUS, my $median_variance ) = $Mon{'kappa_mon'}->get( "stats", "median" );
 
 # Get the backend degradation factor.
