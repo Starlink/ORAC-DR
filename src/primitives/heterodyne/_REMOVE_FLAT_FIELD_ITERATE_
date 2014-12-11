@@ -483,7 +483,6 @@ if ( ! $isok ) {
          my $ratiofile = new ORAC::TempFile( 0 ); # Current iteration's ratios
          my $spectfile = new ORAC::TempFile( 0 ); # Mean spectra for each receptor
          my $temp4file = new ORAC::TempFile( 0 );
-         my $temp7file = new ORAC::TempFile( 0 );
          my $temp5file = new ORAC::TempFile( 0 ); # Thresholded spectra for each receptor
          my $temp6file = new ORAC::TempFile( 0 ); # Integrated flux over thresholded spectra
          my $temp8file = new ORAC::TempFile( 0 ); # Sum of differences between current and
@@ -508,12 +507,12 @@ if ( ! $isok ) {
 # Grow the vector ratios into an array with the dimensions of the mean
 # spectra.
             } else {
-               $params = "in=$temp7file out=$temp9file axes=[0,1] ";
+               $params = "in=$previousfile out=$temp9file axes=[0,1] ";
                $params .= "lbound=$lower_bound ubound=$upper_bound";
                $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Apply the ratio to the spectra.
-               $params = "in1=$spectfile in2=$temp9file out=$temp4file";
+               $params = "in1=$mean_spectra_by_date in2=$temp9file out=$temp4file";
                $Mon{'kappa_mon'}->obeyw( "div", "$params" );
                $params = "in=$temp4file out=$spectfile trim trimwcs";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
@@ -603,41 +602,32 @@ if ( ! $isok ) {
             ( $ORAC_STATUS, my $refvalue ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
 # Normalize to the value in the reference receptor.
-            $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp6file out=$temp7file scalar=$refvalue" );
+            $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp6file out=$ratiofile scalar=$refvalue" );
 
-# Initialise the vector of ratios and the previous version.
-            if ( $first ) {
-               $params = "in=$temp7file out=$previousfile";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$previousfile" );
-               ( $ORAC_STATUS, $ratio_shift ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-
-               $params = "in=$previousfile out=$ratiofile";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-               $first = 0;
-
-            } else {
-
-# Sum the differences for the non-reference receptors.
-               $params = "ia=$temp7file ib=$previousfile out=$temp8file exp=abs(ia-ib)";
-               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file" );
-               ( $ORAC_STATUS, $ratio_shift ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-               $ratio_shift = $ratio_shift / max( $nval - 1, 1 );
-               my $fs_ratio = sprintf( "%.4f", $ratio_shift );
-               orac_say "  Ratio shift is $fs_ratio.";
-
-# Prepare for the next iteration.
-               $params = "in=$temp7file out=$previousfile";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            if ( ! $first ) {
 
 # Update the ratios for the factors derived in the current iteration.
-               $params = "in1=$ratiofile in2=$temp7file out=$temp9file";
+               $params = "in1=$previousfile in2=$ratiofile out=$temp9file";
                $Mon{'kappa_mon'}->obeyw( "div", "$params" );
                $params = "in=$temp9file out=$ratiofile";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Sum the differences for the non-reference receptors.  Since the
+# reference receptor is by defintion set to 1.0, there is one fewer
+# degree of freedom.
+               $params = "ia=$ratiofile ib=$previousfile out=$temp8file exp='abs(ia-ib)'";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file" );
+               ( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+               $ratio_shift = $total / max( $nval - 1, 1 );
+               my $fs_ratio = sprintf( "%.4f", $ratio_shift );
+               orac_say "  Ratio shift is $fs_ratio.";
             }
+
+# Prepare for the next iteration.  This iteration's ratios is the
+# next iteration's previous set of ratios.
+            $params = "in=$ratiofile out=$previousfile";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
 # Report the receptor ratios.
 # ---------------------------
