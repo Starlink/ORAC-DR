@@ -251,7 +251,7 @@ if ( ! $isok ) {
       my $useref;
       my $firstobs = 1;
       my $ORAC_STATUS;
-      my ( %flat_ratio, %flat_ratio_error );
+      my ( %flat_ratio, %flat_ratio_error, %first_flat_ratio );
 
       orac_say "Detector gain correction";
 
@@ -651,21 +651,46 @@ if ( ! $isok ) {
 
                   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri)" );
                   ( $ORAC_STATUS, my $ratio ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-                  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri) comp=error" );
-                  ( $ORAC_STATUS, my $ratio_error ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-
                   $flat_ratio{$receptor} = $ratio if ( uc($ratio) ne "BAD" );
-                  $flat_ratio_error{$receptor} = $ratio_error if ( uc($ratio_error) ne "BAD" );
+
+# Errors will grow because of the incremental calculation of the ratios
+# at each division of the new ratios into the old ratios.  While the
+# first set of errors may slightly underestimate the true internal errors,
+# but it is much better than inflated errors going up roughly as the
+# square root of the number of iterations before convergence.  However,
+# the errors will need scaling for the different raios,
+                  if ( $first ) {
+                     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri) comp=error" );
+                     ( $ORAC_STATUS, my $ratio_error ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+                     $flat_ratio_error{$receptor} = $ratio_error if ( uc($ratio_error) ne "BAD" );
+
+                     $first_flat_ratio{$receptor} = $flat_ratio{$receptor};
+                  }
                }
             }
 
+# Report the current set of ratios.
             orac_say "";
             my $type = "Flat field normalisation";
             _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
-            $type = "Flat field error";
-            _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio_error TYPE=$type
+
             $iter++;
+            $first = 0;
          }
+
+# Scale the first-cycle errors to their final ratios.
+         for ( my $i = 1; $i <= $MAX_RECEPTOR; $i++ ) {
+            my $receptor = $array->receptor( $i );
+            if ( defined( $receptor ) ) {
+               $flat_ratio_error{$receptor} *= $flat_ratio{$receptor} /
+                                               $first_flat_ratio{$receptor};
+            }
+         }
+
+# We only report the errors after the iterations cease, so they are
+# adjacent to the ratios.
+         my $type = "Flat field error";
+         _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio_error TYPE=$type
 
 # Apply the flat field to each file in each observation for the
 # current night.
