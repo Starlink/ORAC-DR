@@ -504,6 +504,7 @@ if ( ! $isok ) {
          my $first = 1;
          my $iter = 1;
          my $derive_flat = 1;
+         my $max_thresh = 100000.;
          $nval = $MAX_RECEPTOR;
          while ( $ratio_shift > 0.01  && $iter <= $maxiter && $nval > 1 ) {
             orac_print "\nIteration $iter:";
@@ -552,11 +553,19 @@ if ( ! $isok ) {
 
 # Threshold to select the astronomical signal.
                my $clip = 4.0;
-               my $thresh = $median + $clip * $sigma;
+               my $thresh = min( $median + $clip * $sigma, $max_thresh );
                my $fs_thresh = sprintf( "%.4f", $thresh );
                orac_print " Set threshold to $fs_thresh.\n";
                $params = "in=$spectfile out=$temp5file thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
                $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Aim to prevent divergence especially for small observations and ones
+# with bad baselines that can be rejected automatically because there
+# are too few.  After rejecting a receptor because its value lie below the
+# threshold, more weight is given to wobbly baselines, which in turn
+# raises the bar causing more decent receptors to be rejected. 10% is
+# a number picked out of the air and will likely need to be changed.
+               $max_thresh = $thresh * 1.10;
 
                $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file" );
                ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
