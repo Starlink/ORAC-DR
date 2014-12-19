@@ -111,71 +111,24 @@ foreach my $Obj ( @objs ) {
    my $rmssum = 0.0;
    my $numsum = 0.0;
 
-# Retrieve the JCMT pointing catalogue and look up the current
-# object.  If it is defined, then we use the line velocity and width
-# to mask out the line, then use the remaining (hopefully line-free)
-# regions to determine the RMS.  If the object isn't defined, then
-# we'll fit a linear baseline and use the masking from MFITTREND to
-# mask out lines.
-   use Astro::Catalog;
-   my $object = $Obj->uhdr( "ORAC_OBJECT" );
-   my $poicat = $Cal->find_file( "poi.dat" );
-   my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
-                                     File => $poicat );
-   my $result = $jcmtcat->popstarbyid( $object );
-   if ( defined( $result ) &&
-        defined( $result->misc ) &&
-        defined( $result->misc->{'velocity_range'} ) ) {
-
-      $range = $result->misc->{'velocity_range'};
-      $centre = $result->coords->rv;
-
-# Check that the velocity range lies within the data.  It will
-# be the same for all the files, which will only cover different
-# spatial regions.
-      my $in = $Obj->file;
-      $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$in" );
-      $lline = $centre - $range * 0.5;
-      $uline = $centre + $range * 0.5;
-
-      ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
-      ( $ORAC_STATUS, @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
-   }
-
    foreach my $i ( 1 .. $Obj->nfiles ) {
       my $in = $Obj->file( $i );
       orac_print "Calculating RMS values for $in.\n";
 
-      my $temp1file = new ORAC::TempFile( 0 );
       my $temp2file = new ORAC::TempFile( 0 );
       my $temp3file = new ORAC::TempFile( 0 );
       my $temp4file = new ORAC::TempFile( 0 );
 
-      if ( defined( $centre ) && defined( $range ) ) {
-
-# Mask the spectral line using the catalogue information.
-         if ( ( $lline >= $flbnd[2] && $lline <= $fubnd[2] ) ||
-              ( $uline >= $flbnd[2] && $uline <= $fubnd[2] ) ) {
-            my $params = "in=$in out=$temp1file section=',,$centre~$range' newval=bad";
-            $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
-         } else {
-            $temp1file = $in;
-         }
-
-      } else {
-         $temp1file = $in;
-      }
-
       if ( $method eq 'AUTO' ) {
 
 # Find the input NDF's bounds.
-         _GET_DIMENSIONS_ FILE=$temp1file
+         _GET_DIMENSIONS_ FILE=$in
          my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
          my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
 
 # Fit and subtract a background from the spectrum.  Spectral axis
 # is the third.
-         my $params = "in=$temp1file out=$temp2file mask=$temp3file order=1 subtract";
+         my $params = "in=$in out=$temp2file mask=$temp3file order=1 subtract";
          $params .= " modifyin=false rmsclip=! axis=spec auto method=single";
          $params .= " numbin=" . ( int( ( $ubnd[2] - $lbnd[2] + 1 ) / 4 ) );
          $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
@@ -193,7 +146,7 @@ foreach my $Obj ( @objs ) {
          }
 
 # Mask out the requested central portion.
-         my $params = "in=$temp1file out=$temp4file section=',,~$centmask\%' newval=bad";
+         my $params = "in=$in out=$temp4file section=',,~$centmask\%' newval=bad";
          $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
       }
