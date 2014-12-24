@@ -50,11 +50,17 @@ The median Tsys is written to each object's C<MEDTSYS> internal
 header for later logging, and also to each tile NDF's FITS airlock
 using the same keyword.
 
+=item *
+
+For tiled cubes of more than 400 Mpixel, the median is calculated 
+by histograms rather than finding the true median by sorting.
+
+
 =back
 
 =head1 TASKS
 
-KAPPA: NDFCOPY, NDFTRACE, STATS, WCSATTRIB.
+KAPPA: NDFCOPY, HISTAT, NDFTRACE, STATS, WCSATTRIB.
 
 =head1 AUTHORS
 
@@ -166,9 +172,33 @@ foreach my $Obj ( @objs ) {
    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_eff order" );
    ( $ORAC_STATUS, my $median_eff_time ) = $Mon{'kappa_mon'}->get( "stats", "median" );
 
+# The pasted variance array might have a very large number of elements and
+# addressing in the sort in STATS fails catastrophically.  So look
+# for very large arrays and call HISTAT instead.  While only approximate
+# it is much quicker too.
+   $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$temp_var$compvar" );
+   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "histat", "numpix" );
+
+# STATS (PDA_QSIAx) crashes around 1E9 elements.  So for 8k spectral 
+# elements trimmed this threshold would apply above about a 230-pixel
+# square in the spatial axes.
+   my $median_variance;
+   if ( $numpix < 4E8 ) {
+
 # Obtain the median variance.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_var$compvar order" );
-   ( $ORAC_STATUS, my $median_variance ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_var$compvar order" );
+      ( $ORAC_STATUS, $median_variance ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+   } else {
+
+# Obtain the median variance using a faster algorithm, but which
+# yields approximate values.  Given the large number of elements,
+# the median values should be very close to the accurate values
+# for normal data.
+      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$temp_var$compvar" );
+      ( $ORAC_STATUS, $median_variance ) = $Mon{'kappa_mon'}->get( "histat", "median" );
+   }
+
 
 # Get the backend degradation factor.
    my $backend_degr_factor = defined( $Obj->hdr( "BEDEGFAC" ) ) ?
