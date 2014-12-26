@@ -501,15 +501,22 @@ if ( ! $isok ) {
 # Iteration
 # =========
          my $ratio_shift = 10000.0;
+         my $previous_shift = $ratio_shift + 1.;
          my $first = 1;
          my $iter = 1;
          my $derive_flat = 1;
          my $max_thresh = 100000.;
          $nval = $MAX_RECEPTOR;
-         while ( $ratio_shift > 0.01  && $iter <= $maxiter && $nval > 1 ) {
+
+# A one-percent shift is about 0.001 per receptor, and the best data will
+# have errors several times that.  Stop if the solution is diverging, i.e.
+# the shifts are increasing.
+         while ( $ratio_shift > 0.01 && $ratio_shift < $previous_shift &&
+                 $iter <= $maxiter && $nval > 1 ) {
             orac_print "\nIteration $iter:";
 
-# Apply the previous iterations to the fit.
+# Apply the previous iterations to the fit, except when there was not
+# a previous iteration.
             if ( $first ) {
                $params = "in=$mean_spectra_by_date out=$spectfile trim trimwcs";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
@@ -637,9 +644,14 @@ if ( ! $isok ) {
                $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
                $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file" );
                ( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+               $previous_shift = $ratio_shift;
                $ratio_shift = $total / max( $nval - 1, 1 );
                my $fs_ratio = sprintf( "%.4f", $ratio_shift );
                orac_say "  Ratio shift is $fs_ratio.";
+               if ( $ratio_shift > $previous_shift ) {
+                  orac_say "  Ratio shift is not converging.";
+                  last;
+               }
             }
 
 # Prepare for the next iteration.  This iteration's ratios is the
