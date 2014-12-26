@@ -4,11 +4,11 @@ _CALCULATE_MEDIAN_TSYS_
 
 =head1 DESCRIPTION
 
-This primitive calculates and stores the median system temperature (Tsys) 
+This primitive calculates and stores the median system temperature (Tsys)
 at the centre of reduced ACSIS cubes, since MAKECUBE only does this for a subset
 of cases including the less common case when the spreading method is nearest.
 
-The formula relating the variance and Tsys is used.
+The radiometer formula relating the variance and Tsys is used.
 
 Tsys = 0.5 * sqrt( variance * eff_time * delta_nu ) / backend_degradation
 
@@ -52,7 +52,7 @@ using the same keyword.
 
 =item *
 
-For tiled cubes of more than 400 Mpixel, the median is calculated 
+For tiled cubes of more than 400 Mpixel, the median is calculated
 by histograms rather than finding the true median by sorting.
 
 
@@ -64,7 +64,7 @@ KAPPA: NDFCOPY, HISTAT, NDFTRACE, STATS, WCSATTRIB.
 
 =head1 AUTHORS
 
-Malcolm J. Currie <mjc@jach.hawaii.edu>
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
@@ -90,6 +90,9 @@ MA 02111-1307, USA.
 
 =cut
 
+# Preliminaries
+# =============
+
 # Handle parameters.
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 1 );
 
@@ -112,6 +115,9 @@ foreach my $Obj ( @objs ) {
    my $in = $Obj->file;
    my ( @efftime_ndf, @var );
 
+# Obtain the frequency increment
+# ==============================
+
 # Get a small central region to obtain the delta_nu and to avoid saving the
 # spectral-axis attributes, and then resetting to the original values.
    my $temp_freq = new ORAC::TempFile( 0 );
@@ -130,6 +136,9 @@ foreach my $Obj ( @objs ) {
    $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$temp_freq" );
    ( $ORAC_STATUS, my @pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
    my $delta_nu = $pixscale[2];
+
+# Join the tiles of the VARIANCE and EFF_TIME
+# ===========================================
 
 # Form lists of the tiled parts of the spectral cube.  Do not use a TempFile for
 # the variance NDFs as they are needed outside of the loop, instead add to the
@@ -168,6 +177,9 @@ foreach my $Obj ( @objs ) {
       $compvar = " comp=error";
    }
 
+# Obtain the median variance and T_eff
+# ====================================
+
 # Obtain the median eff_time.
    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_eff order" );
    ( $ORAC_STATUS, my $median_eff_time ) = $Mon{'kappa_mon'}->get( "stats", "median" );
@@ -199,6 +211,8 @@ foreach my $Obj ( @objs ) {
       ( $ORAC_STATUS, $median_variance ) = $Mon{'kappa_mon'}->get( "histat", "median" );
    }
 
+# Obtain the other parameters for the radiometer formula
+# ======================================================
 
 # Get the backend degradation factor.
    my $backend_degr_factor = defined( $Obj->hdr( "BEDEGFAC" ) ) ?
@@ -216,9 +230,12 @@ foreach my $Obj ( @objs ) {
          $delta_nu *= 1.5;
 
       } else {
-        $delta_nu *= 1.0;
+         $delta_nu *= 1.0;
       }
    }
+
+# Apply and store the result of the radiometer formula
+# ====================================================
 
    my $fcon = $backend_degr_factor * $backend_degr_factor / $delta_nu;
    my $median_tsys = 0.5 * sqrt( $median_variance * $median_eff_time / $fcon );
