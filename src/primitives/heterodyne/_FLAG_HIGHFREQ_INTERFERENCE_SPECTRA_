@@ -68,6 +68,13 @@ parameter system.  Even if set to 1 (true), at least RINGING_MIN_SPECTRA
 spectra are required to give a sufficient baseline against which to
 detect spectra with ringing.  [0]
 
+=item RINGING_ALL = BOOLEAN (Given)
+
+If RINGING is true, should it be applied to to all receptors.  By
+default ringing filtering is limited to Receptor H07.  This argument
+can be overridden by the RECPAR_HIGHFREQ_RINGING_ALL uhdr via the
+recipe parameter system. [0]
+
 =item RINGING_MIN_SPECTRA = INTEGER (Given)
 
 Minimum number of good spectra for ringing filtering to be attempted.
@@ -183,6 +190,7 @@ if ( ! $apply ) { goto RETURN }
 
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $ringing = get_prim_arg( $_PRIM_ARGS_, "RINGING", "0" );
+my $ringing_all = get_prim_arg( $_PRIM_ARGS_, "RINGING_ALL", "0" );
 my $min_spec = get_prim_arg( $_PRIM_ARGS_, "RINGING_MIN_SPECTRA", "400" );
 my $thresh_def = $ringing ? 4.0 : 3.0;
 my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", $thresh_def );
@@ -200,6 +208,9 @@ if ( ref( $edge_clip ) eq 'ARRAY' ) { $edge_clip = join( ",", @{ $edge_clip } ) 
 
 $ringing = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" ) ) ?
              $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" )            : $ringing );
+
+$ringing_all = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_ALL" ) ) ?
+                 $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_ALL" )    : $ringing_all );
 
 $min_spec = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" ) ) ?
             $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" )              :
@@ -501,8 +512,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # high-frequency noise that has the same phase for all affected spectra,
 # just the intensity varies.  The signal this generates peaks about 5%
 # of the strong signal.  This is just a first crude attempt at
-# filtering them.  They seem to occur between the the first type of
-# high-frequency interference.
+# filtering them.  They seem to occur between the first type of
+# high-frequency interference and only in Receptor H07.
    if ( $ringing ) {
       orac_say( "\nFilter spectra affected by correlated ringing noise." );
       my $hfi = new ORAC::TempFile( 0 );
@@ -524,7 +535,17 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
      print $fc_fh "ClumpFind.DeltaT=0.003\n";
      close $fc_fh;
 
-    foreach my $receptor ( @receptors ) {
+
+# Select which receptors to analyse.
+# ----------------------------------
+      my @ringing_receptors;
+      if ( $ringing_all ) {
+         @ringing_receptors = @receptors;
+      } else {
+         push @ringing_receptors, "H07";
+      }
+
+      foreach my $receptor ( @ringing_receptors ) {
          orac_say( "  Receptor $receptor." );
          my $pixel = $array->pixel( $receptor );
 
