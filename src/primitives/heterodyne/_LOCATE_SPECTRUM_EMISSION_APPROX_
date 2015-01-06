@@ -38,6 +38,12 @@ are bad and other elements set to zero.
 
 =over 4
 
+=item AXIS = STRING (Given)
+
+Axis along which to perform analysis for emission.  This is one of the
+standard AST names or a integer.  Thus spec gives the spectral axis
+and 3 the thirds axis.  ["spec"]
+
 =item EDGE_CLIP = STRING (Given)
 
 The standard deviation to clip iteratively the spectrum in order to
@@ -111,7 +117,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2013 Science & Technology Facilities Council.
+Copyright (C) 2013-2014 Science & Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -133,6 +139,8 @@ MA 02111-1307, USA.
 
 =cut
 
+use ORAC::General;
+
 # Determine whether the emission detection is actually needed.
 my $apply_li = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" ) ) ?
                $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE" )              :
@@ -150,6 +158,7 @@ if ( ! $apply ) { goto RETURN }
 # Deal with arguments.
 # ====================
 
+my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", "spec" );
 my $minfactor = get_prim_arg( $_PRIM_ARGS_, "INITIAL_FACTOR", 3 );
 my $maxfactor = get_prim_arg( $_PRIM_ARGS_, "MAX_FACTOR", max( $minfactor, 3 ) );
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
@@ -177,8 +186,6 @@ $maxfactor = min( 5, max( $minfactor, $maxfactor ) );
 my $in = $Frm->file;
 $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
 my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
-( $ORAC_STATUS, my $lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-( $ORAC_STATUS, my $ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
 
 # Count the number of non-degenerate axes.
 my $ndim = 0;
@@ -196,6 +203,13 @@ if ( $ndim != 1 ) {
    orac_err( "_LOCATE_SPECTRUM_EMISSION_APPROX_: Current Frame is not " .
              "one dimensional (probable programming error)." );
 }
+
+# Obtain the bounds of the spectrum.  Since it's one-dimensional, use
+# the returned variables directly.
+( $ORAC_STATUS, my $lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+( $ORAC_STATUS, my $ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+( $ORAC_STATUS, my $flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+( $ORAC_STATUS, my $fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
 
 my $min_el = 100;
 if ( $no_el < $min_el ) {
@@ -254,7 +268,7 @@ $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 # baseline significantly exceeds the noise in the baseline.
 my $numbin = 32;
 $params = "in=$in out=$baselined_spectrum subtract auto ";
-$params .= "order=1 axis=spec method=single numbin=$numbin";
+$params .= "order=1 axis=$axis method=single numbin=$numbin";
 $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
 # Smooth the spectrum to narrow the histogram peak.
@@ -433,12 +447,12 @@ while ( $loop ) {
 # maskfile...
    $numbin = 32;
    $params = "in=$temp5file out=$detrend_spectrum mask=$current_mask ";
-   $params .= "subtract auto order=1 axis=spec method=single numbin=$numbin";
+   $params .= "subtract auto order=1 axis=$axis method=single numbin=$numbin";
    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
 # then in order to report the ranges repeat but in Region mode.
    $params = "in=$temp5file out=$temp6file subtract=f auto ";
-   $params .= "order=1 axis=spec method=region numbin=$numbin";
+   $params .= "order=1 axis=$axis method=region numbin=$numbin";
    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
    ( $ORAC_STATUS, my @aranges ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
 
@@ -469,8 +483,13 @@ while ( $loop ) {
          $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$mranges[$j+1]" );
          ( $ORAC_STATUS, my $posout2 ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
 
-         orac_say sprintf( "     %.3f : %.3f (%d:%d)",
-                           $posout1, $posout2, $mranges[$j], $mranges[$j+1] );
+         if ( is_numeric( $posout1 ) ) {
+            orac_say sprintf( "     %.3f : %.3f (%d:%d)",
+                              $posout1, $posout2, $mranges[$j], $mranges[$j+1] );
+         } else {
+            orac_say sprintf( "     %s : %s (%d:%d)",
+                              $posout1, $posout2, $mranges[$j], $mranges[$j+1] );
+         }
       }
    }
 
