@@ -32,6 +32,12 @@ and reuse for the remainder.
 The name of the file in which to store the concatenated cube.
 An error will result if this is not supplied.
 
+=item JCMTSTATE = BOOLEAN (Given)
+
+Whether or not the JCMTSTATE information needs to be manipulated
+to concatenate over the subscans, and also slice to propagate
+such information for the single receptor.  [0]
+
 =item RECEPTOR = STRING (Given)
 
 The name of the receptor, e.g. H00, whose subscans are to be
@@ -65,7 +71,8 @@ observations.
 
 =head1 TASKS
 
-KAPPA: NDFCOPY, PASTE.
+KAPPA: NDFCOPY, PASTE;
+SMURF: TIMESORT.
 
 =head1 REQUIRED PERL MODULES
 
@@ -77,7 +84,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2014 Science & Technology Facilities Council.
+Copyright (C) 2014-2015 Science & Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -116,6 +123,7 @@ if ( ! defined( $receptor ) )  {
 my $section = get_prim_arg( $_PRIM_ARGS_, "SECTION", "~85%" );
 my $refbound = get_prim_arg( $_PRIM_ARGS_, "BOUNDS", undef );
 my $samesize = get_prim_arg( $_PRIM_ARGS_, "SAMESIZE", undef );
+my $preserve = get_prim_arg( $_PRIM_ARGS_, "JCMTSTATE", 0 );
 
 # Other preparatory stuff
 # =======================
@@ -134,10 +142,10 @@ my $pixel = $array->pixel( $receptor );
 # Form array of temporal bounds for the subscans.
 # ===============================================
 
+my $no_times = 0;
 if ( ! ( defined( $refbound ) && defined( $samesize ) ) ) {
 
 # This is to enable pasting into one file for the chosen receptor.
-   my $no_times = 0;
    $samesize = 1;
    my $lastsize;
 
@@ -159,6 +167,7 @@ if ( ! ( defined( $refbound ) && defined( $samesize ) ) ) {
 
 } else {
    @time_bounds = @$refbound;
+   $no_times = $time_bounds[-1] - $time_bounds[0] + 1;
 }
 
 # Single file
@@ -168,6 +177,65 @@ if ( ! ( defined( $refbound ) && defined( $samesize ) ) ) {
 if ( $Frm->nfiles == 1 ) {
    $params = "in=$in($section,$pixel,) out=$pasted";
    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Paste and extract the receptor slice for the full observation.
+# ==============================================================
+
+# Use TIMESORT when we care about pasting and slicing the JCMTSTATE
+# information.
+} elsif ( $preserve ) {
+
+# The spectral dimensions must match, otherwise TIMESORT warns about
+# this without generating an error, but yields an NDF full of bad
+# values.  Form the intersection of the bounds.
+   my $maxlower = -100000000;
+   my $minupper = 100000000;
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my $file = $Frm->file( $i );
+      $file .= "($section,$pixel,)";
+      _GET_DIMENSIONS_ FILE=$file
+      my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+      my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+      $maxlower = max( $lbnd[0], $maxlower );
+      $minupper = min( $ubnd[0], $minupper );
+   }
+
+# Add a sanity check, although this should not fail, as we normally take
+# a percentage section, where the spectral bounds may vary by a few
+# pixels at each end.
+   if ( $minupper > $maxlower ) {
+      orac_err "_PASTE_SUBSCANS_BY_RECEPTOR_ (probable programming error): " .
+               "spectral bounds of the time series being concatenated do " .
+               "not overlap.";
+   }
+   $section = "$maxlower:$minupper";
+
+# When the JCMTSTATE extensions need to be retained.  Form list of input
+# files for TIMESORT, using the overlap bounds.
+   my $inlist;
+   my @files;
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my $file = $Frm->file( $i );
+      push @files, "$file($section,$pixel,)";
+   }
+   $inlist = write_file_list( @files );
+
+# Set up parameters for TIMESORT.
+   $params = "in=^$inlist out=$pasted detectors=$receptor ";
+   $params .= "limittype=spectra sizelimit=$no_times merge";
+
+# Run TIMESORT.
+   $Mon{'smurf_mon'}->obeyw( "timesort", "$params" );
+
+# Find out how many output files there were.
+   my ( $ORAC_STATUS, $nout ) = $Mon{'smurf_mon'}->get( "timesort", "nout" );
+   if ( $nout > 1 ) {
+      orac_err "Pasting for Receptor $receptor generates more than one file.\n";
+   } else {
+      my $timeout = $pasted . "_1";
+      $params = "in=$timeout out=$pasted";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   }
 
 # Single paste
 # ============
