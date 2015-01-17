@@ -88,6 +88,10 @@ The number of standard deviations below the mean to set scale low
 to when plotting using display. Only used if SIGLOW is also given.
 Display will usually use mode=faint otherwise.
 
+=item TEXT_OVERLAY = CHARACTER (Given)
+
+Text to be overlaid. [undef]
+
 =back
 
 =head1 NOTES
@@ -188,9 +192,10 @@ my $yres = get_prim_arg( $_PRIM_ARGS_, 'YRES', undef );
 $yres = $xres if ( !defined( $yres ) );
 my $outroot = get_prim_arg( $_PRIM_ARGS_, 'OUTROOT', $file );
 
-# Get catalogue files.
+# Get catalogue files and overlay text.
 my $extents = get_prim_arg( $_PRIM_ARGS_, 'EXTENTS', undef);
 my $pointcat = get_prim_arg( $_PRIM_ARGS_, 'POINTCAT', undef);
+my $text_overlay = get_prim_arg( $_PRIM_ARGS_, 'TEXT_OVERLAY', undef);
 
 # Get plotting options
 my $siglow = get_prim_arg( $_PRIM_ARGS_, 'SIGLOW', undef);
@@ -257,7 +262,7 @@ if ( $#nondegen > 1 ) {
 my $exif = undef;
 my $tempimg = 'temp_image_for_device';
 for ( my $i = 0; $i < $nx; $i++ ) {
-   my ( $outfile, $outvecfile, $outclumpfile, $outcatfile, $params );
+   my ( $outfile, $outvecfile, $outclumpfile, $outcatfile, $outtextfile, $params );
    my $xres = $resx[ $i ];
    my $yres = $resy[ $i ];
 
@@ -270,17 +275,20 @@ for ( my $i = 0; $i < $nx; $i++ ) {
             $outvecfile = "${outroot}_vector_$xres." . lc( $type );
 	    $outclumpfile = "${outroot}_clump_$xres." . lc( $type );
 	    $outcatfile = "${outroot}_cat_$xres." . lc( $type );
+	    $outtextfile = "${outroot}_text_$xres." . lc( $type );
          } else {
             $outfile = "${outroot}_${xres}x${yres}." . lc( $type );
             $outvecfile = "${outroot}_vector_${xres}x${yres}." . lc( $type );
 	    $outclumpfile = "${outroot}_clump_${xres}x${yres}." . lc( $type );
 	    $outcatfile = "${outroot}_cat_${xres}x${yres}." . lc( $type );
+	    $outtextfile = "${outroot}_text_${xres}x${yres}." . lc( $type );
          }
       } else {
          $outfile = join ".", $outroot, lc( $type );
          $outvecfile = join ".", $outroot, "_vector", lc( $type );
 	 $outclumpfile = join ".", $outroot, "_clump", lc( $type );
 	 $outcatfile = join ".", $outroot, "_cat", lc( $type );
+	 $outtextfile = join ".", $outroot, "_text", lc( $type );
       }
 
 
@@ -421,6 +429,21 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 	   }
 
 	 }
+
+         # If overlay text was specified, attempt to render it with
+         # ImageMagick.
+         if ((defined $text_overlay) and $IMCONVERT) {
+            die "TEXT_OVERLAY contains unexpected/no characters"
+                unless $text_overlay =~ /^([-_a-zA-Z0-9.!"\n ]+)$/;
+            my $text = $1;
+            my $size = int($xres / 10);
+            my $outline = int($xres / 64);
+            system("$IMCONVERT $outfile -gravity center " .
+                "-stroke '#FFF' -strokewidth $outline -pointsize $size -annotate 0 '$text' " .
+                "-stroke none -fill '#F00' -pointsize $size -annotate 0 '$text' ".
+                "$outtextfile");
+            rename($outtextfile, $outfile);
+         }
        }
 
       orac_say "$file to $outfile: Created graphic.";
