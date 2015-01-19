@@ -193,6 +193,8 @@ collected on the Las Cumbres Observatory Global Telescope Network (LCOGT). }
 \newcommand{\KAPPA}{\xref{{\sc{Kappa}}}{sun95}{}}
 \newcommand{\SMURF}{\xref{{\sc{Smurf}}}{sun258}{}}
 \newcommand{\SLALIB}{\xref{{\sc{SLALIB}}}{sun67}{}}
+\newcommand{\AASTROM}{\xref{{\sc{AutoAstrom}}}{sun242}{}}
+\newcommand{\ASTROM}{\xref{{\sc{Astrom}}}{sun5}{}}
 \newcommand{\ORACDR}{{\footnotesize ORAC-DR}}
 \newcommand{\SEx}{{\sc SExtractor}}
 \newcommand{\astref}{\xref{SUN/211}{sun211}{}}
@@ -211,6 +213,7 @@ collected on the Las Cumbres Observatory Global Telescope Network (LCOGT). }
 \newcommand{\makeflat}{\xref{\task{makeflat}}{sun139}{MAKEFLAT}}
 \newcommand{\debias}{\xref{\task{debias}}{sun139}{DEBIAS}}
 \newcommand{\calcor}{\xref{\task{calcor}}{sun139}{CALCOR}}
+\newcommand{\flatcor}{\xref{\task{flatcor}}{sun139}{FLATCOR}}
 
 % macros for typesetting parameters
 \newcommand{\aparam}[1]{\texttt{#1}}     % ADAM parameter
@@ -221,9 +224,16 @@ collected on the Las Cumbres Observatory Global Telescope Network (LCOGT). }
 \newcommand{\LCO}{LCOGT}
 \newcommand{\LCONet}{LCOGT Network}
 \newcommand{\LCOFull}{Las Cumbres Observatory Global Telescope Network}
+\newcommand{\SAICD}{LCOGT-SA-ICD Version 0.10.0}
+\newcommand{\SAICDFull}{LCOGT Pipeline/Science Archive Interface Control
+Document (LCOGT-SA-ICD Version 0.10.0)}
+\newcommand{\SA}{Science Archive}
+\newcommand{\Ast}{\texttt{timecorrect.py} code}
 
 
 \newcommand{\rmn}[1] {\mathrm{#1}}
+\newcommand{\arcmin}{\mbox{$^{\prime}$}}
+\newcommand{\arcsec}{\mbox{$^{\prime \prime}$}}
 
 %% Definitions imported from SUN/95
 
@@ -727,7 +737,7 @@ initialized as usual before running \oracdr.
 The pipeline uses the following Starlink applications:
 \begin{itemize}
 \item \KAPPA
-\item \FIGARO
+%\item \FIGARO
 \item \CCDPACK
 \item \SEx
 \end{itemize}
@@ -804,7 +814,12 @@ To reduce all data for a given night you should run
       oracdr -log f -verbose -file <filename of frames>
 \end{verbatim}
 
-\textbf{XXX Not normally how things are run, add more details}
+%\textbf{XXX Not normally how things are run, add more details}
+\textit{Additional details on running the pipeline will be added here or in a companion
+document depending on the determined intended audience for the document
+(internal LCOGT pipeline modifiers versus external (or internal) consumers of
+the data who want additional details on the pipeline operation and
+construction).}
 
 %Several windows will (eventually) open: an \ORACDR\ text display, \GAIA\
 %windows and \textsc{Kapview} windows (a collective term for various
@@ -958,17 +973,117 @@ suitable calibration frame that matches the frame's binning.
 \subsubsection{Flatfield normalization}
 
 Flatfield division is performed by the \task{\_DIVIDE\_BY\_FLAT\_}\ primitive
-and makes use of the \CCDPACK\ \task{flatcor}\ task to perform the actual
+and makes use of the \CCDPACK\ \flatcor\ task to perform the actual
 correction and trimming to the trim limits. The appropriate
 flatfield frame to use is selected based on the normal nearest-in-time
 suitable calibration frame that matches the frame's binning and filter.
 
 \subsubsection{Astrometric solution}
+
+The current astrometric solver makes use of the \AASTROM\ wrapper around the
+\ASTROM\ task and is controlled from within the \task{\_ADD\_AUTO\_ASTROMETRY\_}
+primitive. This handles the detection and extraction of objects on the image
+using \SEx\ and the download of a reference catalog to match against. The
+reference catalogs are consulted in the order listed in the
+\texttt{\$ORAC\_DATA\_CAL/index.skycat\_catalogue} and the default is UCAC-3
+\cite{ucac3} with a fallback of 2MASS \cite{2mass} (both with two possible
+server sources at CDS, France and CADC, Canada to add redundancy) and a final
+fallback of the USNO-B \cite{usnob} catalog (The Context Cameras
+(\texttt{LCOCC}) have a different version of
+\texttt{\$ORAC\_DATA\_CAL/index.skycat\_catalogue} which only makes use of the
+Tycho-2 catalog \cite{tycho2} due to the larger field of view and shallower
+depth of these cameras).
+
+The \ASTROM\ task can fit  4, 6, 7, 8, or 9 coefficients. The 4 coefficient is
+never used (assumes same scale in both axes \& no shear terms), the 6
+coefficient is the normal default for most cameras, the 7th term adds fitting
+for the radial distortion (barrel/pincushion), the 8 coefficient fit adds
+fitting for the plate center (but not distortion) and finally the 9 coefficient fit adds
+fit includes fitting for the plate center along with the distortion and is the
+default for the Context Cameras (\texttt{LCOCC}) due to their large field of
+view.
+
+After a putative fit, the results are sanity checked on the X and Y rms, the
+number of stars used in the fit (must be $\geq$6) and the fitted platescale is
+within 5\% of the expected value (which can cause false rejection if the nominal
+platescale (\texttt{PIXSCALE} in the FITS header) placed by the Instrument Agent
+hasn't been properly configured). The cases where the astrometric solution fails
+or is reset after the sanity check are distinguished by setting \texttt{WCSERR}
+in the header to '3' or '4' respectively (with '0' indicating success).
+
 \subsubsection{Calculation of image statistics}
+
+This occurs within the \task{\_CALCULATE\_SEEING\_STATS\_} primitive and makes
+use of \SEx\ to perform the extraction and measurement of sources. A relatively
+high threshold of 5.0 sigma above the background mesh fit with a minimum source
+size of 12 pixels is used to avoid pushing down too far into the noise and
+producing a biased result. Objects that have zero size or \SEx\
+\texttt{FLAGS!=0} are removed from the calculation and then the mean FWHM,
+ellipticity and orientation angle are calculated, reported in the log and filed
+with the calibration system, appearing in \texttt{index.dqc}. These are subsequently
+added to the header of the products as described in Section~\ref{sec:products}.
+
 \subsubsection{Production of image catalog}
+
+This occurs within the \task{\_CREATE\_IMAGE\_CATALOGUE\_}\ primitive and makes
+use of \SEx\ to perform the source detection and extraction and produce a LCOGT
+standard source catalog in the format as defined in the
+\htmladdnormallink{\SAICDFull}{http://intranet.lco.gtn/Science_Archive#Interface_Control_Document_.28ICD.29}. This
+extraction occurs at a lower threshold of 1.5 sigma above the background mesh
+fit to give a reasonably complete source catalog without overwhelming users or
+the \SA\ with spurious detections.
+
+The \SEx\ config file is in \texttt{\$ORAC\_DATA\_CAL/extractor\_catalogue.sex}
+but some elements are dynamically modified within the primitive as the \SAICD\
+specification calls for aperture photometry in fixed aperture of 1\arcsec,
+3\arcsec, 5\arcsec and 7\arcsec\ apertures which translates to a variable
+camera-specific number of pixels, based on the platescale. The output catalog is
+renamed to \texttt{$<$root name$>$10\_cat.fits} or \texttt{$<$root
+name$>$90\_cat.fits} depending on whether QuickLook (indicated by
+\texttt{\$Frm->uhdr( "QUICK\_LOOK" ) == 1}) or offline processing is occurring.
+The output catalog is subsequently modified by the \Ast\ as further detailed in
+Section~\ref{sec:timecorrect}.
+
 \subsubsection{Calculation of zeropoint}
+
+This makes use of the catalog of detected sources produced by the previous
+\task{\_CREATE\_IMAGE\_CATALOGUE\_}\ primitive and performs a cross-match to the
+combined standard star catalog produced by AJP's \task{findassm} program. The
+cross match filters on distance, area (object size), ellipticity and quality
+flags and surviving good matches are used to calculate the mean axial ratio of
+bright sources,the sky brightness, the limiting magnitude, a transparency
+estimate and the instrumental zero point. These results are reported in the log
+and filed with the calibration system, appearing in \texttt{index.zeropoint}.
+These are subsequently added to the header of the products as described in
+Section~\ref{sec:products}.
+
 \subsubsection{Output of derived products}
+\protect\label{sec:products}
+
+The \task{\_DERIVED\_PRODUCTS\_} primitive is used to create the derived products from the processed frames. The
+following items are performed:
+\begin{itemize}
+\item  the headers are updated with the details of the master calibration frames
+   and correction steps used,
+\item  the saturation and trimmed section are updated with the values used in
+   the pipeline processing,
+\item  A clipped mean, median and sigma are calculated (using
+\task{\_CLIPPED\_STATS\_MEDIAN\_}) and added to the header,
+\item  the QC module (the \task{\_SET\_QC\_FLAGS\_}\ primitive) is run to produce the four QC flags in the headers,
+\item  incorrect values of the TAGID and/or PROPID are flagged and corrected
+   and the PROPID is checked against the lists of known proposals,
+\item  access rights and state of the data are set,
+\item  a 512$\times$512 PNG thumbnail of the processed image is created,
+\item  the frame is converted to FITS format,
+\item  the \Ast\ (see Section~\ref{sec:timecorrect}) is called to compute per-star barycentric time
+   correction and airmass and updates the header of the BCD image and
+   source catalog,
+\item  if a final destination is defined by the enviroment variable
+   \texttt{\$FINAL\_DATA\_OUT}, the derived products are moved there.
+\end{itemize}
+
 \subsubsection{Airmass and barycentric time correction}
+\protect\label{sec:timecorrect}
 
 
 In order to provide the most precise absolute timestamp that is free from
@@ -1129,6 +1244,34 @@ DOI: 10.1007/s10569-011-9377-8
 
 \bibitem{sf2001} Shirai, T. \& Fukushima, T., 2001, \textit{Construction of a
 new forced nutation theory of the nonrigid Earth }, AJ, 121, 3270--3283. 
+
+\bibitem{ucac3} Zacharias, N., Finch, C., Girard, T., Hambly, N.,  Wycoff, G.,
+Zacharias, M.~I., Castillo, D., Corbin, T.,  DiVittorio, M., Dutta, S., Gaume,
+R., Gauss, S.,  Germain, M., Hall, D., Hartkopf, W., Hsu, D.,  Holdenried, E.,
+Makarov, V., Martinez, M., Mason, B.,  Monet, D., Rafferty, T., Rhodes, A.,
+Siemers, T.,  Smith, D., Tilleman, T., Urban, S., Wieder, G.,  Winter, L.,
+Young, A., 2010, \textit{The Third US Naval Observatory CCD Astrograph Catalog
+(UCAC3)}, AJ, 139, 2184--2199.
+
+\bibitem{2mass} Skrutskie, M.~F., Cutri, R.~M., Stiening, R.,  Weinberg, M.~D.,
+Schneider, S., Carpenter, J.~M.,  Beichman, C., Capps, R., Chester, T., Elias,
+J.,  Huchra, J., Liebert, J., Lonsdale, C., Monet, D.~G.,  Price, S., Seitzer,
+P., Jarrett, T., Kirkpatrick, J.~D.,  Gizis, J.~E., Howard, E., Evans, T.,
+Fowler, J.,  Fullmer, L., Hurt, R., Light, R., Kopan, E.~L.,  Marsh, K.~A.,
+McCallon, H.~L., Tam, R., Van Dyk, S.,  Wheelock, S., \textit{The Two Micron All
+Sky Survey (2MASS)}, 2006, AJ, 131, 1163--1183.
+
+\bibitem{usnob} Monet, D.~G., Levine, S.~E., Canzian, B., Ables, H.~D., 
+Bird, A.~R., Dahn, C.~C., Guetter, H.~H., Harris, H.~C.,  Henden, A.~A.,
+Leggett, S.~K., Levison, H.~F.,  Luginbuhl, C.~B., Martini, J., Monet,
+A.~K.~B.,  Munn, J.~A., Pier, J.~R., \textit{The USNO-B Catalog}, 2003, AJ,
+125, 984--993.
+
+\bibitem{tycho2} H{\o}g, E., Fabricius, C., Makarov, V.~V., Bastian, U., 
+Schwekendiek, P., Wicenec, A., Urban, S., Corbin, T.,  Wycoff, G.,
+\textit{Construction and verification of the Tycho-2 Catalogue}, 2000, A\&A,
+357,367--386.
+
 \end{thebibliography}
 
 \newpage
@@ -1178,8 +1321,8 @@ instead of the {\bf LCOSBIG} one when reducing {\bf LCOSINISTRO} data.
 \end{center}
 }
 \begin{description}
-\classitem{\_AVERAGE\_BIASES\_}
-Averages the current frame into the current bias. (deprecated)
+%\classitem{\_AVERAGE\_BIASES\_}
+%Averages the current frame into the current bias. (deprecated)
 \classitem{\_FILE\_LIBRARY\_BIAS\_}
 File a copy of the masterbias SDF, PNG and calibration index files in the
 calibration library
@@ -1235,7 +1378,7 @@ Steers processing for SKY\_FLAT recipes.
 \classitem{\_SUBTRACT\_DARK\_}
 Subtracts a dark frame.
 \classitem{\_SUBTRACT\_DARK\_NO\_THRESH\_}
-Subtracts a dark frame.
+Subtracts a dark frame without thresholding of remaining hot pixels.
 \end{description}
 
 {\large
@@ -1259,9 +1402,9 @@ Evaluates the image data quality control flag and sets the relevant bitmask keyw
 \classitem{\_DERIVED\_PRODUCTS\_}
 Create derived products from the processed frames.
 \classitem{\_DERIVED\_PRODUCTS\_STEER\_}
-Primitive description
-\classitem{\_DIVIDE\_BY\_FLAT\_}
 Steers processing for DERIVED\_PRODUCTS recipe.
+\classitem{\_DIVIDE\_BY\_FLAT\_}
+Divides an object frame by a flatfield frame.
 \classitem{\_IMG\_QC\_READOUT\_TEST\_}
 Primitive description
 \classitem{\_REMOVE\_BIAS\_}
@@ -1269,9 +1412,9 @@ Subtracts a bias frame.
 \classitem{\_SUBTRACT\_DARK\_}
 Subtracts a dark frame.
 \classitem{\_SUBTRACT\_DARK\_NO\_THRESH\_}
-Subtracts a dark frame.
+Subtracts a dark frame without thresholding of remaining hot pixels.
 \classitem{\_SET\_QC\_FLAGS\_}
-Primitive description
+Evaluate and set Quality Control flags.
 \end{description}
 
 {\large
