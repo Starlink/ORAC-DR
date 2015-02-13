@@ -6,7 +6,7 @@ docdir      = $${STARLINK_DIR}/docs
 
 STAR2HTML   = $${STARLINK_DIR}/bin/star2html
 STARPERL    = $${STARLINK_DIR}/Perl/bin/perl
-PDFLATEX    = pdflatex
+PDFLATEX    = TEXINPUTS=$${STARLINK_DIR}/share/latexsupport//: pdflatex
 HLINK       = $${STARLINK_DIR}/bin/hlink
 ORAC_DIR    = $(realpath $(CURDIR)/..)
 
