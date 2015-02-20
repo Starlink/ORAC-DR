@@ -56,22 +56,24 @@ MA 02111-1307, USA.
 
 =cut
 
-# Bring in Starlink::HDSPACK
+# Bring in Starlink::HDSPACK.
 use Starlink::HDSPACK qw/ copy_hdsobj /;
 
 # Sanity check
 unless ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "BIAS") {
-  # This isn't a BIAS frame
-  unless ($Frm->uhdr("DARK_AS_BIAS")) {
-    orac_warn "This is not a BIAS frame - Running the wrong recipe?\n";
-    orac_warn "Continuing anyway and assuming this is deliberate\n";
-  } else {
-    # With Michelle it would be acceptable to run this on a DARK
-    unless ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK") {
-      orac_warn "This Michelle data is not a BIAS or a DARK frame - Running the wrong recipe?\n";
+
+   # This isn't a BIAS frame.
+   unless ($Frm->uhdr("DARK_AS_BIAS")) {
+      orac_warn "This is not a BIAS frame - Running the wrong recipe?\n";
       orac_warn "Continuing anyway and assuming this is deliberate\n";
-    }
-  }
+
+   # With Michelle it would be acceptable to run this on a DARK.
+   } else {
+      unless ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK") {
+         orac_warn "This Michelle data is not a BIAS or a DARK frame - Running the wrong recipe?\n";
+         orac_warn "Continuing anyway and assuming this is deliberate\n";
+      }
+   }
 }
 
 my $nfiles = $Frm->nfiles;
@@ -82,14 +84,15 @@ $tmpFrm->files( $Frm->file );
 
 my ($in, $out) = $tmpFrm->inout("_bco");
 
-# Average together the integrations
+# Average together the integrations.  First form the MATHS command line.
+# The IA -> IH are the names of tokens for NDFs within a MATHS expression.
 my $add = "";
 my $files = "";
 my %hash = (1=>"IA", 2=>"IB", 3=>"IC", 4=>"ID", 5=>"IE", 6=>"IF", 7=>"IG", 8=>"IH");
 
 foreach my $i (1..$nfiles) {
    my $file = $Frm->file($i);
-   $files.= $hash{$i}."=".$file." ";
+   $files .= $hash{$i} . "=" . $file . " ";
    $add .= $hash{$i};
    $add .= " + " if($i != $nfiles);
 }
@@ -110,17 +113,17 @@ my $tmpfile = $tmp->file;
 
 orac_print "$out: bias frames coadded\n";
 
-# Calculate the Variance into the tmp file
+# Calculate the variance into the temporary file's data array.
 if ($nfiles >= 3) {
-   # Construct variance frame
-   # $out contains the mean frame
 
-   my $mfile = $nfiles+1;
-   $files .= $hash{$mfile}."=".$out;
+   # Construct the variance frame.  $out contains the mean frame.
+   # First form the command line for MATHS.
+   my $mfile = $nfiles + 1;
+   $files .= $hash{$mfile} . "=" . $out;
    $add = "";
    foreach my $i (1..$nfiles) {
       $add .= "((".$hash{$i}."-".$hash{$mfile}.")*(".$hash{$i}."-".$hash{$mfile}."))";
-      $add .= " + " if($i != $nfiles);
+      $add .= " + " if ($i != $nfiles);
    }
    my $exp = "( $add ) / $nfiles";
 
@@ -128,23 +131,25 @@ if ($nfiles >= 3) {
 
    $Mon{'kappa_mon'}->obeyw("maths", $param);
 
+   # Copy the variance information to the destination NDF's VARIANCE component.
    $ORAC_STATUS = ( copy_hdsobj( "$tmpfile.DATA_ARRAY", "$out.VARIANCE" ) ? ORAC__OK : ORAC__ERROR );
 
-   $Frm->files($out);
+   $Frm->files( $out );
    $Frm->mergehdr;
 
 } elsif ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK") {
-   # It's a Michelle DARK being used as a BIAS - simply add the readnoise
-   $Frm->files($out);
+
+   # It's a Michelle DARK being used as a BIAS, therefore simply add the readnoise.
+   $Frm->files( $out );
    _ADD_READNOISE_VARIANCE_
-} else  {
-   orac_warn("Will not create BIAS variance - less than 3 integrations\n");
+
+} else {
+   orac_warn("Will not create BIAS variance as there are fewer than three integrations.\n");
 }
 
-# Display the frame
+# Display the frame.
 $Display->display_data( $Frm ) if defined $Display;
 
-# Keep it tidy
+# Keep the reporting tidy.
 orac_print "\n";
-
 
