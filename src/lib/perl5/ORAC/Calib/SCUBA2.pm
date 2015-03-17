@@ -870,7 +870,7 @@ sub makemap_config {
     my $config_type = lc($args{config_type}) if (defined $args{config_type});
     if ( $config_type ) {
       $configfile .= "_".$config_type
-        unless ( $config_type eq "normal" );
+        unless ( $config_type eq "base" );
     }
 
     # Check for SUMMIT or QL pipeline

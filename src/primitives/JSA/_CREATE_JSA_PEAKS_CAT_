@@ -152,18 +152,43 @@ if ($tag_status)
         # Get the ID of the parent extent.
         chomp(my $parent_extent_id =`$stilts_path tpipe in=$extent_cat cmd='keepcols ID;select index==$i' omode=out ofmt=csv-nohead`);
 
-
         # Clean up various files
         push @intermediates, $log;
         if (-e $jsacat) {
 
-            # Save the peak catalogues and the parent extents for the
-            # concatenation stage.
-            push @peakcats, $jsacat;
-            push @parentextents, $parent_extent_id;
+            # Concatenate this file into the output file.
+            my $id = "addcol ID -before \$1 \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\";";
+            my $parent = "addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parent_extent_id\\\"\";";
+            my $ra = "replacecol -name RA -desc \"RA of peak pixel\" PEAK1 PEAK1;";
+            my $dec = "replacecol -name DEC -desc \"Dec of peak pixel\" PEAK2 PEAK2;";
+            my $peak = "replacecol -name PEAK_FLUX PEAK PEAK;";
+            my $deletecol = "delcols \"CEN1 CEN2 SIZE1 SIZE2 SUM VOLUME SHAPE\";";
+            my $icmd ="\'$id $parent $ra $dec $peak $deletecol\'";
+            my ($nin, $in1, $in2, $icmd1, $icmd2);
 
-            # Mark the catalogues as intermediaries.
-            push @intermediates, $jsacat;
+            if (-e $peakcat) {
+                orac_say("Peak cat exists! $peakcat");
+                $nin = "2";
+                $in1 = "in1=$peakcat";
+                $in2 = "in2=$jsacat";
+                $icmd1 = "";
+                $icmd2="icmd2=$icmd";
+            }
+            else {
+                $nin = "1";
+                $in1 = "in1=$jsacat";
+                $icmd1="icmd1=$icmd";
+                $in2 = "";
+                $icmd2="";
+            }
+            my $stilts_arguments = "$stilts_path tcatn $in1 $icmd1 $in2 $icmd2 out=$peakcat nin=$nin ofmt=fits-basic";
+
+            system($stilts_arguments);
+
+            # Remove the intermediate catalogs.
+            if (-e $jsacat) {
+                unlink $jsacat;
+            }
 
         }
 
@@ -171,32 +196,7 @@ if ($tag_status)
     }
 
     # Concatenate the peak catalogues, if any were found.
-    if (scalar @peakcats > 0) {
-
-        # Assemble the stilts command line for tcatn.
-        my $inlist = "";
-        my $incmd = "";
-        my $counter = 0;
-        for my $p (0..$#peakcats){
-            $counter = $p + 1;
-            $inlist="$inlist" ."in$counter=$peakcats[$p] ";
-            my $id = "addcol ID -before \$1 \"\\\"JCMTPP_J\\\"+replaceAll(degreesToHms(PEAK1,1),\\\":\\\",\\\"\\\")+replaceAll(degreesToDms(PEAK2,0),\\\":\\\",\\\"\\\")\";";
-            my $parent = "addcol PARENT_EXTENT \"split(ID,\\\"J\\\")[0]+\\\"$parentextents[$p]\\\"\";";
-            my $ra = "replacecol -name RA -desc \"RA of peak pixel\" PEAK1 PEAK1;";
-            my $dec = "replacecol -name DEC -desc \"Dec of peak pixel\" PEAK2 PEAK2;";
-            my $peak = "replacecol -name PEAK_FLUX PEAK PEAK;";
-            my $deletecol = "delcols \"CEN1 CEN2 SIZE1 SIZE2 SUM VOLUME SHAPE\";";
-            $incmd = "$incmd" . " icmd$counter=\'$id $parent $ra $dec $peak $deletecol\'";
-          }
-
-        # Number of input files.
-        $counter = $#peakcats+1;
-
-        my $stilts_arguments = "$stilts_path tcatn $inlist $incmd out=$peakcat nin=$counter ofmt=fits-basic";
-
-        system($stilts_arguments);
-
-        orac_say("Concatenated individual peak catalogues into $peakcat");
+    if (-e $peakcat) {
 
         # Add JSA FITS headers to the catalog.
         _COPY_JSA_HEADERS_TO_FITS_FILE_ IN=$emission OUT=$peakcat GROUP=$group PRODUCT=peak-cat
@@ -204,11 +204,6 @@ if ($tag_status)
         # Push the output peaks catalogue into the uhdr.
         if (-e $peakcat) {
           $Obj->uhdr('JSA_PEAK_CAT', $peakcat);
-        }
-
-        # Delete the intermediate .fit files.
-        foreach (@peakcats) {
-          unlink $_;
         }
 
         # Create preview images.

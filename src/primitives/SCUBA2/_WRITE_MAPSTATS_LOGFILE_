@@ -136,6 +136,7 @@ if ($proceed) {
   my $pixregion = sprintf "%d", ($mapsize / $pixscale);
   _FIND_IMAGE_STATISTICS_ REGION=$pixregion COMP=ERR VERBOSE=0 GROUP=$group
   my $rms = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+  orac_say("RMS is $rms\n");
   my $image = $Obj->file .".more.smurf.exp_time";
   _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0 GROUP=$group
   my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
@@ -177,7 +178,21 @@ if ($proceed) {
   # Obtain out the correct units to write into the log file
   $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=".$Obj->file);
   my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
-  my $ndp = 2;
+  # Get the NEFD units
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=".$Obj->file . ".more.smurf.nefd");
+  ($ORAC_STATUS, my $nefdunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
+
+
+  # Strip out spaces from the units strings (replace with . for mulitplication)
+  $units =~ s/\s/./g;
+  $nefdunits=~ s/\s/./g;
+
+  # Replace ** with ^ for easier reading.
+  $nefdunits=~ s/\Q**\E/^/;
+  $units =~ s/\Q**\E/^/;
+
+  # Default number of significant figures.
+  my $ndp = 6;
   if ($units =~ /beam/i) {
     $units =~ s/beam/bm/i;
   } elsif ($units =~ /arcsec/i) {
@@ -187,10 +202,10 @@ if ($proceed) {
   } elsif ($units =~ /pw/i) {
     $ndp = 6;
   }
-  my @unitstring = split("/",$units);
 
+  my @unitstring = split("/",$units);
   my $rms_units = $units;
-  my $nefd_units = "($unitstring[0].s^0.5)";
+  my $nefd_units = $nefdunits;
   my $logtype = "mapstats";
   my $recipe = "UNKNOWN";
   if (defined $Frm->hdr("RECIPE")){
@@ -201,9 +216,10 @@ if ($proceed) {
 
   my @params = qw/ t_elapsed t_exp rms rms_units nefd nefd_units mapsize pixscale project recipe filename/;
   my @units =  ("(s)", "(s)", "()", "()", "()", "()", '(")', '(")', '()', '()', '()');
-  my @values = ( $t_elapsed, $printval->($texp, 2),
-                 $printval->($rms, $ndp), $rms_units,
-                 $printval->($nefd, $ndp), $nefd_units,
+
+ my @values = ( $t_elapsed, $printval->($texp, 2),
+                 sprintf("%.3E",$rms), $rms_units,
+                 sprintf("%.3E",$nefd), $nefd_units,
 		 $mapsize, $printval->($pixscale, 1),
 		 $Frm->hdr("PROJECT"),
                  $recipe,

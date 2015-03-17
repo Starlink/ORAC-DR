@@ -1,0 +1,237 @@
+=head1 NAME
+
+_WRITE_FLATFIELD_LOG_
+
+=head1 DESCRIPTION
+
+This primitive writes the log file of the relative responsivities of
+the receptors.  For each row in the log it tabules the UT time, the
+observation number, the file name, the reference detector, and the 
+responses for all receptors.  Unknown flatfield ratios are set to 0.0.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ERROR = HASH REFERENCE (Given)
+
+A hash reference pointing to the error of the receptor-specific
+flatfield ratios given in Argument RATIO.  Keys are receptor names and
+values are the specific value. This argument must be defined.
+
+=item OBJ = ORAC::Frame/ORAC::Group object (Given)
+
+The ORAC::Frame or ORAC::Group object from which the file name
+will be taken.  [current ORAC::Frame object]
+
+=item OBSNUMBERS = INTEGER (Given)
+
+An array of the observations used to form the ratios.
+
+=item RATIO = HASH REFERENCE (Given)
+
+A hash reference pointing to the receptor-specific flatfield ratios.
+Keys are receptor names and values are the specific value. This
+argument must be defined.
+
+=item REF = STRING (Given)
+
+The name of the reference receptor.  [H05]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+It creates an ORAC-DR log file to record the receptor-to-receptor
+responses.  For multiple processing, only the additional statistics are
+appended.
+
+=item *
+
+The full set of columns and from which headers (where appropriate) the
+values originate is listed below in column order.
+
+=over 4
+
+=item Start time
+
+C<DATE-OBS>
+
+=item Observation number
+
+From Argument OBSNUMBERS if supplied, otherwise C<ORAC_OBSERVATION_NUMBER>
+
+=item Filename
+
+C<$Obj-E<gt>file>
+
+=item Reference receptor (usually H05)
+
+=item Receptor responses H00 to H15 each followed by the statistical error
+
+=back
+
+=item
+
+The string C<null> appears in the table should a value not be
+available, ecept for response ratios.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The log file F<$ORAC_DATA_OUT/log.flatstats.
+
+=back
+
+=head1 TASKS
+
+None
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+# Preliminaries
+# =============
+
+# Handle arguments.
+my $Obj = get_prim_arg( $_PRIM_ARGS_, "OBJ", $Frm );
+my $obsnumref = get_prim_arg( $_PRIM_ARGS_, "OBSNUMBERS", undef );
+my $ref = get_prim_arg( $_PRIM_ARGS_, "REF", "H05" );
+my $ratio = get_prim_arg( $_PRIM_ARGS_, "RATIO", undef );
+if ( ! defined( $ratio ) ) {
+   orac_throw "HASH argument to _WRITE_FLATFIELD_LOG must be defined: programming error";
+}
+
+my $error = get_prim_arg( $_PRIM_ARGS_, "ERROR", undef );
+
+my $MAX_RECEPTOR = 16;
+
+# Start a log file.
+my $log = new ORAC::LogFile( 'log.flatstats' );
+
+# Create the heading.
+# ===================
+
+# Obtain the current time.
+my $time = gmtime();
+my $title = "Noise statistic created at $time UT";
+
+# Write the header if not already present.
+my $filehead = pack( "A30", "File" );
+my $UThead = pack( "A18", "UT" );
+
+my $molehead = pack( "A13", "Molecule" );
+
+# Find the length of the list of observations used to form the flat
+# field ratios.
+my $obsnum;
+my $obslen = 3;
+if ( defined( $obsnumref ) ) {
+   $obsnum = join( ",", @$obsnumref );
+   $obslen = length( $obsnum );
+}
+my $obshead = pack( "A$obslen", "Obs" );
+my $freqhead = "Freq (GHz)";
+
+# Start with the initial columns then...
+my $field_names = "$UThead $obshead $freqhead  $molehead $filehead Ref   ";
+
+# add the receptor names suitably aligned.
+my $spacer = defined( $error ) ? 6 : 3;
+my $i;
+for ( $i = 0; $i < $MAX_RECEPTOR; $i++ ) {
+   my $receptor = " " x ( $spacer - 1 )  . "H" . sprintf( "%02d", $i ) . " " x $spacer;
+   $field_names .= $receptor;
+}
+
+$log->header( "# $title",
+              "# $field_names",
+             );
+
+# Obtain the relevant parameters.
+# ===============================
+
+# UT start time to the nearest second.
+my $utstart = $Obj->hdr( "DATE-OBS" );
+my $utstring = "null" . " " x 14;
+if ( defined $utstart ) {
+   my @ut = split( /:/, $utstart );
+   $utstring = sprintf '%5s', $ut[0] . ":" . $ut[1] . ":" . $ut[2];
+}
+
+# Obtain the current observation number, if it was not supplied.
+if ( ! defined( $obsnumref ) ) {
+   $obsnum = defined( $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ) ) ?
+             sprintf "%4d", $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ) :
+             "null";
+}
+
+my $name = pack( "A30", $Obj->file );
+
+# Determine the representative frequency.
+my $sideband = $Obj->hdr( "OBS_SB" );
+my $lo = $Obj->hdr( "LOFREQS" );
+my $iff = $Obj->hdr( "IFFREQ" );
+my $freq = "null";
+if ( $sideband =~ /USB/ ) {
+   $freq = $lo + $iff;
+} elsif ( $sideband =~ /LSB/ ) {
+   $freq = $lo - $iff;
+}
+$freq = " " x 2 . sprintf( "%6.1f", $freq ) . " " x 2;
+
+# Get the species.
+my $moletran = $Obj->hdr( "MOLECULE" ) . "_" .  $Obj->hdr( "TRANSITI" );
+$moletran =~ s/\s//g;
+$moletran = pack( "A13", $moletran );
+
+
+# Write them to a new line in the log file.
+# =========================================
+
+my $logentry = "$utstring $obsnum  $freq  $moletran $name $ref ";
+
+my $key;
+if ( defined( $error ) ) {
+   for ( $i = 0; $i < $MAX_RECEPTOR; $i++ ) {
+      $key = "H" . sprintf( "%02d", $i );
+      if ( exists( $ratio->{ $key } ) && exists( $error->{ $key } ) ) {
+         $logentry .= sprintf( "%8.3f %5.3f", $ratio->{ $key }, $error->{ $key } );
+      } else {
+         $logentry .= "   0.000 0.000";
+      }
+   }
+
+} else {
+   for ( $i = 0; $i < $MAX_RECEPTOR; $i++ ) {
+      $key = "H" . sprintf( "%02d", $i );
+      if ( exists( $ratio->{ $key } ) ) {
+         $logentry .= sprintf( "%7.3f", $ratio->{ $key } );
+      } else {
+         $logentry .= "  0.000";
+      }
+   }
+}
+
+$log->addentry( $logentry );

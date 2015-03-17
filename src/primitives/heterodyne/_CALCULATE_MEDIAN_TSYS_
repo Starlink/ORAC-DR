@@ -1,0 +1,265 @@
+=head1 NAME
+
+_CALCULATE_MEDIAN_TSYS_
+
+=head1 DESCRIPTION
+
+This primitive calculates and stores the median system temperature (Tsys)
+at the centre of reduced ACSIS cubes, since MAKECUBE only does this for a subset
+of cases including the less common case when the spreading method is nearest.
+
+The radiometer formula relating the variance and Tsys is used.
+
+Tsys = 0.5 * sqrt( variance * eff_time * delta_nu ) / backend_degradation
+
+where variance comes from the VARIANCE component, eff_time from the SMURF
+extension's EFF_TIME NDF, backend degradation factor from the BEDEGFAC
+header.  The delta_nu is the pixel scale at the array centre in Hz in the
+topocentric standard of rest, and it is scaled by a factor of 1.5 if the
+FFT windowing header (FFT_WIN) is "hanning".
+
+The primitive pastes the effective time and variance tiles, and finds their
+median values, applies the formula to derived the median Tsys.
+
+The object MEDTSYS header is updated with the calculated value and written
+to the corresponding file's header.
+
+=head1 ARGUMENTS
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object.  [1]
+
+=head1 OUTPUT DATA
+
+The tiled variances in files with the _var suffix.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS spectral-cube data.
+
+=item *
+
+The median Tsys is written to each object's C<MEDTSYS> internal
+header for later logging, and also to each tile NDF's FITS airlock
+using the same keyword.
+
+=item *
+
+For tiled cubes of more than 400 Mpixel, the median is calculated
+by histograms rather than finding the true median by sorting.
+
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFCOPY, HISTAT, NDFTRACE, STATS, WCSATTRIB.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Preliminaries
+# =============
+
+use ORAC::Constants qw/ :badvalues /;
+
+# Handle parameters.
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 1 );
+
+# Figure out what we're doing with groups/frames.
+my @objs;
+if ( $group == 0 ) {
+   push @objs, $Frm;
+} elsif ( $group == 1 ) {
+   push @objs, $Grp;
+} elsif ( $group == 2 ) {
+   @objs = $Grp->members;
+} else {
+   orac_throw "Programming error: GROUP parameter to _CALCULATE_MEDIAN_TSYS_ must be 0, 1, or 2";
+}
+
+my $ORAC_STATUS;
+
+# Loop through all the objects.
+foreach my $Obj ( @objs ) {
+   my $in = $Obj->file;
+   my ( @efftime_ndf, @var );
+
+# Obtain the frequency increment
+# ==============================
+
+# Get a small central region to obtain the delta_nu and to avoid saving the
+# spectral-axis attributes, and then resetting to the original values.
+   my $temp_freq = new ORAC::TempFile( 0 );
+   $Mon{ndfpack_mon}->obeyw( "ndfcopy", "in=$in(~1,~1,) out=$temp_freq" );
+
+# Find the frequency difference across the central pixel measured in Hz
+# with the topocentric standard of rest.
+   my $params = "ndf=$temp_freq mode=set name='system(3)' newval=freq";
+   $Mon{ndfpack_mon}->obeyw( "wcsattrib", "$params" );
+   $params = "ndf=$temp_freq mode=set name=StdOfRest newval=topo";
+   $Mon{ndfpack_mon}->obeyw( "wcsattrib", "$params" );
+   $params = "ndf=$temp_freq mode=set name='unit(3)' newval=Hz";
+   $Mon{ndfpack_mon}->obeyw( "wcsattrib", "$params" );
+
+# Extract the pixel scale.
+   $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$temp_freq" );
+   ( $ORAC_STATUS, my @pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+   my $delta_nu = $pixscale[2];
+
+# Join the tiles of the VARIANCE and EFF_TIME
+# ===========================================
+
+# Form lists of the tiled parts of the spectral cube.  Do not use a TempFile for
+# the variance NDFs as they are needed outside of the loop, instead add to the
+# intermediates for later tidying.
+   my $speccube = $Obj->file;
+   orac_print "Calculating median Tsys value for $speccube.\n";
+
+   my ( $temp_eff, $temp_var );
+   my $compvar = "";
+   if ( $Obj->nfiles > 1 ) {
+
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+         my ( $tile, $varout ) = $Obj->inout( "_var", $i );
+
+         $params= "in=$tile out=$varout comp=variance";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         push @var, $varout;
+         $Obj->push_intermediates( $varout );
+
+         push @efftime_ndf, "$in" . ".MORE.SMURF.EFF_TIME";
+      }
+
+# Paste the effective-time arrays.
+      $temp_eff = new ORAC::TempFile( 0 );
+      _PASTE_FILES_ FILES=\@efftime_ndf OUT=$temp_eff
+
+# Paste the variance arrays.
+      $temp_var = new ORAC::TempFile( 0 );
+      _PASTE_FILES_ FILES=\@var OUT=$temp_var
+
+# It is a single tile so no pasting is required.  Use the
+# relevant arrays directly.
+   } else {
+      $temp_eff = $speccube . ".MORE.SMURF.EFF_TIME";
+      $temp_var = $speccube;
+      $compvar = " comp=error";
+   }
+
+# Obtain the median variance and T_eff
+# ====================================
+
+# Obtain the median eff_time.
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_eff order" );
+   ( $ORAC_STATUS, my $median_eff_time ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+# The pasted variance array might have a very large number of elements and
+# addressing in the sort in STATS fails catastrophically.  So look
+# for very large arrays and call HISTAT instead.  While only approximate
+# it is much quicker too.
+   $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$temp_var$compvar" );
+   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "histat", "numpix" );
+
+# STATS (PDA_QSIAx) crashes around 1E9 elements.  So for 8k spectral 
+# elements trimmed this threshold would apply above about a 230-pixel
+# square in the spatial axes.
+   my $median_variance;
+   if ( $numpix < 4E8 ) {
+
+# Obtain the median variance.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_var$compvar order" );
+      ( $ORAC_STATUS, $median_variance ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+   } else {
+
+# Obtain the median variance using a faster algorithm, but which
+# yields approximate values.  Given the large number of elements,
+# the median values should be very close to the accurate values
+# for normal data.
+      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$temp_var$compvar" );
+      ( $ORAC_STATUS, $median_variance ) = $Mon{'kappa_mon'}->get( "histat", "median" );
+   }
+
+# Obtain the other parameters for the radiometer formula
+# ======================================================
+
+# Get the backend degradation factor.
+   my $backend_degr_factor = defined( $Obj->hdr( "BEDEGFAC" ) ) ?
+                                      $Obj->hdr( "BEDEGFAC" ) : 1.0;
+
+# Modify the channel width to take account of the effect of the FFT
+# windowing function.
+   $delta_nu = abs( $delta_nu );
+   if ( defined ( $Obj->hdr( "FFT_WIN" ) ) ) {
+      my $fft_window = lc( $Obj->hdr( "FFT_WIN" ) );
+      if ( $fft_window =~ /truncate/ ) {
+         $delta_nu *= 1.0;
+
+      } elsif ( $fft_window =~ /hanning/ ) {
+         $delta_nu *= 1.5;
+
+      } else {
+         $delta_nu *= 1.0;
+      }
+   }
+
+# Apply and store the result of the radiometer formula
+# ====================================================
+
+   my $fcon = $backend_degr_factor * $backend_degr_factor / $delta_nu;
+   my $median_tsys = "NaN";
+
+# Allow for extreme or bad values.  Bad may arise from a single valid pixel
+# in tile (the median is undefined).
+   if ( ! ( lc( $median_variance ) =~ /inf/ || lc( $median_variance ) =~ /nan/ ||
+            $median_variance == VAL__BADD ) && ! ( $median_eff_time == VAL__BADD ||
+            lc( $median_eff_time ) =~ /inf/ || lc( $median_eff_time ) =~ /nan/ ) ) {
+
+      $median_tsys = 0.5 * sqrt( $median_variance * $median_eff_time / $fcon );
+   }
+
+# Record the values in ORAC-DR for logging and to the actual data files for
+# longer-term presevation.
+   my $comment = "[K] Median system temperature";
+   $Obj->hdr( "MEDTSYS", $median_tsys );
+   foreach my $i ( 1 .. $Obj->nfiles ) {
+       my $tile = $Obj->file( $i );
+      _SET_FILE_FITS_ITEM_ FILE=$tile KEY=MEDTSYS VALUE=$median_tsys COMMENT=$comment
+   }
+}
+
+# Tidy-up output.
+orac_print "\n";

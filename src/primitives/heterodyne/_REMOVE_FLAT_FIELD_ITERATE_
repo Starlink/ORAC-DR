@@ -1,5 +1,3 @@
-# -*-cperl-*-
-
 =head1 NAME
 
 _REMOVE_FLAT_FIELD_ITERATE_ - Remove flat-field effects iteratively.
@@ -44,6 +42,13 @@ cent shift from the previous iteration.
 =head1 ARGUMENTS
 
 =over 4
+
+=item APPLY = BOOLEAN (Given)
+
+Whether or not to apply the calculated flatfield.  If APPLY is false
+the ratios are still calculated and logged.  This argument can be
+overridden by the RECPAR_FLAT_APPLY uhdr via the recipe parameter
+system. [1]
 
 =item COMBINE_BY_DATE = BOOLEAN (Given)
 
@@ -119,6 +124,10 @@ This primitive is suitable for baselined time-series ACSIS cubes.
 The cube is collapsed along the time and frequency axes using the
 'sum' estimator.
 
+=item *
+
+Only applies to RASTER of SCAN types.
+
 =back
 
 =head1 OUTPUT DATA
@@ -133,8 +142,8 @@ The flat-fielded time-series cube with suffix _ff.
 
 =head1 TASKS
 
-KAPPA: BLOCK, CDIV, CHPIX, COLLAPSE, DIV, MANIC, MATHS, MSTATS, NDFCOPY,
-NDFTRACE, PASTE, SETUNITS, SETVAR, STATS, THRESH, TRANDAT.
+KAPPA: BLOCK, CDIV, CHPIX, COLLAPSE, DIV, MANIC, MATHS, MSTATS, MULT,
+NDFCOPY, NDFTRACE, PASTE, SETUNITS, SETVAR, STATS, THRESH, TRANDAT.
 
 =head1 REQUIRED PERL MODULES
 
@@ -151,9 +160,14 @@ Rights Reserved.
 
 =cut
 
+# Need more data than a stare or jiggle provides.
+my $obstype = uc( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) );
+if ( $obstype ne 'RASTER' and $obstype ne 'SCAN' ) { goto RETURN }
+
 # Obtain arguments and recipe parameters.
 # =======================================
 
+my $apply = get_prim_arg( $_PRIM_ARGS_, "APPLY", 1 );
 my $combine_date = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_DATE", 1 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
@@ -166,6 +180,9 @@ my $upper_vel = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
 $flatmethod = ( defined( $Frm->uhdr( "RECPAR_FLAT_METHOD" ) ) ?
                 $Frm->uhdr( "RECPAR_FLAT_METHOD" )            :
                 $flatmethod );
+$apply = ( defined( $Frm->uhdr( "RECPAR_FLAT_APPLY" ) ) ?
+           $Frm->uhdr( "RECPAR_FLAT_APPLY" )            :
+           $apply );
 $lower_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
              $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
              $lower_vel );
@@ -182,18 +199,20 @@ if ( defined( $upper_vel ) && $upper_vel =~ /^[+-]?\d+$/ ) {
    $upper_vel = sprintf( "%.1f", $upper_vel );
 }
 
-my $flat_range = "";
-if ( defined( $lower_vel ) && defined( $upper_vel ) ) {
-   $flat_range = "$lower_vel" . ":" . "$upper_vel";
-} else {
-   orac_warn "Flat fielding selected without specifying the velocity range to perform \n";
-   orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the analysis \n";
-   orac_warn "may be affected by noise. \n";
-   orac_warn "Set FLAT_LOWER_VELOCITY and FLAT_UPPER_VELOCITY to span the astronomical signal.\n";
-}
-
 # Provide a shorthand for the selecting the method.
 my $sum = lc( $flatmethod ) eq 'sum' ? 1 : 0;
+
+my $flat_range = "";
+if ( $sum ) {
+   if ( defined( $lower_vel ) && defined( $upper_vel ) ) {
+     $flat_range = "$lower_vel" . ":" . "$upper_vel";
+   } else {
+      orac_warn "Flat fielding selected without specifying the velocity range to perform \n";
+      orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the analysis \n";
+      orac_warn "may be affected by noise. \n";
+      orac_warn "Set FLAT_LOWER_VELOCITY and FLAT_UPPER_VELOCITY to span the astronomical signal.\n";
+   }
+}
 
 # For the sum method there is no iteration.
 $maxiter = 1 if ( $sum );
@@ -237,9 +256,10 @@ if ( ! $isok ) {
    if ( $group != 1 ||
         ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       my $params;
+      my $useref;
       my $firstobs = 1;
       my $ORAC_STATUS;
-      my ( %flat_ratio, %full_flat_ratio );
+      my ( %flat_ratio, %flat_ratio_error, %first_flat_ratio );
 
       orac_say "Detector gain correction";
 
@@ -248,7 +268,7 @@ if ( ! $isok ) {
       foreach my $Grp ( @dategrps ) {
          @Objs = $Grp->members;
          my $number_on_date = scalar( @Objs );
-         my @mean_spectra;
+         my ( @obsnums, @mean_spectra );
          my ( $in, $nval, $nreceptor, $ref, $units );
          my ( $array, $lbound, $ubound );
 
@@ -266,6 +286,7 @@ if ( ! $isok ) {
             $obs++;
             $in = $Obj->file;
             orac_say "Processing observation: $in.";
+            push @obsnums, $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" );
 
 # Determine valid spectral range.  This will either be the regular central 85%,
 # or to user-defined final velocity limits, whichever is more extensive.
@@ -406,7 +427,8 @@ if ( ! $isok ) {
                }
 
 # Collapse along the time axis.  Use a clipped mean to exclude single
-# spectra with strongly negative values.
+# spectra with strongly negative values and very bright features that
+# could be present in just a few of the receptors.
                my $params = "in=$fulltimes out=$temp1file estimator=cmean wlim=0.0 axis=3";
                $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
@@ -465,27 +487,36 @@ if ( ! $isok ) {
          my $upper_bound = $trim_ubnd->[0];
 
 # Set up some temporary files.
-         my $previousfile = new ORAC::TempFile( 0 );
-         my $ratiofile = new ORAC::TempFile( 0 );
-         my $spectfile = new ORAC::TempFile( 0 );
+         my $previousfile = new ORAC::TempFile( 0 ); # Previous itaration's ratios
+         my $ratiofile = new ORAC::TempFile( 0 ); # Current iteration's ratios
+         my $spectfile = new ORAC::TempFile( 0 ); # Mean spectra for each receptor
          my $temp4file = new ORAC::TempFile( 0 );
-         my $temp5file = new ORAC::TempFile( 0 );
-         my $temp6file = new ORAC::TempFile( 0 );
-         my $temp7file = new ORAC::TempFile( 0 );
-         my $temp8file = new ORAC::TempFile( 0 );
+         my $temp5file = new ORAC::TempFile( 0 ); # Thresholded spectra for each receptor
+         my $temp6file = new ORAC::TempFile( 0 ); # Integrated flux over thresholded spectra
+         my $temp8file = new ORAC::TempFile( 0 ); # Sum of differences between current and
+                                                  # previous ratios
          my $temp9file = new ORAC::TempFile( 0 );
          my $ratiocube = new ORAC::TempFile( 0 );
 
 # Iteration
 # =========
          my $ratio_shift = 10000.0;
+         my $previous_shift = $ratio_shift + 1.;
          my $first = 1;
          my $iter = 1;
          my $derive_flat = 1;
-         while ( $ratio_shift > 0.01  && $iter <= $maxiter ) {
+         my $max_thresh = 100000.;
+         $nval = $MAX_RECEPTOR;
+
+# A one-percent shift is about 0.001 per receptor, and the best data will
+# have errors several times that.  Stop if the solution is diverging, i.e.
+# the shifts are increasing.
+         while ( $ratio_shift > 0.01 && $ratio_shift < $previous_shift &&
+                 $iter <= $maxiter && $nval > 1 ) {
             orac_print "\nIteration $iter:";
 
-# Apply the previous iterations to the fit.
+# Apply the previous iterations to the fit, except when there was not
+# a previous iteration.
             if ( $first ) {
                $params = "in=$mean_spectra_by_date out=$spectfile trim trimwcs";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
@@ -493,12 +524,12 @@ if ( ! $isok ) {
 # Grow the vector ratios into an array with the dimensions of the mean
 # spectra.
             } else {
-               $params = "in=$temp7file out=$temp9file axes=[0,1] ";
+               $params = "in=$previousfile out=$temp9file axes=[0,1] ";
                $params .= "lbound=$lower_bound ubound=$upper_bound";
                $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Apply the ratio to the spectra.
-               $params = "in1=$spectfile in2=$temp9file out=$temp4file";
+               $params = "in1=$mean_spectra_by_date in2=$temp9file out=$temp4file";
                $Mon{'kappa_mon'}->obeyw( "div", "$params" );
                $params = "in=$temp4file out=$spectfile trim trimwcs";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
@@ -529,17 +560,23 @@ if ( ! $isok ) {
 
 # Threshold to select the astronomical signal.
                my $clip = 4.0;
-               my $thresh = $median + $clip * $sigma;
+               my $thresh = min( $median + $clip * $sigma, $max_thresh );
                my $fs_thresh = sprintf( "%.4f", $thresh );
                orac_print " Set threshold to $fs_thresh.\n";
                $params = "in=$spectfile out=$temp5file thrlo=$thresh thrhi=1.0e30 newlo=bad newhi=1E30";
                $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file" );
-               ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+# Aim to prevent divergence especially for small observations and ones
+# with bad baselines that can be rejected automatically because there
+# are too few.  After rejecting a receptor because its value lie below the
+# threshold, more weight is given to wobbly baselines, which in turn
+# raises the bar causing more decent receptors to be rejected. 10% is
+# a number picked out of the air and will likely need to be changed.
+               $max_thresh = $thresh * 1.10;
 
 # Want to avoid having too few and especially no good values that will
 # cause problems later.  The number is somehat arbitrary.
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file" );
                ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
                if ( $numgood < 10 * $nreceptor ) {
                   orac_warn "Unable to calculate the flat field.  There are too few data data values\n";
@@ -548,8 +585,8 @@ if ( ! $isok ) {
                   last;
                }
 
-# Collapse along the velocity axis giving the mean emission.
-               $params = "in=$temp5file out=$temp6file estimator=mean wlim=0.0 axis=1";
+# Collapse along the velocity axis giving the summed emission.
+               $params = "in=$temp5file out=$temp6file estimator=sum wlim=0.0 axis=1";
                $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
             }
 
@@ -559,7 +596,8 @@ if ( ! $isok ) {
 
 # Extract the mean value for the reference receptor.
             my $array = new JCMT::ACSIS::Array( File => $temp6file );
-            my $pixel = $array->pixel( $ref );
+            my $pixel = substr( $ref, 1, 2 ) + 1;
+
             $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp6file($pixel)" );
             ( $ORAC_STATUS, my $ref_numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
 
@@ -578,47 +616,46 @@ if ( ! $isok ) {
                   next OBJECT;
                }
                orac_say "  Using the reserve reference receptor: $reserve_ref.";
+               $useref = $reserve_ref;
+            } else {
+               $useref = $ref;
             }
 
 # Obtain the mean value for the reference receptor or its reserve.
             ( $ORAC_STATUS, my $refvalue ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
 # Normalize to the value in the reference receptor.
-            $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp6file out=$temp7file scalar=$refvalue" );
+            $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp6file out=$ratiofile scalar=$refvalue" );
 
-# Initialise the vector of ratios.
-            if ( $first ) {
-               $params = "in=$temp7file out=$previousfile";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$previousfile" );
-               ( $ORAC_STATUS, $ratio_shift ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-
-               $params = "in=$previousfile out=$ratiofile";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-               $first = 0;
-
-            } else {
-
-# Sum the differences for the non-reference receptors.
-               $params = "ia=$temp7file ib=$previousfile out=$temp8file exp=abs(ia-ib)";
-               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
-               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file" );
-               ( $ORAC_STATUS, $ratio_shift ) = $Mon{'kappa_mon'}->get( "stats", "total" );
-               $ratio_shift = $ratio_shift / max( $nval - 1, 1 );
-               my $fs_ratio = sprintf( "%.4f", $ratio_shift );
-               orac_say "  Ratio shift is $fs_ratio.";
-
-# Prepare for the next iteration.
-               $params = "in=$temp7file out=$previousfile";
-               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            if ( ! $first && $nval > 1 ) {
 
 # Update the ratios for the factors derived in the current iteration.
-               $params = "in1=$ratiofile in2=$temp7file out=$temp9file";
-               $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+               $params = "in1=$previousfile in2=$ratiofile out=$temp9file";
+               $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
                $params = "in=$temp9file out=$ratiofile";
                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Sum the differences for the non-reference receptors.  Since the
+# reference receptor is by defintion set to 1.0, there is one fewer
+# degree of freedom.
+               $params = "ia=$ratiofile ib=$previousfile out=$temp8file exp='abs(ia-ib)'";
+               $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+               $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file" );
+               ( $ORAC_STATUS, my $total ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+               $previous_shift = $ratio_shift;
+               $ratio_shift = $total / max( $nval - 1, 1 );
+               my $fs_ratio = sprintf( "%.4f", $ratio_shift );
+               orac_say "  Ratio shift is $fs_ratio.";
+               if ( $ratio_shift > $previous_shift ) {
+                  orac_say "  Ratio shift is not converging.";
+                  last;
+               }
             }
+
+# Prepare for the next iteration.  This iteration's ratios is the
+# next iteration's previous set of ratios.
+            $params = "in=$ratiofile out=$previousfile";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
 # Report the receptor ratios.
 # ---------------------------
@@ -631,22 +668,55 @@ if ( ! $isok ) {
                my $receptor = $array->receptor( $i );
                if ( defined( $receptor ) ) {
                   my $ri = substr( $receptor, 1, 2 ) + 1;
+
                   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri)" );
                   ( $ORAC_STATUS, my $ratio ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-                  $full_flat_ratio{$receptor} = $ratio;
                   $flat_ratio{$receptor} = $ratio if ( uc($ratio) ne "BAD" );
+
+# Errors will grow because of the incremental calculation of the ratios
+# at each division of the new ratios into the old ratios.  While the
+# first set of errors may slightly underestimate the true internal errors,
+# but it is much better than inflated errors going up roughly as the
+# square root of the number of iterations before convergence.  However,
+# the errors will need scaling for the different ratios.
+                  if ( $first ) {
+                     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$ratiofile($ri) comp=error" );
+                     ( $ORAC_STATUS, my $ratio_error ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+                     $flat_ratio_error{$receptor} = $ratio_error if ( uc($ratio_error) ne "BAD" );
+
+                     $first_flat_ratio{$receptor} = $flat_ratio{$receptor};
+                  }
                }
             }
 
+# Report the current set of ratios.
             orac_say "";
             my $type = "Flat field normalisation";
             _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
+
             $iter++;
+            $first = 0;
          }
+
+# Scale the first-cycle errors to their final ratios.
+         for ( my $i = 1; $i <= $MAX_RECEPTOR; $i++ ) {
+            my $receptor = $array->receptor( $i );
+            if ( defined( $receptor ) &&
+                 defined( $first_flat_ratio{$receptor} ) &&
+                 $first_flat_ratio{$receptor} > 0 ) {
+               $flat_ratio_error{$receptor} *= $flat_ratio{$receptor} /
+                                               $first_flat_ratio{$receptor};
+            }
+         }
+
+# We only report the errors after the iterations cease, so they are
+# adjacent to the ratios.
+         my $type = "Flat field error";
+         _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio_error TYPE=$type
 
 # Apply the flat field to each file in each observation for the
 # current night.
-         if ( $derive_flat ) {
+         if ( $derive_flat & $apply ) {
             foreach my $Obj ( @Objs ) {
 
 # Obtain the receptors present in the current observation.  Note we
@@ -660,7 +730,7 @@ if ( ! $isok ) {
 # Extract the relative fluxes for the current observation.
                my @ratios;
                foreach ( @receptors ) {
-                  if ( defined( $_ ) ) {
+                  if ( defined( $flat_ratio{$_} ) ) {
                      push @ratios, $flat_ratio{$_};
                   } else {
                      push @ratios, 1.0;
@@ -707,9 +777,14 @@ if ( ! $isok ) {
                }
             }
          }
+
+# Log the flat field.
+         _WRITE_FLATFIELD_LOG_ RATIO=\%flat_ratio ERROR=\%flat_ratio_error REF=$useref OBSNUMBERS=\@obsnums
       }
    }
 }
 
 # Tidy up output.
 orac_print "\n";
+
+RETURN:
