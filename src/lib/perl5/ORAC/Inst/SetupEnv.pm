@@ -470,8 +470,11 @@ sub orac_calc_instrument_settings {
     } else {
         $rawdir = File::Spec->catfile( $dataroot, $sitecode, $cameracode, $localut, "raw" );
     }
+    my $caldir;
+    $caldir = File::Spec->catdir( "/data/archive/Calibs/", $root, $cameracode );
+    _mkdir_lcogt($caldir);
 
-    return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root, $cameracode ),
+    return ( ORAC_DATA_CAL => $caldir,
              ORAC_DATA_IN => $rawdir,
              ORAC_DATA_OUT => $outdir,
              ORAC_SUN => $sun,

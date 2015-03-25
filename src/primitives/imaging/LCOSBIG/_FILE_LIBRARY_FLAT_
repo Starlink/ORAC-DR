@@ -1,0 +1,156 @@
+#+
+# Name:
+#    _FILE_LIBRARY_FLAT_
+#
+# Purpose:
+#    Makes a copy of the masterflat and index file in the calibration library.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes a copy of the masterflat and index.flat from the 
+#    current directory to calibration library (pointed to by the ORAC_DATA_CAL
+#    environment variable.
+#
+# Arguments:
+#
+# Notes:
+#    -  This primitive is suitable for optical imaging instruments.
+#    -  Processing only occurs for flat frames, and when the steering
+#     	header MAKE_FLAT is true.
+#
+# Tasks:
+#    KAPPA: NDFCOPY.
+#
+# Output Data:
+#    The masterflat.  It is called
+#    "flat_<instrument>_<UT night>_bin<Xbin>x<Ybin>" where <instrument> is the
+#    LCOGT instrument identifier and <Xbin>,<Ybin> are the binning factors
+#    in X and Y.
+#
+#
+# Authors:
+#    TAL: Tim Lister (LCOGT)
+#
+# Copyright:
+#    Copyright (C) 2014 Las Cumbres Observatory Global Telescope Inc.
+#    All Rights Reserved.
+#
+#-
+use File::Copy;
+
+# Selection
+# =========
+#
+# This should only be performed on flat frames, when it's time make a flat.
+    my $obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE");
+
+    if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
+       $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKYFLAT" ||
+       $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMBERT-FLAT" ) ) {
+
+# Record the current file, to be restored at the conclusion.
+# The current frame will normally be the last group member, but
+# this may not be the Frm needed if there are multiple filters
+# represented.
+        my $flatframe = $Frm->file;
+        (my $volume,my $directories,$flatframe) =  File::Spec->splitpath( $flatframe );
+      	orac_print $flatframe . " being considered\n\n";
+
+# If we have a final destination environment var. set, copy the masterflat SDF,
+# PNG and calib index files there.
+	if ( defined $ENV{ORAC_DATA_CAL} ) {
+          my $calib_dest = File::Spec->catfile( $ENV{ORAC_DATA_CAL} );
+          my $calib_dest_flat = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, $flatframe );
+          my $param = "in=$flatframe out=$calib_dest_flat";
+	  orac_print "Copying ". $flatframe . " to calib library=" . $calib_dest_flat . "\n";
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+
+          my $pngfile = $flatframe . ".png";
+          orac_print "Copying ". $pngfile . " to calib library=" . $calib_dest . "\n";
+          copy($pngfile, $calib_dest);
+
+# Get the name of index file for flats
+          my $flatindex = $Cal->GenericIndex("flat");
+          my $indexfile = $flatindex->indexfile;
+
+# Find filename entry within index
+          my @entries = $flatindex->scanindex( ':ID' => "/^$flatframe/" );
+          if ( @entries > 0 ) {
+# Update entry in calib library index file
+            my $entry1 = $entries[0];
+            my $libflatindex = $Cal->GenericIndex("flat", "static");
+            my $libflatindexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.flat");
+            $libflatindex->indexfile( $libflatindexfile );
+            $libflatindex->add($flatframe, $entry1);
+            orac_print "Added entry to calib library index: " . $libflatindex->indexfile . "\n";
+
+# Set back to orginal index file
+            $flatindex->indexfile($indexfile);
+#            print "Calib index now: " . $libflatindex->indexfile . "\n";
+          }
+      	}
+    }
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_FILE_LIBRARY_FLAT_ -- Makes a copy of the masterflat and index file in the calibration library.
+
+=head1 DESCRIPTION
+
+This primitive makes a copy of the masterflat and index.flat from the current
+directory to calibration library (pointed to by the ORAC_DATA_CAL environment
+variable.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item *
+
+None
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for optical imaging instruments.
+
+=item *
+
+Processing only occurs for flat frames, and when the steering header
+MAKE_FLAT is true.
+
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFCOPY.
+
+=head1 OUTPUT DATA
+
+The masterflat.  It is called
+"flat_E<lt>instrumentE<gt>_E<lt>UTnightE<gt>_SKYFLAT_binE<lt>XbinE<gt>xE<lt>YbinE<gt>_E<lt>filterE<gt>"
+where E<lt>instrumentE<gt> is the LCOGT instrument identifier, E<lt>XbinE<gt>,
+E<lt>YbinE<gt> are the binning factors in X and Y and E<lt>filterE<gt> is the filter.
+
+=head1 AUTHORS
+
+Tim Lister (tlister@lcogt.net)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2014 Las Cumbres Observatory Global Telescope Inc.
+All Rights Reserved.
+
+=cut
