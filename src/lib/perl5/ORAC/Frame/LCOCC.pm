@@ -226,7 +226,12 @@ sub findgroup {
     # For non biases and darks, add the filter
     if ( uc( $self->hdr( "OBSTYPE" ) ) ne 'BIAS' and
       	 uc( $self->hdr( "OBSTYPE" ) ) ne 'DARK') {
-	 $hdrgrp .= "_" . uc($self->hdr( "FILTER" ));
+	 $hdrgrp .= "_" . $self->uhdr( "ORAC_FILTER" );
+    }
+    # For biases and darks, add the molecule number
+    if ( uc( $self->hdr( "OBSTYPE" ) ) eq 'BIAS' or
+      	 uc( $self->hdr( "OBSTYPE" ) ) eq 'DARK') {
+	 $hdrgrp .= "_" . $self->hdr( "MOLNUM" );
     }
     # Add DATE-OBS if we *are* doing a science observation,
     # to ensure that they are not combined into groups
@@ -263,7 +268,7 @@ start of the next.
 =cut
 
 sub framegroupkeys {
-  return (qw/ OBSTYPE XBINNING YBINNING FILTER ORAC_OBSERVATION_NUMBER/);
+  return (qw/ OBSTYPE XBINNING YBINNING ORAC_FILTER ORAC_OBSERVATION_NUMBER/);
 }
 
 =item B<file_from_bits>

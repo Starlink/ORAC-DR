@@ -221,13 +221,13 @@ sub findgroup {
 
     $hdrgrp .=  uc($self->hdr( "OBSTYPE" ))
                 . '_bin'
-		. $self->uhdr( "ORAC_XBINNING" )
-		.'x'
-		. $self->uhdr( "ORAC_YBINNING" );
+                . $self->uhdr( "ORAC_XBINNING" )
+                .'x'
+                . $self->uhdr( "ORAC_YBINNING" );
     # For non biases and darks, add the filter
     if ( uc( $self->hdr( "OBSTYPE" ) ) ne 'BIAS' and
-	 uc( $self->hdr( "OBSTYPE" ) ) ne 'DARK') {
-	 $hdrgrp .= "_" . $self->uhdr( "ORAC_FILTER" );
+         uc( $self->hdr( "OBSTYPE" ) ) ne 'DARK') {
+         $hdrgrp .= "_" . $self->uhdr( "ORAC_FILTER" );
     }
     # Add DATE-OBS if we *are* doing a science observation,
     # to ensure that they are not combined into groups
@@ -350,7 +350,7 @@ Tim Jenness (timj@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2013 Las Cumbres Observatory Global Telescope Inc.
+Copyright (C) 2013, 2015 Las Cumbres Observatory Global Telescope Inc.
 All Rights Reserved.
 
 =cut
