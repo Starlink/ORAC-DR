@@ -2,12 +2,14 @@
 
 =head1 NAME
 
-_CREATE_IMAGE_CATALOGUE__ - source extraction and photometry on all sources
+_CREATE_IMAGE_CATALOGUE_ - source extraction and photometry on all sources
 
 =head1 DESCRIPTION
 
 For the group file, find all the sources and calculate the flux
-of each detected source. Write the results to a catalogue file.
+of each detected source. Write the results to a catalogue file. The 
+resulting catalogue file is in C<FITS_1.0> format with columns defined
+to produce an LCOGT Standard Catalogue Product.
 
 =head1 ARGUMENTS
 
@@ -18,10 +20,17 @@ of each detected source. Write the results to a catalogue file.
 If true, use the current group file for source extraction. If false, use
 the current frame. [0]
 
-=item OUTPUT_FORMAT = STRING (Given)
+=item DETECT_SIGMA = REAL (Given)
 
-The catalogue output format. The name of the format comes from the
-appropriate C<Astro::Catalog> IO class. ['SExtractor']
+The number of sigmas above the fitted background mesh that SExtractor should
+try to detect objects at. [1.5]
+
+=item MINPIX = INTEGER (Given)
+
+The minimum number of pixels in an object that SExtractor should count as a 
+valid object. [12]
+
+=back
 
 =head1 NOTES
 
@@ -31,11 +40,19 @@ appropriate C<Astro::Catalog> IO class. ['SExtractor']
 
 Currently uses SEXTRACTOR for source extraction and for photometry.
 
+=item *
+
+The output catalogue is not completely in LCOGT Standard Catalogue Product
+form and requires post-processing by C<timecorrect.py> in order to propogate the
+image headers, calculate the missing C<AIRMASS> and C<TCORR> columns and
+splitting the C<FLUX_APER> and C<FLUXERR_APER> 2D arrays into 8 separate
+columns.
+
 =back
 
 =head1 REQUIRED PERL MODULES
 
-Starlink::Extractor, Astro::WaveBand, Astro::Catalog.
+Starlink::Extractor.
 
 =head1 AUTHOR
 
@@ -46,6 +63,7 @@ Tim Lister <tlister@lcogt.net>
 
 Copyright (C) 2003 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
+Copyright (C) 2012-2015 Las Cumbres Observatory Global Telescope Inc.
 
 =cut
 use File::Copy;
@@ -53,9 +71,6 @@ use Data::Dumper;
 
 # Do only if it's time to create a catalogue.
 if( $Frm->uhdr("CREATE_CATALOGUE") ) {
-
-# Get the output format.
-  my $output_format = $_CREATE_IMAGE_CATALOGUE_{OUTPUT_FORMAT} || 'SExtractor';
 
 # Get the input NDF.
   my $in;
@@ -139,7 +154,7 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
   $extractor->seeing_fwhm($fwhm);
   $extractor->catalog_type('FITS_1.0');
   $extractor->catalog_name('object_cat.cat');
-# Split the full path of the found SExtractor config file into volume (N/A on
+# Split the full path of the found SExtractor config file into volume (N/A on 
 # Unix) and directory path so we know where to locate the companion SExtractor
 # param file
   (my $volume, my $directories, my $conf_filename) = File::Spec->splitpath( $conf_file );
@@ -154,8 +169,6 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 # Derive an inventory of the images in $resfile.
   my $extractor_status = $Mon{ "extractor" }->obeyw( "extract", "$param1" );
 
-# We can handle a failure here by making a null ARD file.  So we test a
-# local status rather than let ORAC go on to the next file.
   if ( $extractor_status == ORAC__OK ) {
     my $extracted_catalog = 'object_cat.cat';
 
@@ -186,9 +199,6 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
     }
 
     my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
-#  my $status = $filtered_catalog->write_catalog( file => $cat_file,
-#                                                 format => $output_format,
-#                                               );
 
     rename( $extracted_catalog, $cat_file ) ||
       orac_throw "Cannot rename  $extracted_catalog to $cat_file\n";

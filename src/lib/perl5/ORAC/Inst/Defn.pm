@@ -1071,7 +1071,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $general_root );
 
   } elsif ($inst eq 'LCOMEROPE') {
-    push( @path, File::Spec->catdir( $root, "LCOMERPE" ) );
+    push( @path, File::Spec->catdir( $root, "LCOMEROPE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOMEROPE" ) );
     push( @path, File::Spec->catdir( $root, "LCOSBIG" ) );
     push( @path, File::Spec->catdir( $imaging_root, "LCOSBIG" ) );
