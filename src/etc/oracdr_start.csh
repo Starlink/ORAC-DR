@@ -183,7 +183,7 @@ if ( -e $starperl ) then
   echo " ++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
   echo ""
   echo " For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON"
-  echo ' For problems with the ORAC-DR system mail scicom@eao.hawaii.edu'
+  echo ' For problems with the ORAC-DR system mail oracdr@eaobservatory.org'
   echo '     ORAC-DR website: http://www.oracdr.org/'
   echo ""
   echo ""
