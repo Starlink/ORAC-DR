@@ -1,11 +1,10 @@
 This is the ORAC Data Reduction pipeline software (ORAC-DR)
 
-You can use it to reduce astronomical data from the James Clerk
-Maxwell Telescope, the United Kingdom Infrared Telescope and
-the Anglo-Australian Telescope.
+You can use it to reduce astronomical data from the James Clerk Maxwell Telescope, the United Kingdom Infrared Telescope, the Anglo-Australian Telescope and the Las Cumbres Observatory.
 
 The directories are laid out as follows:
 
+```
   src/        Source code tree
       bin        Executables
       etc        Initialisation scripts
@@ -21,13 +20,14 @@ The directories are laid out as follows:
       uml        Class layouts (currently out of date)
 
   cal/      Calibration support files per instrument
+```
 
 The check out repository can be used directly so long as the following
 environment variables are set
 
-  ORAC_DIR       Set to the src directory
-  ORAC_PERL5LIB  Set to the src/lib/perl5 directory
-  ORAC_PERLBIN   Set to a suitable perl binary
-  ORAC_CAL_ROOT  Set to the cal directory
+* `ORAC_DIR`       Set to the `src` directory
+* `ORAC_PERL5LIB`  Set to the `src/lib/perl5` directory
+* `ORAC_PERLBIN`   Set to a suitable perl binary
+* `ORAC_CAL_ROOT`  Set to the `cal` directory
 
-and then source the src/etc/login and src/etc/cshrc (or profile) scripts.
+and then source the `src/etc/login` and `src/etc/cshrc` (or profile) scripts.
