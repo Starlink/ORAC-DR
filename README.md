@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/12517/Starlink/ORAC-DR.svg)](http://dx.doi.org/10.5281/zenodo.17214)
+
 This is the ORAC Data Reduction pipeline software (ORAC-DR)
 
 You can use it to reduce astronomical data from the James Clerk Maxwell Telescope, the United Kingdom Infrared Telescope, the Anglo-Australian Telescope and the Las Cumbres Observatory.
