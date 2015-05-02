@@ -34,19 +34,19 @@ set hostname = `/bin/hostname`
 
 set script = "none"
 
-if ($hostname == "wfdr1") then
+if (($hostname == "wfdr1") || ($hostname == "wfdr1-old")) then
     set script = oracdr_wfcam1.csh
 endif
 
-if ($hostname == "wfdr2") then
+if (($hostname == "wfdr2") || ($hostname == "wfdr2-old")) then
     set script = oracdr_wfcam2.csh
 endif
 
-if ($hostname == "wfdr3") then
+if (($hostname == "wfdr3") || ($hostname == "wfdr3-old")) then
     set script = oracdr_wfcam3.csh
 endif
 
-if ($hostname == "wfdr4") then
+if (($hostname == "wfdr4") || ($hostname == "wfdr4-old")) then
     set script = oracdr_wfcam4.csh
 endif
 
