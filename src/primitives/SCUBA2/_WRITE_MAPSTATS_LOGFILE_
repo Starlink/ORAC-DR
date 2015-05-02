@@ -128,24 +128,41 @@ if ($proceed) {
   orac_print "Writing results to log.mapstats...\n";
   $Obj->tagset("mapstats");
   $Obj->tagretrieve($tag);
+
   # All checks should be carried out on the reduced file or the new
   # image in the SUMMIT pipeline
+
+  # First crop the entire map into a new file: this will use MAP_HGHT,
+  # MAP_WDTH and MAP_PA fits headers.
+  my $cropfile = new ORAC::TempFile;
+  _CROP_IMAGE_REGION_ in=$Obj->file OUT=$cropfile
+
+  # Find out the map size
   _GET_PIXEL_SCALE_ VERBOSE=0 GROUP=$group
   my $pixscale = $_GET_PIXEL_SCALE_{PIXSCALE};
   my $mapsize = $Frm->hdr("MAP_HGHT");
-  my $pixregion = sprintf "%d", ($mapsize / $pixscale);
-  _FIND_IMAGE_STATISTICS_ REGION=$pixregion COMP=ERR VERBOSE=0 GROUP=$group
+
+  # Then carry out statistics on whole map.
+  # 1. Find the median rms
+  _FIND_IMAGE_STATISTICS_  IMAGE=$cropfile COMP=ERR VERBOSE=0 GROUP=$group
   my $rms = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
   orac_say("RMS is $rms\n");
-  my $image = $Obj->file .".more.smurf.exp_time";
-  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0 GROUP=$group
+
+  # 2. Find the median expsoure time
+  my $image = $cropfile .".more.smurf.exp_time";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image VERBOSE=0 GROUP=$group
   my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-  _COMPONENT_EXISTS_ COMPONENT=more.smurf.nefd FILE=$Obj->file
+
+  # 3. Find the median NEFD (calculating the nefds if they don't exist
+  # and recropping the map if required).
+  _COMPONENT_EXISTS_ COMPONENT=more.smurf.nefd FILE=$cropfile
   if (!$_COMPONENT_EXISTS_{EXISTS}) {
-    _CALCULATE_NEFD_ GROUP=$group LOGFILE=0
+    _CALCULATE_NEFD_ GROUP=$group
+    $cropfile = new ORAC::TempFile;
+    _CROP_IMAGE_REGION_ in=$Obj->file OUT=$cropfile
   }
-  $image = $Obj->file .".more.smurf.nefd";
-  _FIND_IMAGE_STATISTICS_ IMAGE=$image REGION=$pixregion VERBOSE=0 GROUP=$group
+  $image = $cropfile .".more.smurf.nefd";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image VERBOSE=0 GROUP=$group
   my $nefd = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
 
   my $printval = sub {
