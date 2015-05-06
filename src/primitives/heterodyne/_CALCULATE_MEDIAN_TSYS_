@@ -138,6 +138,7 @@ foreach my $Obj ( @objs ) {
    $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$temp_freq" );
    ( $ORAC_STATUS, my @pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
    my $delta_nu = $pixscale[2];
+   my $eff_time_exists;
 
 # Join the tiles of the VARIANCE and EFF_TIME
 # ===========================================
@@ -150,6 +151,7 @@ foreach my $Obj ( @objs ) {
 
    my ( $temp_eff, $temp_var );
    my $compvar = "";
+   my $neff_time = 0;
    if ( $Obj->nfiles > 1 ) {
 
       foreach my $i ( 1 .. $Obj->nfiles ) {
@@ -160,12 +162,19 @@ foreach my $Obj ( @objs ) {
          push @var, $varout;
          $Obj->push_intermediates( $varout );
 
-         push @efftime_ndf, "$in" . ".MORE.SMURF.EFF_TIME";
+         _COMPONENT_EXISTS_ FILE=$in COMPONENT=MORE.SMURF.EFF_TIME
+         $eff_time_exists = $_COMPONENT_EXISTS_{EXISTS};
+         if ( $eff_time_exists ) {
+            push @efftime_ndf, "$in" . ".MORE.SMURF.EFF_TIME";
+            $neff_time++;
+         }
       }
 
-# Paste the effective-time arrays.
-      $temp_eff = new ORAC::TempFile( 0 );
-      _PASTE_FILES_ FILES=\@efftime_ndf OUT=$temp_eff
+# Paste the effective-time arrays if any exist.
+      if ( $neff_time > 0 ) {
+         $temp_eff = new ORAC::TempFile( 0 );
+         _PASTE_FILES_ FILES=\@efftime_ndf OUT=$temp_eff
+      }
 
 # Paste the variance arrays.
       $temp_var = new ORAC::TempFile( 0 );
@@ -177,14 +186,22 @@ foreach my $Obj ( @objs ) {
       $temp_eff = $speccube . ".MORE.SMURF.EFF_TIME";
       $temp_var = $speccube;
       $compvar = " comp=error";
+
+# Make sure this file has a EFF_TIME component.
+      _COMPONENT_EXISTS_ FILE=$speccube COMPONENT=MORE.SMURF.EFF_TIME
+      $neff_time = 1 if $_COMPONENT_EXISTS_{EXISTS};
    }
 
 # Obtain the median variance and T_eff
 # ====================================
 
+   my $median_eff_time = VAL__BADD;
+   if ( $neff_time > 0 ) {
+
 # Obtain the median eff_time.
-   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_eff order" );
-   ( $ORAC_STATUS, my $median_eff_time ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp_eff order" );
+      ( $ORAC_STATUS, $median_eff_time ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+   }
 
 # The pasted variance array might have a very large number of elements and
 # addressing in the sort in STATS fails catastrophically.  So look
