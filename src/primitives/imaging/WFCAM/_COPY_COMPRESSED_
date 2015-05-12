@@ -71,21 +71,121 @@ my $hdutype;
 my $status = 0;
 my $fptr = Astro::FITS::CFITSIO::open_file($outfiles[1],READONLY,$status);
 $fptr->movabs_hdu(2,$hdutype,$status);
-$fptr->close_file($status);
 
 # If it's an image then do the compression
 if ($hdutype == IMAGE_HDU) {
     my $errmsg;
     my $nread = $Frm->hdr("NEXP");
     $nread = 1 if (! $nread);
-    my $retval = cir_compress_mef_f2i($outfiles[1],$nread,$outfile,$errmsg);
-    if ($retval != CIR_OK) {
-        orac_err("CIR_COMPRESS_MEF_F2I: failed in _COPY_COMPRESSED_\n$errmsg\n");
+
+    # Get the number of header units
+
+    my ($msg,$nhdu);
+    $fptr->get_num_hdus($nhdu,$status);
+    if ($nhdu <= 1) {
+	orac_err("File $fname isn't a MEF (nhdus = $nhdu)\n");
     }
+
+    # Create the output file and copy the primary header
+
+    my ($optr);
+    unlink $outfile if (-f $outfile);
+    $optr = Astro::FITS::CFITSIO::create_file($outfile,$status);
+    if ($status != 0) {
+	Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
+	$fptr->close_file($status);
+	orac_err("Failed to create file: $outfile\n$msg\n");
+    }
+    $fptr->copy_hdu($optr,0,$status);
+    if ($status != 0) {
+	Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
+	$fptr->close_file($status);
+	$optr->close_file($status);
+	orac_err("Failed to copy primary from $fname to $outfile\n$msg\n");
+    }
+
+    # Set compression parameters
+
+    $optr->set_compression_type(RICE_1,$status);
+
+    # Now loop for each of the input header units
+
+    my ($i,$bitpix,$naxis,@naxes,$npix,@fdata,$anynul,$j,$bscale,$bzero);
+    my ($nkeys,$card);
+    for ($i = 1; $i < $nhdu; $i++) {
+	$fptr->movabs_hdu($i+1,$hdutype,$status);
+
+	# Get the image parameters and create a similar output image
+
+	if ($status != 0) {
+	    Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
+	    $fptr->close_file($status);
+	    $optr->close_file($status);
+	    orac_err("Failed to create output image $i in $outfile\n$msg\n");
+	}
+
+	# Read the input data
+
+	$npix = $naxes[0]*$naxes[1];
+	$fptr->read_img(TFLOAT,1,$npix,undef,\@fdata,$anynul,$status);
+	if ($status != 0) {
+	    Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
+	    $fptr->close_file($status);
+	    $optr->close_file($status);
+	    orac_err("Failed to read input image $i in $fname\n$msg\n");
+	}
+	if ($nread != 1) {
+	    for ($j = 0; $j < $npix; $j++) {
+		$fdata[$j] *= $nread;
+	    }
+	}
+
+	# Now write the output data
+
+	$fptr->read_key(TDOUBLE,"BSCALE",$bscale,undef,$status);
+	if ($status != 0) {
+	    $bscale = 1.0;
+	    $status = 0;
+	}
+	$fptr->read_key(TDOUBLE,"BZERO",$bzero,undef,$status);
+	if ($status != 0) {
+	    $bzero = 0.0;
+	    $status = 0;
+	}
+	$optr->set_bscale($bscale,$bzero,$status);
+	$bscale /= $nread;
+	$optr->write_img(TFLOAT,1,$npix,\@fdata,$status);
+	if ($status != 0) {
+	    Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
+	    $fptr->close_file($status);
+	    orac_err("Failed to write output image $i in $outfile\n$msg\n");
+	}
+
+	# Write all the relevant header cards to the output file
+
+	$fptr->get_hdrspace($nkeys,undef,$status);
+	for ($j = 1; $j <= $nkeys; $j++) {
+	    $fptr->read_record($j,$card,$status);
+	    if (Astro::FITS::CFITSIO::fits_get_keyclass($card) > TYP_CMPRS_KEY) {
+		$optr->write_record($card,$status);
+	    }
+	}
+	$optr->update_key(TDOUBLE,"BSCALE",$bscale,undef,$status);
+	if ($status != 0) {
+	    Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
+	    $fptr->close_file($status);
+	    $optr->close_file($status);
+	    orac_err("Failed to write output header $i in $outfile\n$msg\n");
+	}
+    }
+
+    $fptr->close_file($status);
+    $optr->close_file($status);
     orac_print("CASU file $outfile_proper created\n");
     unlink $outfiles[1];
     rename($outfile,$outfile_proper);
 } else {
+    $fptr->close_file($status);
     orac_print("$outfile_proper is already compressed\n");
 }
 
