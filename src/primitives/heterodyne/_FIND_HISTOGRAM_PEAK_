@@ -49,7 +49,10 @@ deviations in the list should not decrease.  ["2.0,2.0,2.5,3.0"]
 =item EXTREME = BOOLEAN (Given)
 
 Whether to obtain the peak of the first (or last if skewness is negative),
-or the most populous peak.  [1]
+or the most populous peak.  Even if EXTREME is set true, there is
+protection against chooing a false local maximum, arbitrarily defined as
+a peak who integrated signal is less than a tenth that of the most populous
+peak.  In such cases the strongest peak is substituted.  [1]
 
 =item FINE_RESOLUTION = BOOLEAN (Given)
 
@@ -109,7 +112,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2013 Science and Technology Facilities Council.
+Copyright (C) 2013, 2015 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -413,6 +416,8 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
 # Check number of clumps using NCLUMPS output parameter.
       ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
    }
+
+   my $usepeak = 0;
    if ( $nclumps > 0 ) {
 
 # Extract the desired information from the output table.
@@ -422,24 +427,64 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
 # means to access the required data in the file.  It searches the STL
 # format for the start of the table and given by the BEGINTABLE, and
 # there is no development of this format so this should be robust.
-# Then we assume that the first row is the lowest co-ordinate; there
-# should not be a peak below the baseline.
+# Then we assume that the first row is the lowest co-ordinate and that
+# peaks appear in ascending co-ordinate order.  There should not be a
+# peak below the baseline, but sometimes there can be a weak one even
+# with positive skewness.
       open( TABLE, "< $outcat" ) or
             die "Could not find catalogue $outcat specifying the histogram peaks: $!\n";
-      unlink $outcat;
+#      unlink $outcat;
       my @lines = <TABLE>;
       my $i = 0;
       my $row;
+      my @fields;
       my $nlines = scalar( @lines );
-      if ( $skewness >= 0.0 && $extreme ) {
-         while ( $i < $nlines ) {
-            chomp $lines[$i];
-            if ( $lines[$i] =~ /BEGINTABLE/ ) {
-               $row = $lines[$i+1];
-               last;
-            }
-            $i++;
+
+# Find the most-populous clump.  First reach the table itself.
+      while ( $i < $nlines ) {
+         chomp $lines[$i];
+         if ( $lines[$i] =~ /BEGINTABLE/ ) {
+            last;
          }
+         $i++;
+      }
+
+# Record where the tabular data start.
+      $i++;
+      my $datastart = $i;
+
+# The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  So search to find the
+# row with the biggest Sum.
+      my $pop = -1;
+      my $popindex = $i;
+      my $sumindex = 4;
+      while ( $i < $nlines ) {
+         chomp $lines[$i];
+         @fields = split( ' ', $lines[$i] );
+         $fields[$sumindex] =~ s/D/e/;
+         if ( $fields[$sumindex] > $pop ) {
+            $pop = $fields[$sumindex];
+            $popindex = $i;
+         }
+         $i++;
+      }
+      $row = $lines[$popindex];
+      my $sum;
+
+# For extreme value and positive skewness normally use the the first
+# peak.  However, this this still can be a false peak.
+      if ( $skewness >= 0.0 && $extreme ) {
+         chomp $lines[$datastart];
+         $row = $lines[$datastart];
+
+#  This another fudge to cope a special case: positive skewness with a
+#  negative tail with peak in it.  If the maximum peak is 10x or more
+#  the biggest peak is deemed to be the main peak.  The factor is quite
+#  arbitrary and subject to change in the light of experience.
+         @fields = split( ' ', $row );
+         $sum = $fields[$sumindex];
+         $sum =~ s/D/e/;
+         $row = $lines[$popindex] if ( $sum < 0.1 * $pop );
 
 # The final clump is specified in the last line of the file, although
 # this is not particularly robust to external change, albeit unlikely.
@@ -447,35 +492,20 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
          $i = $nlines - 1;
          $row = $lines[$i];
 
-# Find the most-populous clump.  First reach the table itself.
-      } else {
-         while ( $i < $nlines ) {
-            chomp $lines[$i];
-            if ( $lines[$i] =~ /BEGINTABLE/ ) {
-               last;
-            }
-            $i++;
-         }
-
-# The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  So search to find the
-# row with the biggest Sum.
-         my $pop = -1;
-         my $popindex = $i;
-         my $sumindex = 4;
-         while ( $i < $nlines ) {
-            my @fields = split( ' ', chomp $lines[$i] );
-            if ( $fields[$sumindex] > $pop ) {
-               $pop = $fields[$sumindex];
-               $popindex = $i;
-            }
-            $i++;
-         }
-         $row = $lines[$popindex];
+#  This another fudge to cope a special case: negative skewness with a
+#  positive tail with peak in it.  If the maximum peak is 10x or more
+#  than the last peak, the biggest peak is deemed to be the main peak.
+#  The factor is quite arbitrary and subject to change in the light of
+#  experience.
+         @fields = split( ' ', $row );
+         $sum = $fields[$sumindex];
+         $sum =~ s/D/e/;
+         $row = $lines[$popindex] if ( $sum < 0.1 * $pop );
       }
 
 # Extract the centroid value for the first or last peak depending on the skewness.
 # Convert from scientific notion with a D exponent to E so that Perl recognises it.
-      my @fields = split( ' ', $row );
+      @fields = split( ' ', $row );
       $peak = $method eq "centroid" ? $fields[2] : $fields[1];
       $peak =~ s/D/e/;
       $peak = $peak * $resolution + $minimum;
@@ -500,16 +530,20 @@ for ( my $iter = 1; $iter <= $itermax; $iter++ ) {
             $width = $ffwhm / 2.3548;
          } else {
            orac_warn "Unable to fit Gaussian to histogram peak. Using the location of the maximum bin.\n";
+           $usepeak = 1;
          }
       }
 
    } else {
       orac_warn "No clumps found.  Using the location of the maximum bin.\n";
+      $usepeak = 1;
    }
 
 # If clump finding or fitting failed set approximate returned values.
-   $peak = ( $maxpos - 0.5 ) * $resolution + $minimum if ( ! defined( $peak ) );
-   $width = $hist_sigma * $resolution if ( ! defined( $width ) );
+   if ( $usepeak ) {
+      $peak = ( $maxpos - 0.5 ) * $resolution + $minimum if ( ! defined( $peak ) );
+      $width = $hist_sigma * $resolution if ( ! defined( $width ) );
+   }
 
 # Bias range according to the skewness in an another ad hoc attempt to
 # offset skewness on the centroid.
