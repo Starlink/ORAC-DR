@@ -60,7 +60,7 @@ by histograms rather than finding the true median by sorting.
 
 =head1 TASKS
 
-KAPPA: NDFCOPY, HISTAT, NDFTRACE, STATS, WCSATTRIB.
+KAPPA: COLLAPSE, HISTAT, NDFCOPY, NDFTRACE, STATS, WCSATTRIB.
 
 =head1 AUTHORS
 
@@ -157,8 +157,15 @@ foreach my $Obj ( @objs ) {
       foreach my $i ( 1 .. $Obj->nfiles ) {
          my ( $tile, $varout ) = $Obj->inout( "_var", $i );
 
-         $params= "in=$tile out=$varout comp=variance";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+# The variance cube could be very large when pasted, especially for
+# HEALpix arrays where large borders or gaps may be present. To avoid
+# exceeding NDF's pixel capacity we divide and conquer by collapsing
+# along the spectral axis first, and then we only have to paste and
+# obtain median statistics for the much smaller spatial arrays.  This
+# will lead to a small loss of accuracy, but well within tolerances for
+# this processing step.
+         $params= "in=$tile out=$varout comp=variance estimator=median axis=spec";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
          push @var, $varout;
          $Obj->push_intermediates( $varout );
 
@@ -176,7 +183,7 @@ foreach my $Obj ( @objs ) {
          _PASTE_FILES_ FILES=\@efftime_ndf OUT=$temp_eff
       }
 
-# Paste the variance arrays.
+# Paste the spatial variance arrays.
       $temp_var = new ORAC::TempFile( 0 );
       _PASTE_FILES_ FILES=\@var OUT=$temp_var
 
@@ -206,13 +213,15 @@ foreach my $Obj ( @objs ) {
 # The pasted variance array might have a very large number of elements and
 # addressing in the sort in STATS fails catastrophically.  So look
 # for very large arrays and call HISTAT instead.  While only approximate
-# it is much quicker too.
+# it is much quicker too.  This test is probably no longer necessary since
+# the collapse along the spectral axis was introducd, but defensively
+# does not do any harm.
    $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$temp_var$compvar" );
    ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "histat", "numpix" );
 
-# STATS (PDA_QSIAx) crashes around 1E9 elements.  So for 8k spectral 
-# elements trimmed this threshold would apply above about a 230-pixel
-# square in the spatial axes.
+# STATS (PDA_QSIAx) crashes around 1E9 elements.  So without the collapse
+# of the spectral axis, for 8k spectral elements trimmed this threshold would
+# apply above about a 230-pixel square in the spatial axes.
    my $median_variance;
    if ( $numpix < 4E8 ) {
 
