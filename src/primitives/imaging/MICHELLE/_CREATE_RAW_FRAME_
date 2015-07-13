@@ -33,9 +33,14 @@
 #
 # Copyright:
 #    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-#    Council.  All Rights Reserved.
+#    Council.
+#    Copyright (C) 2015 Science & Technology Facility Council.
+#    All Rights Reserved.
 #
 #-
+
+use NDF;
+use Starlink::HDSPACK qw/copobj/;
 
 # Are the data chopped?
     my $chop = $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" ) eq "CHOP" ||
@@ -78,6 +83,30 @@
 # Update the Frame object.
           $Frm->file( $i, $out );
        }
+
+    } elsif ( $chop && $Frm->nfiles == 1 ) {
+       orac_err "Two integrations (one in each chopped beam) " .
+                "per observation is expected.\n" .
+                "Assume chopped beams have already been differenced\n";
+
+# Copy the raw data to an _raw output frame, which may be manipulated.
+       ( $in, $out ) = $Frm->inout( "_raw" );
+       $out .= ".I1";
+       my $status = &NDF::SAI__OK;
+       my $root = substr( $in, 0, index( $in, '.' ) );
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$root.I1 out=$out" );
+
+# Report the processing status.
+       orac_print "$root to $out: Copied NDF component.\n";
+
+# Copy the header NDF too.
+       $out = substr( $out, 0, index( $out, '.' ) );
+       $status = copobj($root.".header",$out.".header",$status);
+
+# Update the Frame object and merge the headers.
+       my $outndf = $out . ".I1";
+       $Frm->file( $outndf );
+       $Frm->mergehdr;
 
 # Abort if more integrations are present.
     } elsif ( $chop ){
@@ -144,6 +173,7 @@ MJC: Malcolm J. Currie (JAC)
 =head1 COPYRIGHT
 
 Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+Copyright (C) 2015 Science & Technology Facility Council.
+All Rights Reserved.
 
 =cut
