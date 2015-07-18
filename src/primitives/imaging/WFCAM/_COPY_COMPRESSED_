@@ -2,6 +2,7 @@
 
 use Astro::FITS::CFITSIO qw(:longnames :constants);
 use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
+use strict "vars";
 
 # Create input and output names
 
@@ -18,6 +19,31 @@ my $header_copied = 0;
 my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
 
 my $out;
+
+# Keywords for extension header unit
+
+my @ehukeys = ("INHERIT","DETECTOR","DETECTID","DROWS","DCOLUMNS",
+               "RDOUT_X1","RDOUT_X2","RDOUT_Y1","RDOUT_Y2","PIXLSIZE","GAIN",
+               "CAMNUM","HDTFILE2","DET_TEMP","CNFINDEX","PCSYSID","SDSUID",
+               "READOUT","CAPPLICN","CAMROLE","CAMPOWER","RUNID","CTYPE1",
+               "CTYPE2","CRPIX1","CRPIX2","CRVAL1","CRVAL2","CRUNIT1",
+               "CRUNIT2","CD1_1","CD1_2","CD2_1","CD2_2","PV2_1","PV2_2",
+               "PV2_3");
+
+my %ehulut = ();
+my $kk;
+foreach $kk (@ehukeys) {
+    $ehulut{$kk} = 1;
+}
+
+# Keywords to delete
+
+my @delkeys = ("HDUCLAS1","HDUCLAS2","HDSNAME","HDSTYPE");
+my %dellut = ();
+foreach $kk (@delkeys) {
+    $dellut{$kk} = 1;
+}
+
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
   ( my $in, $out ) = $Frm->inout( "_adu", $i );
@@ -74,24 +100,61 @@ $fptr->movabs_hdu(2,$hdutype,$status);
 
 # If it's an image then do the compression
 if ($hdutype == IMAGE_HDU) {
-    my $errmsg;
     my $nread = $Frm->hdr("NEXP");
     $nread = 1 if (! $nread);
-
-    # Get file name (just for orac_err messages).
-    my $fname = $outfiles[1];
 
     # Get the number of header units
 
     my ($msg,$nhdu);
     $fptr->get_num_hdus($nhdu,$status);
-    if ($nhdu <= 1) {
-	orac_err("File $fname isn't a MEF (nhdus = $nhdu)\n");
+    orac_err("File $outfiles[1] isn't a MEF (nhdus = $nhdu)\n") if ($nhdu <= 1);
+
+    # Read the headers from the input HDUs
+
+    my ($hdr,$hdr1,$nk,$i);
+    $status = 0;
+    $fptr->movabs_hdu(1,$hdutype,$status);
+    $fptr->hdr2str(1,$hdr,$nk,$status);
+    for ($i = 2; $i <= $nhdu; $i++) {
+        $fptr->movabs_hdu($i,$hdutype,$status);
+        $fptr->hdr2str(1,$hdr1,$nk,$status);
+        $hdr .= $hdr1;
+    }
+    $nk = length $hdr;
+    $nk /= 80;
+
+    # Find cards that lack an equal sign and fix them
+
+    my $ist;
+    for ($i = 0; $i < $nk; $i++) {
+        $ist = $i*80;
+        if (substr($hdr,$ist+8,1) ne '=') {
+            substr($hdr,$ist+8,1) = '=';
+            substr($hdr,$ist+10,1) = '\'';
+            substr($hdr,$ist+29,1) = '\'';
+        }
+    }
+
+    # Set up the new header cards
+
+    my @newphu = ();
+    my @newehu = ();
+    my ($keyname,$keylength);
+    for ($i = 0; $i < $nk; $i++) {
+        $kk = substr($hdr,$i*80,80);
+        next if (Astro::FITS::CFITSIO::fits_get_keyclass($kk) <= TYP_CKSUM_KEY);
+        Astro::FITS::CFITSIO::fits_get_keyname($kk,$keyname,$keylength,$status);
+        next if (exists $dellut{$keyname});
+        if (exists $ehulut{$keyname}) {
+            push @newehu,$kk;
+        } else {
+            push @newphu,$kk;
+        }
     }
 
     # Create the output file and copy the primary header
 
-    my ($optr);
+    my ($optr,@naxes,$line);
     unlink $outfile if (-f $outfile);
     $optr = Astro::FITS::CFITSIO::create_file($outfile,$status);
     if ($status != 0) {
@@ -99,13 +162,15 @@ if ($hdutype == IMAGE_HDU) {
 	$fptr->close_file($status);
 	orac_err("Failed to create file: $outfile\n$msg\n");
     }
-    $fptr->movabs_hdu(1,$hdutype,$status);
-    $fptr->copy_hdu($optr,0,$status);
+    $optr->create_img(BYTE_IMG,0,\@naxes,$status);
+    foreach $line (@newphu) {
+        $optr->write_record($line,$status);
+    }
     if ($status != 0) {
 	Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
 	$fptr->close_file($status);
 	$optr->close_file($status);
-	orac_err("Failed to copy primary from $fname to $outfile\n$msg\n");
+	orac_err("Failed to create primary in $outfile\n$msg\n");
     }
 
     # Set compression parameters
@@ -114,7 +179,7 @@ if ($hdutype == IMAGE_HDU) {
 
     # Now loop for each of the input header units
 
-    my ($i,$bitpix,$naxis,@naxes,$npix,@fdata,$anynul,$j,$bscale,$bzero);
+    my ($bitpix,$naxis,$npix,@fdata,$anynul,$j,$bscale,$bzero);
     my ($nkeys,$card);
     for ($i = 1; $i < $nhdu; $i++) {
 	$fptr->movabs_hdu($i+1,$hdutype,$status);
@@ -129,6 +194,9 @@ if ($hdutype == IMAGE_HDU) {
 	    $optr->close_file($status);
 	    orac_err("Failed to create output image $i in $outfile\n$msg\n");
 	}
+        foreach $line (@newehu) {
+            $optr->write_record($line,$status);
+        }
 
 	# Read the input data
 
@@ -138,7 +206,7 @@ if ($hdutype == IMAGE_HDU) {
 	    Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
 	    $fptr->close_file($status);
 	    $optr->close_file($status);
-	    orac_err("Failed to read input image $i in $fname\n$msg\n");
+	    orac_err("Failed to read input image $i in " . $outfiles[1].  "\n$msg\n");
 	}
 	if ($nread != 1) {
 	    for ($j = 0; $j < $npix; $j++) {
@@ -167,22 +235,9 @@ if ($hdutype == IMAGE_HDU) {
 	    orac_err("Failed to write output image $i in $outfile\n$msg\n");
 	}
 
-	# Write all the relevant header cards to the output file
+        # Update the bscale parameter
 
-	$fptr->get_hdrspace($nkeys,undef,$status);
-	for ($j = 1; $j <= $nkeys; $j++) {
-	    $fptr->read_record($j,$card,$status);
-	    if (Astro::FITS::CFITSIO::fits_get_keyclass($card) > TYP_CMPRS_KEY) {
-		$optr->write_record($card,$status);
-	    }
-	}
 	$optr->update_key(TDOUBLE,"BSCALE",$bscale,undef,$status);
-	if ($status != 0) {
-	    Astro::FITS::CFITSIO::fits_get_errstatus($status,$msg);
-	    $fptr->close_file($status);
-	    $optr->close_file($status);
-	    orac_err("Failed to write output header $i in $outfile\n$msg\n");
-	}
     }
 
     $fptr->close_file($status);
