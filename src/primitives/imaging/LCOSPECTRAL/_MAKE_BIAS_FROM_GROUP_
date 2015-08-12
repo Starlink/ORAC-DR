@@ -44,7 +44,7 @@
 #    TAL: Tim Lister (LCOGT)
 #
 # Copyright:
-#    Copyright (C) 2012-2015 Las Cumbres Observatory Global Telescope Inc.
+#    Copyright (C) 2012, 2015 Las Cumbres Observatory Global Telescope Inc.
 #    All Rights Reserved.
 #
 #-
@@ -53,7 +53,7 @@ use File::Copy;
 # Selection
 # =========
 #
-# This should only be performed on OBJECT, SKY or calibration LAMP
+# This should only be performed on BIAS
 # frames, when it's time make a bias.
     my $obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE");
     my $stuff = "N/A";
@@ -82,7 +82,7 @@ use File::Copy;
         my $method = ( $_MAKE_BIAS_FROM_GROUP_{METHOD} || "median" );
 
 # Make a bias for each filter within the group.
-        orac_print "Making masterbias\n";
+        orac_print "Making masterbias using method $method\n";
 
 # Extract from the main group those frames belonging to this group.
 #          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
@@ -175,10 +175,12 @@ use File::Copy;
       	$Frm->file( $out );
 
         my $cam = uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) );
-        
+        my $binning = $Frm->uhdr( "ORAC_XBINNING" ) . 'x' . $Frm->uhdr( "ORAC_YBINNING" );
+
         my %bias_valuemap = (
-                     'FS02' => 285.0,
-                     'FS03' => 582.0,
+                     'FS01' => { '1x1' => 799.0, '2x2' => 502.0 },
+                     'FS02' => { '1x1' => 564.0, '2x2' => 288.0},
+                     'FS03' => { '2x2' => 582.0},
                      );
 
         my $min_goodbias = 0.0;
@@ -186,9 +188,9 @@ use File::Copy;
         my $goodbias_value = -999.0;
         
         if (exists $bias_valuemap{$cam}) {
-          $goodbias_value = $bias_valuemap{$cam};
-          $min_goodbias = $goodbias_value - ( $goodbias_value / 50.0 );
-          $max_goodbias = $goodbias_value + ( $goodbias_value / 50.0 );
+          $goodbias_value = $bias_valuemap{$cam}{$binning};
+          $min_goodbias = $goodbias_value - ( $goodbias_value / 5.0 );
+          $max_goodbias = $goodbias_value + ( $goodbias_value / 5.0 );
         } else {
           orac_warn "LCOGT camera '$cam' not found in bias value mapping\n";
         }
@@ -307,8 +309,8 @@ use File::Copy;
             my $final_dest;
             if ( defined $ENV{FINAL_DATA_OUT} ) {
               $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
-              move($pngfile, $final_dest);
-              orac_print "Moving ". $pngfile . " to final data place=" . $final_dest . "\n";
+              copy($pngfile, $final_dest);
+              orac_print "Copying ". $pngfile . " to final data place=" . $final_dest . "\n";
             }
 
 # Convert masterbias frame to FITS
@@ -317,6 +319,9 @@ use File::Copy;
 
       	    move($fitsbiasframe, $ENV{FINAL_DATA_OUT});
 	    orac_print "Moving ". $fitsbiasframe . " to final data place=" . $ENV{FINAL_DATA_OUT} . "\n";
+
+# File in calib library
+            _FILE_LIBRARY_BIAS_
       	  }
         } else {
           orac_warn "Mean of masterbias out of range (Mean=" . $biasmean . ", range " . $min_goodbias . "--" . $max_goodbias . ")\n";
@@ -396,7 +401,7 @@ Tim Lister (tlister@lcogt.net)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012-2015 Las Cumbres Observatory Global Telescope Inc.
+Copyright (C) 2012, 2015 Las Cumbres Observatory Global Telescope Inc.
 All Rights Reserved.
 
 =cut
