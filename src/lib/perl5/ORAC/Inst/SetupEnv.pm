@@ -204,6 +204,7 @@ sub orac_calc_instrument_settings {
                          'FS02' => 'ogg',
                          'EM03' => 'coj',
                          'FS03' => 'coj',
+                         'FS01' => 'coj',
                          'EF02' => 'cpt',
                          'EF03' => 'cpt',
                          'EF04' => 'cpt',
