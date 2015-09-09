@@ -936,7 +936,7 @@ sub _expand_primitive {
              '  orac_debug( $__PREFIX . ":"."'.$prim->name .'".'."\":($remote)\t$arguments\n\"); }\n");
         my ($monolith, $task, $args) = $self->_parse_obey_line( $line );
         $monolith = "<Unknown Monolith>" unless defined $monolith;
-        push(@parsed,'orac_print("++ Calling '.$task .' in '. $monolith.' ","green");');
+        push(@parsed,'orac_print("++ Calling '.$monolith .' with: '. $task .' '. $args .'\n","green");');
         $debug_obey = 1;
       }
 
@@ -971,7 +971,7 @@ sub _expand_primitive {
         # If debugging add a statement before the status is checked
         # so that we can store the status value in the file
         push(@parsed,
-             'orac_print("took ".sprintf("%.3f",Time::HiRes::tv_interval($_obey_start_time))." seconds\n","green");',
+             'orac_print("   took ".sprintf("%.3f",Time::HiRes::tv_interval($_obey_start_time))." seconds\n","green");',
              'orac_debug( "Returned with status = ". $OBEYW_STATUS . "\n");'."\n",
             ) if $debug_obey;
 
