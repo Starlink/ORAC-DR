@@ -191,18 +191,20 @@ sub orac_calc_instrument_settings {
                          'KB75' => 'cpt',
                          'KB12' => 'cpt',
                          'KB05' => 'coj',
+                         'KB79' => 'coj',
                          'KB71' => 'coj',
-			 'KB16' => 'sqa',
-                         'FL01' => 'bpl',
-			 'FL02' => 'lsc',
-			 'FL03' => 'lsc',
-			 'FL04' => 'lsc',
+                         'KB16' => 'sqa',
+                         'FL09' => 'bpl',
+                         'FL02' => 'lsc',
+                         'FL03' => 'lsc',
+                         'FL04' => 'lsc',
                          'FL07' => 'lsc',
-			 'EN06' => 'ogg',
-			 'EM01' => 'ogg',
-			 'FS02' => 'ogg',
-			 'EM03' => 'coj',
-			 'FS03' => 'coj',			 
+                         'EN06' => 'ogg',
+                         'EM01' => 'ogg',
+                         'FS02' => 'ogg',
+                         'EM03' => 'coj',
+                         'FS03' => 'coj',
+                         'FS01' => 'coj',
                          'EF02' => 'cpt',
                          'EF03' => 'cpt',
                          'EF04' => 'cpt',
@@ -249,7 +251,7 @@ sub orac_calc_instrument_settings {
                            'LCOSBIG' => "/mfs-sba/engineering/",
                            'LCOCC' => "/mfs-sba/engineering/",
                            'LCOSBIG_0M4' => "/mfs-sba/engineering/",
-			   'LCOSBIG_0M8' => "/mfs-sba/engineering/",
+                           'LCOSBIG_0M8' => "/mfs-sba/engineering/",
 #                           'LCOSINISTRO' => "/data/archive/science/", # Testing line
                            'LCOSINISTRO' => "/mfs-sba/engineering/",
                            'LCOFLOYDS' => "/mfs-sba/engineering/",
@@ -470,8 +472,11 @@ sub orac_calc_instrument_settings {
     } else {
         $rawdir = File::Spec->catfile( $dataroot, $sitecode, $cameracode, $localut, "raw" );
     }
+    my $caldir;
+    $caldir = File::Spec->catdir( "/data/archive/Calibs/", $root, $cameracode );
+    _mkdir_lcogt($caldir);
 
-    return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root, $cameracode ),
+    return ( ORAC_DATA_CAL => $caldir,
              ORAC_DATA_IN => $rawdir,
              ORAC_DATA_OUT => $outdir,
              ORAC_SUN => $sun,

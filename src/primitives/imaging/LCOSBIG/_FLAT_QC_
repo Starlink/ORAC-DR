@@ -38,22 +38,23 @@
 use File::Copy;
 use Data::Dumper;
 
+# Switch for additional debugging output
+my $verbose = 0;
 
 # Data Selection
 # ==============
 #
-# $masterflat1flat and $masterflat2flat
 if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
        $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKYFLAT" ||
        $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMBERT-FLAT" ) &&
        $Frm->uhdr( "MAKE_FLAT" ) ) {
 
-        my $index = $Cal->GenericIndex("flat");
+        my $calindex = $Cal->GenericIndex("flat");
         #my $entryref = $Cal->GenericIndexAccessor( "flat", [qw/ ORAC_FILTER ORAC_XBINNING ORAC_YBINNING /], @_ );
-        #print Dumper $index;
-        #my @keys = $index->indexkeys();
+        #print Dumper $calindex;
+        #my @keys = $calindex->indexkeys();
         #foreach my $k ( @keys ) {
-        #    my $r = $index->indexref->{$k};
+        #    my $r = $calindex->indexref->{$k};
         #    print "$k  $r\n";
         #}
         my $filter = $Frm->uhdr( "ORAC_FILTER" );
@@ -61,11 +62,16 @@ if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
         my $ybin = $Frm->uhdr( "ORAC_YBINNING" );
         my $date = $Frm->hdr( "DAY-OBS" );
         my $masterflat1 = $Cal->flat;
-        orac_print "Master flat 1= $masterflat1\n";
+        if ( $verbose ) {
+            print "Master flat 1= $masterflat1\n";
+            print "Testing calibration frames for DATE=$date FILTER=$filter BINNING=$xbin $ybin\n";
+        }
 
-        orac_print "Testing calibration frames for DATE=$date FILTER=$filter BINNING=$xbin $ybin\n";
-        my @entries = $index->scanindex( ':ID' => '/^flat/', ORAC_FILTER => $filter, ORAC_XBINNING => $xbin, ORAC_YBINNING => $ybin );
-        orac_print "No. of entries=" . scalar(@entries) . "\n";
+        my @entries = $calindex->scanindex( ':ID' => '/^flat/', 'DAY-OBS' => $date, ORAC_FILTER => $filter, ORAC_XBINNING => $xbin, ORAC_YBINNING => $ybin );
+        if ( $verbose ) {
+            print "No. of entries=" . scalar(@entries) . "\n";
+            print Dumper @entries;
+        }
         my $masterflat2 = '';
         if ( @entries >= 2 ) {
           #print "Have enough entries\n";
@@ -73,11 +79,11 @@ if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
           #print Dumper $masterflat2;
           #$masterflat1 = $entries[-2];
 
-          my @keys = $index->indexkeys();
+          my @keys = $calindex->indexkeys();
           foreach my $filename ( @keys ) {
               my $binstr = "bin" . $xbin . "x" . $ybin;
               my $filterstr = "_" . $filter;
-              if ( $filter eq 'gp' && $filename =~ /$date/ ) {
+              if ( $filter eq 'gp' && $filename =~ /$date/ && $verbose == 1 ) {
                   print  "Matching $date, $filterstr, $binstr from $filename\n";
                   print ($filename =~ /$date/);
                   print "\n";
@@ -88,10 +94,10 @@ if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
                   print "end tests\n";
               }
 
-              if ( $filename =~ /$date/ && $filename =~ /$filterstr/ && $filename =~ /$binstr/ ) {
+              if ( $filename =~ /$filterstr/ && $filename =~ /$binstr/ ) {
 
-                  #my @entries = $index->scanindex( ':ID' => "/^$filename/", ORAC_FILTER => $filter, ORAC_XBINNING => $xbin, ORAC_YBINNING => $ybin );
-                  my @entries = $index->scanindex( ':ID' => "/^$filename/" );
+                  #my @entries = $calindex->scanindex( ':ID' => "/^$filename/", ORAC_FILTER => $filter, ORAC_XBINNING => $xbin, ORAC_YBINNING => $ybin );
+                  my @entries = $calindex->scanindex( ':ID' => "/^$filename/", 'DAY-OBS' => $date );
                   #print "Looking for $filename, $filter, $xbin, $ybin, got " . scalar(@entries) . "\n";
                   my $flat_filename = $filename . '.sdf';
 
@@ -100,25 +106,31 @@ if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
                       $test = $Cal->find_file($flat_filename);
                       if ( $masterflat1 ne $test ) {
                           $masterflat2 = $test;
-                          orac_print "Got $flat_filename as second masterflat\n";
+                          if ( $verbose ) {
+                              print "Got $flat_filename as second masterflat\n";
+                          }
                       }
                   #} elsif ( @entries > 0 && $masterflat1 eq '') {
                   #    $masterflat1 = $Cal->find_file($flat_filename);
                   #    print "Got $flat_filename as masterflat1\n";
                   } elsif ( @entries == 0 ) {
-                      orac_print "Index returned zero entries for this filter and binning\n";
+                      if ( $verbose ) {
+                          print "Index returned zero entries for this day-obs, filter and binning\n";
+                      }
                   }
               #} else {
                   #print "Filename $filename does not contain date $date\n";
               }
           }
-
+          
         }
         #print Dumper @entries;
 
         if ( $masterflat1 ne '' && $masterflat2 ne '' ) {
-            orac_print "masterflat1=$masterflat1, masterflat2=$masterflat2\n";
-
+            if ( $verbose ) {
+                print "masterflat1=$masterflat1, masterflat2=$masterflat2\n";
+            }
+            
             # Declare name of difference flat
             my $diff = "difflat_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $Frm->uhdr( "ORAC_FILTER");
 
@@ -126,34 +138,47 @@ if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
             # AM/PM test
             my $sigma_max = 0.01;
             my $sigma_min = 0.0;
-
-            # Compute the division of the am-pm master flat fields:
+            
+            # Compute the difference of the am-pm master flat fields:
             my $param1 = "in1=$masterflat1 in2=$masterflat2 out=$diff";
             $Mon{ "kappa_mon" }->obeyw( "sub", "$param1" );
 
-            # Compute statistics on the divided frame:
+            # Compute statistics on the difference frame:
             $param1 = "ndf=$diff";
             $Mon{ "kappa_mon" }->obeyw( "stats", "$param1" );
-
+            
             # Extract the statistical properties:
             ( my $ORAC_STATUS, my $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
             ( $ORAC_STATUS, my $sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
-            orac_print "Sigma = $sigma\n";
-
+            if ( $verbose ) {
+                print "Sigma = $sigma\n";
+            }
+            
             # Test statistical properties against permitted boundaries.
             # If flats are acceptable, leave both masterflat1 and masterflat2 in the flat index.
             # Otherwise, remove them from it to prevent them being used.
             # This will force the pipeline to look into its library.
             if ($sigma <= $sigma_min || $sigma > $sigma_max) {
-
+                
                 # Remove this flat by deleting it from the index.flat file using the new
                 # ORAC::Index remove method
-                my $ok1 = $index->remove($masterflat1);
-                my $ok2 = $index->remove($masterflat2);
+                my $ok1 = $calindex->remove($masterflat1);
+                my $ok2 = $calindex->remove($masterflat2);
                 orac_print "$masterflat1 and $masterflat2 failed flat field QC.  Removed them from flat index\n";
-
+                if ( $verbose ) {
+                    print "$masterflat1 and $masterflat2 failed flat field QC.  Removed them from flat index\n";
+                }
+            } else {
+            # Flats are good, file in calib archive directory.
+            # Filing is done in reverse order as masterflat1 will be the 
+            # later-in-time flat and masterflat2 its earlier compatriot.
+                orac_print "$masterflat1 and $masterflat2 passed flat field QC. Filing in library\n";
+                $Frm->file($masterflat2);
+                _FILE_LIBRARY_FLAT_
+                $Frm->file($masterflat1);
+                _FILE_LIBRARY_FLAT_
             }
             _DELETE_A_FRAME_ FRAME=$diff
         }
-
+    
     }

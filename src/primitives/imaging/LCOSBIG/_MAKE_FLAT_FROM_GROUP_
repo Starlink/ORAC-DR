@@ -31,10 +31,8 @@
 #    METHOD = CHARACTER (Given)
 #       The method used to combine frames to form the flat.  See
 #       parameter METHOD of CCDPACK/MAKEFLAT (SUN/139) for the options.
-#       The main two in practice will be "fastmed" or "broadened".  The
-#       former is an unweighted median but is unsuitable for a
-#       self-flat recipe, as it creates a biassed histogram in the
-#       flat-fielded frames, from those pixels divided by themselves.
+#       The main two in practice will be "sigma" or "broadened".  The
+#       former is a sigma-clipped mean which is the default.
 #       The "broadened" option averages the central few contributing
 #       pixels and thus avoids the artefact in the histogram, and
 #       therefore should be used for self-flat creation.  This option
@@ -48,9 +46,6 @@
 #    stored by reference in the group user header FILTER_LIST.  If this
 #    is undefined, only a single flat is made for filter stored in the
 #    current Frame's user header ORAC_FILTER.
-#    -  There is special behaviour for a combined polarimetry flat
-#    (see "Output Data").  The string "pol" in the filter name is used
-#    to indicate polarimetry data.
 #    -  The flat is displayed.
 #
 # Tasks:
@@ -63,17 +58,6 @@
 #    the group, <filter> is the filter name, and <cyclenumber> is the
 #    cycle number derived from steering header CYCLE_NUMBER.
 #
-#    An exception is for polarimetric data, where the name becomes
-#    flat_<filter>_pol<waveplate_angle>_<groupnumber>.  The
-#    <waveplate_angle> is the integer part of the angle, e.g. 22, 67,
-#    from internal header ORAC_WAVEPLATE_ANGLE.  Subsequent cycles for
-#    polarimetry also have the "_c<cyclenumber>" suffix, but the cycle
-#    comes from steering header POL_CYCLE_NUMBER.  When steering header
-#    WAVEPLATE_FLAT is false (0), copies of the flat are made, one
-#    for each angle, using the above nomenclature.  Each has its
-#    waveplate angle set to its nominal angle.  This allows a single
-#    ORAC_WAVEPLATE_ANGLE rule entry irrespective of whether all
-#    waveplate angles were combined to make a flat or not.
 #
 # Authors:
 #    TAL: Tim Lister (LCOGT)
@@ -118,6 +102,10 @@ use File::Copy;
 # =========
 
 # Determine whether or not to clean the data before combination.
+# NOTE: THIS PARAMETER SHOULD BE SWITCHED OFF FOR SINISTRO DATA
+#       CCDPACK documentation notes that the clean feature tends to unjustifiably fixate on
+#       linear features in the images, resulting in over-masking of pixels.  This is particularly
+#       over-zealous for Sinistro data due to the boundary lines between quadrants.
        my $clean = $_MAKE_FLAT_FROM_GROUP_{CLEAN};
        $clean = defined( $clean ) ? $clean : 1;
        if ($clean) { orac_print "Making flats with cleaning switch ON\n";
@@ -127,6 +115,7 @@ use File::Copy;
 
 # Obtain the value for the combination method.
        my $method = ( $_MAKE_FLAT_FROM_GROUP_{METHOD} || "broadened" );
+       orac_print "Making flats using method $method\n";
 
 # Determine whether or not to clean the data before combination.
        my $usefilter = $_MAKE_FLAT_FROM_GROUP_{FILTER};
@@ -205,23 +194,6 @@ use File::Copy;
              $filter =~ s/\./p/g;
              $filter =~ tr/\(\)\[\]/d/;
 
-# Is this a polarimetric frame?
-             my $poldata = $Frm->uhdr( "ORAC_POLARIMETRY" );
-
-# See if this is polarimetry data requiring separate flats for each waveplate
-# angle, from the steering header.  May also need eventually to put in a filter
-# name.
-             my $waveplate_flat = $Frm->uhdr( "WAVEPLATE_FLAT" );
-             $waveplate_flat = defined( $waveplate_flat ) ? $waveplate_flat: 0;
-
-# Get the polarimetry cycle number.  Supply a default for recipes not
-# supporting this yet.  Can't use ( || ) syntax because 0 could be the
-# default, inherited from the ordinary cycle number.
-             if ( $poldata ) {
-                my $pol_cycleno = $Frm->uhdr( "POL_CYCLE_NUMBER" );
-                $cycleno = defined( $pol_cycleno ) ? $pol_cycleno : $cycleno;
-             }
-
 # Obtain the flat number.  This may have an _subgrp suffix.  Since we take care
 # of different cycles in the naming, we remove the ugly _subgrp strings.
              my $flatno = $Grp->groupid;
@@ -233,42 +205,19 @@ use File::Copy;
                 $cyclesuffix = "_c" . $cycleno;
              }
 
-# There is a different naming rule for polarimetry data.
              my $out;
-             if ( $poldata ) {
-
-# Obtain the integer part of the waveplate angle for the current group.
-# No need to had pol in the name twice, so remove it from the filter name.
-                my $wplangle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
-                my $int_wplangle = int( $wplangle + 0.1 );
-                $filter =~ s/\+pol//;
-
-# Generate the polarimetry flat's name.  Here the flats are grouped by
-# waveplate angle.
-                if ( $waveplate_flat ) {
-                   $out = "flat_${filter}_pol${int_wplangle}_$flatno$cyclesuffix";
-
-# Since all angles are combined just set the first to a nominal 0 degrees.
-# Copies for other angles are made later.  They rely on the pol0 being
-# present to change the name for each flat.
-                } else {
-                   $out = "flat_${filter}_pol0_$flatno$cyclesuffix";
-                }
-
-             } else {
 
 # Generate the flat's name.
-                $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
+             $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
 # Check if the flat file already exists
-                while ( -r $out . '.sdf' ) {
-                  $cycleno++;
-                  if ( $cycleno > 0 ) {
-                    $cyclesuffix = "_c" . $cycleno;
-                  }
-                  $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
-                }
-                print "Using $out as flatname\n";
+             while ( -r $out . '.sdf' ) {
+               $cycleno++;
+               if ( $cycleno > 0 ) {
+                 $cyclesuffix = "_c" . $cycleno;
+               }
+               $out = "flat_" . $Frm->uhdr("ORAC_INSTRUMENT") . "_" . $Frm->uhdr( "ORAC_UTDATE") . "_" . $flatno . $cyclesuffix;
              }
+             # print "Using $out as flatname\n";
 
 # Make a normalised flat
 # ======================
@@ -429,8 +378,8 @@ use File::Copy;
               my $final_dest;
               if ( defined $ENV{FINAL_DATA_OUT} ) {
                 $final_dest = File::Spec->catfile( $ENV{FINAL_DATA_OUT} );
-                move($pngfile, $final_dest);
-                orac_print "Moving ". $pngfile . " to final data place=" . $final_dest . "\n";
+                copy($pngfile, $final_dest);
+                orac_print "Copying ". $pngfile . " to final data place=" . $final_dest . "\n";
               }
 
 # Convert masterflat frame to FITS
@@ -525,12 +474,6 @@ current Frame's user header ORAC_FILTER.
 
 =item *
 
-There is special behaviour for a combined polarimetry flat
-(see L<"OUTPUT DATA">).  The string "pol" in the filter name is used
-to indicate polarimetry data.
-
-=item *
-
 The flat is displayed.
 
 =back
@@ -548,18 +491,6 @@ for subsequent cycles, where E<lt>groupnumberE<gt> is the frame number
 of the group, E<lt>filterE<gt> is the filter name, and
 E<lt>cyclenumberE<gt> is the cycle number derived from steering header
 CYCLE_NUMBER.
-
-An exception is for polarimetric data, where the name becomes
-flat_E<lt>filterE<gt>_polE<lt>waveplate_angleE<gt>_E<lt>groupnumberE<gt>.
-The E<lt>waveplate_angleE<gt> is the integer part of the angle, e.g.
-22, 67, from internal header ORAC_WAVEPLATE_ANGLE.  Subsequent cycles for
-polarimetry also have the "_cE<lt>cyclenumberE<gt>" suffix, but the
-cycle comes from steering header POL_CYCLE_NUMBER.  When steering
-header WAVEPLATE_FLAT is false (0), copies of the flat are made, one
-for each angle, using the above nomenclature.  Each has its waveplate
-angle set to its nominal angle.  This allows a single ORAC_WAVEPLATE_ANGLE
-rule entry irrespective of whether all waveplate angles were combined
-to make a flat or not.
 
 =head1 AUTHORS
 
