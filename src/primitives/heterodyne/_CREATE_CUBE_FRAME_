@@ -18,6 +18,21 @@ SMURF/MAKECUBE, transforms it into a spatial/spectral cube.
 
 The number of bytes per pixel. [4]
 
+=item CHUNK = LOGICAL (Given)
+
+Whether or not to permit chunking.  This is probably only needed to be
+set true if processing final frames for HEALPix reductions.  [0]
+
+=item CHUNKSIZE = INTEGER (Given)
+
+The maximum sum of file sizes in megabytes of files to process
+simultaneously in MAKECUBE to avoid a timeout.  The choice is
+affected by processor speed and memory.  The minimum allowed value
+is 100.
+
+This argument can be overridden by the RECPAR_CHUNKSIZE uhdr via the
+recipe parameter system.  [5120]
+
 =item DETECTORS = STRING (Given)
 
 A comma-separated list of detectors to use when creating the cube. If
@@ -105,7 +120,10 @@ _TAG_AS_REDUCED_PRODUCT_ primitive. [0]
 
 =item TILE = LOGICAL (Given)
 
-Whether or not to break the spectral cubes into tiles.  [1]
+Whether or not to break the spectral cubes into tiles.  The default
+depends on whether JSA tiling is being used, in which case the
+default is 0 because these options are mutually exclusive.  The
+default is 1 otherwise.  []
 
 =item TILEBORDER = INTEGER (Given)
 
@@ -166,7 +184,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2010, 2012-2014 Science and Technology Facilities Council.
+Copyright (C) 2008, 2010, 2012-2015 Science and Technology Facilities Council.
 Copyright (C) 2006-2007 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
@@ -196,6 +214,8 @@ use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 #  where c is the velocity of light in m/s.  The value has more
 #  precision than needed, but it shows that the value is floating point.
 use constant FREQ2PIXSIZE => 1236.7;
+use constant MEGABYTE => 1048576;
+use constant JSACHUNK => 1000;
 
 # Deal with parameters.
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
@@ -205,8 +225,10 @@ my $param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
 my $param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
 my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
+my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNKSIZE", 5120 );
 my $jsatile = get_prim_arg( $_PRIM_ARGS_, "JSATILE", 0 );
 my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", ! $jsatile );
+my $chunk = get_prim_arg( $_PRIM_ARGS_, "CHUNK", 0 );
 
 
 my $detectors = ( defined( $_PRIM_ARGS_->{DETECTORS} ) ?
@@ -219,6 +241,9 @@ my $override = get_prim_arg( $_PRIM_ARGS_, "OVERRIDE", 1 );
 
 # Override various parameters via the recipe parameter system.
 if( $override ) {
+  $chunksize = ( defined( $Frm->uhdr( "RECPAR_CHUNKSIZE" ) ) ?
+                 $Frm->uhdr( "RECPAR_CHUNKSIZE" )            :
+                 $chunksize );
   $maxsize = ( defined( $Frm->uhdr( "RECPAR_CUBE_MAXSIZE" ) ) ?
                $Frm->uhdr( "RECPAR_CUBE_MAXSIZE" )            :
                $maxsize );
@@ -244,7 +269,8 @@ if( $override ) {
 
 # Normal and JSA tiling are mutually exclusive.
 $tile = $jsatile ? 0 : $tile;
-
+$chunksize = max( 100, $chunksize );
+$chunksize = JSACHUNK if $jsatile;
 
 # Following _CREATE_CUBE_GROUP_, there is no need to keep the border
 # as MAKECUBE deals with smoothing border internally.
@@ -284,6 +310,7 @@ my $autogrid = $mc_hash->{autogrid};
 my $system = defined( $system_arg ) ? $system_arg : $mc_hash->{system};
 my $badmask = $mc_hash->{badmask};
 my $alignsys = $mc_hash->{alignsys};
+my $ORAC_STATUS;
 
 if( $type ne "raster" ) {
 
@@ -295,7 +322,7 @@ if( $type ne "raster" ) {
 
   # Check to see if we have a sparse cube.
   $Frm->uhdr( "SPARSE", 0 );
-  my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
+  ( $ORAC_STATUS, my $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
   if( uc( $sparse ) eq 'TRUE' ) {
     orac_warn "Resulting cube will be sparse.\n";
     $Frm->uhdr( "SPARSE", 1 );
@@ -397,7 +424,7 @@ if ( $Frm->uhdr("ISHYBRID") ) {
 # units. If the data units are Kelvin, then we can generate the
 # variance from the Tsys values instead.
 my $tmptsys = new ORAC::TempFile( 0 );
-my $ORAC_STATUS = ( create_hdsobj( "$tmptsys", 'NDF' ) ? ORAC__OK : ORAC__ERROR );
+$ORAC_STATUS = ( create_hdsobj( "$tmptsys", 'NDF' ) ? ORAC__OK : ORAC__ERROR );
 $ORAC_STATUS = ( copy_hdsobj( "$files[0].MORE.ACSIS.TSYS", "$tmptsys.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys" );
 ( $ORAC_STATUS, my $tsysmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
@@ -423,36 +450,98 @@ if( ! $Frm->uhdr( "SPARSE" ) ) {
   $Grp->uhdr( "MAKECUBE_PARAMETERS", $params );
 }
 
-# Tell user what we're doing.
-orac_print( " Creating cube from " . join( ", ", @files ) . "..." );
+# Form a list of all the input filenames and determine their total size in
+# megabytes.  Also store the filenames in a GRP list text file.
+my @infiles;
+my $totalsize = 0;
+foreach my $i ( 1 .. $Frm->nfiles ) {
+  push @infiles, $Frm->file( $i );
+  my $fullname = $Frm->file( $i ) . ".sdf";
+  $totalsize += ( -s $fullname ) / MEGABYTE;
+}
+$inlist = write_file_list( @infiles );
 
-# Run MAKECUBE.
-$Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=$out" );
+# Rather than just fill chunks to the maximum, and then possibly
+# have a final chunk much smaller than the rest, creates chunks that
+# are the average chunksize.
+my ( $num_chunk, $mean_chunksize );
+if ( $chunk ) {
+  $num_chunk = int( $totalsize / $chunksize ) + 1;
+  $mean_chunksize = $totalsize / $num_chunk;
 
-# See if MAKECUBE created a VARIANCE component.  CADC demands that one be
-# present in reduced products.  Create one if variance is absent and fill
-# it with bad values.
-
-orac_print( "done.\n" );
-
-# Retrieve the number of tiles created.
-( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
-
-my @jsatilelist;
-if ( $jsatile ) {
-   ( $ORAC_STATUS, @jsatilelist ) = $Mon{'smurf_mon'}->get( "makecube", "jsatilelist" );
 }
 
-# Look for and handle missing a VARIANCE component, say from nonsense
-# Tsys values.
+#-------------------------------------------------------------------
+
+# Do not create the output file, thus this is a quick operation.
+$Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=!" );
+
+# The reference co-ordinates are needed so that the same reference
+# position applies to all chunks.
+( $ORAC_STATUS, my $reflon ) = $Mon{'smurf_mon'}->get( "makecube", "reflon" );
+( $ORAC_STATUS, my $reflat ) = $Mon{'smurf_mon'}->get( "makecube", "reflat" );
+( $ORAC_STATUS, my @pixref ) = $Mon{'smurf_mon'}->get( "makecube", "pixref" );
+( $ORAC_STATUS, my @flbnd ) = $Mon{'smurf_mon'}->get( "makecube", "flbnd" );
+( $ORAC_STATUS, my @fubnd ) = $Mon{'smurf_mon'}->get( "makecube", "fubnd" );
+( $ORAC_STATUS, my @lbound ) = $Mon{'smurf_mon'}->get( "makecube", "lbound" );
+( $ORAC_STATUS, my @ubound ) = $Mon{'smurf_mon'}->get( "makecube", "ubound" );
+
+# Remove unnecessary precision that only serves to exhaust the
+# number of characters allowed in a command line.
+my $prx = sprintf( "%.3f", $pixref[0] );
+my $pry = sprintf( "%.3f", $pixref[1] );
+my $prlb = sprintf( "%.3f", $flbnd[2] );
+my $prub = sprintf( "%.3f", $fubnd[2] );
+
+my $specbounds = "'" . $prlb . "," . $prub . "'";
+$params .= " reflon=$reflon reflat=$reflat specunion specbounds=$specbounds";
+if ( !$jsatile ) {
+   $params .= " lbnd=[" . $lbound[0] . "," . $lbound[1] . "]";
+   $params .= " ubnd=[" . $ubound[0] . "," . $ubound[1] . "]";
+}
+
+# Disable autogrid and use previously calculated reference pixel.
+# This is per DSB's advice (20110326) to avoid double counting
+# pixels when chunking and mosaicking.  MAKECUBE sometimes
+# sometimes gives borders one pixel more than would be expected.
+$params .= " refpix1=$prx refpix2=$pry";
+$params =~ s/autogrid /autogrid=n / if ( $totalsize > $chunksize && $chunk );
+
+# Obtain the total number of tiles.
+( $ORAC_STATUS, my $totaltile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+
+#-----------------------------------------------------------------
+
+my @jsatilelist;
 my $makecube_outfile;
-foreach my $j ( 1 .. $ntile ) {
-   if ( $jsatile ) {
+
+# Tell user what we're doing.
+if ( $totalsize <= $chunksize || !$chunk || $num_chunk < 2 ) {
+  orac_print( " Creating cube from " . join( ", ", @files ) . "..." );
+
+  # Run MAKECUBE.
+  $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=$out" );
+  orac_print( "done.\n" );
+
+  # Retrieve the HPX identifiers of tiles created.
+  if ( $jsatile ) {
+    ( $ORAC_STATUS, @jsatilelist ) = $Mon{'smurf_mon'}->get( "makecube", "jsatilelist" );
+  }
+
+  # See if MAKECUBE created a VARIANCE component.  CADC demands that one be
+  # present in reduced products.  Create one if variance is absent and fill
+  # it with bad values.
+
+  # Look for and handle missing a VARIANCE component, say from nonsense
+  # Tsys values.
+  my $makecube_outfile;
+  foreach my $j ( 1 .. $totaltile ) {
+    if ( $jsatile ) {
       $makecube_outfile = "${out}_" . $jsatilelist[ $j - 1 ];
-   } else {
-      $makecube_outfile = ( $ntile == 1 ) ? $out : "${out}_$j";
-   }
-   if ( -e "${makecube_outfile}.sdf" ) {
+    } else {
+      $makecube_outfile = ( $totaltile == 1 ) ? $out : "${out}_$j";
+    }
+    if ( -e "${makecube_outfile}.sdf" ) {
 
       $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$makecube_outfile" );
       ( $ORAC_STATUS, my $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
@@ -488,10 +577,22 @@ foreach my $j ( 1 .. $ntile ) {
          $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
          orac_say( " Creating VARIANCE component in $makecube_outfile." );
       }
-   }
+    }
+  }
+
+# Divide and conquer.  For JSA tiles the chunks are numbered by their
+# HPX tile indices.
+} else {
+
+  my $fileref = \@infiles;
+  _CHUNK_AND_MOSAIC_CUBE_ FILES=$fileref CHUNKSIZE=$chunksize NUM_CHUNK=$num_chunk MEAN_CHUNKSIZE=$mean_chunksize TOTALSIZE=$totalsize TOTALTILE=$totaltile MAKECUBE_PARAMS=$params TILE=$tile JSATILE=$jsatile SUFFIX=$suffix GROUP=0
+  if ( $jsatile ) {
+    @jsatilelist = @{$_CHUNK_AND_MOSAIC_CUBE_{JSATILELIST}};
+    $totaltile = scalar( @jsatilelist );
+  }
 }
 
-if ( $ntile > 1 || $jsatile ) {
+if ( $totaltile > 1 || $jsatile ) {
 
   # We need to rename the output cubes, as MAKECUBE creates _cube_N
   # and we want _cubeNNN.
@@ -499,7 +600,7 @@ if ( $ntile > 1 || $jsatile ) {
   my $numbad = 0;
   my $outfilenumber = 1;
   my $outfile;
-  foreach my $j ( 1 .. $ntile ) {
+  foreach my $j ( 1 .. $totaltile ) {
     if ( $jsatile ) {
        $makecube_outfile = "${out}_" . $jsatilelist[ $j - 1 ] . ".sdf" ;
        $outfile = "${out}" . sprintf( "%06d", $jsatilelist[ $j - 1 ] ) . ".sdf";
@@ -530,8 +631,8 @@ if ( $ntile > 1 || $jsatile ) {
     }
   }
 
-  $ntile -= $numbad;
-  orac_print " $ntile cubes formed: ";
+  $totaltile -= $numbad;
+  orac_print " $totaltile cubes formed: ";
 
   $Frm->files( @files );
   my $filestring = join ", ", @files;
@@ -540,7 +641,7 @@ if ( $ntile > 1 || $jsatile ) {
   # The HEALPix TILENUM headers written by MAKECUBE should be known to ORAC-DR.
   $Frm->readhdr() if $jsatile;
 
-} elsif ( $ntile == 1 ) {
+} elsif ( $totaltile == 1 ) {
 
   # We want the output file to be named _cube001.
   my $makecube_outfile = "${out}.sdf";

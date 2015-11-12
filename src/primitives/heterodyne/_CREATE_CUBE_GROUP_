@@ -111,7 +111,10 @@ _TAG_AS_REDUCED_PRODUCT_ primtive. [0]
 
 =item TILE = LOGICAL (Given)
 
-Whether or not to break the spectral cubes into tiles.  [1]
+Whether or not to break the spectral cubes into tiles.  The default
+depends on whether JSA tiling is being used, in which case the
+default is 0 because these options are mutually exclusive.  The
+default is 1 otherwise.  []
 
 =back
 
@@ -196,6 +199,7 @@ use File::Copy;
 #  precision than needed, but it shows that the value is floating point.
 use constant FREQ2PIXSIZE => 1236.7;
 use constant MEGABYTE => 1048576;
+use constant JSACHUNK => 1000;
 
 # Deal with parameters.
 my $system_arg = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
@@ -214,8 +218,8 @@ my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", ! $jsatile );
 # Override various parameters via the recipe parameter system.
 if( $override ) {
   $chunksize = ( defined( $Frm->uhdr( "RECPAR_CHUNKSIZE" ) ) ?
-                  $Frm->uhdr( "RECPAR_CHUNKSIZE" )            :
-                  $chunksize );
+                 $Frm->uhdr( "RECPAR_CHUNKSIZE" )            :
+                 $chunksize );
   $maxsize = ( defined( $Frm->uhdr( "RECPAR_CUBE_MAXSIZE" ) ) ?
                $Frm->uhdr( "RECPAR_CUBE_MAXSIZE" )            :
                $maxsize );
@@ -242,6 +246,7 @@ if( $override ) {
 # Normal and JSA tiling are mutually exclusive.
 $tile = $jsatile ? 0 : $tile;
 $chunksize = max( 100, $chunksize );
+$chunksize = JSACHUNK if $jsatile;
 
 # No need to keep the border as MAKECUBE deals with smoothing border
 # internally.
@@ -462,8 +467,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
       $params .= " genvar=spread inweight=f";
     }
 
-    # Determine the reference sky co-ordinates and spectral bounds for all the files
-    # ==============================================================================
+    # Determine the number of chunks
+    # ==============================
 
     # Form a list of all the input filenames and determine their total size in
     # megabytes.  Also store the filenames in a GRP list text file.
@@ -478,11 +483,23 @@ if( $Grp->lastallmembers( $Frm ) ) {
     }
     my $inlist = write_file_list( @infiles );
 
-    # Rather than just fill chunks to the maximum, and then possibly
-    # have a final chunk much smaller than the rest, creates chunks that
-    # are the average chunksize.
-    my $num_chunk = int( $totalsize / $chunksize ) + 1;
+    # Ensure that there are at last two files per chunk (except for
+    # the final chunk) for legacy tiling.
+    my $num_chunk;
+    if ( $jsatile && $totalsize > JSACHUNK ) {
+      my $num_files = scalar( @infiles );
+      $num_chunk = int( ( $num_files - 1 ) / 2 ) + 1;
+    } else {
+
+      # Rather than just fill chunks to the maximum, and then possibly
+      # have a final chunk much smaller than the rest, creates chunks that
+      # are the average chunksize.
+      $num_chunk = int( $totalsize / $chunksize ) + 1;
+    }
     my $mean_chunksize = $totalsize / $num_chunk;
+
+    # Determine the reference sky co-ordinates and spectral bounds for all the files
+    # ==============================================================================
 
     # Do not create the output file, thus this is a quick operation.
     $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=!" );
@@ -506,8 +523,10 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     my $specbounds = "'" . $prlb . "," . $prub . "'";
     $params .= " reflon=$reflon reflat=$reflat specunion specbounds=$specbounds";
-    $params .= " lbnd=[" . $lbound[0] . "," . $lbound[1] . "]";
-    $params .= " ubnd=[" . $ubound[0] . "," . $ubound[1] . "]";
+    if ( ! $jsatile ) {
+      $params .= " lbnd=[" . $lbound[0] . "," . $lbound[1] . "]";
+      $params .= " ubnd=[" . $ubound[0] . "," . $ubound[1] . "]";
+    }
 
     # Disable autogrid and use previously calculated reference pixel.
     # This is per DSB's advice (20110326) to avoid double counting
@@ -531,13 +550,13 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     my ( $in, $out ) = $Grp->inout( "_cube" );
     my $makecube_outfile;
-    if ( $totalsize <= $chunksize || $jsatile ) {
+    if ( $totalsize <= $chunksize || $num_chunk < 2 ) {
       orac_print "Creating cube from " . join( ", ", @infiles ) . "... ";
 
       $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=$out" );
 
+      ( $ORAC_STATUS, $totaltile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
       if ( $jsatile ) {
-         ( $ORAC_STATUS, $totaltile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
          ( $ORAC_STATUS, @jsatilelist ) = $Mon{'smurf_mon'}->get( "makecube", "jsatilelist" );
       }
 
@@ -591,10 +610,16 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
       orac_say "done.";
 
+# Divide and conquer.  For JSA tiles the chunks are numbered by their
+# HPX tile idicies.
     } else {
 
       my $fileref = \@infiles;
-      _CHUNK_AND_MOSAIC_CUBE_ FILES=$fileref CHUNKSIZE=$chunksize NUM_CHUNK=$num_chunk MEAN_CHUNKSIZE=$mean_chunksize TOTALSIZE=$totalsize TOTALTILE=$totaltile MAKECUBE_PARAMS=$params TILE=$tile
+      _CHUNK_AND_MOSAIC_CUBE_ FILES=$fileref CHUNKSIZE=$chunksize NUM_CHUNK=$num_chunk MEAN_CHUNKSIZE=$mean_chunksize TOTALSIZE=$totalsize TOTALTILE=$totaltile MAKECUBE_PARAMS=$params TILE=$tile JSATILE=$jsatile
+      if ( $jsatile ) {
+        @jsatilelist = @{$_CHUNK_AND_MOSAIC_CUBE_{JSATILELIST}};
+        $totaltile = scalar( @jsatilelist );
+      }
     }
     undef $inlist;
 

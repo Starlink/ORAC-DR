@@ -29,6 +29,20 @@ The maximum subset size in megabytes.  [5120]
 A reference to an array containing filenames to be formed into a spatial/spectral
 cube.
 
+=item GROUP = LOGICAL (Given)
+
+Whether or not to operate on the current Group object.  It should be
+true when called from _CREATE_CUBE_GROUP_ and false when invoked from
+_CREATE_CUBE_FRAME_.  [0]
+
+=item JSATILE = LOGICAL (Given)
+
+If true create HEALPix tiles.  [0]
+
+=item JSATILELIST = ARRAY REFERENCE (Returned)
+
+For JSA tile processing this returns the set of unique HPX identifiers.
+
 =item MAKECUBE_PARAMS = STRING (Given)
 
 The parameter values for MAKECUBE excluding the name of the IN and OUT parameters.
@@ -41,6 +55,12 @@ The average subset size in megabytes.
 
 The number of subsets.
 
+=item SUFFIX = STRING (Given)
+
+Generate cubes with this file suffix.  ["_cube"]
+
+Override the default "_cube" suffix with a new value.
+
 =item TOTALSIZE = INTEGER (Given)
 
 The total size in megabytes of all the time series listed in TIMESERIES.
@@ -48,7 +68,7 @@ The total size in megabytes of all the time series listed in TIMESERIES.
 =item TOTALTILE = INTEGER (Given)
 
 The total number of tiles that MAKECUBE would create processing all
-the time-series data files.
+the time-series data files.  It is ignored if Argument JSATILE is true.
 
 =back
 
@@ -62,8 +82,9 @@ This primitive is suitable for ACSIS.
 
 =item *
 
-It serves _CREATE_CUBE_GROUP_ from where the supplied arguments to this
-primitive are either parameters or are evaluated.
+It serves _CREATE_CUBE_GROUP_ and _CREATE_CUBE_FRAME_ from where the
+supplied arguments to this primitive are either parameters or are
+evaluated.
 
 =back
 
@@ -73,12 +94,20 @@ primitive are either parameters or are evaluated.
 
 =item *
 
-A cube (or set of cubes) whose filename is of the form
-gaYYYYMMDD_NN_SS_cubeMMM.sdf, where YYYYMMDD is the UT date, NN is the
-observation number, SS is the zero-padded subsystem number, and MMM is
-the zero-padded tile number. Tiles are numbered starting from 1 and
-increasing monotonically, counting from the bottom-left corner in
-spatial extent and proceeding in a raster fashion from left to right.
+For GROUP=0 a cube (or set of cubes) whose filename is of the form
+aYYYYMMDD_NNNNN_SS_XMMM.sdf, where YYYYMMDD is the UT date, NNNNN is
+the zero-added observation number, SS is the zero-padded subsystem number,
+X is the value of SUFFIX, and MMM is the zero-padded tile number.
+
+For GROUP=1 a cube (or set of cubes) whose filename is of the form
+gaYYYYMMDD_N_S_XMMM.sdf, where N is the observation number, and S is
+the subsystem number.  YYYYMMDD, X and MMM are as for GROUP=0.
+
+For JSATILE=0 tiles are numbered starting from 1 and increasing
+monotonically, counting from the bottom-left corner in spatial extent
+and proceeding in a raster fashion from left to right.
+
+For JSATILE=1 tiles are number by the HPX identifer in ascending order.
 
 =back
 
@@ -99,8 +128,10 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010-2011, 2013 Science and Technology Facilities Council.  All
-Rights Reserved.
+Copyright (C) 2010-2011, 2013, 2015 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -120,7 +151,14 @@ Place, Suite 330, Boston, MA 02111-1307, USA.
 use File::Basename;
 use File::Copy;
 use constant MEGABYTE => 1048576;
+use constant JSACHUNK => 1000;
 
+# Arguments
+# =========
+
+my $jsatile = get_prim_arg( $_PRIM_ARGS_, "JSATILE", 0 );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 1 );
+my $suffix = get_prim_arg( $_PRIM_ARGS_, "SUFFIX", "_cube" );
 my $files = get_prim_arg( $_PRIM_ARGS_, "FILES", undef );
 if ( ! defined( $files ) ) {
   orac_throw "FILES argument to _CHUNK_AND_MOSAIC_CUBE_ not defined: programming error";
@@ -147,14 +185,14 @@ if ( ! defined( $totalsize ) ) {
 }
 
 my $totaltile = get_prim_arg( $_PRIM_ARGS_, "TOTALTILE", undef );
-if ( ! defined( $totaltile ) ) {
+if ( ! defined( $totaltile ) && !$jsatile ) {
   orac_throw "TOTALTILE argument to _CHUNK_AND_MOSAIC_CUBE_ not defined: programming error";
 }
 
 my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNKSIZE", 5120 );
+$chunksize = JSACHUNK if $jsatile;
 
 # Will a TSYS be created?
-
 my $tsys_present = 0;
 if ( lc( $params ) =~ /spread=nearest/ ) {
    $tsys_present = 1;
@@ -162,6 +200,10 @@ if ( lc( $params ) =~ /spread=nearest/ ) {
 } elsif ( !( lc( $params ) =~ /spread=/ ) ) {
    $tsys_present = 1;
 }
+$params .= " jsatiles" if $jsatile;
+
+# Handle group or file.
+my $Obj = $group ? $Grp : $Frm;
 
 # Divide the list into manageable chunks to prevent a timeout.
 # ============================================================
@@ -182,11 +224,17 @@ my $chunk_index = 0;
 my $sumsize = 0;
 my @chfiles;
 my @all_tiles;
+my @full_jsatiles;
+my @jsatilelist;
 my $num_files = @$files;
 my $ORAC_STATUS;
 
 # Allocate files to chunks.
 # -------------------------
+
+# Find the maximum number of files to combine for JSA tiling.
+my $maxfiles = $jsatile ? int( ( $num_files - 1 ) / $num_chunk ) + 1 : 1;
+my $jsa_count = $jsatile && ( $totalsize / $num_chunk ) > JSACHUNK;
 
 # Look at each input file and see if it needs chunking.
 foreach my $i ( 1 .. $num_files ) {
@@ -198,16 +246,21 @@ foreach my $i ( 1 .. $num_files ) {
 # the last file in the group.  Also because of the quantisation
 # enlarge the chunk size to the maximum for the final chunk so
 # that it can encompass all the remaining input time-series files.
+# For JSA tiles instead just count to the maximum number of
+# files that can be handled concurrently.
    my $use_chunksize = ( $chunk_index == $num_chunk ) ? $chunksize : $mean_chunksize;
-   if ( ( $sumsize + $filesize ) <= $use_chunksize && $i < $num_files ) {
+   if ( $i < $num_files &&
+        ( ( $sumsize + $filesize ) <= $use_chunksize ) ||
+        ( $jsa_count && scalar( @chfiles ) < $maxfiles ) ) {
       $sumsize += $filesize;
       push @chfiles, $files->[ $fi ];
       $fi++;
 
    } else {
 
-# Append the final input time-series file to the the list for the final chunk.
-      if ( $i == $num_files ) {
+# Append the final input time-series file to the list for the final
+# chunk unless JSA tiling.
+      if ( $i == $num_files && !$jsa_count ) {
          push @chfiles, $files->[ $fi ];
          $fi++;
       }
@@ -227,7 +280,7 @@ foreach my $i ( 1 .. $num_files ) {
       my $chfilename = basename( $chfile->file );
 
 # Form tiles for current chunk.  Use a suffix to delineate the chunks.
-      my ( $in, $out ) = $Grp->inout( "_cube" );
+      my ( $in, $out ) = $Obj->inout( $suffix );
       $out .= "_ch" . "$chunk_index";
 
 # Obtain a name of a text file to list the output tiles, but the file
@@ -251,6 +304,17 @@ foreach my $i ( 1 .. $num_files ) {
       push ( @all_tiles, read_file_list( $outfilename ) );
       undef $outfiles;
 
+# Form array of all the unqiue JSA tile indices present.
+      if ( $jsatile ) {
+         ( $ORAC_STATUS, @jsatilelist ) = $Mon{'smurf_mon'}->get( "makecube", "jsatilelist" );
+         my @sorted_tile_list = sort { $a <=> $b } @jsatilelist;
+         my %seen_jsatiles;
+         @full_jsatiles = grep( ! $seen_jsatiles{$_}++, @full_jsatiles, @sorted_tile_list );
+
+# The extra line feed is intentional.
+         orac_say "HPX tile list: " . join( ",", @sorted_tile_list ) . "\n";
+      }
+
 # Start a new list of files for the new chunk.
       if ( $i < $num_files ) {
          @chfiles = ( $files->[ $fi ] );
@@ -260,17 +324,31 @@ foreach my $i ( 1 .. $num_files ) {
    }
 }
 
+if ( $jsatile ) {
+   orac_print "\nFull set of HPX tiles is: " . join( ",", @full_jsatiles ) . "\n";
+   orac_print "Total number of tiles supplied: $totaltile   ";
+   $totaltile = scalar( @full_jsatiles );
+   orac_print "unique : $totaltile\n";
+}
+
 # Assign files in each chunk to the grand-mosaic tiles.
 # =====================================================
 
-( undef, my $out ) = $Grp->inout( "_cube" );
+( undef, my $out ) = $Obj->inout( $suffix );
+
 if ( $chunk_index > 1 ) {
 
 # Extract the files for the current tile made from the various chunks.
+# For JSA tiles that will be the HPX index rather than the tile counter.
    foreach my $t ( 1 .. $totaltile ) {
       my @match_files;
       if ( $totaltile > 1 ) {
-         my $pattern = "_$t\$";
+         my $pattern;
+         if ( $jsatile ) {
+            $pattern = "_$full_jsatiles[ $t - 1 ]\$";
+         } else {
+            $pattern = "_$t\$";
+         }
          @match_files = grep{ /$pattern/ } @all_tiles;
       } else {
          @match_files = @all_tiles;
@@ -299,8 +377,14 @@ if ( $chunk_index > 1 ) {
 
 # Mimic MAKECUBE's output-NDF naming convention, i.e. exclude the
 # _<tile> suffix if there is only one tile.
-      my $mmout = ( $totaltile > 1 ) ? $out . "_" . $t : $out;
+      my $mmout;
+      if ( $jsatile ) {
+         $mmout = ( $totaltile > 1 ) ? $out . "_" . $full_jsatiles[ $t - 1 ] : $out;
+      } else {
+         $mmout = ( $totaltile > 1 ) ? $out . "_" . $t : $out;
+      }
 
+      my $itile = $jsatile ? $full_jsatiles[ $t - 1 ] : $t;
       if ( $nframe > 1 ) {
 
 # Form trimmed mosaic.
@@ -314,7 +398,7 @@ if ( $chunk_index > 1 ) {
 # knows about the SMURF extensions that are also NDFs, MAKEMOS does not.
 
 # First combine the main arrays.
-         orac_print "\nRunning MAKEMOS on Tile $t to form $mmout from:\n";
+         orac_print "\nRunning MAKEMOS on Tile $itile to form $mmout from:\n";
          foreach my $i ( 1.. $nframe ) {
             orac_print "  " . $tiles_main[ $i - 1 ] . "\n";
          }
@@ -348,7 +432,7 @@ if ( $chunk_index > 1 ) {
 # MSTATS will leave a cube with a degenerate final axis.  Remove that axis.
          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_exp_time out=$exp_time_out trim" );
 
-         orac_print "Summing exposure times on Tile $t to form $exp_time_out.\n";
+         orac_print "Summing exposure times on Tile $itile to form $exp_time_out.\n";
 
          undef $temp_exp_time;
          undef $mslist;
@@ -379,7 +463,7 @@ if ( $chunk_index > 1 ) {
 
 # MSTATS will leave a cube with a degenerate final axis.  Remove that axis.
             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp_tsys out=$tsys_out trim" );
-            orac_print "Averaging system temperatures on Tile $t to form $tsys_out.\n";
+            orac_print "Averaging system temperatures on Tile $itile to form $tsys_out.\n";
 
             undef $temp_tsys;
             undef $mslist;
@@ -406,7 +490,7 @@ if ( $chunk_index > 1 ) {
             my $dlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
             my $dlist_fh = $dlist->handle;
 
-            orac_print "Combining T_eff on Tile $t to form $eff_time_out.\n";
+            orac_print "Combining T_eff on Tile $itile to form $eff_time_out.\n";
             my ( @numerator, @denominator );
 
             foreach my $i ( 1.. $nframe ) {
@@ -498,12 +582,15 @@ if ( $chunk_index > 1 ) {
          }
 
       } elsif ( $nframe == 1 ) {
-         orac_print "Only one file contributes to Tile $t\n";
+         orac_print "Only one file contributes to Tile $itile\n";
          orac_print "Rename ". $tiles_main[0] . " to $mmout \n";
          move( $tiles_main[0] . ".sdf", $mmout . ".sdf" );
 
       } else {
-         orac_print "No files contribute to Tile $t.\n";
+         orac_print "No files contribute to Tile $itile.\n";
       }
    }
+
+# Return the unique set of JSA tiles created.
+   $_CHUNK_AND_MOSAIC_CUBE_{JSATILELIST} = \@full_jsatiles if $jsatile;
 }
