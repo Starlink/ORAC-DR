@@ -22,7 +22,10 @@ central 10% of the bandpass. 'STANDARD' tells the primitive to mask
 out the central 25% of the bandpass. 'WIDE' tells the primitive to
 mask out the central 50% of the bandpass. 'AUTO' tells the pipeline to
 use MFITTREND to attempt to automatically find emission and mask that
-out. ['AUTO']
+out.  'LINEFOREST' is 'AUTO' but with a preliminary thresholding
+to increase he fraction of baseline to emission for line forests,
+the threshold level being derived from a histogram-peak estimation
+of the base level and noise.  ['AUTO']
 
 =head1 OUTPUT DATA
 
@@ -65,6 +68,13 @@ are the corresponding RMS.
 The array RMS value is written to current Frame's C<RMS_MEAN> internal
 header for later logging.
 
+=item *
+
+For the lineforest rejection the threshold is currently and arbitrarily
+set to the peak (which correspond to the baseline level) plus three
+times the width of this peak in the histogram, as returned by
+CUPID:FINDCLUMPS (cf. L<_FIND_HISTOGRAM_PEAK_>).
+
 =back
 
 =head1 AUTHORS
@@ -74,7 +84,7 @@ Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008-2009, 2013-2014 Science and Technology Facilities Council.
+Copyright (C) 2008-2009, 2013-2014, 2016 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
@@ -144,12 +154,35 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $temp1 = $infile;
   }
 
-  if( $method eq 'AUTO' ) {
+  if ( $method eq 'AUTO' || $method eq 'LINEFOREST' ) {
 
     # Find dimensions.
     _GET_DIMENSIONS_
     my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
     my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+
+    # Determine a threshold.  Use the Freedman & Diaconis rule to set
+    # the bin widths.
+    if ( $method eq 'LINEFOREST' ) {
+      {
+        my $threshold;
+        my $Frm = new $Frm;
+        $Frm->file( $temp1 );
+        _FIND_HISTOGRAM_PEAK_ EXTREME=1 SMOOTH=1 METHOD=Centroid FINE_RESOLUTION=1
+        if ( defined $_FIND_HISTOGRAM_PEAK_{PEAK} &&
+             defined $_FIND_HISTOGRAM_PEAK_{WIDTH} ) {
+          $threshold = $_FIND_HISTOGRAM_PEAK_{PEAK} +
+                       3.0 * $_FIND_HISTOGRAM_PEAK_{WIDTH};
+
+          # Apply the trimmed data range.
+          my $temp4 = new ORAC::TempFile( 0 );
+          my $params = "in=$temp1 out=$temp4 ";
+          $params .= "thrlo=-1E9 thrhi=$threshold newlo=bad newhi=bad";
+          $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+          $temp1 = $temp4;
+        }
+      }
+    }
 
     # Fit and subtract a background from the spectrum.
     my $params = "in=$temp1 out=$temp2 mask=$temp3 order=1 subtract";
