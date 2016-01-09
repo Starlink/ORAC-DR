@@ -765,6 +765,7 @@ sub _read_recipe {
   }
   # Rethrow the exception for the last attempt at finding the recipe
   if (!defined $recipe && defined $RecErr) {
+    orac_err("RECIPE ERROR: Could not find and/or access requested recipe. Aborting.\n", "blue");
     throw ORAC::Error::FatalError("$RecErr");
   }
   throw ORAC::Error::FatalError("Trouble reading recipe") unless defined $recipe;
