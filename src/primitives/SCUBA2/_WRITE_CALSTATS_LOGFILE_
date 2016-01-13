@@ -17,7 +17,16 @@ parameters.
 
 =head1 ARGUMENTS
 
-None.
+This primitive has one argument:
+
+=over 4
+
+=item B<PICARD>
+
+A flag to dentote whether to look in the standard index file to find
+the results (if 0), or to look in the PICARD_RESULTS header for the
+calibration results (if 1). Default is 0, i.e. look in the index.gains
+file.
 
 =head1 EXTERNAL TASKS
 
@@ -130,6 +139,8 @@ USA.
 
 =cut
 
+my $picardresults = get_prim_arg($_PRIM_ARGS_, "PICARD", 0);
+
 if ($Cal->iscalsource($Frm->hdr("OBJECT")) && $Frm->tagexists("newimage")) {
   orac_print "\nCalling _WRITE_CALSTATS_LOGFILE_: write logfile with results from calibrator analysis\n", "yellow"
     if ($Frm->uhdr("PICARD"));
@@ -137,16 +148,33 @@ if ($Cal->iscalsource($Frm->hdr("OBJECT")) && $Frm->tagexists("newimage")) {
   my %hdr = %{$Cal->thing};
   my (%fcf, %fluxes);
   my @units = qw/ARCSEC BEAM BEAMMATCH/;
-  foreach my $units (@units) {
-    $hdr{UNITS} = $units;
-    my $match = $Cal->gainsindex->choosebydt('ORACTIME', \%hdr, 0);
-    my $entry = $Cal->gainsindex->indexentry($match);
-    $fcf{$units} = {FCF => $entry->{GAIN}, FCFERR => $entry->{GAINERR}};
-    if ($units eq "ARCSEC") {
-      $fluxes{FLUX} = $entry->{FLUX};
-      $fluxes{FLUXERR} = $entry->{FLUXERR};
-    } elsif ($units eq "BEAM") {
-      $fluxes{PEAK} = $entry->{FLUX};
+
+  if ($picardresults) {
+    if (defined $Frm->uhdr("PICARD_RESULTS")) {
+      orac_print("Fetching FCF information from PICARD_RESULTS.\n");
+      my %picard_results = %{ $Frm->uhdr("PICARD_RESULTS") };
+      $fcf{BEAM} = {FCF=> $picard_results{fcf_beam}, FCFERR => $picard_results{fcf_beam_err}};
+      $fcf{BEAMMATCH} = {FCF=>$picard_results{fcf_beammatch}, FCFERR => $picard_results{fcf_beammatch_err}};
+      $fcf{ARCSEC} = {FCF=>$picard_results{fcf_arcsec}, FCFERR => $picard_results{fcf_arcsec_err}};
+      $fluxes{FLUX} = $picard_results{flux};
+      $fluxes{FLUXERR} = $picard_results{flux_err};
+      $fluxes{PEAK} = $picard_results{peak};
+    } else {
+      orac_err("No PICARD_RESULTS object found. No FCFs can be identified.\n");
+    }
+  } else {
+    orac_print("Fetching FCF information from index.gains file for calibrator that was closest in time to this observation.\n");
+    foreach my $units (@units) {
+      $hdr{UNITS} = $units;
+      my $match = $Cal->gainsindex->choosebydt('ORACTIME', \%hdr, 0);
+      my $entry = $Cal->gainsindex->indexentry($match);
+      $fcf{$units} = {FCF => $entry->{GAIN}, FCFERR => $entry->{GAINERR}};
+      if ($units eq "ARCSEC") {
+        $fluxes{FLUX} = $entry->{FLUX};
+        $fluxes{FLUXERR} = $entry->{FLUXERR};
+      } elsif ($units eq "BEAM") {
+        $fluxes{PEAK} = $entry->{FLUX};
+      }
     }
   }
 
