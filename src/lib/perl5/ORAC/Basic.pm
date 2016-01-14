@@ -303,8 +303,8 @@ sub orac_exit_if_error {
   my $ErrText = shift;
   if (defined $ErrText) {
     ORAC::Error->flush;
-    ORAC::Event->mainloop("Tk");
     orac_err($ErrText);
+    ORAC::Event->mainloop("Tk");
     orac_exit_normally( err => 1);
   }
 }
