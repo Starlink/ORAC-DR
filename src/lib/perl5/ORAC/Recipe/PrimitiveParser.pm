@@ -454,9 +454,6 @@ sub _read_primitive {
       @found = $self->_search_path( $dirs, $name );
       if (!@found) {
         my $str = join("\n",@$dirs);
-        # Repeat error message to ensure this is visible in x window before the xgui exits.
-        orac_err("Could not find and/or open '$name' in any of :\n$str\n", 'red');
-
         throw ORAC::Error::FatalError("Could not find and/or open '$name' in any of:\n$str\n",
                                       ORAC__FATAL);
       }
