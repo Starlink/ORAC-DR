@@ -444,7 +444,7 @@ name for a particular observation type
 
  [RECIPES_POINTING]
 
-where object names have spaces removed.
+where object names are forced to upper case and have spaces removed.
 
 In all cases where an OBJECT is specified above it can be replaced
 by a perl pattern:
