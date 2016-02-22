@@ -170,10 +170,10 @@ sub recipe_name_from_params {
 =item B<for_recipe>
 
 Retrieves the parameters associated with a particular recipe.
-Optionally an object name can also be supplied to allow recipe/object
-combinations.
+Optionally a translated header hash can also be supplied to allow recipe/object
+and other combinations.
 
- %params = $par->for_recipe( $recipe, $object );
+ %params = $par->for_recipe( $recipe, \%hdr );
 
 Will return an empty list if no parameters exist for the recipe
 or if the recipe name is not defined.
@@ -188,9 +188,10 @@ Whitespace is removed from the object name.
 sub for_recipe {
   my $self = shift;
   my $rec = shift;
-  my $object = shift;
+  my $hdr = shift || {};
   return () unless defined $rec;
   $rec = uc($rec);
+  my $object = $hdr->{'ORAC_OBJECT'};
   my %allpars = $self->_parameters();
 
   my %RecPars;
