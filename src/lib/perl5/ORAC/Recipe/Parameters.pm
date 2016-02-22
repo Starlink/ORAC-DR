@@ -192,38 +192,53 @@ sub for_recipe {
   return () unless defined $rec;
   $rec = uc($rec);
   my $object = $hdr->{'ORAC_OBJECT'};
+  $object = uc($object) if defined $object;
+
+  # Hash to store recipe parameters by specificness.
+  my %RecParsMatch = ();
+
+  # Check each "section" of the recipe parameters definition in turn.
   my %allpars = $self->_parameters();
+  SECTION: while (my ($key, $pars) = each %allpars) {
+    my ($recipe_object, @filters) = split '#', $key;
+    my ($recipe, $object_match) = split ':', $recipe_object, 2;
 
-  my %RecPars;
+    next unless $recipe eq $rec;
 
-  # Simple recipe parameter
-  if (exists $allpars{$rec}) {
-    %RecPars = %{$allpars{$rec}};
-  }
+    # Counter for number of filters (including object name) matched.
+    my $spec = 0;
 
-  # OBJECT Recipe parameters
-  if (defined $object) {
-    $object =~ s/\s//g;
-    if (length($object)) {
-      my $usekey;
-      my $testkey = $rec .":". uc($object);
-      if (exists $allpars{$testkey}) {
-        # Shortcut exact match
-        $usekey = $testkey;
-      } else {
-        # Check for wildcards in object position
-        for my $cfgobj (keys %allpars) {
-          if ($testkey =~ /^$cfgobj$/) {
-            $usekey = $cfgobj;
-            last;
-          }
-        }
-      }
-      %RecPars = (%RecPars, %{$allpars{$usekey}})
-        if defined $usekey;
+    if (defined $object_match) {
+      next unless defined $object
+              and ($object eq $object_match)
+               || ($object =~ /^$object_match$/);
+      $spec ++;
+    }
+
+    foreach my $filter (@filters) {
+      # For now assume all filters are "=" operations (string-wise) but
+      # we could add more operations here.  E.g date < X might be useful.
+      my ($filter_key, $filter_val) = split '=', $filter, 2;
+      my $hdr_val = $hdr->{'ORAC_' . $filter_key};
+      next SECTION unless defined $hdr_val and $hdr_val eq $filter_val;
+      $spec ++;
+    }
+
+    unless (exists $RecParsMatch{$spec}) {
+      $RecParsMatch{$spec} = $pars;
+    }
+    else {
+      $RecParsMatch{$spec} = {%{$RecParsMatch{$spec}}, %$pars};
     }
   }
 
+  # Apply recipe parameters in order of specificness.
+  my %RecPars = ();
+  foreach my $spec (sort {$a <=> $b} keys %RecParsMatch) {
+    %RecPars = (%RecPars, %{$RecParsMatch{$spec}});
+  }
+
+  # Override with any fixed parameters.
   my $fixed = $self->fixed_parameters();
   %RecPars = (%RecPars, %$fixed) if defined $fixed;
 
@@ -461,6 +476,15 @@ recipe.
 
 Here all objects starting with the letter "O" for that recipe
 will use the override of param1.
+
+Parameters for a given recipe can also be specified by other translated
+headers, for example:
+
+  [RECIPE_NAME#FILTER=850]
+  param1 = value1
+
+  [RECIPE_NAME:OBJECT_NAME#FILTER=450]
+  param1 = value2
 
 =head1 AUTHORS
 
