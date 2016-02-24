@@ -486,6 +486,18 @@ headers, for example:
   [RECIPE_NAME:OBJECT_NAME#FILTER=450]
   param1 = value2
 
+  [REDUCE_SCAN#FILTER=850#SCAN_PATTERN=CURVY_PONG]
+  MAKEMAP_CONFIG = my_pong_850_dimmconfig.lis
+
+  [REDUCE_SCAN#FILTER=450#SCAN_PATTERN=CV_DAISY]
+  MAKEMAP_CONFIG = my_daisy_450_dimmconfig.lis
+
+There can be multiple such general header specifiers but they must
+follow any object names.  To see which translated headers are available,
+you could try running the F<translatehdr> command, e.g.:
+
+  $STARLINK_DIR/Perl/bin/translatehdr filename.sdf
+
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
