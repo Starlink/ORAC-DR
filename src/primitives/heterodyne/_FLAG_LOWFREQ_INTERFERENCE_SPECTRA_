@@ -26,6 +26,8 @@ It achieves this through the following steps.
   -  Analyses the complete non-linearity profile of each good receptor
      in turn to identify anomalous spectra.
      o  Reduces the noise to obtain a smooth profile.
+     o  Optionally for longer time intervals subtracts the varying baseline
+        to allow for slow secular trends.
      o  Rejects spectra whose mean non-linearity exceeds the mean level
         a nominated number of clipped standard deviations (see Arguments
         EDGE_CLIP and THRESH_CLIP).  The derived standard deviation
@@ -120,6 +122,31 @@ allowed is 51.  This argument can be overridden by the
 RECPAR_BASELINE_LINEARITY_SCALELENGTH uhdr via the recipe parameter
 system.  [101]
 
+=item TRENDBOX = INTEGER (Given)
+
+The filter box width in temporal elements used to determine and
+subtract a smooth continuum level for the profile of non-linearity
+against time using the FINDBACK algorithm. To apply this correction
+the observation must be of duration at least ten minutes, comprise
+more than one subscan, TRENDBOX must be defined and have a valid value
+(see below).  This correction is normally not required.
+
+In rare occurrences there can be significant slowly time-varying
+systematic changes to the non-linearity patterns in the spectra.  This
+can undermine a simple threshold to determine the anomalous spectra,
+say for instance if there are two extended periods each with a
+different base level; good data from the higher might be completely
+rejected.  If TRENDBOX is defined it should be at least the width of
+the longest non-linearity excursion (whose spectra should be
+rejected).  The secular trend is subtracted and the mean of the trend
+added back to give a positive signal, which can then be thresholded.
+
+It should be should be odd (if an even value is supplied, the next
+higher odd value will be used).   The minimum allowed is 1251 or
+typically 2.5 minutes of continuous data collection.  This argument
+can be overridden by the RECPAR_BASELINE_LINEARITY_TRENDBOX uhdr via
+the recipe parameter system.  [undef]
+
 =item THRESH_CLIP = REAL (Given)
 
 The number of standard deviations at which to threshold the noise
@@ -202,7 +229,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011-2014 Science & Technology Facilities Council.
+Copyright (C) 2011-2016 Science & Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -244,7 +271,7 @@ my $thresh_clip = get_prim_arg( $_PRIM_ARGS_, "THRESH_CLIP", "4.0" );
 my $emission_mask = get_prim_arg( $_PRIM_ARGS_, "LINEWIDTH", "auto" );
 my $min_spec = get_prim_arg( $_PRIM_ARGS_, "MIN_SPECTRA", "50" );
 my $smooth_scale = get_prim_arg( $_PRIM_ARGS_, "SCALELENGTH", 101 );
-
+my $trend_box = get_prim_arg( $_PRIM_ARGS_, "TRENDBOX", undef );
 
 # Handle recipe parameter overrides.
 $b_regions = ( defined( $Frm->uhdr( "RECPAR_BASELINE_REGIONS" ) ) ?
@@ -265,6 +292,10 @@ $emission_mask = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_LINEWIDTH" ) 
 $smooth_scale = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" ) ) ?
                 $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_SCALELENGTH" )       :
                 $smooth_scale );
+
+$trend_box = ( defined( $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_TRENDBOX" ) ) ?
+             $Frm->uhdr( "RECPAR_BASELINE_LINEARITY_TRENDBOX" )              :
+             $trend_box );
 
 $min_spec = ( defined( $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" ) ) ?
             $Frm->uhdr( "RECPAR_LOWFREQ_INTERFERENCE_MIN_SPECTRA" )              :
@@ -719,6 +750,42 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
 # ---------------------------------------------------------------------------
    my $linearity_mask = new ORAC::TempFile( 0 );
 
+# A simple threshold will not be suitable if there are significant
+# trends from which outlines are to be identified.  This is fairly rare.
+# It is corrected by determining the continuum level with the FINDBACK
+# algorithm (in essence a broad smooth) to estimate the low-frequency
+# variation against time, which is then subtracted and the mean trend
+# added before thresholding.
+#
+# The boxsize is somewhat arbitrary to remove broadly varying changes in
+# the non-linearity over several minutes.  We want to preserve shorter
+# periods of increased non-linearity so that they may be filtered,
+# but not secular trends.  It might be better to work in time units
+# rather than pixels and this would allow for the gaps.  However, it
+# would be messy to implement because of the time gaps.
+#
+# The minimum 1251 typically corresponds to about 2.5 minutes or about
+# double that allowing for the normal time gaps.  The maximum depends
+# on the duration of the data collection.  The non-linear excursions seem
+# to last at most a few minutes.  The duration of the observation must
+# warrant the process too.  Here it's about ten minutes.  These empirical
+# limits will probably require some tweaking.  Note that the odd-valued
+# box size is because FINDBACK expects such a value (or will use the next
+# higher odd integer).
+
+   my ( $max_trend_box, $min_trend_box );
+   my $correct_trend = defined( $trend_box ) && $Frm->files > 1;
+   if ( $correct_trend ) {
+      $max_trend_box = int( $no_times / 4 );
+      $min_trend_box = 1251;
+      $correct_trend = $max_trend_box > $min_trend_box;
+   }
+
+   if ( $correct_trend ) {
+      $trend_box = $trend_box % 2 ? $trend_box : $trend_box + 1;
+      $trend_box = max( $min_trend_box, min( $trend_box, $max_trend_box ) );
+   }
+
    orac_say "";
    foreach my $receptor ( @receptors ) {
       orac_say( "Receptor $receptor." );
@@ -728,6 +795,7 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
       my $temp9file = new ORAC::TempFile( 0 );
       my $temp10file = new ORAC::TempFile( 0 );
       my $temp11file = new ORAC::TempFile( 0 );
+      my $temp12file = new ORAC::TempFile( 0 );
 
 # Identify anomalous spectra.
 # ---------------------------
@@ -741,6 +809,30 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
 
       } else {
          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$linearity_profiles($pixel,) out=$temp8file" );
+      }
+
+# Remove slowly time-varying base level of the non-linearity.  A
+# simple subtract will give negative values, so offset by the mean.
+# The mean blocking is not ideal but a clipped mean is not availble with BLOCK.
+# An alternative is to use the slower CUPID:FINDBACK that will be less biased
+# by periods of non-linearity.
+      if ( $correct_trend ) {
+         $params = "in=$temp8file out=$temp12file box=$trend_box estimator=mean";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+         my $temp13file = new ORAC::TempFile( 0 );
+
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp12file clip=3" );
+         ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+         $params = "exp='IA-IB+$mean' ";
+         $params .= "ia=$temp8file ib=$temp12file out=$temp13file";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Further code is expecting temp8file, so copy back to the original
+# name.
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp13file out=$temp8file" );
+         orac_say "  Correcting for trend in non-linearity profile using " .
+                  "a boxsize of $trend_box spectra.";
       }
 
 # To obtain the desired binning resolution for the histogram peak cut off
@@ -867,8 +959,8 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
       my $lbnd = $_GET_DIMENSIONS_{LBOUND};
       my $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
-      my $temp11file = new ORAC::TempFile( 0 );
-      my $temp12file = new ORAC::TempFile( 0 );
+      my $temp14file = new ORAC::TempFile( 0 );
+      my $temp15file = new ORAC::TempFile( 0 );
 
 # Create a mask NDF.
 # ------------------
@@ -889,19 +981,19 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
 # Expand the thresholded image to the size of the current receptor's
 # plane in the initial cube.
       orac_say( "   Expand the masked profile." );
-      $params = "in=$linearity_mask(,$t_lbnd:$t_ubnd) out=$temp11file ";
+      $params = "in=$linearity_mask(,$t_lbnd:$t_ubnd) out=$temp14file ";
       $params .= "axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
       $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Restore the origin on the time axis.
-      $params = "ndf=$temp11file like=$cubemask";
+      $params = "ndf=$temp14file like=$cubemask";
       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$params" );
 
 # Paste the data to the mask file.
       orac_say( "   Paste the masked data into the cube mask." );
-      $params = "in=$cubemask p1=$temp11file out=$temp12file confine=false transp=false";
+      $params = "in=$cubemask p1=$temp14file out=$temp15file confine=false transp=false";
       $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp12file out=$cubemask" );
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp15file out=$cubemask" );
 
 # At this point $cubemask should have all the original receptors
 # checked for wobbly spectra and have bad values for those spectra.
