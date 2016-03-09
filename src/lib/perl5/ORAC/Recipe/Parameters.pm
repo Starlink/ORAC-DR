@@ -218,9 +218,12 @@ sub for_recipe {
     foreach my $filter (@filters) {
       # For now assume all filters are "=" operations (string-wise) but
       # we could add more operations here.  E.g date < X might be useful.
+      # Note: we force the header value to upper case because _parse_file()
+      # will already have forced the whole "key" (including filters)
+      # to upper case.
       my ($filter_key, $filter_val) = split '=', $filter, 2;
       my $hdr_val = $hdr->{'ORAC_' . $filter_key};
-      next SECTION unless defined $hdr_val and $hdr_val eq $filter_val;
+      next SECTION unless defined $hdr_val and uc($hdr_val) eq $filter_val;
       $spec ++;
     }
 
