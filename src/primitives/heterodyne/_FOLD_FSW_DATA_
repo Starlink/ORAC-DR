@@ -6,8 +6,10 @@ _FOLD_FSW_DATA_ - Reduce FSW data
 
 =head1 DESCRIPTION
 
-This primitive is part of the reduction of frequency switch data. It creates a copy of the orginal file,
-invert it, and slide its wcs by the frequency throw. It then wcsmosaic it with the original file.
+This primitive is part of the reduction of frequency-switch data. It
+creates a copy of the original file, inverts it, and slides its WCS by
+the frequency throw.  It then forms a mosaic of the inverted and shifted
+data with the original file.
 
 =head1 ARGUMENTS
 
@@ -23,7 +25,7 @@ None.
 
 =item *
 
-This primitive is suitable for HARP and RxA3
+This primitive is suitable for HARP and RxA3.
 
 =back
 
@@ -40,19 +42,18 @@ _fsw appended.
 
 =head1 TASKS
 
-KAPPA: wcsattrib, cmult, wcsslide, wcsmosaic
+KAPPA: CMULT, WCSATTRIB, WCSMOSAIC, WCSSLIDE.
 
 =head1 REQUIRED PERL MODULES
 
-None.
-
 =head1 AUTHORS
 
-Luca Rizzi E<lt>l.rizzi@jach.hawaii.eduE<gt>,
+Luca Rizzi E<lt>l.rizzi@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010 Science and Technology Facilities Council.
+Copyright (C) 2010, 2016 Science and Technology Facilities Council.
 Council.  All Rights Reserved.
 
 =head1 LICENCE
@@ -77,80 +78,87 @@ MA 02111-1307, USA.
 my $ORAC_STATUS;
 my $params;
 
+# Write a heading to structure the commentary.
+orac_say "\nFrequency-switch folding";
+my $underline = "-" x 33;
+orac_say "$underline\n";
+
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  my ($in, $out) = $Frm->inout("_fsw",$i);
+  my ($in, $out) = $Frm->inout( "_fsw", $i );
 
-  # reading header parameters
+  # Read header parameters.
   my $rx        = $Frm->uhdr( "ORAC_INSTRUMENT" );
   my $ifchansp  = $Frm->hdr( "IFCHANSP" );
-  if (!defined($ifchansp)) {
+  if ( !defined( $ifchansp ) ) {
     orac_warn( " Header keyword IFCHANSP is not defined. Halting processing of this observation.\n" );
     return ORAC__TERM;
   }
   my $side_band = $Frm->hdr( "OBS_SB" );
-  if (!defined($side_band)) {
-    orac_warn( " Header keyword OBS_DB (side band)  is not defined. Halting processing of this observation.\n" );
+  if ( !defined( $side_band ) ) {
+    orac_warn( " Header keyword OBS_DB (side band) is not defined. Halting processing of this observation.\n" );
     return ORAC__TERM;
   }
   my $freq_thr  = $Frm->hdr( "FREQ_THR" );
-  if (!defined($freq_thr)) {
+  if ( !defined( $freq_thr ) ) {
     orac_warn( " Header keyword FREQ_THR (frequency throw) is not defined. Halting processing of this observation.\n" );
     return ORAC__TERM;
   }
-  # reformat header parameters
-  my $width = abs($ifchansp/1000000000.);
+
+  # Reformat the header parameters.
+  my $width = abs( $ifchansp / 1000000000. );
   my $throw = $freq_thr / 500;
 
-  # output to user to check we got the right values
-  orac_print ("Performing frequency switch folding\n");
-  orac_print ("Receiver  = $rx\n");
-  orac_print ("Width     = $width [Ghz]\n");
-  orac_print ("Side band = $side_band\n");
-  orac_print ("Throw     = $freq_thr [Mhz]\n");
+  # Report to user in order to check that we have the right values.
+  orac_print "Performing folding with the following parameters:\n");
+  orac_print "  Receiver  = $rx\n";
+  orac_print "  Width     = $width [Ghz]\n";
+  orac_print "  Side band = $side_band\n";
+  orac_print "  Throw     = $freq_thr [Mhz]\n";
 
-  # calculate the frequency shift
-  my $shift = int ( $throw / $width + 0.5);
+  # Calculate the frequency shift.
+  my $fshift = $throw / $width;
+  my $shift = int( $fshift + 0.5 * $fshift / abs( $fshift ) );
 
-  # create temporary files to store copies of the original files
+  # Create temporary files to store copies of the original files.
   my $tempafile = new ORAC::TempFile( 0 );
   my $tempbfile = new ORAC::TempFile( 0 );
 
-  # make a copy of input file before starting to change
-  $params="in=$in out=$tempafile";
-  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params");
+  # Make a copy of input file before starting to change it.
+  $params = "in=$in out=$tempafile";
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-  # read and store the current WCS parameters
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=get name='system(1)'");
+  # Read and store the current WCS parameters.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='system(1)'" );
   ($ORAC_STATUS, my $system) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=get name=stdofrest");
-  ($ORAC_STATUS, my $stdofrest) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=stdofrest" );
+  ($ORAC_STATUS, my $stdofrest) = $Mon{ndfpack_mon}->get( "wcsattrib", "value" );
 
-  # set the WCS parameters to what we need for the reduction
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$tempafile mode=set name='system(1)' newval=Freq");
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$tempafile mode=set name=stdofrest newval=topo");
+  # Set the WCS parameters to what we need for the reduction.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$tempafile mode=set name='system(1)' newval=Freq" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$tempafile mode=set name=stdofrest newval=topo" );
 
-  # find boundaries
+  # Find the pixel bounds.
   _GET_DIMENSIONS_ FILE=$tempafile
   my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
   my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
 
-  # modify boundaries to trim the file of the switched portion
-  $lbnd[0]=$lbnd[0]+$shift;
+  # Modify the bounds to trim the file of the switched portion.
+  $lbnd[0] = $lbnd[0] + $shift;
 
   if ( $rx =~ /HARP/ ) {
 
-    # multiply A for -1 to obtain B
+    # Multiply A by -1 to obtain B.
     $params = "in=$tempafile out=$tempbfile scalar=-1";
     $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
   } elsif ( $rx =~ /RxA3/ ) {
 
-    # copy in to B
-    $params="in=$tempafile out=$tempbfile";
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params");
+    # Copy A to B.
+    $params = "in=$tempafile out=$tempbfile";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-    # multiply B for -1 to obtain A
+    # Multiply B by -1 to obtain A.
     $params = "in=$tempbfile out=$tempafile scalar=-1";
     $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
@@ -160,32 +168,23 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     return ORAC__TERMERR;
   }
 
-  # Shift the world coordinates by the throw
+  # Shift the world coordinates by the throw.
   $params = "ndf=$tempbfile abs=[$throw,0,0]";
   $Mon{'kappa_mon'}->obeyw( "wcsslide", "$params" );
 
-  # do the mosaic
-  $params = "in='$tempafile,$tempbfile' out=$out ref=$in method=nearest wlim=2 ubnd=[$ubnd[0],$ubnd[1],$ubnd[2]] lbnd=[$lbnd[0],$lbnd[1],$lbnd[2]]";
+  # Create the mosaic.
+  $params = "in='$tempafile,$tempbfile' out=$out ref=$in method=nearest ";
+  $params .= "wlim=2 ubnd=[$ubnd[0],$ubnd[1],$ubnd[2]] lbnd=[$lbnd[0],$lbnd[1],$lbnd[2]]";
   $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
 
-  # find boundaries
-  #_GET_DIMENSIONS_ FILE=$out
-  #my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
-  #my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
-  #orac_print ("Dimensions after combining: \n");
-  #orac_print ("First  axis ".$lbnd[0]." ".$ubnd[0]."\n");
+  # Restore the original WCS attributes.
+  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$out mode=set name='system(1)' newval=$system" );
+  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$out mode=set name=stdofrest newval=$stdofrest" );
 
-
-  # Restore original WCS attributes
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$out mode=set name='system(1)' newval=$system");
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$out mode=set name=stdofrest newval=$stdofrest");
-
-  orac_print("done.\n");
+  orac_print "\nFrequency-switched data from $in combined in $out\n";
+  orac_print "Done.\n\n";
 
   # Update the file name in the object
-  $Frm->file( $i, $out);
+  $Frm->file( $i, $out );
 
 }
-
-
-
