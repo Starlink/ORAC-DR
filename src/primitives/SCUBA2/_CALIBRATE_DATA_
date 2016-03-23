@@ -41,7 +41,8 @@ If true, the Group file will be calibrated.
 =item B<UNITS>
 
 Controls the units of the FCF. The options are C<BEAM> for Jy/beam/pW
-and C<ARCSEC> for Jy/arcsec**2/pW. Default is C<BEAM>.
+and C<ARCSEC> for Jy/arcsec**2/pW. C<PW> can be specified to leave the
+map in pW. Default is C<BEAM>.
 
 =back
 
@@ -116,17 +117,27 @@ if ($Obj->product && $Obj->product eq $calproduct) {
   $proceed = ($group && $Grp->file_exists) ? 1 : $proceed;
 }
 
-if ( $proceed ) {
-  # Apply a correction due to filtering in the map-maker if present
-  my $filt_corr = ($group && defined $Grp->uhdr("FCF_CORR_AMP"))
-    ? $Grp->uhdr("FCF_CORR_AMP") : 1;
-
-  my $units = uc(get_prim_arg($_PRIM_ARGS_, "UNITS", 'BEAM'));
+# If we would like to proceed, first check the requested units, in case
+# it has been requested that we leave the map in pW.  Note that this means
+# we won't generate a "calib" tag if the units are pW -- if this becomes
+# a problem we should proceed but set the FCF to 1 (or, better yet,
+# skip the multiplication entirely and just copy the data file).
+my $units;
+if ($proceed) {
+  $units = uc(get_prim_arg($_PRIM_ARGS_, "UNITS", 'BEAM'));
   if ($units ne 'BEAM' && $units ne 'ARCSEC') {
     orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
   }
   $units = $Frm->uhdr("RECPAR_CALUNITS")
     if (defined $Frm->uhdr("RECPAR_CALUNITS"));
+
+  $proceed = 0 if $units eq 'PW';
+}
+
+if ( $proceed ) {
+  # Apply a correction due to filtering in the map-maker if present
+  my $filt_corr = ($group && defined $Grp->uhdr("FCF_CORR_AMP"))
+    ? $Grp->uhdr("FCF_CORR_AMP") : 1;
 
   my $fcf = get_prim_arg($_PRIM_ARGS_, "FCF", undef);
 
