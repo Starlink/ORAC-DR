@@ -31,6 +31,18 @@ Frame member in the current Group is used. [0]
 The order of fit used for the baseline. This can be overridden by the
 RECPAR_BASELINE_ORDER recipe parameter. [1]
 
+=item NUMBIN = INTEGER (Given)
+
+The number of smoothing bins to used for the baseline determination
+and hence the emission masking.  The default lets MFITTREND choose
+(currently 32 bins), and is normally sufficient for narrow lines.  For
+line forests more resolution is needed so as not to include emission
+in the majority of bins, and so a value that will provide a few bins
+across the a line's width is better, typically 128, which is the default
+if the RECPAR_LINEFOREST_BASELINE recipe parameter is true.  This
+argument can be overridden by the RECPAR_BASELINE_NUMBIN recipe parameter.
+[]
+
 =item SPATIAL_SMOOTH = INTEGER (Given)
 
 The number of pixels in both spatial dimensions over which the cube is
@@ -90,16 +102,27 @@ All Rights Reserved.
 
 =cut
 
+my $forest = ( defined( $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE" ) ) ?
+               $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE" )            :
+               0 );
+
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $numbin = get_prim_arg( $_PRIM_ARGS_, "NUMBIN", ( $forest ? undef: 128 ) );
 
-# Override order if we've been given a recipe parameter.
+# Override order and number of averaging bins if we've been given a
+# recipe parameter.
 $order = ( defined( $Frm->uhdr( "RECPAR_BASELINE_ORDER" ) ) ?
            $Frm->uhdr( "RECPAR_BASELINE_ORDER" )            :
            $order );
 
+$numbin = ( defined( $Frm->uhdr( "RECPAR_BASELINE_NUMBIN" ) ) ?
+            $Frm->uhdr( "RECPAR_BASELINE_NUMBIN" )            :
+            $numbin );
+
+# Select the objects to analyse.
 my @objs;
 if( $group == 0 ) {
   push @objs, $Frm;
@@ -152,7 +175,10 @@ foreach my $Obj ( @objs ) {
     # an 'auto' fit with a high-order baseline.
     my $temp3 = new ORAC::TempFile( 0 );
     my $temp3file = $temp3->file;
-    my $params = "in=$temp2file out=$temp3file axis=3 order=$order auto mask=$mask method=single variance subtract=false";
+    my $params = "in=$temp2file out=$temp3file axis=3 order=$order auto ";
+    $params .= "mask=$mask method=single variance subtract=false";
+    $params .= " numbin=$numbin" if defined( $numbin );
+    $params .= " forest" if $forest;
     $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
     # Report to user.
