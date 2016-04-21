@@ -875,32 +875,20 @@ sub orac_check_data_dir {
 
   # Read the directory, extract the number and sort the list
   # Note that I dont even keep the filenames, just the numbers.
-  # Do this with a sort/map/grep combination
+  # Do this with a sort/grep/map/grep combination which also filters
+  # out observation numbers which aren't greater than the current observation.
 
   my @sort = sort { $a <=> $b }
-    map { $DummyFrm->raw($_); $DummyFrm->number }
-      grep { /$pattern/ } readdir($DATADIR);
-
+    grep { $_ > $obsnum }
+      map { $DummyFrm->raw($_); $DummyFrm->number }
+        grep { /$pattern/ } readdir($DATADIR);
 
   # Close data directory
   closedir $DATADIR;
 
-  # Now need to compare with the supplied observation number
-  # Go through the sorted list until we find a number that is
-  # greater than the current observation. Cant simply take the
-  # slice since the index in the sort array is not related to the
-  # observation number
+  # If the list isn't empty, the first item is the next observation.
 
-  my $next = undef;             # Next number up
-  foreach (@sort) {
-    if ($_ > $obsnum) {
-      $next = $_;
-      last;
-    }
-  }
-
-  # If $next is defined, that means we have found the next observation
-  # in the list.
+  my $next = @sort ? $sort[0] : undef;
 
   # If we are in a scalar context we also need the highest number found
   # The highest value is the last member unless $next
