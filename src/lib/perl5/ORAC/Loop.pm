@@ -500,12 +500,12 @@ sub orac_loop_flag {
       # read the file (should contain something)
       my @all = _read_flagfiles( @actual );
 
-      orac_print "Found additional data associated with current observation..."
-        if @all > @$prev;
-
       # simply compare number of entries. Not very robust but good enough
-      last if @all > @$prev;
+      if (@all > @$prev) {
+        orac_print "Found additional data associated with current observation...";
 
+        last;
+      }
     }
 
     if ($skip) {
