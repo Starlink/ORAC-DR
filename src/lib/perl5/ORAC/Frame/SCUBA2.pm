@@ -1099,8 +1099,7 @@ sub _dacodes {
       push (@letters, lc(substr($tsk[0],-1,1)) );
     }
   } else {
-#    @letters = qw/ a b c d /;
-    @letters = qw/ a /;
+    @letters = qw/ a b c d /;
   }
 
   return (wantarray ? @letters : join("",@letters) );
