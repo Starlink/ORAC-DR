@@ -438,13 +438,17 @@ sub orac_loop_flag {
   # Construct the flag name(s) from the observation number
   my @fnames = $TemplateFrm->flag_from_bits($utdate, $obsno);
 
+  # Determine how many observations to look ahead.
+  my $lookahead = 0;
+
   # if our flag files contain pointers to multiple files then
   # in principal we are always one flag file behind. We always
   # have to look at $obsno and $obsno+1. If prev is defined we
   # need to look for the next one as well
-  my @nnames;
-  @nnames = $TemplateFrm->flag_from_bits( $utdate, $obsno+1) if @$prev;
+  $lookahead += 1 if @$prev;
 
+  # If "skip" is enabled, also look ahead several more observations.
+  $lookahead += 10 if $skip;
 
   # Get the relevant string representing what we are looking for
   my $text;
@@ -453,7 +457,7 @@ sub orac_loop_flag {
   } else {
     $text = $fnames[0];
   }
-  $text .= " and next flag file" if @nnames;
+  $text .= " and the next $lookahead flag file(s)" if $lookahead;
   orac_print("Checking for new data via flag: $text");
 
   # Now loop until the file appears
@@ -466,7 +470,6 @@ sub orac_loop_flag {
 
   # Get a full path to the flag files
   my @actual = _to_abs_path( @fnames );
-  my @nactual = _to_abs_path( @nnames );
 
   # Check file size since that controls how we increment the observation
   # number
@@ -474,20 +477,7 @@ sub orac_loop_flag {
 
   # Now that we are looking (possibly) for two sets of data files
   # we now must be in an infinite loop
-  while (1) {
-
-    # if the next observation has turned up we run with it
-    if (_files_there( @nactual ) ) {
-      # check file length
-      $nonzero = _files_nonzero(@nactual);
-      # increment the observation number
-      $obsno++;
-      # clear previous
-      $prev = [];
-
-      last;
-    }
-
+  LOOP: while (1) {
     # if the requested obsnum is available we first need to compare
     # and contrast if we have a non zero size flag file
     if (_files_there(@actual )) {
@@ -508,56 +498,25 @@ sub orac_loop_flag {
       }
     }
 
-    if ($skip) {
+    # if the next observation, or one of the other future observations
+    # for which we are looking, has turned up we run with it
+    for (my $i = 1; $i <= $lookahead; $i ++) {
+      # Dynamically regenerate the list of expected files for the observation
+      # in question.  In the case of SCUBA-2 this will cause the meta file to
+      # be read, which is necessary when not all sub-arrays are enabled.
+      my @nactual = _to_abs_path($TemplateFrm->flag_from_bits($utdate,
+                                                              $obsno + $i));
 
-      my $lookahead = 10;     # Maximum number of files to look ahead.
+      if (_files_there(@nactual)) {
+        # check file length
+        $nonzero = _files_nonzero(@nactual);
+        # increment the observation number
+        $obsno += $i;
+        # clear previous
+        $prev = [];
 
-      for my $i ( $obsno .. $obsno + $lookahead ) {
-
-        # Okay the file was not there -- if SKIP is true we should
-        # re-read the directory to check whether the next file has
-        # appeared In order to prevent the problem of observations n
-        # and n+1 appearing in the time it takes us to read the
-        # directory we should make sure that we are looking for
-        # observation n (which has not turned up yet) rather than
-        # n+1. We do this by running orac_check_data_dir with an
-        # observation number one less than we are interested in
-
-        # Run in a scalar context since we are only interested in the
-        # next observation. The flag argument is set to true.
-        my $next = orac_check_data_dir($class, $i - 1, 1);
-
-        # Check to see if something was found
-        if (defined $next) {
-
-          # This indicates that an observation is available Now need
-          # to modify the name of the file that the loop is searching
-          # for ($actual) [this is done many times in the loop and
-          # twice in this routine!]. Do not need to reset the timer
-          # since we already know that we have a file.
-
-          if ($next != $i) {
-
-            orac_print ("\nFile $fnames[0] appears to be missing\n");
-
-            # Okay - it wasnt the expected observation number so make
-            # sure that is updated
-            $obsno = $next;
-
-            # Create new flag filenames so we can check file size
-            @actual = _to_abs_path( $TemplateFrm->flag_from_bits($utdate, $obsno) );
-            $nonzero = _files_nonzero( @actual );
-
-            # clear previous list
-            $prev = [];
-
-            orac_print("Next available observation is number $obsno");
-
-            # Finish loop since we have found a file
-            last;
-
-          }
-        }
+        # Finish loop since we have found a file
+        last LOOP;
       }
     }
 
@@ -579,14 +538,6 @@ sub orac_loop_flag {
     if ($npauses >= $dot) {
       orac_print ".";
       $npauses = 0;
-
-      # If we have a list of flag files for the next observations
-      # refresh it now.  (In the case of SCUBA-2 this will cause the
-      # meta file to be re-read.)
-      if (@$prev) {
-        @nnames = $TemplateFrm->flag_from_bits($utdate, $obsno + 1);
-        @nactual = _to_abs_path(@nnames);
-      }
     }
 
   }
