@@ -6,14 +6,26 @@ _FTS2_APPLY_PHASE_CORRECTION_
 
 =head1 SYNOPSIS
 
-_FTS2_APPLY_PHASE_CORRECTION_
+_FTS2_APPLY_PHASE_CORRECTION_ MODE=double
 
 =head1 DESCRIPTION
 
 When FTS2 is in the beam, the phase introduced to the resulting interferogram
-by FTS2 needs to be accounted for. This task performs the phase correction. It
-assumes that the interferograms in the cube are single-sided and therefore employs
-the Forman method of phase correction.
+by FTS2 needs to be accounted for. This task performs the phase correction,
+and can work in one of two modes, controlled by the "MODE" primitive argument:
+
+=over 4
+
+=item Single-sided (MODE=single)
+
+It assumes that the interferograms in the cube are single-sided and
+therefore employs the Forman method of phase correction.
+
+=item Double-sided (MODE=double)
+
+It assumes that the interferograms in the cube are double-sided.
+
+=back
 
 =head1 OUTPUT FILES
 
@@ -30,7 +42,8 @@ Coskun Oba E<lt> josh.oba@uleth.ca E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2010, University of Lethbridge.
+Copyright (C) 2010 University of Lethbridge.
+Copyright (C) 2016 East Asian Observatory.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -50,15 +63,17 @@ USA
 
 =cut
 
-orac_say "\nApplying Phase Correction...\n";
+# Determine mode of operation (single- or double-sided).
+my $mode = lc(get_prim_arg($_PRIM_ARGS_, 'MODE', undef, 1));
+orac_termerr('Phase correction mode not recognized')
+  unless $mode eq 'single' || $mode eq 'double';
+
+orac_say "\nApplying Phase Correction [" . $mode . "-sided] ...\n";
 
 my $ext = "_phs";
 
-# PARAMS
-my $degree        = 1;
-my $dsHalfLength  = 224;
-my $pcfHalfLength = 128;
-my $apodization   = 15;
+# Parameters: both modes:
+my $degree = 1;
 
 my $wnLBound = $Frm->uhdr('FTS_WN_LBOUND');
 my $wnUBound = $Frm->uhdr('FTS_WN_UBOUND');
@@ -66,17 +81,33 @@ my $wnUBound = $Frm->uhdr('FTS_WN_UBOUND');
 orac_termerr('FTS_WN_LBOUND or UBOUND is missing')
   unless (defined $wnLBound) && (defined $wnUBound);
 
+# Parameters: single-sided mode only:
+my $dsHalfLength  = 224;
+my $pcfHalfLength = 128;
+my $apodization   = 15;
+
+# Perform phase correction.
 my @outFiles;
+
 for my $i (1..$Frm->nfiles) {
   my ($in, $out) = $Frm->inout($ext, $i);
 
   orac_say "Processing " . $out . "...: ";
 
-  my $args  = "in=$in out=$out ";
-     $args .= "dsHalfLength=$dsHalfLength pcfHalfLength=$pcfHalfLength ";
-     $args .= "degree=$degree wnlbound=$wnLBound wnubound=$wnUBound apodization=$apodization";
+  my $action;
+  my $args  = "in=$in out=$out";
+  $args    .= " degree=$degree wnlbound=$wnLBound wnubound=$wnUBound";
 
-  my $status = $Mon{smurf_mon}->obeyw("fts2phasecorr","$args");
+  if ($mode eq 'single') {
+    $args .= " dsHalfLength=$dsHalfLength pcfHalfLength=$pcfHalfLength";
+    $args .= " apodization=$apodization";
+    $action = 'fts2phasecorr';
+  }
+  else {
+    $action = 'fts2phasecorrds';
+  }
+
+  my $status = $Mon{smurf_mon}->obeyw($action, $args);
 
   if($status == ORAC__OK) {
     orac_say "DONE\n";
@@ -85,4 +116,5 @@ for my $i (1..$Frm->nfiles) {
   }
   push(@outFiles, $out);
 }
+
 $Frm->files(@outFiles);
