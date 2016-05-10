@@ -2,26 +2,25 @@
 
 =head1 NAME
 
-_FTS2_OFFAXIS_FREQUENCY_SHIFT_
+_PREPARE_FTS_DATA_
 
 =head1 SYNOPSIS
 
-_FTS2_OFFAXIS_FREQUENCY_SHIFT_
+_PREPARE_FTS_DATA_
 
 =head1 DESCRIPTION
 
-This primitives scales the frequency grid according to the different path
-difference that off-axis rays travel through the interferometer.
+This primitives initializes the source file to be processed by the FTS2 Data
+Reduction engine.
 
 =head1 OUTPUT FILES
 
-Creates output files with a C<_frq> extension.
+Creates output files with a C<_fts> extension.
 The Frame is updated with the output files.
 
 =head1 NOTES
 
-This primitive will operate on 4D data which represents 3D spectral cube with
-real and imaginary components.
+This primitive will operate on interferogram cubes.
 
 =head1 AUTHOR
 
@@ -49,23 +48,36 @@ USA
 
 =cut
 
-orac_say "Applying off-axis frequency correction...";
+orac_say "Initializing...\n";
 
-my $ext = "_frq";
-my $thetaFile = "/home/oba/jach/FTS2/cal/THETA.sdf";
+my $ext = "_fts";
+
+my $center = $Frm->uhdr('FTS_STAGE_CENTER');
+orac_termerr('FTS_STAGE_CENTER is not defined') unless defined $center;
+
+my $fnyquist = 0.0;
 
 my @outFiles;
-for my $i (1..$Frm->nfiles) {
-  my ($in, $out) = $Frm->inout($ext, $i);
-  my $args = "in=$in out=$out theta=$thetaFile";
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+  my ($in, $out) = $Frm->inout($ext, $i + 1);
 
-  my $status = $Mon{smurf_mon}->obeyw("fts2freqcorr","$args");
+  my $zpdtype = '';
+  $zpdtype = $Frm->hdrval('SCANDIR', $i) > 0 ? '_fwd' : '_bck'
+    if $Frm->uhdr('FTS_SCANDIR_ZPD');
+  my $zpdmethod = "zeropath$zpdtype";
+  $Frm->subarray($in);
+  my $zpd = $Cal->$zpdmethod();
+  orac_termerr('No suitable ZPD file found') unless defined $zpd;
+
+  my $args = "in=$in out=$out zpd=$zpd centre=$center fnyquist=$fnyquist";
+
+  orac_say "Processing " . $out . "...: ";
+  my $status = $Mon{smurf_mon}->obeyw("fts2init","$args");
   if($status == ORAC__OK) {
     orac_say "DONE\n";
   } else {
     orac_say "FAILED\n";
   }
-
   push(@outFiles, $out);
 }
 $Frm->files(@outFiles);
