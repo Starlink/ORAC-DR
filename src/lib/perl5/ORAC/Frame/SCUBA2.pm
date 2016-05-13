@@ -422,6 +422,34 @@ sub file_from_bits_extra {
   return ( $self->hdr("FILTER") =~ /^8/ ) ? "850" : "450";
 }
 
+=item B<inout>
+
+Acts like the base class C<inout> method unless the C<uhdr> entry
+C<ALLOW_NUMBERED_SUFFICES> is set, in which case, if the file
+already has a suffix including a 3-digit number, that number is
+preserved in the suffix of the new file.
+
+This is not quite the same as the corresponding method in the
+ACSIS frame class because we don't assume that the number in
+the suffix is the same as the file number within the frame -- there
+could be multiple files with the same suffix number, e.g. from
+different subarrays.
+
+=cut
+
+sub inout {
+  my $self = shift;
+  my $suffix = shift;
+  my $number = shift;
+
+  if ($self->uhdr('ALLOW_NUMBERED_SUFFICES')
+      and $self->file($number // 1) =~ /_[a-z]+(\d\d\d)$/) {
+    $suffix .= $1;
+  }
+
+  return $self->SUPER::inout($suffix, (defined $number ? $number : ()));
+}
+
 =item B<pattern_from_bits>
 
 Determines the pattern for the flag file. This differs from other
