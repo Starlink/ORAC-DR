@@ -34,6 +34,7 @@ use vars qw/ $VERSION /;
 $VERSION = '1.0';
 
 __PACKAGE__->CreateBasicAccessors( bad_receptors => { staticindex => 1 },
+                                   flat => { staticindex => 1 },
                                    standard => { staticindex => 1 },
 );
 
@@ -62,6 +63,8 @@ sub new {
   $obj->{BadReceptors} = undef;
   $obj->{BadReceptorsIndex} = undef;
   $obj->{BadReceptorsNoUpdate} = 0;
+  $obj->{Flat} = undef;
+  $obj->{FlatIndex} = undef;
   $obj->{Standard} = undef;
   $obj->{StandardIndex} = undef;
   $obj->{StandardNoUpdate} = 0;
@@ -267,13 +270,72 @@ sub bad_receptors_list {
     # Look for bad receptors in $sys itself.
     my @list_bad = split /:/, $sys;
 
-    # Merge the list recptor with those from other sources.
+    # Merge the list receptor with those from other sources.
     my %seen = map { $_, 1 } @bad_receptors, @list_bad;
     @bad_receptors = keys %seen;
 
   }
 
   return @bad_receptors;
+}
+
+=item B<flat>
+
+Retrieve flat-field ratios for the observation's UT date.
+
+=cut
+
+sub flat {
+  my $self = shift;
+
+  # Find the nearest flat calibration in the index file.
+  my $flat_position = $self->flatindex->choosebydt( 'ORACTIME', $self->thing, 0 );
+
+  # $uhdrref is a reference to the Frame uhdr hash.
+  my $uhdrref = $self->thingtwo;
+  my $instname = $uhdrref->{'ORAC_INSTRUMENT'};
+
+  # Flat fielding only applies to HARP data.
+  if ( ! ( defined( $flat_position ) && $instname =~ /HARP/ ) ) {
+    return undef;
+  }
+
+  my ( %ratios, @receptors, $receptor_name );
+
+  # $uhdrref is a reference to the Frame hdr hash.
+  my $hdrref = $self->thing;
+
+  # Form the array of receptor names needed.  This implies that the
+  # rules.flat file needs to be created on the fly if RECPTORS does
+  # include the full 16, as will be the normal case except in the early
+  # observations (after which non-functioning receptors were omitted
+  # from the time-series cubes to reduce storage requirements), and
+  # hence be the case for a user's index.flat.  The master index will
+  # contain all 16.  Should the user omit a receptor from
+  # $ORAC_DATA_OUT/index.flat, the pipeline will exit with an error
+  # citing a mismatch of the number of columns and keys.
+  if ( defined( $hdrref->{'RECPTORS'} ) ) {
+    @receptors = split / /, $hdrref->{'RECPTORS'};
+  } else {
+    foreach my $i ( 0..15 ) {
+      $receptor_name = "H" . printf("%02d", $i );
+      push @receptors, $receptor_name;
+    }
+  }
+
+  my $flatref = $self->flatindex->indexentry( $flat_position );
+
+  # Retrieve the specific entry, and then the receptors relative
+  # performances.  The sensible default of 1.0 should still give
+  # presentable results.
+  foreach my $r ( @receptors ) {
+    if ( exists( $flatref->{ $r } ) ) {
+      $ratios{ $r } = $flatref->{ $r };
+    } else {
+      $ratios{ $r } = 1.0;
+    }
+  }
+  return %ratios;
 }
 
 =item B<standard>
@@ -344,7 +406,7 @@ Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2009, 2014 Science and Technology Facilities Council.
+Copyright (C) 2007-2009, 2014, 2016 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
