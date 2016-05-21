@@ -1,0 +1,157 @@
+=head1 NAME
+
+_REMOVE_FLAT_FIELD_INDEX_ - Remove flat-field obtained from the calibration system
+
+=head1 DESCRIPTION
+
+This primitive first obtains the receptor-to-receptor responses via
+the flat calibration for each UT date for the chosen cubes. (See
+Argument GROUP.) Then it applies the relative sensitivities to flat
+field those same cubes.  It segregates a group of cubes by observation
+date, and applies a flat field for each date.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for baselined time-series ACSIS cubes.
+
+=item *
+
+Only applies to RASTER or SCAN types.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The flat-fielded time-series cube with suffix _ff.
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Need more data than a stare or jiggle provides.
+my $obstype = uc( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) );
+if ( $obstype ne 'RASTER' and $obstype ne 'SCAN' ) { goto RETURN }
+
+# Obtain argument.
+# ================
+
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+
+# Write a header to structure the commentary
+# ==========================================
+
+orac_say "\n\nIndexed flat-field correction";
+my $underline = "-" x 37;
+orac_say "$underline\n";
+
+# Select objects to flat field.
+# =============================
+
+# We want to combine data taken on the same night to be able to
+# to use the nightly flat fields stored in the calibration file
+# index.flat.
+my @dategrps;
+my $singleGrp;
+if ( $group == 0 ) {
+   $singleGrp->push( $Frm );
+   push @dategrps, $singleGrp;
+} elsif ( $group == 1 ) {
+   $singleGrp->push( $Grp );
+   push @dategrps, $singleGrp;
+} elsif ( $group == 2 ) {
+   @dategrps = $Grp->subgrps( "ORAC_UTDATE" );
+}
+
+# Only do this if we're not doing a Group, or if we are doing a
+# Group and this Frame is the last member of the Group.
+if ( $group != 1 ||
+     ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
+   my ( %flat_ratio, $utdate );
+
+   orac_say "Detector gain correction";
+
+# Loop over the UT date or current group
+# ======================================
+   foreach my $Grp ( @dategrps ) {
+      my @Objs = $Grp->members;
+      $utdate = $Objs[ 0 ]->uhdr( "ORAC_UTDATE" );
+
+# Trick the calibration system that the ORACTIME is that of the
+# date-selected group, not that of the current Frame (probably the
+# last one is a reduction).
+      my $oractime = $Frm->hdr( "ORACTIME" );
+      $Frm->hdr( "ORACTIME", $utdate );
+
+# Obtain the ratios from the calibration index.
+      my %flat_ratio = $Cal->flat();
+
+# Reset the ORACTIME.
+      $Frm->hdr( "ORACTIME", $oractime );
+
+# Report the set of ratios used.
+      orac_say "";
+      my $type = "Flat field normalisation for $utdate.";
+      _PRETTYPRINT_RECEPTOR_QA_ HASH=\%flat_ratio TYPE=$type
+
+# Apply the flat field to each file in each observation for the
+# current night (group).
+      _APPLY_FLAT_FIELD_ RATIO=\%flat_ratio
+   }
+}
+
+# Tidy up output.
+orac_print "\n";
+
+RETURN:
