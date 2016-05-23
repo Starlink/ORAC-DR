@@ -10,6 +10,12 @@ Argument GROUP.) Then it applies the relative sensitivities to flat
 field those same cubes.  It segregates a group of cubes by observation
 date, and applies a flat field for each date.
 
+If $ORAC_DATA_OUT contains an index.flat file but no rules.flat, a
+rules.flat is created there unless the index.flat has entries for all
+16 receptors.  The created rules.flat lists the union of the receptors
+present in all the observations, derived from the RECPTORS header in
+the first Frame of each night.
+
 =head1 ARGUMENTS
 
 =over 4
@@ -118,9 +124,92 @@ if ( $group == 0 ) {
 # Group and this Frame is the last member of the Group.
 if ( $group != 1 ||
      ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
-   my ( %flat_ratio, $utdate );
+   my ( %flat_ratio, @keys, $utdate );
 
    orac_say "Detector gain correction";
+
+# Get information about a user-defined index.flat.
+# ================================================
+
+# If there is a user-defined index.flat, does it contain all 16 receptors?
+   my $make_rules = 0;
+   my $index_file = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.flat" );
+   if ( -f $index_file ) {
+      open( my $fh, '<', $index_file ) or orac_err "Could not open file '$index_file' $!";
+
+# Read the first line containing the receptor keys.
+      my $first = <$fh>;
+      chomp $first;
+
+      orac_warn "Index files always start with a # character.  $index_file does not."
+        unless $first =~ /^\#/;
+
+# Strip off the leading # and ORACTIME.
+      $first =~ s/^\#//;
+      $first =~ s/^ORACTIME\s+//;
+
+# Create array of receptors in the user-created index file by splitting on spaces.
+      @keys = split( /\s+/, $first );
+
+# Determine whether all receptors are listed.  If they are, the
+# standard $ORAC_DATA_CAL rules file should be used ($make_rules is
+# false).
+      foreach my $i ( 0..15 ) {
+         my $fn = sprintf( "%02d", $i );
+         my $receptor_name = "H$fn";
+         if ( ! grep( /^$receptor_name$/, @keys ) ) {
+            $make_rules = 1;
+            last;
+         }
+      }
+   }
+
+# Create a rules file.
+# ====================
+
+   my @distinct_receptors;
+   my $rules_file = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "rules.flat" );
+   if ( $make_rules ) {
+
+# Determine whether or not to create a dynamic receptors rules.flat.
+# We want the superset of receptors for all the nights in the group.
+# The RECPTORS header will list the receptors actually present
+# in the data for that night.
+      my @all_receptors;
+
+# If there is a user-defined index and no rules file, one needs to be
+# created.  If there is a pair, we trust the user has made a matching
+# pair.
+      if ( -f $index_file && ! -f $rules_file ) {
+
+# Form an array of the receptors present during any of the nights.
+         foreach my $dateGrp ( @dategrps ) {
+            my @Objs = $dateGrp->members;
+
+            if ( defined( $Objs[ 0 ]->hdr( "RECPTORS" ) ) ) {
+               my @receptors = split / /, $Objs[ 0 ]->hdr( "RECPTORS" );
+               @all_receptors = ( @receptors, @all_receptors );
+            }
+         }
+
+# Form array of distinct receptor names present in the observations
+# being processed.
+         my %seen;
+         @distinct_receptors = grep { ! $seen{$_}++ } @all_receptors;
+      } else {
+         $make_rules = 0;
+      }
+   }
+
+# Write the rules file.
+   if ( $make_rules ) {
+      orac_say "Create $rules_file containing all the receptors";
+      orac_say "present in the group's observations.";
+      open( my $fh, '>', $rules_file ) or orac_err "Could not open file '$rules_file' $!";
+      print $fh "ORACTIME\n";
+      foreach my $r ( @distinct_receptors ) { print $fh "$r\n" }
+      close $fh;
+   }
 
 # Loop over the UT date or current group
 # ======================================
