@@ -253,6 +253,15 @@ my %BEAMAREA = ( '850' => 229.75,
 		 '450' => 100.0
                );
 
+# SCUBA-2 secondary calibrators commonly observed at the wrong position.
+# Supply the correct positions from the JCMT pointing catalog for use with
+# position fudging.
+my %CATALOG_POSITION = (
+    'CRL618'    => ['04:42:53.672', '+36:06:53.17'],
+    'CRL2688'   => ['21:02:18.75',  '+36:41:37.80'],
+    'HLTAU'     => ['04:31:38.4',   '+18:13:59.0'],
+);
+
 # Setup the object structure
 __PACKAGE__->CreateBasicAccessors( mask => {},
                                    resp => {},
@@ -384,6 +393,30 @@ sub beamfit {
   }
 
   return $self->{BeamFit};
+}
+
+=item B<catalog_position>
+
+Get the catalog position for a secondary calibrator if we have a catalog
+position for it.
+
+    my $position = $Cal->catalog_position($Frm->hdr('OBJECT'));
+
+Returns undef if there is no catalog position stored for the given object.
+Otherwise returns a reference to a RA, Dec array of sexagesimal strings.
+
+=cut
+
+sub catalog_position {
+    my $self = shift;
+    my $source = uc(shift);
+    $source =~ s/\s//g;
+
+    if (exists $CATALOG_POSITION{$source}) {
+        return $CATALOG_POSITION{$source};
+    }
+
+    return undef;
 }
 
 =item B<errbeam>
