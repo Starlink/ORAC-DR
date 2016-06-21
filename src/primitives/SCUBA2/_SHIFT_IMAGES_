@@ -227,6 +227,7 @@ my (@shifted, @refpos);
 # by finding the peak in the first file
 my ($refcoords, $register_to_first);
 my $refcosys = $cosys;
+my $catalog_position = undef;
 if ( $isoffset ) {
   orac_print "Shifting images relative to (0,0)\n";
   @refpos = ($units eq "sexagesimal") ? ("00:00:00.0","00:00:00.0") : (0,0);
@@ -238,6 +239,12 @@ if ( $isoffset ) {
     @refpos = split(/\s+/, $skyref);
     orac_print "Shifting images relative to sky reference position: $refpos[0], $refpos[1]\n"
       if ($verbose);
+
+    # Since this might be a calibration source, see if we have a catalog
+    # position for it, but only if this is from a calibration/EC project.
+    $catalog_position = $Cal->catalog_position($Frm->hdr('OBJECT'))
+        if $Frm->hdr('PROJECT') =~ /CAL/i
+        or $Frm->hdr('PROJECT') =~ /EC/i;
   } else {
     # Otherwise use the peak position of the first file, assumed to
     # be close to the map centre
@@ -273,6 +280,41 @@ if ( $isoffset ) {
     $refcoords = Astro::Coords->new( long => $refpos[0], lat => $refpos[1],
 				     type => $refcosys, units => "degrees");
   }
+
+  if (defined $catalog_position) {
+    # Check the reference coordinates are close to the catalog position,
+    # and if so use the catalog position instead.  Otherwise assume that
+    # another position is being observed but with an incorrect target
+    # name.  Do this after setting up $refcoords based on the original
+    # SkyRef position so that we can easily calculate the offset distance.
+    my $catalog_coords = Astro::Coords->new(
+        ra => $catalog_position->[0], dec => $catalog_position->[1],
+        type => 'J2000', units => 'sexagesimal');
+
+    my $distance = (scalar $catalog_coords->distance($refcoords))->arcsec();
+
+    if ($distance < 0.1) {
+      orac_print("Coordinates agree with catalog position\n") if $verbose;
+    }
+    else {
+      orac_warn("Coordinates differ by " . $distance .
+                "\" from catalog position!\n");
+
+      if ($distance > 60.0) {
+        orac_warn("Assuming that the target is not that named and ignoring position difference.\n");
+      }
+      else {
+        orac_warn("Changing image shifting reference position to: " .
+                  $catalog_position->[0] . ' ' .
+                  $catalog_position->[1] . " (J2000)\n");
+
+        @refpos = @$catalog_position;
+        $refcoords = $catalog_coords;
+        $refcosys = 'J2000';
+      }
+    }
+  }
+
   if ($refcosys ne $cosys) {
     @refpos = ($cosys eq "J2000") ? ($refcoords->ra(format => 's'),
 				     $refcoords->dec(format => 's'))
