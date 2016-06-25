@@ -1,0 +1,397 @@
+=head1 NAME
+
+_SUBTRACT_REFERENCE_EMISSION_
+
+=head1 DESCRIPTION
+
+This primitive finds the clipped mean emission-masked spectrum
+collapsed over time and receptor, applies a mild smooth to this
+spectrum, subtracts it from the unmasked time-series.  The purpose is
+to remove any absorption lines originating from emission in a poorly
+chosen reference position.
+
+The masked timeseries cube determined by the
+_RECREATE_MASKED_TIMESERIES_ primitive.
+
+It is only implemented if recipe parameter SUBTRACT_REF_EMISSION is
+defined.
+ 
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data.
+
+=item *
+
+The masked time-series data filenames must be stored in a hash
+reference in the Group MASKED_TIMESERIES uhdr, with the key being the
+original unmasked time-series data, and the value being the masked
+time-series data.
+
+=item *
+
+The names of the new output files are updated in the Group internal
+header MASKED_TIMESERIES.
+
+=item *
+
+The output files are logged as group intermediates.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Time-series data with reference emission subtracted having the _sre suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, SUB
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Retrieve and validate parameters.
+# =================================
+
+# Override order if we've been given a recipe parameter.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_EMISSION" ) ) ?
+              $Frm->uhdr( "RECPAR_SUBTRACT_REF_EMISSION" )            :
+              0 );
+if ( ! $apply ) { goto RETURN }
+
+my %masked;
+my $user_region = 0;
+
+# Retrieve the regions containing strong reference-spectrum emission
+# from the Frame's user header.
+my $rem_regions = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_REGIONS" ) ) ?
+                  $Frm->uhdr( "RECPAR_REF_EMISSION_REGIONS" )              :
+                  undef );
+my ( @rem_bounds, @regions );
+if ( ref( $rem_regions ) eq 'ARRAY' ) { 
+   @regions = @{ $rem_regions }
+} else {
+   push @regions, $rem_regions;
+}   
+
+if ( defined( $rem_regions ) ) {
+
+# Validate the syntax of the reference-emission region.
+   foreach ( @regions ) {
+      if ( /:/ ) {
+         my ( $lowvel, $uppvel ) = split( ":", $_ );
+         $user_region = 1;
+         push @rem_bounds, $lowvel;
+         push @rem_bounds, $uppvel;
+      } else {
+         $user_region = 0;
+         last;
+      }
+   }
+}
+
+# Write a heading to structure the commentary.
+orac_say "\n\nSubtract mean spectrum from unmasked time-series";
+my $underline = "-" x 70;
+orac_say "$underline\n";
+
+orac_say "Averaging spectra in masked time-series data.";
+
+# Form average spectrum for each observation.
+# ===========================================
+foreach my $Frm ( $Grp->members ) {
+   my ( $key, @masks, @msp, $params, @weight );
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my ( $in, $esp ) = $Frm->inout( "_esp", $i );
+      push @msp, $esp;
+
+# We need the dimensions of the input file for later.
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+      push @weight, $ubnd->[2] - $lbnd->[2] + 1;
+
+# Extract the masked timeseries associated with the current input file.
+      my ( $rootname, $suffix ) = split /_([^_]+)$/, $in;
+      my $mask_ref = $Grp->uhdr( "TIMESERIES_MASKS" );
+      $key = $rootname . "_" . $i;
+      my $tsmask = $mask_ref->{$key};
+      push @masks, $tsmask;
+
+# Obtain some temporary filenames.
+      my $temp1file = new ORAC::TempFile( 0 );
+      my $temp2file = new ORAC::TempFile( 0 );
+      my $temp3file = new ORAC::TempFile( 0 );
+
+# Apply the mask (zero times the data values should still pass the
+# mask from the masked timeseries through to the output.
+      $params = "in1=$in in2=$tsmask out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Collapse along the time axis.  Use a clipped mean to exclude single
+# spectra with strongly negative values and very bright features that
+# could be present in just a few of the receptors.
+      $params = "in=$temp1file out=$temp2file estimator=cmean wlim=0.0 axis=3";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+      $params = "in=$temp2file out=$temp3file estimator=mean wlim=0.0 axis=2";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+      $params = "in=$temp3file out=$esp scalar=-1.0";
+      $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+   }
+
+# Find the weighted average of each subfile's mean spectrum (the one
+# after source emission being masked).  The fiddly bit is forming the
+# MATHS command line to form ia, ib, ic... for the input file names.
+   my $maths_list = '';
+   my $maths_eq = 'exp=\'(';
+   my $maths_index = "a";
+   my $total_weight = 0;
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
+      $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
+      $maths_index = chr( ord( $maths_index ) + 1 );
+      $total_weight += $weight[$i-1];
+   }
+   $maths_eq =~ s/\+$/)/;
+   $maths_eq .= "/" . $total_weight . "'";
+
+   my ( $junk, $esp ) = $Frm->inout( "_ressp" );
+   $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$esp" );
+
+# Find the representative rms of the mean spectrum.
+# =================================================
+
+# It should comprise minimal source emission (now in absorption),
+# reference-spectrum emission and noise.  It's the last that we seek.
+   my $rms;
+   {
+      my $Frm = $Frm->new;
+      $Frm->file( $esp );
+      _FIND_MEAN_RMS_ GROUP=0
+      $rms = $Frm->uhdr( "RMS_MEAN" );
+   }
+
+   my $linemap = undef;
+   my $maxwidth;
+
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Do the preliminary steps for each file.
+# =======================================
+      my ( $in, $out ) = $Frm->inout( "_sre", $i );
+      my $temp4file = new ORAC::TempFile( 0 );
+      my $temp5file = new ORAC::TempFile( 0 );
+
+# We need the dimensions of the input file for later.
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+# Retrieve the units of the input cube.
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+      my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+      ( $ORAC_STATUS, my $pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+
+# Determine reference emissiion in user-specified regions.
+# ========================================================
+# Need extra work NDFs.
+      my $temp6file = new ORAC::TempFile( 0 );
+      my $temp7file = new ORAC::TempFile( 0 );
+      my $temp8file = new ORAC::TempFile( 0 );
+
+      my $text;
+      if ( $user_region ) {
+         my $userlines = scalar( @rem_bounds );
+         if ( $userlines ) {
+            orac_say "Subtracting the user-defined region from unmasked time-series data.";
+         } else {
+            orac_say "Subtracting the $userlines user-defined regions from unmasked time-series data.";
+         }
+
+# Create a temporary file to hold an ARD mask.
+         my $ardmask = new ORAC::TempFile;
+
+# Need to tell ARD the data are one-dimensional and the co-ordinates
+# are spectral (not pixels).
+         print {$ardmask->handle} "COFRAME( SPECTRUM )\n";
+         print {$ardmask->handle} "DIMENSION( 1 )\n";
+
+# For each pair of baseline regions, write a RECT ARD region.  Also
+# find the halfwidth in pixels of the widest line.
+         my $hw = 0.0;
+         for ( my $j = 0; $j <= $#rem_bounds ; $j += 2 ) {
+            print {$ardmask->handle} "LINE( $rem_bounds[$j], $rem_bounds[$j+1] )\n";
+            $hw = max( $hw, 0.5 / $pixscale * ( $rem_bounds[$j+1] - $rem_bounds[$j] ) );
+         }
+         my $boxsize = max( 3.0, $hw );
+
+# Run ARDMASK to mask the line.
+         $params = "in=$esp out=$temp6file inside ardfile=" . $ardmask->file;
+         $Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
+
+# Lightly smooth the remaining spectrum and fill in the gap where the line is
+# masked.
+         $params = "in=$temp6file out=$temp7file estimator=median box=5";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+         $params = "in=$temp7file out=$temp8file niter=10 size=$boxsize";
+         $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Subtract this spectrum from the original, so as to correct for
+# residual non-reference emission that may be present around the
+# reference line.
+         $params = "in1=$esp in2=$temp8file out=$temp5file";
+         $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+         $text = "mean of chosen line regions";
+      } else {
+
+# Attempt automated removal of reference emission.
+# ================================================
+
+# Locate and measure extents of the reference emission lines via the
+# LINEMAP argument.  Also recover the maximum line width.
+         if ( $i == 1 ) {
+            orac_say "Locating reference emission lines.";
+            my $Frm = new $Frm;
+            $Frm->file( $esp );
+            _FIND_EMISSION_LINES_IN_SPECTRUM_
+            $linemap = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
+            $maxwidth = $_FIND_EMISSION_LINES_IN_SPECTRUM_{MAXWIDTH};
+         }
+
+# Check that the search completed succefully.
+         if ( defined( $linemap ) ) {
+            orac_say "  Forming masks of the lines and of the background.";
+
+# The linemap contains positive integers---the line indices---for each emission
+# line detected.  Convert this to a mask of the lines and a mask of
+# the background (in which good elements are zero).
+            my $temp9file = new ORAC::TempFile( 0 );
+            my $linemask = new ORAC::TempFile( 0 );
+            my $bgdmask = new ORAC::TempFile( 0 );
+
+            $params = "in=$linemap repval=0 out=$temp9file";
+            $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+            $params = "in=$temp9file thrhi=0.1 newhi=bad thrlo=-0.9 ";
+            $params .= "newlo=bad out=$linemask";
+            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+            $params = "exp='qif(ia.eq.<bad>,0,<bad>)' ia=$linemask out=$bgdmask";
+            $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Apply the emission mask to the average spectrum.
+            $params = "in1=$esp in2=$linemask out=$temp6file";
+            $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+            orac_say "  Apply mask of emission lines.";
+
+# Lightly smooth the remaining spectrum and fill in the gap where the line is
+# masked.
+            orac_say "  Improve definition of reference emission by removal of residual signal.";
+            $params = "in=$temp6file out=$temp7file estimator=median box=5";
+            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            my $boxsize = 0.5 * $maxwidth;
+            $params = "in=$temp7file out=$temp8file niter=10 size=$boxsize";
+            $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Subtract this spectrum from the original, so as to correct for
+# residual non-reference emission that may be present around the
+# reference line.
+            orac_say "  Subtract reference spectrum.";
+            $params = "in1=$esp in2=$temp8file out=$temp5file";
+            $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+            $text = "mean of reference-emission line regions";
+
+# The last resort is to subtract the emission above the noise.
+# ============================================================
+         } else {
+
+# Remove signal below the noise.  We do not want to remove genuine
+# emission not yet masked.  Instead the goal is to subtract the
+# emission lines in the reference spectrum.  There should not be any
+# steps from removing selected parts of the mean non-emission spectrum
+# prvided this primitive is called after baseline subtraction.
+            $params = "in=$esp out=$temp5file ";
+            $params .= "thrlo=$rms newlo=0 thrhi=1E30 newhi=bad";
+            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+            $text = "mean background emission";
+         }
+      }
+
+# Grow the background mean reference spectrum to match the original time
+# series.
+      $params = "in=$temp5file out=$temp4file axes=[1,0,0] ";
+      $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
+      $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Subtract the mean reference spectrum from the input file.
+      $params = "in1=$in in2=$temp4file out=$out";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Set the units back to what they were.
+      $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
+
+# Report to the user.
+      orac_say "$in to $out:";
+      orac_say "Subtracted $text after application of mask " . $masks[$i-1] . ".\n";
+
+# Update the Frm.
+      $Frm->file( $i, $out );
+
+# Request that the output file is removed upon completion of the
+# group processing.
+      $Grp->push_intermediates( $out );
+   }
+}
+
+orac_print "\n";
+
+RETURN:

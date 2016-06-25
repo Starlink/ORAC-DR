@@ -1,0 +1,320 @@
+=head1 NAME
+
+_FIND_EMISSION_LINES_IN_SPECTRUM_
+
+=head1 DESCRIPTION
+
+This primitive attempts to locate emission lines in a spectrum,
+returning locations and size.  It first determines the background and
+subtracts it before using CLUMPFIND to locate emission lines.
+
+Since the background determination requires the line width to be
+known, the primitive iterates up to four times using the maximum
+measured line width to reset the boxsize for background determination.
+If Argument BOXSIZE is set, this is the value used to estimate the
+background.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BOXSIZE = REAL (Given)
+
+The width of the largest line expected in pixels.  It is used to find
+the background before clump finding.  If no value is supplied an
+iterative approach is taken to determine the largest line width.  This
+argument can be overridden by the RECPAR_REF_EMISSION_BOXSIZE
+uhdr via the recipe parameter system.  [undef]
+
+=item LINEMAP = STRING (Returned)
+
+The name of the line-map NDF in whose data array emission lines are
+indicated by their index number, and all other channels are set to
+bad.  If the map was not made this is returned as undef.
+
+=item MAXWIDTH = REAL (Returned)
+
+The width of the widest line found in pixels when Argument BOXSIZE or its 
+associated recipe parameter is not set.
+
+=item RMS = REAL (Given)
+
+The RMS of the noise in the spectrum.  If it is not supplied FINDBACK
+will estimate it.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS one-dimensional spectra.
+
+=item *
+
+The minimum number of elements to be detected as a line is set to 6.
+The ClumpFind minimum contour is set to 1.5 times the rms and the
+contour spearation three times rms to avoid splitting lines.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+A mask of the lines where no line is 0 and integer indices of each line.
+having the _linemap suffix.
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDBACK, FINDCLUMPS;
+KAPPA: BLOCK, NDFTRACE, SUB.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Retrieve and validate parameters.
+# =================================
+
+my $rms = get_prim_arg( $_PRIM_ARGS_, "RMS", undef );
+$rms = max( 0.001, $rms ) if defined( $rms );
+
+# Tricky part is not knowing the line widths, as the box size should
+# be wider than this.  The default assumes that the emission is not
+# broad, e.g. a galactic source.
+my $boxsize = get_prim_arg( $_PRIM_ARGS_, "BOXSIZE", undef );
+$boxsize = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_BOXSIZE" ) ) ?
+           $Frm->uhdr( "RECPAR_REF_EMISSION_BOXSIZE" )              :
+           $boxsize );
+
+# Obtain the spectrum name and the output source map.
+my ( $in, $out ) = $Frm->inout( "_linemap" );
+
+# Reject if not one-dimensional.
+_GET_DIMENSIONS_ FILE=$in
+my $ndim = $_GET_DIMENSIONS_{NDIM};
+if ( $ndim != 1 ) {
+   orac_err "_FIND_EMISSION_LINES_IN_SPECTRUM: Possible programming " .
+            "error, NDF $in is not one dimensional.\n";
+}
+my ( $ORAC_STATUS, $pixscale ) = $Mon{'ndfpack_mon'}->get( 'ndftrace', 'fpixscale');
+my $out_made = 0;
+
+# Create configuration-parameter file for FINDCLUMPS.
+# ===================================================
+
+# The main ones are ClumpFind.MaxBad, ClumpFind.MinPix (although double the
+# default it could be set larger to weed out peaks from lines),
+# ClumpFind.FwhmBeam, and the dynamic ClumpFind.Tlow.  ClumpFind.Tlow is 
+# set low to get more of the line wings. ClumpFind.VeloRes could be set.
+# Noise might split a line so increase DeltaT from the default of 2*RMS.
+my $fc_param = new ORAC::TempFile( 1 );
+open my $fc_fh, ">", $fc_param;
+print $fc_fh "ClumpFind.Minpix=6\n";
+print $fc_fh "ClumpFind.AllowEdge=1\n";
+print $fc_fh "ClumpFind.FwhmBeam=0.0\n";
+print $fc_fh "ClumpFind.MaxBad=1\n";
+print $fc_fh "ClumpFind.VeloRes=0\n";
+print $fc_fh "ClumpFind.DeltaT=3.0*RMS\n";
+print $fc_fh "ClumpFind.Tlow=1.5*RMS\n";
+close $fc_fh;
+
+# Remove the background.
+# ======================
+
+# Attempt to remove the background for cater for broader weak residual
+# source emission (now in absoprtion).
+my $specback = new ORAC::TempFile( 0 );
+my $specsub = new ORAC::TempFile( 0 );
+
+# Tricky part is not knowing the line widths, as the box size should
+# be wider than this.  Assume that if a value is supplied, the user
+# knows the width of the widest line.  Otherwise iterate to a sensible
+# box size, with an initial value assuming the reference emission is not
+# broad, e.g. a galactic source, and is typical for a narrowline with
+# width of 7 km/s.  Also add a fudge factor of one step in the odd 
+# boxsizes as breathing space for FINDBACK to avoid fitting to the
+# emission line.
+my $user_box = defined( $boxsize );
+$boxsize = int( 7.0 / $pixscale ) if ( ! $user_box );
+my $oddboxsize = $boxsize + ( $boxsize + 1 ) % 2 + 2;
+my @boxes = ();
+push @boxes, $oddboxsize;
+
+my $params;
+my $width_incr = 1E10;
+my $previous_incr = 0.1 * $width_incr;
+my $iteration = 0;
+my $loop = 1;
+while ( $loop || ( $iteration == 1 && $user_box ) ) {
+
+# Find rough background but with a box size that it only has a marginal
+# effect on the centroid of the main peak of the histogram.
+   if ( defined( $rms ) ) {
+      $params = "in=$in out=$specback box=$oddboxsize rms=$rms accept";
+   } else {
+      $params = "in=$in out=$specback box=$oddboxsize rms=! accept";
+   }
+
+   my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# FINDBACK can fall over, but this should not be fatal.
+   if ( $FINDBACK_STATUS != ORAC__OK ) {
+      if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+         orac_say "   Unable to find the background in the reference " .
+                  "   emission spectrum due to insufficient good data.";
+      }
+      orac_say "   Attempting to continue using block smoothing.";
+      $params = "in=$in out=$specback box=$oddboxsize estimator=median";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   }
+
+   $params = "in1=$in in2=$specback out=$specsub";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   orac_say "  Subtract the background from the emission spectrum.";
+
+# Measure the properties of peaks in the background-subtracted reference spectrum.
+# ================================================================================
+
+# Identify the peaks in the spectrum, storing the results table to a
+# Starlink STL file.
+   my $outcat = new ORAC::TempFile( 0 );
+   $outcat .= ".TXT";
+
+   my $nlines = 0;
+   if ( defined( $rms ) ) {
+      $params = "in=$specsub out=$out outcat=$outcat method=clumpfind rms=$rms ";
+   } else {
+      $params = "in=$specsub out=$out outcat=$outcat method=clumpfind ";
+   }
+   
+   $params .= "config='^$fc_param' accept";
+   my $FINDCLUMPS_STATUS = $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+   if ( $FINDCLUMPS_STATUS == ORAC__OK ) {
+
+# Check number of emission lines using NCLUMPS output parameter.
+      ( $ORAC_STATUS, $nlines ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+      $out_made = 1;
+   }
+
+   if ( $nlines == 0 ) {
+      orac_say "No emission lines found in $in.";
+      $loop = 0;
+
+   } else {
+
+# Extract the desired information from the output table.
+# ======================================================
+
+# Since I'm not allowed to use STILTS, here is a not terribly pretty
+# means to access the required data in the file.  It searches the STL
+# format for the start of the table and given by the BEGINTABLE, and
+# there is no development of this format so this should be robust.
+      open( TABLE, "< $outcat" ) or
+            orac_err "Could not find catalogue $outcat specifying the emission lines: $!\n";
+      unlink $outcat;
+      my @lines = <TABLE>;
+      my $i = 0;
+      my $row;
+      my @fields;
+      my $nlines = scalar( @lines );
+
+# Reach the table itself, skipping over metadata.
+      while ( $i < $nlines ) {
+         chomp $lines[$i];
+         if ( $lines[$i] =~ /BEGINTABLE/ ) {
+            last;
+         }
+         $i++;
+      }
+
+# Record where the tabular data start.
+      $i++;
+      my $datastart = $i;
+
+# The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  Search to find the
+# line with the widest size.
+      my $maxsize = -1;
+      my $sizeindex = 3;
+      while ( $i < $nlines ) {
+         chomp $lines[$i];
+         @fields = split( ' ', $lines[$i] );
+         $fields[$sizeindex] =~ s/D/e/;
+         if ( $fields[$sizeindex] > $maxsize ) {
+            $maxsize = $fields[$sizeindex];
+         }
+         $i++;
+      }
+
+# Decide whether sufficent iterations have been performed.  Deem
+# convergence to be when the shift in the width is only one or no
+# channels and the width increment does not increase.
+# Here we take the size as equivalent to the standard deviation
+# so extend +-4 or these to set the line width to include the wings.
+# Also add a fudge factor of one step in the odd boxsizes as breathing
+# space for FINDBACK.
+#
+# Exit if a boxsize has been found previously to avoid an oscillation.
+      if ( ! $user_box ) {
+         $iteration++;
+         my $new_boxsize = int( 8.0 * $maxsize / $pixscale ) ;
+         $new_boxsize += ( $new_boxsize + 1 ) % 2 + 2;
+         if ( grep $_ == $new_boxsize, @boxes ) {
+            $loop = 0;
+         } else {
+            push @boxes, $new_boxsize;
+            $width_incr = abs( $oddboxsize - $new_boxsize );
+            $loop = $iteration < 4 && $width_incr > 1 && $previous_incr >= $width_incr;
+            my $line_width = sprintf( "%.2f", $new_boxsize * $pixscale );
+            orac_say "  Setting line width to $line_width km/s." if $loop;
+
+            $oddboxsize = $new_boxsize;
+            $previous_incr = $width_incr;
+         }
+      }
+   }
+}
+
+if ( $out_made ) {
+   $ _FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP} = $out;
+} else {
+   $ _FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP} = undef;
+}
+if ( ! $user_box ) {
+   $ _FIND_EMISSION_LINES_IN_SPECTRUM_{MAXWIDTH} = $boxsize;
+}
