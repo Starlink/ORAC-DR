@@ -145,31 +145,25 @@ orac_say "Averaging spectra in masked time-series data.";
 
 my @refposgrps = $combine_date ? $Grp->subgrps( "ORAC_REFERENCE_LOCATION" ) : $Grp->members;
 my ( @mean_spectra, @mean_weights );
+my ( @masks, $params, @weight );
+my ( $in, $out, $esp, $ressp );
 
 # Loop over the reference-position groups.
 # ========================================
 GROUP: foreach my $Grp ( @refposgrps ) {
-   @Objs = $Grp->members;
+   my @Objs = $Grp->members;
    my $number_at_location = scalar( @Objs );
 
-# Create temporary file name for each observation's mean spectra.
-   foreach my $f ( 0.. $number_at_location - 1 ) {
-      $mean_spectra[ $f ]  = new ORAC::TempFile( 0 );
-   }
-
 # Each object (group or observation) may comprise more than one file.
-   my $obs = -1;
    OBJECT: foreach my $Frm ( @Objs ) {
-      $obs++;
-      $in = $Obj->file;
+      $in = $Frm->file;
       orac_say "Processing observation: $in.";
-      push @obsnums, $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" );
 
 # Form average spectrum for each observation.
 # ===========================================
-      my ( $key, @masks, @msp, $params, @weight );
+      my ( $key, @msp );
       foreach my $i ( 1 .. $Frm->nfiles ) {
-         my ( $in, $esp ) = $Frm->inout( "_esp", $i );
+         ( $in, $esp ) = $Frm->inout( "_esp", $i );
          push @msp, $esp;
 
 # We need the dimensions of the input file for later.
@@ -211,22 +205,29 @@ GROUP: foreach my $Grp ( @refposgrps ) {
 # Find the weighted average of each subfile's mean spectrum (the one
 # after source emission being masked).  The fiddly bit is forming the
 # MATHS command line to form ia, ib, ic... for the input file names.
-      my $maths_list = '';
-      my $maths_eq = 'exp=\'(';
-      my $maths_index = "a";
-      my $total_weight = 0;
-      foreach my $i ( 1 .. $Frm->nfiles ) {
-         $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
-         $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
-         $maths_index = chr( ord( $maths_index ) + 1 );
-         $total_weight += $weight[$i-1];
-      }
-      $maths_eq =~ s/\+$/)/;
-      $maths_eq .= "/" . $total_weight . "'";
+      ( my $junk, $ressp ) = $Frm->inout( "_ressp" );
+      my $total_weight;
+      if ( $Frm->nfiles > 1 ) {
+         my $maths_list = '';
+         my $maths_eq = 'exp=\'(';
+         my $maths_index = "a";
+         $total_weight = 0;
+         foreach my $i ( 1 .. $Frm->nfiles ) {
+            $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
+            $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
+            $maths_index = chr( ord( $maths_index ) + 1 );
+            $total_weight += $weight[$i-1];
+         }
+         $maths_eq =~ s/\+$/)/;
+         $maths_eq .= "/" . $total_weight . "'";
 
-      my ( $junk, $esp ) = $Frm->inout( "_ressp" );
-      $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$esp" );
-      push @mean_spectra, $esp;
+         $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$ressp" );
+      } else {
+         $params = "in=$msp[0] out=$ressp";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         $total_weight = $weight[0];
+      }
+      push @mean_spectra, $ressp;
       push @mean_weights, $total_weight;
    }
 
@@ -235,25 +236,26 @@ GROUP: foreach my $Grp ( @refposgrps ) {
 
 # Find the weighted average of the current reference location's mean
 # spectrum (the one after source emission being masked). 
-   my ( $junk, $mrsp ) = $Frm->inout( "_mrsp" );
+   my $mrsp;
+   ( my $junk, $mrsp ) = $Frm->inout( "_mrsp" );
    if ( $number_at_location > 1 ) {
       my $maths_list = '';
       my $maths_eq = 'exp=\'(';
       my $maths_index = "a";
       my $total_weight = 0;
       foreach my $i ( 1 .. $number_at_location ) {
-         $maths_list .= "i" . $maths_index . "=$$mean_spectrum[$i-1] ";
-         $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
+         $maths_list .= "i" . $maths_index . "=$mean_spectra[$i-1] ";
+         $maths_eq .= "i" . $maths_index . "*" . $mean_weights[$i-1] . "+";
          $maths_index = chr( ord( $maths_index ) + 1 );
-         $total_weight += $weight[$i-1];
+         $total_weight += $mean_weights[$i-1];
       }
       $maths_eq =~ s/\+$/)/;
       $maths_eq .= "/" . $total_weight . "'";
 
-      $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$esp" );
+      $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$mrsp" );
    } else {
-     $params = "in=$mean_spectra[0] out=$mrsp";
-     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      $params = "in=$mean_spectra[0] out=$mrsp";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
    }
 
 # Find the representative rms of the mean spectrum.
@@ -269,27 +271,31 @@ GROUP: foreach my $Grp ( @refposgrps ) {
       $rms = $Frm->uhdr( "RMS_MEAN" );
    }
 
+   my ( $ORAC_STATUS, $units );
    my $linemap = undef;
    my $cleaned = undef;
-   my ( $ardmask, $maxwidth );
+   my ( $ardmask, $boxsize, $maxwidth );
+   my ( $lbnd, $ubnd, $text );
+   my ( $temp4file, $temp5file );
 
    foreach my $Frm ( @Objs ) {
       foreach my $i ( 1 .. $Frm->nfiles ) {
 
 # Do the preliminary steps for each file.
 # =======================================
-         my ( $in, $out ) = $Frm->inout( "_sre", $i );
-         my $temp4file = new ORAC::TempFile( 0 );
-         my $temp5file = new ORAC::TempFile( 0 );
+         $temp4file = new ORAC::TempFile( 0 );
+         $temp5file = new ORAC::TempFile( 0 );
+
+         ( $in, $out ) = $Frm->inout( "_sre", $i );
 
 # We need the dimensions of the input file for later.
          _GET_DIMENSIONS_ FILE=$in
-         my $lbnd = $_GET_DIMENSIONS_{LBOUND};
-         my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+         $lbnd = $_GET_DIMENSIONS_{LBOUND};
+         $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
 # Retrieve the units of the input cube.
          $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-         my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+         ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
          ( $ORAC_STATUS, my $pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
 
 # Determine reference emission in user-specified regions.
@@ -299,7 +305,6 @@ GROUP: foreach my $Grp ( @refposgrps ) {
          my $temp7file = new ORAC::TempFile( 0 );
          my $temp8file = new ORAC::TempFile( 0 );
 
-         my $text;
          if ( $user_region ) {
             my $userlines = scalar( @rem_bounds );
             if ( $userlines ) {
@@ -325,7 +330,7 @@ GROUP: foreach my $Grp ( @refposgrps ) {
                   print {$ardmask->handle} "LINE( $rem_bounds[$j], $rem_bounds[$j+1] )\n";
                   $hw = max( $hw, 0.5 / $pixscale * ( $rem_bounds[$j+1] - $rem_bounds[$j] ) );
                }
-               my $boxsize = max( 3.0, $hw );
+               $boxsize = max( 3.0, $hw );
             }
 
 # Run ARDMASK to mask the line.
@@ -342,7 +347,7 @@ GROUP: foreach my $Grp ( @refposgrps ) {
 # Subtract this spectrum from the original, so as to correct for
 # residual non-reference emission that may be present around the
 # reference line.
-            $params = "in1=$esp in2=$temp8file out=$temp5file";
+            $params = "in1=$mrsp in2=$temp8file out=$temp5file";
             $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
             $text = "mean of chosen line regions";
@@ -351,6 +356,10 @@ GROUP: foreach my $Grp ( @refposgrps ) {
 # Attempt automated removal of reference emission.
 # ================================================
 
+# Reduce the noise with minimal broadening of the lines.
+            ( $junk, my $resm ) = $Frm->inout( "_resm" );
+            $params = "in=$esp out=$resm fwhm=1.5";
+            $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
             my $ref_spectrum = new ORAC::TempFile( 0 );
 
 # Locate and measure extents of the reference emission lines via the
@@ -358,7 +367,7 @@ GROUP: foreach my $Grp ( @refposgrps ) {
             if ( $i == 1 ) {
                orac_say "Locating reference emission lines.";
                my $Frm = new $Frm;
-               $Frm->file( $mrsp );
+               $Frm->file( $resm );
                _FIND_EMISSION_LINES_IN_SPECTRUM_
                $linemap = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
                $maxwidth = $_FIND_EMISSION_LINES_IN_SPECTRUM_{MAXWIDTH};
@@ -403,54 +412,53 @@ GROUP: foreach my $Grp ( @refposgrps ) {
 # residual non-reference emission that may be present around the
 # reference line.
                   orac_say "  Subtract reference spectrum.";
-                  $params = "in1=$mrsp in2=$temp8file out=$ref_spectrum";
+                  $params = "in1=$mrsp in2=$temp8file out=$temp5file";
                   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
                   $text = "mean of reference-emission line regions";
                }
 
-            }
-
 # The last resort is to subtract the emission above the noise.
 # ============================================================
-         } else {
+            } else {
 
 # Remove signal below the noise.  We do not want to remove genuine
 # emission not yet masked.  Instead the goal is to subtract the
 # emission lines in the reference spectrum.  There should not be any
 # steps from removing selected parts of the mean non-emission spectrum
 # prvided this primitive is called after baseline subtraction.
-            $params = "in=$esp out=$temp5file ";
-            $params .= "thrlo=$rms newlo=0 thrhi=1E30 newhi=bad";
-            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-            $text = "mean background emission";
+               $params = "in=$mrsp out=$temp5file ";
+               $params .= "thrlo=$rms newlo=0 thrhi=1E30 newhi=bad";
+               $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+               $text = "mean background emission";
+            }
          }
-      }
 
 # Grow the background mean reference spectrum to match the original time
 # series.
-      $params = "in=$temp5file out=$temp4file axes=[1,0,0] ";
-      $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
-      $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
-      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+         $params = "in=$temp5file out=$temp4file axes=[1,0,0] ";
+         $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
+         $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
+         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Subtract the mean reference spectrum from the input file.
-      $params = "in1=$in in2=$temp4file out=$out";
-      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+         $params = "in1=$in in2=$temp4file out=$out";
+         $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
 # Set the units back to what they were.
-      $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
+         $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
 
 # Report to the user.
-      orac_say "$in to $out:";
-      orac_say "Subtracted $text after application of mask " . $masks[$i-1] . ".\n";
+         orac_say "$in to $out:";
+         orac_say "Subtracted $text after application of mask " . $masks[$i-1] . ".\n";
 
 # Update the Frm.
-      $Frm->file( $i, $out );
+         $Frm->file( $i, $out );
 
 # Request that the output file is removed upon completion of the
 # group processing.
-      $Grp->push_intermediates( $out );
+         $Grp->push_intermediates( $out );
+      }
    }
 }
 
