@@ -39,7 +39,7 @@ bad.  If the map was not made this is returned as undef.
 
 =item MAXWIDTH = REAL (Returned)
 
-The width of the widest line found in pixels when Argument BOXSIZE or its 
+The width of the widest line found in pixels when Argument BOXSIZE or its
 associated recipe parameter is not set.
 
 =item RMS = REAL (Given)
@@ -142,6 +142,7 @@ if ( $ndim != 1 ) {
             "error, NDF $in is not one dimensional.\n";
 }
 my ( $ORAC_STATUS, $pixscale ) = $Mon{'ndfpack_mon'}->get( 'ndftrace', 'fpixscale');
+
 my $out_made = 0;
 my $bc_spectrum_made = 0;
 
@@ -170,7 +171,7 @@ close $fc_fh;
 # Attempt to remove the background for cater for broader weak residual
 # source emission (now in absoprtion).
 my $specback = new ORAC::TempFile( 0 );
-my $specsub = new ORAC::TempFile( 0 );
+( undef, my $specsub ) = $Frm->inout( "_refsub" );
 
 # Tricky part is not knowing the line widths, as the box size should
 # be wider than this.  Assume that if a value is supplied, the user
@@ -279,18 +280,82 @@ while ( $loop || ( $iteration == 1 && $user_box ) ) {
       my $datastart = $i;
 
 # The fields are Index, Peak1, Cen1, Size1, Sum, Peak.  Search to find the
-# line with the widest size.
+# line with the widest size.  Lines could be blended and therefore the
+# largest width may not span where an emission feature exists.  Thus
+# store the ranges an amalgamate overlapping ones.
       my $maxsize = -1;
+      my $cenindex = 2;
       my $sizeindex = 3;
-      while ( $i < $nlines ) {
+      my $nsigma = 3.0;
+      my $k = 0;
+      my ( @lower, @upper );
+      while ( $i < $nflines ) {
          chomp $lines[$i];
          @fields = split( ' ', $lines[$i] );
          $fields[$sizeindex] =~ s/D/e/;
+         $fields[$cenindex] =~ s/D/e/;
+
+         push @lower, $fields[$cenindex] - $nsigma * $fields[$sizeindex];
+         push @upper, $fields[$cenindex] + $nsigma * $fields[$sizeindex];
          if ( $fields[$sizeindex] > $maxsize ) {
             $maxsize = $fields[$sizeindex];
          }
          $i++;
       }
+
+# Obtain the widest line including overlapping lines.
+# ===================================================
+      my ( @new_lower, @new_upper );
+      my $nlines = scalar( @lower );
+
+# There are no overlaps if only one line is detected.
+      if ( $nlines == 1 ) {
+         $maxsize =  0.5 * ( $upper[0] - $lower[0] ) / $nsigma;
+
+# Sort the clump ranges.
+      } else {
+         my @sorted_indices = sort { $lower[$a] <=> $lower[$b] } 0 .. $#lower;
+         my @sorted_lower = @lower[ @sorted_indices ];
+         my @sorted_upper = @upper[ @sorted_indices ];
+
+# Start the first of the new ranges that may include mergers.  Without any
+# any overlap between ranges there will be no mergers and the new set will be the
+# same as the original.
+         $new_lower[0] = $sorted_lower[0];
+         my $nr = 0;
+         my $or = 0;
+         while ( $or < $nlines - 1 ) {
+
+# See if ranges do not overlap.  In which case complete the current
+# new range and move on to the next range.
+            if ( $sorted_upper[$or] <= $sorted_lower[$or + 1] ) {
+               $new_upper[$nr]= $sorted_upper[$or];
+               $nr++;
+               $new_lower[$nr]= $sorted_lower[$or + 1];
+               $new_upper[$nr]= $sorted_upper[$or + 1] if ( $or == $nlines - 2 );
+            }
+            $or++;
+         }
+         if ( ! defined( $new_upper[$nr] ) ) {
+            $new_upper[$nr] = $sorted_upper[-1];
+         }
+
+
+# Find the largest line width after merging.  Restore the width to
+# the standard deviation.
+         my $newlines = scalar( @new_lower );
+
+         my $maxsize = -1;
+         for $nr ( 0 .. $#new_lower ) {
+
+             my $width = $new_upper[$nr] - $new_lower[$nr];
+             $maxsize = $width if $width > $maxsize;
+         }
+         $maxsize = 0.5 * $maxsize / $nsigma;
+      }
+
+# More iterations?
+# ================
 
 # Decide whether sufficent iterations have been performed.  Deem
 # convergence to be when the shift in the width is only one or no
