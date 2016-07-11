@@ -1,0 +1,334 @@
+=head1 NAME
+
+_REFINE_REFERENCE_SPECTRUM_ - Attempts to extract the reference spectrum.
+
+=head1 DESCRIPTION
+
+Given an approximate reference spectrum containing emission spectral
+lines and source-target emission in absorption, this primitive
+attempts to refine the spectrum, that is to return a reference spectrum
+comprising its emission lines upon a level baseline.  The supplied
+approximate reference spectrum is usually the inverse of the average
+either across an observation or for a group of observations that have
+the same reference location,
+
+If there were no source emission, it would be a simple task to find
+and subtract the background, and clump-find the lines.  The hard part
+comes where there is source emission present, which might be extended
+and weak over a wide velocity range (say through blending of many
+weak sources).  Then it becomes tricky to determine the baseline, and
+impossible should the reference region also contain weak and broad
+emission.
+
+The approach taken is iterativ.  The primitive first roughly locates
+the reference lines, masks them, and then inverts the supplied
+spectrum.  It then repeats so masking the emission lines from the
+intended source that are present.  After inverting again it estimates
+the background across the reference spectrum, filling the masked
+lines.  The background is subtracted from the supplied emission
+spectrum.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item IN = STRING (Given)
+
+The name of the spectrum with reference-spectrum lines in emission and
+any residual source emission in absorption.  The data may need to be
+multiplied by -1 to achieve this polarity.  If it is not defined,
+then default to the current Frame.  ['']
+
+=item OUT = STRING (Given)
+
+The background-subtracted reference spectrum. If it is not defined, an
+error is reported.  ['']
+
+=item RMS = REAL (Given)
+
+The RMS of the noise in the spectrum.  If it is not supplied FINDBACK
+will estimate it, or if FINBACK fails it is estimated by subtraction of
+the Gaussian smoothed spectrum from itself.
+
+=back
+
+=head1 OUTPUT DATA
+
+The 
+
+
+=head1 TASKS
+
+KAPPA: NDFTRACE, WCSFRAME.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@Star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+# Handle arguments.
+# =================
+
+# Obtain the file.  Spectral trimming occurs before a group object is formed
+# and therefore no GROUP argument is needed, merely default to the current
+# Frame.
+my $in = get_prim_arg( $_PRIM_ARGS_, "IN", $Frm->file );
+my $out = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+
+if ( ! defined( $out ) ) {
+   orac_err "_LOCATE_REFERENCE_EMISSION_: Programming error---Argument " .
+            "OUT is not supplied.\n";
+}
+
+my $rms = get_prim_arg( $_PRIM_ARGS_, "RMS", undef );
+$rms = max( 0.001, $rms ) if defined( $rms );
+
+# Obtain an approximate rms noise if one not supplied.
+# ====================================================
+
+# The best smoothing FWHM is data dependent, but 11 seems to give
+# decent results with ACSIS-HARP data.
+my ( $ORAC_STATUS, $params );
+if ( ! defined( $rms ) ) {
+   my $smoothspec = new ORAC::TempFile( 0 );
+   my $noisespec = new ORAC::TempFile( 0 );
+   my $sqnoise = new ORAC::TempFile( 0 );
+   $params = "in=$in out=$smoothspec fwhm=11";
+   $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+   $params = "in1=$in in2=$smoothspec out=$noisespec";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   $Mon{'kappa_mon'}->obeyw( "maths", "ia=$noisespec out=$sqnoise exp='ia*ia'" );
+
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$sqnoise clip=3" );
+   ( $ORAC_STATUS, my $sum ) = $Mon{'kappa_mon'}->get( "stats", "total" );
+   ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+   $rms = sqrt( $sum / $numgood );
+}
+
+# The calculated reference spectrum supplied may also have target emission
+# (now in absorption), even if target emission has been allegedly detected
+# and masked.  Broad and weak signal may be present.  Such absorption
+# features would be fitted as background by FINDBACK, and when subtracted
+# introduce spurious additional flux to the source emission.
+#
+# To attempt to determine the background level, try to locate the
+# reference lines without background substitution, mask them, and invert
+# the masked spectrum and repeat.  Once both source and target emission are
+# roughly masked, only then determine the background and fill in the gaps
+# from the two sets of masks.
+#
+# Subtract the background from the original supplied spectrum and determine
+# the reference emission better after the background subtraction.
+
+# First pass at determinimg the locations of reference-spectrum emission lines.
+# =============================================================================
+
+orac_say "Locating reference emission lines approximately.";
+my ( $cleaned, $linemap, $linemap_r, $linemap_s, $maxwidth, $text );
+
+my $temp1file = new ORAC::TempFile( 0 );
+my $temp2file = new ORAC::TempFile( 0 );
+
+# Search for the reference-spectrum lines without background subtraction.
+{
+   my $Frm = new $Frm;
+   $Frm->file( $in );
+   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=0
+   $linemap_r = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
+}
+
+# Check that the search completed successfully.
+if ( defined( $linemap_r ) ) {
+   orac_say "  Forming masks of the lines and of the background.";
+
+# The linemap contains positive integers---the line indices---for each emission
+# line detected.  Convert this to a mask of the lines and a mask of
+# the background (in which good elements are zero).
+   my $linemask_r = new ORAC::TempFile( 0 );
+   _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_r LINEMASK=$linemask_r
+
+# Apply the emission mask to the average reference spectrum.
+   $params = "in1=$in in2=$linemask_r out=$temp1file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   orac_say "  Apply mask of reference emission lines.";
+
+# The last resort is to subtract the emission above the noise.
+# ============================================================
+} else {
+
+# Remove signal below the noise.  We do not want to remove genuine
+# emission not yet masked.  Instead the goal is to subtract the
+# emission lines in the reference spectrum.  There should not be any
+# steps from removing selected parts of the mean non-emission spectrum
+# provided this primitive is called after baseline subtraction.
+   my $thrlo = 2 * $rms;
+   $params = "in=$in out=$temp1file ";
+   $params .= "thrlo=$thrlo newlo=0 thrhi=1E30 newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+   $text = "mean background emission";
+}
+
+# Determine the locations of source-spectrum emission lines.
+# ==========================================================
+
+# Flip the reference-emission masked spectrum.
+$params = "in=$temp1file scalar=-1 out=$temp2file";
+$Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+my $temp3file = new ORAC::TempFile( 0 );
+my $temp4file = new ORAC::TempFile( 0 );
+
+# Search for the source-spectrum lines without background subtraction.
+{
+   my $Frm = new $Frm;
+   $Frm->file( $temp2file );
+   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=0
+   $linemap_s = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
+}
+
+# Check that the search completed successfully.
+if ( defined( $linemap_s ) ) {
+
+# Convert this to a mask of the lines and a mask of
+# the background (in which good elements are zero).
+   my $linemask_s = new ORAC::TempFile( 0 );
+   _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_s LINEMASK=$linemask_s
+
+# Apply the emission mask to the average reference spectrum.
+   $params = "in1=$temp2file in2=$linemask_s out=$temp3file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   orac_say "  Apply mask of source emission lines.";
+
+# The last resort is to subtract the emission above the noise.
+# ============================================================
+} else {
+
+# Remove signal below the noise.  We do not want to remove genuine
+# emission not yet masked.  Instead the goal is to subtract the
+# emission lines in the reference spectrum.  There should not be any
+# steps from removing selected parts of the mean non-emission spectrum
+# provided this primitive is called after baseline subtraction.
+# As there may be more extensive weak signal, set the threshold
+# higher.
+   my $thrlo = 5 * $rms;
+   $params = "in=$temp2file out=$temp3file ";
+   $params .= "thrlo=$rms newlo=0 thrhi=1E30 newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+   $text = "mean background emission";
+}
+
+# Find the background. 
+# ====================
+
+# Both the reference and source emission lines are at least partially masked
+# making the estimation of the background, which may include weak source emission.
+
+orac_say "Fitting and subtracting the background.";
+
+# Flip the spectrum with both source and reference emission masked.
+$params = "in=$temp3file scalar=-1 out=$temp4file";
+$Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+my $temp5file = new ORAC::TempFile( 0 );
+my $temp6file = new ORAC::TempFile( 0 );
+
+# Lightly smooth the remaining spectrum and fill in the gap where the lines
+# are masked.
+$params = "in=$temp4file out=$temp5file estimator=median box=5";
+$Mon{'kappa_mon'}->obeyw( "block", "$params" );
+my $boxsize = 9;
+
+$params = "in=$temp5file out=$temp6file niter=10 size=$boxsize";
+$Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+my $specback = new ORAC::TempFile( 0 );
+#my $backsub = new ORAC::TempFile( 0 );
+#( undef, my $backsub ) = $Frm->inout( "_backsub" ) if ! defined( $backsub );
+( undef, my $backsub ) = $Frm->inout( "_backsub" );
+
+my $oddboxsize = 19;
+if ( defined( $rms ) ) {
+   $params = "in=$temp6file out=$specback box=$oddboxsize rms=$rms accept";
+} else {
+   $params = "in=$temp6file out=$specback box=$oddboxsize rms=! accept";
+}
+
+my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# FINDBACK can fall over, but this should not be fatal.
+if ( $FINDBACK_STATUS != ORAC__OK ) {
+   if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+      orac_say "   Unable to find the background in the reference " .
+               "   emission spectrum due to insufficient good data.";
+   }
+   orac_say "   Attempting to continue using block smoothing.";
+   $params = "in=$temp6file out=$specback box=$oddboxsize estimator=median";
+   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+}
+
+# Subtract the background from the supplied spectrum.
+$params = "in1=$in in2=$specback out=$backsub";
+$Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+orac_say "  Subtract the background from the emission spectrum.";
+
+# More-accurate determination of the locations of reference-spectrum emission lines.
+# ==================================================================================
+orac_say "Locating reference emission lines.";
+
+# Search for the reference-spectrum lines without background subtraction.
+{
+   my $Frm = new $Frm;
+   $Frm->file( $backsub );
+#   $Frm->file( $temp6file );
+   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=0
+   $linemap = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
+}
+
+# Check that the search completed successfully.
+if ( defined( $linemap ) ) {
+
+   my $temp7file = new ORAC::TempFile( 0 );
+   my $temp8file = new ORAC::TempFile( 0 );
+   my $temp9file = new ORAC::TempFile( 0 );
+
+# Convert this to a mask of the lines and a mask of
+# the background (in which good elements are zero).
+   my $linemask = new ORAC::TempFile( 0 );
+   _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap LINEMASK=$linemask
+
+# Apply the emission mask to the inverted average reference spectrum.
+#   $params = "in1=$in in2=$linemask out=$temp5file";
+   $params = "in1=$backsub in2=$linemask out=$temp7file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   orac_say "  Apply mask of emission lines.";
+
+# Lightly smooth the remaining spectrum and fill in the gap where the line is
+# masked.
+   orac_say "  Improve definition of reference emission by removal of residual signal.";
+   $params = "in=$temp7file out=$temp8file estimator=median box=5";
+   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   my $boxsize = 9;
+   $params = "in=$temp8file out=$temp9file niter=10 size=$boxsize";
+   $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Subtract this spectrum from the original, so as to correct for
+# residual non-reference emission that may be present around the
+# reference line.
+   orac_say "  Subtract reference spectrum.";
+   $params = "in1=$in in2=$temp9file out=$out";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+   $text = "mean of reference-emission line regions";
+}
+
+$_REFINEE_REFERENCE_SPECTRUM_{OUT} = $out;
