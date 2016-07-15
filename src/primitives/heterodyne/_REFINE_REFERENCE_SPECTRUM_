@@ -240,7 +240,7 @@ if ( defined( $linemap_s ) && $nlines_s > 0 ) {
    $text = "mean background emission";
 }
 
-# Find the background. 
+# Find the background.
 # ====================
 
 # Both the reference and source emission lines are at least partially masked
@@ -318,11 +318,18 @@ if ( defined( $linemap ) && $nlines > 0 ) {
    my $temp7file = new ORAC::TempFile( 0 );
    my $temp8file = new ORAC::TempFile( 0 );
    my $temp9file = new ORAC::TempFile( 0 );
+   my $temp10file = new ORAC::TempFile( 0 );
+   my $temp11file = new ORAC::TempFile( 0 );
+   my $temp12file = new ORAC::TempFile( 0 );
+   my $temp13file = new ORAC::TempFile( 0 );
+   my $temp14file = new ORAC::TempFile( 0 );
+   my $temp15file = new ORAC::TempFile( 0 );
 
 # Convert this to a mask of the lines and a mask of
 # the background (in which good elements are zero).
    my $linemask = new ORAC::TempFile( 0 );
-   _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap LINEMASK=$linemask
+   my $bgdmask = new ORAC::TempFile( 0 );
+   _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap LINEMASK=$linemask BGDMASK=$bgdmask
 
 # Apply the emission mask to the inverted average reference spectrum.
 #   $params = "in1=$in in2=$linemask out=$temp5file";
@@ -343,8 +350,78 @@ if ( defined( $linemap ) && $nlines > 0 ) {
 # residual non-reference emission that may be present around the
 # reference line.
    orac_say "  Subtract reference spectrum.";
-   $params = "in1=$in in2=$temp9file out=$out";
+   $params = "in1=$in in2=$temp9file out=$temp10file";
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Remove varying residual background.
+# ===================================
+
+# The spectrum should now be devoid of source emission lines, but
+# the background can be non-uniform from extended source emission.
+# Fit to that after again masking the reference lines so that the
+# window can be narrow, otherwise FINDBACK would produce a background
+# that rises under the reference emission lines.
+   $params = "in1=$temp10file in2=$linemask out=$temp11file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+   my $finalboxsize = 9;
+   if ( defined( $rms ) ) {
+      $params = "in=$temp11file out=$temp12file box=$finalboxsize rms=$rms accept";
+   } else {
+      $params = "in=$temp11file out=$temp12file box=$finalboxsize accept";
+   }
+
+   my $FINDBACK_STATUS = $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+
+# FINDBACK can fall over, but this should not be fatal.
+   if ( $FINDBACK_STATUS != ORAC__OK ) {
+      if ( starversion_gt( 'CUPID', 'V1.6' ) && $FINDBACK_STATUS == 262703466 ) {
+         orac_say "   Unable to find the background in the cleaned reference " .
+                  "   emission spectrum due to insufficient good data.";
+      }
+      orac_say "   Attempting to continue using block smoothing.";
+      $params = "in=$temp11file out=$temp12file box=$finalboxsize estimator=median";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   }
+
+# Now fill in the gaps for the lines.  Peforming this after the
+# background determination gives a better fit to where the eye would
+# connect the disjointed background (because the background is smoother).
+   $boxsize = 9;
+   $params = "in=$temp12file out=$temp13file niter=10 size=$boxsize";
+   $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Remove the residual background, and with a bit of luck we have the
+# reference-source spectrum, at least of the lines detected, on a flat
+# background.  The background has some noise but less so than the original
+# composite because of smoothing.
+   $params = "in1=$temp10file in2=$temp13file out=$temp14file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Apply the background mask.
+   $params = "in1=$temp14file in2=$bgdmask out=$temp15file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+   if ( defined( $rms ) ) {
+      my $temp16file = new ORAC::TempFile( 0 );
+      my $fudge = $thresh*$rms;
+
+# Apply a fudge offset, which seems to be needed empirically, possibly
+# because of smoothing or the background finding seems to go a fraction low.
+      $params = "in=$temp15file scalar=$fudge out=$temp16file";
+      $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
+
+# Replace bad values with zero, so the final result has a zero
+# background and the reference emission lines.
+      $params = "in=$temp16file repval=0 out=$out";
+      $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+   } else {
+      $params = "in=$temp15file repval=0 out=$out";
+      $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+   }
+
+   orac_say "  Apply mask of reference emission lines.";
 
    $text = "mean of reference-emission line regions";
 }
