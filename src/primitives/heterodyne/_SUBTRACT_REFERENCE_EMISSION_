@@ -15,10 +15,32 @@ _RECREATE_MASKED_TIMESERIES_ primitive.
 
 It is only implemented if recipe parameter SUBTRACT_REF_EMISSION is
 defined.
-
+ 
 =head1 ARGUMENTS
 
 =over 4
+
+=item COMBINE_BY_REFPOS = BOOLEAN (Given)
+
+Whether to combine observations by their reference position. Combining
+should improve the signal-to-noise ratio in the derived reference
+spectrum.  This argument can be overridden by the
+RECPAR_REF_EMISSION_COMBINE_REFPOS uhdr via the recipe parameter
+system.  [1]
+
+=item USE_SOURCE_MASK = BOOLEAN (Given)
+
+Whether or not to use the mask of source emission alreasdy detected.
+At first enabling this would appear to be the right choice, as it
+greatly reduces the source emission in the compressed spectrum and
+thus makes discrimination between dips in multiple source emission 
+lines verus an emisison line in the reference spectrum easier.
+However, in practice it often leaves the reference lines in
+steep-sided valleys, and as a result underestimates (typically by
+0.1-0.2 K) the reference line height, and leaves residual reference
+absorption lines in the source spectra.  This argument can be
+overridden by the RECPAR_REF_EMISSION_MASK_SOURCE uhdr via the recipe
+parameter system.  [0]
 
 =back
 
@@ -104,6 +126,16 @@ my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_EMISSION" ) ) ?
 if ( ! $apply ) { goto RETURN }
 
 my $combine_refpos = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_REFPOS", 1 );
+my $usemasked = get_prim_arg( $_PRIM_ARGS_, "USE_SOURCE_MASK", 0 );
+
+$combine_refpos = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS" ) ) ?
+                    $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS"  )            :
+                    $combine_refpos );
+
+$usemasked = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE" ) ) ?
+               $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE"  )            :
+               $usemasked );
+
 
 my %masked;
 my $user_region = 0;
@@ -184,11 +216,20 @@ GROUP: foreach my $Grp ( @refposgrps ) {
          my $temp2file = new ORAC::TempFile( 0 );
          my $temp3file = new ORAC::TempFile( 0 );
 
-# Collapse along the time axis.  Use a clipped mean to exclude single
-# spectra with strongly negative values and very bright features that
-# could be present in just a few of the receptors.
-         $params = "in=$in out=$temp2file estimator=mode wlim=0.0 axis=3";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+# Apply the mask (zero times the data values should still pass the
+# mask from the masked timeseries through to the output.
+         if ( $usemasked ) {
+            $params = "in1=$in in2=$tsmask out=$temp1file";
+            $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Collapse along the time axis.  Use the mode to remove at least some of
+# the residual source emission.
+            $params = "in=$temp1file out=$temp2file estimator=mode wlim=0.0 axis=3";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         } else {
+            $params = "in=$in out=$temp2file estimator=mode wlim=0.0 axis=3";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+         }
 
          $params = "in=$temp2file out=$temp3file estimator=mean wlim=0.0 axis=2";
          $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
