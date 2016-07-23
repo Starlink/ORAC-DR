@@ -28,16 +28,31 @@ the background across the reference spectrum, filling the masked
 lines.  The background is subtracted from the supplied emission
 spectrum.
 
+A supplementary spectrum may be supplied to be used to determine the
+locations and extents of the lines.  This should be derived from the
+time-series cube with source emision masked.  Then the main spectrum
+will then normally be the modal compression of the unmasked time
+series, as this gives better determination of the line intensity.
+
 =head1 PARAMETERS
 
 =over 4
 
 =item IN = STRING (Given)
 
-The name of the spectrum with reference-spectrum lines in emission and
-any residual source emission in absorption.  The data may need to be
-multiplied by -1 to achieve this polarity.  If it is not defined,
-then default to the current Frame.  ['']
+The name of the initial reference spectrum.  This must have the
+reference-spectrum lines in emission and any residual source emission
+in absorption.  The data may need to be multiplied by -1 to achieve
+this polarity.  If it is not defined, then default to the current Frame.  ['']
+
+=item LOCATION = STRING (Given)
+
+The name of the initial reference spectrum to be to determine the
+the locations and extents of reference emission lines.  This must have the
+reference-spectrum lines in emission andany residual source emission
+in absorption.  The data may need to be multiplied by -1 to achieve
+this polarity.  If it is not defined, then defaults to spectrum given
+by Argument IN.   ['']
 
 =item OUT = STRING (Given)
 
@@ -84,6 +99,7 @@ All Rights Reserved.
 # and therefore no GROUP argument is needed, merely default to the current
 # Frame.
 my $in = get_prim_arg( $_PRIM_ARGS_, "IN", $Frm->file );
+my $loc = get_prim_arg( $_PRIM_ARGS_, "LOCATION", $in );
 my $out = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
 
 if ( ! defined( $out ) ) {
@@ -93,6 +109,8 @@ if ( ! defined( $out ) ) {
 
 my $rms = get_prim_arg( $_PRIM_ARGS_, "RMS", undef );
 $rms = max( 0.001, $rms ) if defined( $rms );
+
+my $usemask = $in eq $loc;
 
 # Obtain an approximate rms noise if one not supplied.
 # ====================================================
@@ -140,31 +158,51 @@ my ( $nlines_r, $nlines_s, $nlines, $text );
 
 my $temp1file = new ORAC::TempFile( 0 );
 my $temp2file = new ORAC::TempFile( 0 );
-my $thresh = 1.5;
 
-# Search for the reference-spectrum lines without background subtraction.
+# Want to contour minimum to be a little higher for the spectrum with
+# source emission masked to avoid picking up noise lines and minimum
+# between residual weak source emission.  To compsensate widen the
+# detected lines by four pixels to reach roughly the zero level.
+my $thresh = 1.5;
+my $first_thresh = $usemask ? 2.5 : $thresh;
+my $wings = $usemask ? 7 : 5;
+
+# Search for the reference-spectrum lines without background subtraction
+# when analysing the source-emision-masked spectrum.  This choice may
+# lose weaker reference emission embedded in extended source signal, but
+# it compensates by not regarding dips in the sourece signal as
+# reference emission.  The latter is far more likely.  Use a higher
+# threshold to avoid including noise.
 {
    my $Frm = new $Frm;
-   $Frm->file( $in );
-   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=1 THRESH=$thresh MINPIX=4
+   $Frm->file( $loc );
+   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$usemask THRESH=$first_thresh MINPIX=4
    $linemap_r = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
    $nlines_r = $_FIND_EMISSION_LINES_IN_SPECTRUM_{NLINES};
 }
 
 # Check that the search completed successfully.
+my $bgdmask_r = new ORAC::TempFile( 0 );
 if ( defined( $linemap_r ) && $nlines_r > 0 ) {
    orac_say "  Forming masks of the lines and of the background.";
 
 # The linemap contains positive integers---the line indices---for each emission
 # line detected.  Convert this to a mask of the lines and a mask of
-# the background (in which good elements are zero).
+# the background (in which good elements are zero).  Only if the
+# source-emission spectrum was just analysed, do we want to remember where
+# those lines are masking the rest.
    my $linemask_r = new ORAC::TempFile( 0 );
-   _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_r LINEMASK=$linemask_r
+   my $bgdmask_r = new ORAC::TempFile( 0 );
+   if ( $usemask ) {
+     _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_r LINEMASK=$linemask_r BGDMASK=$bgdmask_r
+   } else {
+     _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_r LINEMASK=$linemask_r
+   }
 
 # Extend into the wings by a couple of pixels to reduce artefacts there.
    my $temp10file = new ORAC::TempFile( 0 );
    my $temp11file = new ORAC::TempFile( 0 );
-   $params = "in=$linemask_r out=$temp10file box=5 wlim=1";
+   $params = "in=$linemask_r out=$temp10file box=$wings wlim=1";
    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
    $params = "in=$linemask_r ref=$temp10file out=$temp11file";
    $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
@@ -245,7 +283,6 @@ if ( defined( $linemap_s ) && $nlines_s > 0 ) {
 
 # Both the reference and source emission lines are at least partially masked
 # making the estimation of the background, which may include weak source emission.
-
 orac_say "Fitting and subtracting the background.";
 
 # Flip the spectrum with both source and reference emission masked.
@@ -398,8 +435,10 @@ if ( defined( $linemap ) && $nlines > 0 ) {
    $params = "in1=$temp10file in2=$temp13file out=$temp14file";
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
-# Apply the background mask.
-   $params = "in1=$temp14file in2=$bgdmask out=$temp15file";
+# Apply the appropriate background mask.  Prefer one from the
+# source-masked spectrum.
+   my $maskbgd = $usemask ? $bgdmask_r : $bgdmask;
+   $params = "in1=$temp14file in2=$maskbgd out=$temp15file";
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
    if ( defined( $rms ) ) {
