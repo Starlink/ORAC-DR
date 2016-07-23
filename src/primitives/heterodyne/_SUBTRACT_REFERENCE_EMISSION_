@@ -4,17 +4,32 @@ _SUBTRACT_REFERENCE_EMISSION_
 
 =head1 DESCRIPTION
 
-This primitive finds the clipped mean emission-masked spectrum
-collapsed over time and receptor, applies a mild smooth to this
-spectrum, subtracts it from the unmasked time-series.  The purpose is
-to remove any absorption lines originating from emission in a poorly
-chosen reference position.
+The purpose of this primitive is to remove any absorption lines
+originating from emission in a poorly chosen reference position.  It
+forms one or two representative reference spectra either by masking
+known emission or not or both, and then for each representative
+spectrum forming the mode spectrum for each receptor and then average
+those. It then applies a mild smooth to it and determines its rms.
+There are pros and cons for the masked spectrum, and so an option is
+to allow either or use both. (See Argument USE_SOURCE_MASK.)
 
-The masked timeseries cube determined by the
-_RECREATE_MASKED_TIMESERIES_ primitive.
+Then follows an analysis phase for which there two approaches. First
+is to set the positions of the reference lines via the
+REF_EMISSION_REGIONS recipe parameter.  These regions are masked and
+filled in, the background determined and subtracted from the unmasked
+representative spectrum to form an approximation to the reference
+spectrum.
 
-It is only implemented if recipe parameter SUBTRACT_REF_EMISSION is
-defined.
+The alternative is to determine the line locations and extents
+automatically (using primitive _REFINE_REFERENCE_SPECTRUM_, which also
+determines and subtracts the background, again to form an estimate of
+the reference spectrum.
+
+The estimated spectrum is expanded to the size of the input unmasked
+time series cubes and added (so as to fill in the absorption lines).
+
+This primiitve is only implemented if recipe parameter
+SUBTRACT_REF_EMISSION is defined.
 
 =head1 ARGUMENTS
 
@@ -28,19 +43,26 @@ spectrum.  This argument can be overridden by the
 RECPAR_REF_EMISSION_COMBINE_REFPOS uhdr via the recipe parameter
 system.  [1]
 
-=item USE_SOURCE_MASK = BOOLEAN (Given)
+=item USE_SOURCE_MASK = STRING (Given)
 
-Whether or not to use the mask of source emission alreasdy detected.
-At first enabling this would appear to be the right choice, as it
-greatly reduces the source emission in the compressed spectrum and
-thus makes discrimination between dips in multiple source emission
-lines verus an emisison line in the reference spectrum easier.
-However, in practice it often leaves the reference lines in
+This controls the use the mask of source emission alreasdy detected.
+At first enabling this (setting it to 1) would appear to be the right
+choice, as it greatly reduces the source emission in the compressed
+spectrum and thus makes discrimination between dips in multiple source
+emission lines verus an emission line in the reference spectrum
+easier. However, in practice it often leaves the reference lines in
 steep-sided valleys, and as a result underestimates (typically by
 0.1-0.2 K) the reference line height, and leaves residual reference
-absorption lines in the source spectra.  This argument can be
-overridden by the RECPAR_REF_EMISSION_MASK_SOURCE uhdr via the recipe
-parameter system.  [0]
+absorption lines in the source spectra.  Combining using the mode
+instead (when set to 0) avoids this but it then becomes problematic
+discriminating between lower source emission and a reference line with
+extended source emission.  A third option is to set this to "Both".
+This attempts to get the best of both, as it uses the masked spectrum
+to locate the lines, but the unmasked modal spectrum to determine the
+line strengths.
+
+This argument can be overridden by the RECPAR_REF_EMISSION_MASK_SOURCE
+uhdr via the recipe parameter system.  ["Both"]
 
 =back
 
@@ -51,6 +73,9 @@ parameter system.  [0]
 =item *
 
 This primitive is suitable for ACSIS data.
+
+=item * The masked time-series cube is determined by the
+_RECREATE_MASKED_TIMESERIES_ primitive.
 
 =item *
 
@@ -127,16 +152,11 @@ my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_EMISSION" ) ) ?
 if ( ! $apply ) { goto RETURN }
 
 my $combine_refpos = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_REFPOS", 1 );
-my $usemasked = get_prim_arg( $_PRIM_ARGS_, "USE_SOURCE_MASK", 0 );
+my $usemasked = get_prim_arg( $_PRIM_ARGS_, "USE_SOURCE_MASK", "Both" );
 
 $combine_refpos = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS" ) ) ?
                     $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS"  )            :
                     $combine_refpos );
-
-$usemasked = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE" ) ) ?
-               $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE"  )            :
-               $usemasked );
-
 
 my %masked;
 my $user_region = 0;
@@ -169,6 +189,13 @@ if ( defined( $rem_regions ) ) {
    }
 }
 
+$usemasked = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE" ) ) ?
+               $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE"  )            :
+               $usemasked );
+my $both = lc( $usemasked ) =~ /^b/ && !$user_region;
+my @combine = ( $usemasked );
+@combine = ( 1, 0 ) if $both;
+
 # Write a heading to structure the commentary.
 orac_say "\n\nSubtract mean spectrum from unmasked time-series";
 my $underline = "-" x 70;
@@ -180,139 +207,160 @@ my @refposgrps = $combine_refpos ? $Grp->subgrps( "ORAC_REFERENCE_LOCATION" ) : 
 my ( @mean_spectra, @mean_weights );
 my ( @masks, $params, @weight );
 my ( $in, $out, $esp, $ressp, $text );
+my ( $mrsp, $resm );
 
 # Loop over the common reference positions or current group.
 # ==========================================================
 GROUP: foreach my $Grp ( @refposgrps ) {
    my @Objs = $Grp->members;
    my $number_at_location = scalar( @Objs );
+   my ( $refspec_masked, $refspec_unmasked );
+
+   foreach my $maskspec ( @combine ) {
+      @mean_spectra = ();
+      @mean_weights = ();
 
 # Each object (group or observation) may comprise more than one file.
-   OBJECT: foreach my $Frm ( @Objs ) {
-      $in = $Frm->file;
-      orac_say "Processing observation: $in.";
+      OBJECT: foreach my $Frm ( @Objs ) {
+         $in = $Frm->file;
+         orac_say "Processing observation: $in.";
 
 # Form average spectrum for each observation.
 # ===========================================
-      my ( $key, @msp );
-      foreach my $i ( 1 .. $Frm->nfiles ) {
-         ( $in, $esp ) = $Frm->inout( "_esp", $i );
-         push @msp, $esp;
+         my ( $key, @msp );
+         foreach my $i ( 1 .. $Frm->nfiles ) {
+            ( $in, $esp ) = $Frm->inout( "_esp", $i );
+            push @msp, $esp;
 
 # We need the dimensions of the input file for later.
-         _GET_DIMENSIONS_ FILE=$in
-         my $lbnd = $_GET_DIMENSIONS_{LBOUND};
-         my $ubnd = $_GET_DIMENSIONS_{UBOUND};
-         push @weight, $ubnd->[2] - $lbnd->[2] + 1;
+            _GET_DIMENSIONS_ FILE=$in
+            my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+            my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+            push @weight, $ubnd->[2] - $lbnd->[2] + 1;
 
 # Extract the masked timeseries associated with the current input file.
-         my ( $rootname, $suffix ) = split /_([^_]+)$/, $in;
-         my $mask_ref = $Grp->uhdr( "TIMESERIES_MASKS" );
-         $key = $rootname . "_" . $i;
-         my $tsmask = $mask_ref->{$key};
-         push @masks, $tsmask;
+            my ( $rootname, $suffix ) = split /_([^_]+)$/, $in;
+            my $mask_ref = $Grp->uhdr( "TIMESERIES_MASKS" );
+            $key = $rootname . "_" . $i;
+            my $tsmask = $mask_ref->{$key};
+            push @masks, $tsmask;
 
 # Obtain some temporary filenames.
-         my $temp1file = new ORAC::TempFile( 0 );
-         my $temp2file = new ORAC::TempFile( 0 );
-         my $temp3file = new ORAC::TempFile( 0 );
+            my $temp1file = new ORAC::TempFile( 0 );
+            my $temp2file = new ORAC::TempFile( 0 );
+            my $temp3file = new ORAC::TempFile( 0 );
 
 # Apply the mask (zero times the data values should still pass the
 # mask from the masked timeseries through to the output.
-         if ( $usemasked ) {
-            $params = "in1=$in in2=$tsmask out=$temp1file";
-            $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+            if ( $maskspec ) {
+               $params = "in1=$in in2=$tsmask out=$temp1file";
+               $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+               orac_say "  Apply source-emission mask before collapsing the time-series cube.";
 
 # Collapse along the time axis.  Use the mode to remove at least some of
 # the residual source emission.
-            $params = "in=$temp1file out=$temp2file estimator=mode wlim=0.0 axis=3";
+               $params = "in=$temp1file out=$temp2file estimator=mode wlim=0.0 axis=3";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            } else {
+               $params = "in=$in out=$temp2file estimator=mode wlim=0.0 axis=3";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            }
+
+            $params = "in=$temp2file out=$temp3file estimator=mean wlim=0.0 axis=2";
             $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-         } else {
-            $params = "in=$in out=$temp2file estimator=mode wlim=0.0 axis=3";
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            orac_say "  Collapse using the mode on the time axis and the mean by receptor.";
+
+            $params = "in=$temp3file out=$esp scalar=-1.0";
+            $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
          }
-
-         $params = "in=$temp2file out=$temp3file estimator=mean wlim=0.0 axis=2";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-
-         $params = "in=$temp3file out=$esp scalar=-1.0";
-         $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
-      }
 
 # Find the weighted average of each subfile's mean spectrum (the one
 # after source emission being masked).  The fiddly bit is forming the
 # MATHS command line to form ia, ib, ic... for the input file names.
-      ( my $junk, $ressp ) = $Frm->inout( "_ressp" );
-      my $total_weight;
-      if ( $Frm->nfiles > 1 ) {
-         my $maths_list = '';
-         my $maths_eq = 'exp=\'(';
-         my $maths_index = "a";
-         $total_weight = 0;
-         foreach my $i ( 1 .. $Frm->nfiles ) {
-            $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
-            $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
-            $maths_index = chr( ord( $maths_index ) + 1 );
-            $total_weight += $weight[$i-1];
-         }
-         $maths_eq =~ s/\+$/)/;
-         $maths_eq .= "/" . $total_weight . "'";
+         ( my $junk, $ressp ) = $Frm->inout( "_ressp" );
+         my $total_weight;
+         if ( $Frm->nfiles > 1 ) {
+            my $maths_list = '';
+            my $maths_eq = 'exp=\'(';
+            my $maths_index = "a";
+            $total_weight = 0;
+            foreach my $i ( 1 .. $Frm->nfiles ) {
+               $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
+               $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
+               $maths_index = chr( ord( $maths_index ) + 1 );
+               $total_weight += $weight[$i-1];
+            }
+            $maths_eq =~ s/\+$/)/;
+            $maths_eq .= "/" . $total_weight . "'";
 
-         $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$ressp" );
-      } else {
-         $params = "in=$msp[0] out=$ressp";
-         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-         $total_weight = $weight[0];
+            $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$ressp" );
+         } else {
+            $params = "in=$msp[0] out=$ressp";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            $total_weight = $weight[0];
+         }
+         push @mean_spectra, $ressp;
+         push @mean_weights, $total_weight;
       }
-      push @mean_spectra, $ressp;
-      push @mean_weights, $total_weight;
-   }
 
 # Form average spectrum for the current reference position.
 # =========================================================
 
 # Find the weighted average of the current reference location's mean
 # spectrum (the one after source emission being masked).
-   my $mrsp;
-   ( my $junk, $mrsp ) = $Frm->inout( "_mrsp" );
-   if ( $number_at_location > 1 ) {
-      my $maths_list = '';
-      my $maths_eq = 'exp=\'(';
-      my $maths_index = "a";
-      my $total_weight = 0;
-      foreach my $i ( 1 .. $number_at_location ) {
-         $maths_list .= "i" . $maths_index . "=$mean_spectra[$i-1] ";
-         $maths_eq .= "i" . $maths_index . "*" . $mean_weights[$i-1] . "+";
-         $maths_index = chr( ord( $maths_index ) + 1 );
-         $total_weight += $mean_weights[$i-1];
-      }
-      $maths_eq =~ s/\+$/)/;
-      $maths_eq .= "/" . $total_weight . "'";
+      ( my $junk, $mrsp ) = $Frm->inout( "_mrsp" );
+      if ( $number_at_location > 1 ) {
+         my $maths_list = '';
+         my $maths_eq = 'exp=\'(';
+         my $maths_index = "a";
+         my $total_weight = 0;
+         foreach my $i ( 1 .. $number_at_location ) {
+            $maths_list .= "i" . $maths_index . "=$mean_spectra[$i-1] ";
+            $maths_eq .= "i" . $maths_index . "*" . $mean_weights[$i-1] . "+";
+            $maths_index = chr( ord( $maths_index ) + 1 );
+            $total_weight += $mean_weights[$i-1];
+         }
+         $maths_eq =~ s/\+$/)/;
+         $maths_eq .= "/" . $total_weight . "'";
 
-      $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$mrsp" );
-   } else {
-      $params = "in=$mean_spectra[0] out=$mrsp";
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-   }
+         $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$mrsp" );
+      } else {
+         $params = "in=$mean_spectra[0] out=$mrsp";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      }
 
 # Reduce the noise with minimal broadening of the lines.
-   ( $junk, my $resm ) = $Frm->inout( "_resm" );
-   $params = "in=$mrsp out=$resm fwhm=1.5";
-   $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
-   my $ref_spectrum = new ORAC::TempFile( 0 );
+      my $suffix = $maskspec ? "resmask" : "resmode";
+      ( $junk, $resm ) = $Frm->inout( $suffix );
+      $params = "in=$mrsp out=$resm fwhm=1.5";
+      $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+      my $ref_spectrum = new ORAC::TempFile( 0 );
 
 # Find the representative rms of the mean spectrum.
 # =================================================
 
 # It should comprise minimal source emission (now in absorption),
 # reference-spectrum emission and noise.  It's the last that we seek.
-   my $rms;
-   {
-      my $Frm = $Frm->new;
-      $Frm->file( $resm );
-      _FIND_MEAN_RMS_ GROUP=0
-      $rms = $Frm->uhdr( "RMS_MEAN" );
-      orac_say "  RMS for the modal spectrum is $rms.";
+      if ( ( ! $maskspec && $both ) || ! $both ) {
+         my $rms;
+         {
+            my $Frm = $Frm->new;
+            $Frm->file( $resm );
+            _FIND_MEAN_RMS_ GROUP=0
+            $rms = $Frm->uhdr( "RMS_MEAN" );
+            orac_say "  RMS for the modal spectrum is $rms.";
+         }
+      }
+
+# Store the two smoothed collapsed spectra separately.  For user-defined
+# regions there is no both and so will continue to use $resm.
+      if ( $both ) {
+         if ( $maskspec ) {
+            $refspec_masked = $resm;
+         } else {
+            $refspec_unmasked = $resm;
+         }
+      }
    }
 
    my ( $ORAC_STATUS, $units );
@@ -377,7 +425,7 @@ GROUP: foreach my $Grp ( @refposgrps ) {
                $boxsize = max( 3.0, $hw );
 
 # Run ARDMASK to mask the line.
-               $params = "in=$mrsp out=$temp6file inside ardfile=" . $ardmask->file;
+               $params = "in=$resm out=$temp6file inside ardfile=" . $ardmask->file;
                $Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
 
 # Lightly smooth the remaining spectrum and fill in the gap where the line is
@@ -402,7 +450,11 @@ GROUP: foreach my $Grp ( @refposgrps ) {
 
 # Form background-subtracted reference spectrum.
             if ( $first ) {
-               _REFINE_REFERENCE_SPECTRUM_ IN=$resm OUT=$temp5file
+               if ( $both ) {
+                  _REFINE_REFERENCE_SPECTRUM_ IN=$refspec_unmasked LOCATION=$refspec_masked OUT=$temp5file
+               } else {
+                  _REFINE_REFERENCE_SPECTRUM_ IN=$resm OUT=$temp5file
+               }
                $text = "mean of reference-emission line regions";
             }
          }
