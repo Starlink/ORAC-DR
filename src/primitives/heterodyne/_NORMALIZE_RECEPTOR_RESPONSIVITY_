@@ -16,6 +16,17 @@ time-series data.
 
 =over 4
 
+=item FLAT_REGIONS = STRING (Given)
+
+A comma-separated list of velocity ranges each in the format v1:v2,
+from where the flat-field should be derived.  These should specify
+regions of moderate to strong emission, but not just compact bright
+sources.  See also the deprecated LOWER_VELOCITY and UPPER_VELOCITY
+which may be used if this argument is undefind. This argument can be
+overridden by the RECPAR_FLAT_REGIONS uhdr via the recipe-parameter
+system.  If no velocity range is set then the whole spectral range is
+used.  [undef]
+
 =item GROUP = INTEGER (Given)
 
 How to process group files. 0 means use the current Frame object. 1
@@ -25,8 +36,9 @@ the current Group object. [0]
 =item LOWER_VELOCITY = REAL (Given)
 
 The requested lower velocity for the flat-field estimations.
-This argument can be overridden by the RECPAR_FLAT_LOWER_VELOCITY uhdr
-via the recipe parameter system.  [undef]
+This argument can be overridden by the RECPAR_FLAT_REGIONS (or the
+deprecated RECPAR_FLAT_LOWER_VELOCITY) uhdr via the recipe-parameter
+system.  [undef]
 
 =item MINSNR = REAL (Given)
 
@@ -43,8 +55,9 @@ normalized. ['H05']
 =item UPPER_VELOCITY = REAL (Given)
 
 The requested upper velocity for the flat-field estimations.
-This argument can be overridden by the RECPAR_FLAT_UPPER_VELOCITY uhdr
-via the recipe parameter system.  [undef]
+This argument can be overridden by the RECPAR_FLAT_REGIONS (or the
+deprecated RECPAR_FLAT_UPPER_VELOCITY) uhdr via the recipe-parameter
+system.  [undef]
 
 =back
 
@@ -82,8 +95,8 @@ The flat-fielded time-series cube with suffix _ff.
 
 =head1 TASKS
 
-KAPPA: ADD, CENTROID, CHPIX, CMULT, COLLAPSE, DIV, HISTOGRAM, MANIC,
-       NDFCOPY, NDFTRACE, SETUNITS, SETVAR, STATS;
+KAPPA: ADD, BLOCK, CENTROID, CHPIX, CMULT, COLLAPSE, DIV, HISTOGRAM, MANIC,
+       NDFCOPY, NDFTRACE, SETUNITS, SETVAR, STATS, WCSTRAN;
 SMURF: MAKECUBE.
 
 =head1 REQUIRED PERL MODULES
@@ -96,7 +109,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012 Science and Technology Facilities Council.  All
+Copyright (C) 2012, 2016 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
@@ -104,26 +117,76 @@ Rights Reserved.
 # Obtain arguments and recipe parameters.
 # =======================================
 
+my $f_regions = get_prim_arg( $_PRIM_ARGS_, "FLAT_REGIONS", undef );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
 my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $upper_vel = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
 my $snr = get_prim_arg( $_PRIM_ARGS_, "MINSNR", 3.0 );
 
-$lower_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
-             $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
-             $lower_vel );
-$upper_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" ) ) ?
-             $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" )              :
-             $upper_vel );
+# Handle recipe parameter overrides.
 $snr = ( defined( $Frm->uhdr( "RECPAR_FLAT_MINIMUM_SNR" ) ) ?
-         $Frm->uhdr( "RECPAR_FLAT_MINIMUM_SNR" )              :
+         $Frm->uhdr( "RECPAR_FLAT_MINIMUM_SNR" )            :
          $snr );
+
+$f_regions = ( defined( $Frm->uhdr( "RECPAR_FLAT_REGIONS" ) ) ?
+             $Frm->uhdr( "RECPAR_FLAT_REGIONS" )              :
+             $f_regions );
+my @regions;
+my ( @f_bounds, @flat_bounds );
+my $user_region = 0;
+
+# Deal with a single region or an array of regions,
+if ( defined( $f_regions ) ) {
+   if ( ref( $f_regions ) eq 'ARRAY' ) {
+      @regions = @{ $f_regions }
+   } else {
+      push @regions, $f_regions;
+   }
+
+# The recipe parameters may supply the deprecated single lower and
+# upper velocity limits.  Convert this to a single velocity region as if
+# passed through FLAT_REGIONS.
+} else {
+   my $lv = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
+              $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
+              $lower_vel );
+   my $uv = ( defined( $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" ) ) ?
+              $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" )              :
+              $upper_vel );
+   if ( defined( $lv ) && defined( $uv ) ) {
+      $lower_vel = min( $lv, $uv );
+      $upper_vel = max( $lv, $uv );
+      push @regions, "$lower_vel:$upper_vel";
+   }
+}
+
+# Validate flat-region syntax and store the bounds.
+if ( defined( $regions[0] ) ) {
+   foreach ( @regions ) {
+      if ( /:/ ) {
+         my ( $lv, $uv ) = split( ":", $_ );
+         $user_region = 1;
+         push @f_bounds, min( $lv, $uv );
+         push @f_bounds, max( $lv, $uv );
+      } else {
+         $user_region = 0;
+         last;
+      }
+   }
+
+   if ( ! $user_region ) {
+      orac_err "Supplied extents of emission to determine the flat have invalid format\n" .
+               "Syntax is <lower1>:<upper1>,<lower2>:<upper2>,...\n";
+   }
 
 # Integer velocity must be made floating point so that NDF sectioning
 # does not regard it as pixels.
-if ( $lower_vel =~ /^[+-]?\d+$/ ) { $lower_vel = sprintf( "%.1f", $lower_vel ) }
-if ( $upper_vel =~ /^[+-]?\d+$/ ) { $upper_vel = sprintf( "%.1f", $upper_vel ) }
+   foreach ( @f_bounds ) {
+      if ( /^[+-]?\d+$/ ) { $_ = sprintf( "%.1f", $_ ) }
+      push @flat_bounds, $_;
+   }
+}
 
 # Write a heading to structure the commentary.
 orac_say "\n\nFlat-field correction";
@@ -131,18 +194,18 @@ my $underline = "-" x 61;
 orac_say "$underline\n";
 
 my $flat_range = "";
-if ( defined( $lower_vel ) && defined( $upper_vel ) ) {
-   $flat_range = "$lower_vel" . ":" . "$upper_vel";
+my $numrange = scalar( @flat_bounds ) / 2;
+if ( defined( $flat_bounds[0] ) ) {
+   $flat_range = $flat_bounds[0] . ":" . $flat_bounds[1] if $numrange == 1;
 } else {
    orac_warn "Flat fielding selected without specifying the velocity range to perform \n";
-   orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the \n";
-   orac_warn "analysis may be swamped by noise. \n";
-   orac_warn "Set FLAT_LOWER_VELOCITY and FLAT_UPPER_VELOCITY to span strong \n";
-   orac_warn "astronomical signal.\n";
+   orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the analysis \n";
+   orac_warn "may be affected by noise. \n";
+   orac_warn "Set FLAT_REGIONS to span the astronomical signal.\n";
 }
 
 # Obtain the MAKECUBE parameters.
-   my $makecube_params = $Grp->uhdr( "MAKECUBE_GROUP_PARAMETERS" );
+my $makecube_params = $Grp->uhdr( "MAKECUBE_GROUP_PARAMETERS" );
 
 
 my $ORAC_STATUS;
@@ -228,8 +291,49 @@ if ( ! $isok ) {
 
 # Try some smoothing in the velocity direction to mitigate against
 # biasing the ratios to a random 0.
-         $params = "in=$tempref(,,$flat_range) out=$temprefs box=[3,3,11] estimator=mean";
-         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+         if ( $numrange == 1 ) {
+            $params = "in=$tempref(,,$flat_range) out=$temprefs box=[3,3,11] estimator=mean";
+            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+         } else {
+
+# For multiple regions mask the low-emission regions before smoothing.
+            my $temp20file = new ORAC::TempFile( 0 );
+            my $temp21file = new ORAC::TempFile( 0 );
+
+# We have the emission regions in velocities but the masking primitive which
+# runs ARDMASK works in pixels.  First create an NDF containing just
+# the spectral axis.  The returned pixel co-ordinates are in a string
+# that may be separated (unhelpfully) by space or comma.  It appears to be
+# a space for this mapping.
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tempref out=$temp20file trim trimwcs" );
+
+            my @pixel_emission;
+            $params = "framein=dsbspectrum frameout=pixel ndf=$temp20file ";
+            for ( my $j = 0; $j <= $#flat_bounds; $j++ ) {
+               $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$flat_bounds[$j]" );
+               ( $ORAC_STATUS, my $posout ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
+               my @pixel_coord = split( ' ', $posout );
+               push @pixel_emission, $pixel_coord[0];
+            }
+
+# Store the thresholded file for the masking primitive.
+            {
+               my $Frm = new $Frm;
+               $Frm->file( $temp20file );
+
+# Further indirection appears to be needed for passing the velocity
+# ranges to _MASK_BASELINE_REGIONS_.  Mask outside the regions.
+               my @em_bounds = \@pixel_emission;
+
+               _MASK_SINGLE_AXIS_REGIONS_ INVERSE=1 USEAXIS=3 REGIONS=\@em_bounds SUFFIX=femmask
+
+# Capture the masked file, and default to remove at the end of processing.
+               $temp21file = $Frm->file;
+            }
+
+            $params = "in=$temp21file ref out=$temprefs box=[3,3,11] estimator=mean";
+            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+         }
 
 # Obtain a noise estimate.
          $params = "ndf=$temprefs clip=[2,2,2]";
@@ -297,8 +401,49 @@ if ( ! $isok ) {
 
 # Try some smoothing in the velocity direction to mitigate against
 # biasing the ratios to a random 0.
-               $params = "in=$tempcube(,,$flat_range) out=$temp13file box=[3,3,11] estimator=mean";
-               $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+               if ( $numrange == 1 ) {
+                  $params = "in=$tempcube(,,$flat_range) out=$temp13file box=[3,3,11] estimator=mean";
+                  $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+               } else {
+
+# For multiple regions mask the low-emission regions before smoothing.
+                  my $temp20file = new ORAC::TempFile( 0 );
+                  my $temp21file = new ORAC::TempFile( 0 );
+
+# We have the emission regions in velocities but the masking primitive which
+# runs ARDMASK works in pixels.  First create an NDF containing just
+# the spectral axis.  The returned pixel co-ordinates are in a string
+# that may be separated (unhelpfully) by space or comma.  It appears to be
+# a space for this mapping.
+                  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tempref out=$temp20file trim trimwcs" );
+
+                  my @pixel_emission;
+                  $params = "framein=dsbspectrum frameout=pixel ndf=$temp20file ";
+                  for ( my $j = 0; $j <= $#flat_bounds; $j++ ) {
+                     $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$flat_bounds[$j]" );
+                     ( $ORAC_STATUS, my $posout ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
+                     my @pixel_coord = split( ' ', $posout );
+                     push @pixel_emission, $pixel_coord[0];
+                  }
+
+# Store the thresholded file for the masking primitive.
+                  {
+                     my $Frm = new $Frm;
+                     $Frm->file( $temp20file );
+
+# Further indirection appears to be needed for passing the velocity
+# ranges to _MASK_BASELINE_REGIONS_.  Mask outside the regions.
+                     my @em_bounds = \@pixel_emission;
+
+                     _MASK_SINGLE_AXIS_REGIONS_ INVERSE=1 USEAXIS=3 REGIONS=\@em_bounds SUFFIX=femmask
+
+# Capture the masked file, and default to remove at the end of processing.
+                     $temp21file = $Frm->file;
+                  }
+
+                  $params = "in=$temp21file ref out=$temprefs box=[3,3,11] estimator=mean";
+                  $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+               }
 
 # Mask the low SNR regions.
 # -------------------------

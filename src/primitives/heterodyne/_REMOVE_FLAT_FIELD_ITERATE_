@@ -19,7 +19,7 @@ receptor (Curtis, Richer & Buckle 2009) integrating over all the
 spectra.  This assumes that all receptors see the same flux which in
 general will not be true, but in practice this does a decent job
 provided the velocity range just spans the emission.  One case where
-it din't work so well is where there appeared to be non-linearity in
+it didn't work so well is where there appeared to be non-linearity in
 the data and the flat field for the bright parts seemed not to be the
 same as near the background.
 
@@ -59,6 +59,17 @@ thing, if only to combine both directions of a weave, there are times
 when the receptor-to-receptor performance changes during a night,
 hence this argument to disable this behaviour.  [1]
 
+=item FLAT_REGIONS = STRING (Given)
+
+A comma-separated list of velocity ranges each in the format v1:v2,
+from where the flat-field should be derived.  These should specify
+regions of moderate to strong emission, but not just compact bright
+sources.  See also the deprecated LOWER_VELOCITY and UPPER_VELOCITY
+which may be used if this argument is undefind. This argument can be
+overridden by the RECPAR_FLAT_REGIONS uhdr via the recipe-parameter
+system.  If no velocity range is set then the whole spectral range is
+used.  [undef]
+
 =item GROUP = INTEGER (Given)
 
 How to process group files. 0 means use the current Frame object. 1
@@ -68,8 +79,9 @@ the current Group object. [0]
 =item LOWER_VELOCITY = REAL (Given)
 
 The requested lower velocity for the flat-field estimations.
-This argument can be overridden by the RECPAR_FLAT_LOWER_VELOCITY uhdr
-via the recipe parameter system.  [undef]
+This argument can be overridden by the RECPAR_FLAT_REGIONS (or the
+deprecated RECPAR_FLAT_LOWER_VELOCITY) uhdr via the recipe-parameter
+system.  [undef]
 
 =item MAX_ITERATIONS = INTEGER (Given)
 
@@ -99,8 +111,9 @@ suffering from bad baselines.  ['H10']
 =item UPPER_VELOCITY = REAL (Given)
 
 The requested upper velocity for the flat-field estimations.
-This argument can be overridden by the RECPAR_FLAT_UPPER_VELOCITY uhdr
-via the recipe parameter system.  [undef]
+This argument can be overridden by the RECPAR_FLAT_REGIONS (or the
+deprecated RECPAR_FLAT_UPPER_VELOCITY) uhdr via the recipe-parameter
+system.  [undef]
 
 =back
 
@@ -143,7 +156,7 @@ The flat-fielded time-series cube with suffix _ff.
 =head1 TASKS
 
 KAPPA: BLOCK, CDIV, CHPIX, COLLAPSE, DIV, MANIC, MATHS, MSTATS, MULT,
-NDFCOPY, PASTE, SETVAR, STATS, THRESH.
+NDFCOPY, PASTE, SETVAR, STATS, THRESH, WCSTRANS.
 
 =head1 REQUIRED PERL MODULES
 
@@ -186,6 +199,7 @@ if ( $obstype ne 'RASTER' and $obstype ne 'SCAN' ) { goto RETURN }
 
 my $apply = get_prim_arg( $_PRIM_ARGS_, "APPLY", 1 );
 my $combine_date = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_DATE", 1 );
+my $f_regions = get_prim_arg( $_PRIM_ARGS_, "FLAT_REGIONS", undef );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", undef );
 my $reserve_ref = get_prim_arg( $_PRIM_ARGS_, "RESERVE_REFERENCE", 'H10' );
@@ -194,40 +208,87 @@ my $maxiter = get_prim_arg( $_PRIM_ARGS_, "MAX_ITERATIONS", 6 );
 my $lower_vel = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $upper_vel = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
 
+# Handle recipe parameter overrides.
 $flatmethod = ( defined( $Frm->uhdr( "RECPAR_FLAT_METHOD" ) ) ?
                 $Frm->uhdr( "RECPAR_FLAT_METHOD" )            :
                 $flatmethod );
 $apply = ( defined( $Frm->uhdr( "RECPAR_FLAT_APPLY" ) ) ?
            $Frm->uhdr( "RECPAR_FLAT_APPLY" )            :
            $apply );
-$lower_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
-             $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
-             $lower_vel );
-$upper_vel = ( defined( $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" ) ) ?
-             $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" )              :
-             $upper_vel );
+$f_regions = ( defined( $Frm->uhdr( "RECPAR_FLAT_REGIONS" ) ) ?
+             $Frm->uhdr( "RECPAR_FLAT_REGIONS" )              :
+             $f_regions );
+
+my @regions;
+my ( @f_bounds, @flat_bounds );
+my $user_region = 0;
+
+# Deal with a single region or an array of regions,
+if ( defined( $f_regions ) ) {
+   if ( ref( $f_regions ) eq 'ARRAY' ) {
+      @regions = @{ $f_regions }
+   } else {
+      push @regions, $f_regions;
+   }
+
+# The recipe parameters may supply the deprecated single lower and
+# upper velocity limits.  Convert this to a single velocity region as if
+# passed through FLAT_REGIONS.  Ensure that the velocity range has the
+# the correct sense.
+} else {
+   my $lv = ( defined( $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" ) ) ?
+              $Frm->uhdr( "RECPAR_FLAT_LOWER_VELOCITY" )              :
+              $lower_vel );
+   my $uv = ( defined( $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" ) ) ?
+              $Frm->uhdr( "RECPAR_FLAT_UPPER_VELOCITY" )              :
+              $upper_vel );
+   if ( defined( $lv ) && defined( $uv ) ) {
+      $lower_vel = min( $lv, $uv );
+      $upper_vel = max( $lv, $uv );
+      push @regions, "$lower_vel:$upper_vel";
+   }
+}
+
+# Validate flat-region syntax and store the bounds.
+if ( defined( $regions[0] ) ) {
+   foreach ( @regions ) {
+      if ( /:/ ) {
+         my ( $lv, $uv ) = split( ":", $_ );
+         $user_region = 1;
+         push @f_bounds, min( $lv, $uv );
+         push @f_bounds, max( $lv, $uv );
+      } else {
+         $user_region = 0;
+         last;
+      }
+   }
+
+   if ( ! $user_region ) {
+      orac_err "Supplied extents of emission to determine the flat have invalid format\n" .
+               "Syntax is <lower1>:<upper1>,<lower2>:<upper2>,...\n";
+   }
 
 # Integer velocity must be made floating point so that NDF sectioning
 # does not regard it as pixels.
-if ( defined( $lower_vel ) && $lower_vel =~ /^[+-]?\d+$/ ) {
-   $lower_vel = sprintf( "%.1f", $lower_vel );
-}
-if ( defined( $upper_vel ) && $upper_vel =~ /^[+-]?\d+$/ ) {
-   $upper_vel = sprintf( "%.1f", $upper_vel );
+   foreach ( @f_bounds ) {
+      if ( /^[+-]?\d+$/ ) { $_ = sprintf( "%.1f", $_ ) }
+      push @flat_bounds, $_;
+   }
 }
 
 # Provide a shorthand for the selecting the method.
 my $sum = lc( $flatmethod ) eq 'sum' ? 1 : 0;
 
 my $flat_range = "";
+my $numrange = scalar( @flat_bounds ) / 2;
 if ( $sum ) {
-   if ( defined( $lower_vel ) && defined( $upper_vel ) ) {
-     $flat_range = "$lower_vel" . ":" . "$upper_vel";
+   if ( defined( $flat_bounds[0] ) ) {
+      $flat_range = $flat_bounds[0] . ":" . $flat_bounds[1] if $numrange == 1;
    } else {
       orac_warn "Flat fielding selected without specifying the velocity range to perform \n";
       orac_warn "receptor-to-receptor comparisons.  Using the full spectrum, but the analysis \n";
       orac_warn "may be affected by noise. \n";
-      orac_warn "Set FLAT_LOWER_VELOCITY and FLAT_UPPER_VELOCITY to span the astronomical signal.\n";
+      orac_warn "Set FLAT_REGIONS to span the astronomical signal.\n";
    }
 }
 
@@ -553,9 +614,52 @@ if ( ! $isok ) {
             if ( $sum ) {
 
 # Collapse along the velocity axis giving the mean emission.  We do
-# not care if some are entirely bad. (wlim=0).
-               $params = "in=$spectfile($flat_range,,) out=$temp6file estimator=mean wlim=0.0 axis=1";
-               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+# not care if some are entirely bad. (wlim=0).  A simple NDF section
+# will suffice.
+               if ( $numrange == 1 ) {
+                  $params = "in=$spectfile($flat_range,,) out=$temp6file estimator=mean wlim=0.0 axis=1";
+                  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+               } else {
+
+# For multiple regions mask the low-emission regions before collapsing.
+                 my $temp10file = new ORAC::TempFile( 0 );
+                 my $temp11file = new ORAC::TempFile( 0 );
+
+# We have the emission regions in velocities but the masking primitive which
+# runs ARDMASK works in pixels.  First create an NDF containing just
+# the spectral axis.  The returned pixel co-ordinates are in a string
+# that may be separated (unhelpfully) by space or comma.  It appears to be
+# a space for this mapping.
+                 $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$spectfile out=$temp10file trim trimwcs" );
+
+                 my @pixel_emission;
+                 $params = "framein=dsbspectrum frameout=pixel ndf=$temp10file ";
+                 for ( my $j = 0; $j <= $#flat_bounds; $j++ ) {
+                    $Mon{'kappa_mon'}->obeyw( "wcstran", "$params posin=$flat_bounds[$j]" );
+                    ( $ORAC_STATUS, my $posout ) = $Mon{'kappa_mon'}->get( "wcstran", "posout" );
+                    my @pixel_coord = split( ' ', $posout );
+                    push @pixel_emission, $pixel_coord[0];
+                 }
+
+# Store the thresholded file for the masking primitive.
+                 {
+                    my $Frm = new $Frm;
+                    $Frm->file( $temp10file );
+
+# Further indirection appears to be needed for passing the velocity
+# ranges to _MASK_BASELINE_REGIONS_.  Mask outside the regions.
+                    my @em_bounds = \@pixel_emission;
+
+                    _MASK_SINGLE_AXIS_REGIONS_ INVERSE=1 USEAXIS=1 REGIONS=\@em_bounds SUFFIX=femmask
+
+# Capture the masked file, and default to remove at the end of processing.
+                    $temp11file = $Frm->file;
+                 }
+
+                 $params = "in=$temp11file out=$temp6file estimator=mean wlim=0.0 axis=1";
+                 $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+              }
 
             } else {
 
