@@ -227,21 +227,22 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my @Objs = $rpGrp->members;
    my $number_at_location = scalar( @Objs );
    my ( $refspec_masked, $refspec_unmasked );
+   my $grpFrm = $rpGrp->allmembers->[0];
 
    foreach my $maskspec ( @combine ) {
       @mean_spectra = ();
       @mean_weights = ();
 
 # Each object (group or observation) may comprise more than one file.
-      OBJECT: foreach my $Frm ( @Objs ) {
-         $in = $Frm->file;
+      OBJECT: foreach my $rpFrm ( @Objs ) {
+         $in = $rpFrm->file;
          orac_say "Processing observation: $in.";
 
 # Form average spectrum for each observation.
 # ===========================================
          my ( $key, @msp );
-         foreach my $i ( 1 .. $Frm->nfiles ) {
-            ( $in, $esp ) = $Frm->inout( "_esp", $i );
+         foreach my $i ( 1 .. $rpFrm->nfiles ) {
+            ( $in, $esp ) = $rpFrm->inout( "_esp", $i );
             push @msp, $esp;
 
 # We need the dimensions of the input file for later.
@@ -293,14 +294,14 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Find the weighted average of each subfile's mean spectrum (the one
 # after source emission being masked).  The fiddly bit is forming the
 # MATHS command line to form ia, ib, ic... for the input file names.
-         ( my $junk, $ressp ) = $Frm->inout( "_ressp" );
+         ( my $junk, $ressp ) = $rpFrm->inout( "_ressp" );
          my $total_weight;
-         if ( $Frm->nfiles > 1 ) {
+         if ( $rpFrm->nfiles > 1 ) {
             my $maths_list = '';
             my $maths_eq = 'exp=\'(';
             my $maths_index = "a";
             $total_weight = 0;
-            foreach my $i ( 1 .. $Frm->nfiles ) {
+            foreach my $i ( 1 .. $rpFrm->nfiles ) {
                $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
                $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
                $maths_index = chr( ord( $maths_index ) + 1 );
@@ -328,7 +329,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
 # Find the weighted average of the current reference location's mean
 # spectrum (the one after source emission being masked).
-      ( my $junk, $mrsp ) = $Frm->inout( "_mrsp" );
+      ( my $junk, $mrsp ) = $grpFrm->inout( "_mrsp" );
       if ( $number_at_location > 1 ) {
          my $maths_list = '';
          my $maths_eq = 'exp=\'(';
@@ -355,7 +356,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
 # Reduce the noise with minimal broadening of the lines.
       my $suffix = $maskspec ? "resmask" : "resmode";
-      ( $junk, $resm ) = $Frm->inout( $suffix );
+      ( $junk, $resm ) = $grpFrm->inout( $suffix );
       $params = "in=$mrsp out=$resm fwhm=1.5";
       $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
       my $ref_spectrum = new ORAC::TempFile( 0 );
@@ -396,7 +397,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my ( $ardmask, $boxsize, $maxwidth );
    my ( $lbnd, $ubnd );
    my $temp4file = new ORAC::TempFile( 0 );
-   my ( undef, $refspec ) = $Frm->inout( "_refspec" );
+   my ( undef, $refspec ) = $grpFrm->inout( "_refspec" );
 
    my $first = 1;
    foreach my $rpFrm ( @Objs ) {
@@ -476,8 +477,11 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Attempt automated removal of reference emission.
 # ------------------------------------------------
 
-# Form background-subtracted reference spectrum.
+# Form background-subtracted reference spectrum.  Need to pass
+# the Frame associated with the current reference position to generate
+# the desired file names.
             if ( $first ) {
+               my $Frm = $rpFrm;
                if ( $both ) {
                   _REFINE_REFERENCE_SPECTRUM_ IN=$refspec_unmasked LOCATION=$refspec_masked OUT=$refspec
                } else {
