@@ -168,15 +168,42 @@ my $thresh = 1.5;
 my $first_thresh = $usemask ? 2.0 : $thresh;
 my $wings = $usemask ? 7 : 5;
 
+# Reference limes can be in a hollow from residual source signal not
+# masked.  Try to smooth and subtract to lift up the reference line
+# to a zero baseline.
+my $basesub = $Frm->inout( "_ssresmask" );
+if ( $usemask ) {
+   my $temp20file = new ORAC::TempFile( 0 );
+   my $temp21file = new ORAC::TempFile( 0 );
+   my $temp22file = new ORAC::TempFile( 0 );
+
+# However, before doing that the wings of reference lines can be
+# missed because of residual source signal at the same frequency.
+# Mask 3-sigma lines and interpolate.  This isn't ideal but should
+# recover some of the affected wing.
+   my $thrlo = -3 * $rms;
+   $params = "in=$loc out=$temp20file ";
+   $params .= "thrlo=$thrlo newlo=bad thrhi=1E30 newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+   $params = "in=$temp20file out=$temp21file niter=10 size=9";
+   $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+   $params = "in=$temp21file out=$temp22file box=41 estimator=median";
+   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   $params = "in1=$temp21file in2=$temp22file out=$basesub";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+}
+
 # Search for the reference-spectrum lines without background subtraction
-# when analysing the source-emision-masked spectrum.  This choice may
+# when analysing the source-emission-masked spectrum.  This choice may
 # lose weaker reference emission embedded in extended source signal, but
-# it compensates by not regarding dips in the sourece signal as
+# it compensates by not regarding dips in the source signal as
 # reference emission.  The latter is far more likely.  Use a higher
-# threshold to avoid including noise.
+# threshold to avoid picking up noise as a line.
 {
    my $Frm = new $Frm;
    $Frm->file( $loc );
+   $Frm->file( $basesub ) if $usemask;
    my $subbgd = !$usemask;
    _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$subbgd THRESH=$first_thresh MINPIX=3
    $linemap_r = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
