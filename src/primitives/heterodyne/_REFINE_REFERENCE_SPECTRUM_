@@ -45,6 +45,11 @@ reference-spectrum lines in emission and any residual source emission
 in absorption.  The data may need to be multiplied by -1 to achieve
 this polarity.  If it is not defined, then default to the current Frame.  ['']
 
+=item ITERATION = INTEGER (Given)
+
+The group-processing iteration number.  It is needed to retain each
+iteration's estimate of the reference spectrum.  [1]
+
 =item LOCATION = STRING (Given)
 
 The name of the initial reference spectrum to be to determine the
@@ -99,8 +104,10 @@ All Rights Reserved.
 # and therefore no GROUP argument is needed, merely default to the current
 # Frame.
 my $in = get_prim_arg( $_PRIM_ARGS_, "IN", $Frm->file );
+my $iteration = get_prim_arg( $_PRIM_ARGS_, "ITERATION", 1 );
 my $loc = get_prim_arg( $_PRIM_ARGS_, "LOCATION", $in );
 my $out = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+my $subback = get_prim_arg( $_PRIM_ARGS_, "BACKGROUND", 0 );
 
 if ( ! defined( $out ) ) {
    orac_err "_REFINE_REFERENCE_SPECTRUM_: Programming error---Argument " .
@@ -171,7 +178,8 @@ my $wings = $usemask ? 7 : 5;
 # Reference limes can be in a hollow from residual source signal not
 # masked.  Try to smooth and subtract to lift up the reference line
 # to a zero baseline.
-my $basesub = $Frm->inout( "_ssresmask" );
+my $suffix = $iteration == 1 ? "_ssresmask" : "_ssresmask$iteration";
+my $basesub = $Frm->inout( $suffix );
 if ( $usemask ) {
    my $temp20file = new ORAC::TempFile( 0 );
    my $temp21file = new ORAC::TempFile( 0 );
@@ -269,7 +277,7 @@ my $temp4file = new ORAC::TempFile( 0 );
 {
    my $Frm = new $Frm;
    $Frm->file( $temp2file );
-   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=1 THRESH=$thresh MINPIX=4
+   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$subback THRESH=$thresh MINPIX=4
    $linemap_s = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
    $nlines_s = $_FIND_EMISSION_LINES_IN_SPECTRUM_{NLINES};
 }
@@ -334,8 +342,8 @@ if ( $nlines_s > 0 ) {
 
 my $specback = new ORAC::TempFile( 0 );
 #my $backsub = new ORAC::TempFile( 0 );
-#( undef, my $backsub ) = $Frm->inout( "_backsub" ) if ! defined( $backsub );
-( undef, my $backsub ) = $Frm->inout( "_backsub" );
+$suffix = $iteration == 1 ? "_backsub" : "_backsub$iteration";
+my $backsub = $Frm->inout( $suffix );
 
 my $oddboxsize = 19;
 if ( defined( $rms ) ) {
@@ -370,7 +378,7 @@ orac_say "Locating reference emission lines.";
 {
    my $Frm = new $Frm;
    $Frm->file( $backsub );
-   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=1 THRESH=$thresh MINPIX=4
+   _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$subback THRESH=$thresh MINPIX=4
    $linemap = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
    $nlines = $_FIND_EMISSION_LINES_IN_SPECTRUM_{NLINES};
 }
@@ -467,11 +475,11 @@ if ( defined( $linemap ) && $nlines > 0 ) {
    $params = "in1=$temp14file in2=$maskbgd out=$temp15file";
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
-   if ( defined( $rms ) ) {
-      my $temp16file = new ORAC::TempFile( 0 );
-
 # Apply a fudge offset, which seems to be needed empirically, possibly
 # because of smoothing or the background finding seems to go a fraction low.
+   if ( defined( $rms ) && $iteration == 1 ) {
+      my $temp16file = new ORAC::TempFile( 0 );
+
       my $fudge = $thresh * $rms;
       $params = "in=$temp15file scalar=$fudge out=$temp16file";
       $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
