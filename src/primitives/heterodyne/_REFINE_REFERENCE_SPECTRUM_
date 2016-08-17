@@ -188,21 +188,34 @@ if ( $usemask ) {
    my $temp20file = new ORAC::TempFile( 0 );
    my $temp21file = new ORAC::TempFile( 0 );
    my $temp22file = new ORAC::TempFile( 0 );
+   my $temp23file = new ORAC::TempFile( 0 );
+   my $temp24file = new ORAC::TempFile( 0 );
 
 # However, before doing that the wings of reference lines can be
 # missed because of residual source signal at the same frequency.
-# Mask 3-sigma lines and interpolate.  This isn't ideal but should
+# Make a broad smooth to subtract the trends from broad absorption.
+# Then mask 3-sigma absorption lines and interpolate.  That should
+# alleviate an emission line in a source absorption well being
+# below the threshold.  This solution is far from ideal but should
 # recover some of the affected wing.
+   $params = "in=$loc out=$temp20file box=75 estimator=median";
+   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   $params = "in1=$loc in2=$temp20file out=$temp21file";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
    my $thrlo = -3 * $rms;
-   $params = "in=$loc out=$temp20file ";
+   $params = "in=$temp21file out=$temp22file ";
    $params .= "thrlo=$thrlo newlo=bad thrhi=1E30 newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-   $params = "in=$temp20file out=$temp21file niter=10 size=9";
+   $params = "in=$temp22file out=$temp23file niter=10 size=9";
    $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
 
-   $params = "in=$temp21file out=$temp22file box=41 estimator=median";
+# Now repeat the background removal previously biased by the
+# absorption line, with a narrower boxsize to follow the trends around
+# reference emission lines better.
+   $params = "in=$temp23file out=$temp24file box=41 estimator=median";
    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-   $params = "in1=$temp21file in2=$temp22file out=$basesub";
+   $params = "in1=$temp23file in2=$temp24file out=$basesub";
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 }
 
