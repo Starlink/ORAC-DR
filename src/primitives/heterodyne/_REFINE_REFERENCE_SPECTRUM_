@@ -64,6 +64,12 @@ by Argument IN.   ['']
 The background-subtracted reference spectrum. If it is not defined, an
 error is reported.  ['']
 
+=item REFMASK (Given)
+
+The mask of the reference spectra determined on an earlier (normally
+the first) iteration. The location of lines should have value 0 and
+bad otherwise.  [undef]
+
 =item RMS = REAL (Given)
 
 The RMS of the noise in the spectrum.  If it is not supplied FINDBACK
@@ -107,6 +113,7 @@ my $in = get_prim_arg( $_PRIM_ARGS_, "IN", $Frm->file );
 my $iteration = get_prim_arg( $_PRIM_ARGS_, "ITERATION", 1 );
 my $loc = get_prim_arg( $_PRIM_ARGS_, "LOCATION", $in );
 my $out = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+my $refmask = get_prim_arg( $_PRIM_ARGS_, "REFMASK", undef );
 my $subback = get_prim_arg( $_PRIM_ARGS_, "BACKGROUND", 0 );
 
 if ( ! defined( $out ) ) {
@@ -252,21 +259,42 @@ if ( defined( $linemap_r ) && $nlines_r > 0 ) {
    }
 
 # Extend into the wings by a couple of pixels to reduce artefacts there.
-   my $temp10file = new ORAC::TempFile( 0 );
-   my $temp11file = new ORAC::TempFile( 0 );
-   $params = "in=$linemask_r out=$temp10file box=$wings wlim=1";
+   my $temp30file = new ORAC::TempFile( 0 );
+   my $temp31file = new ORAC::TempFile( 0 );
+   my $temp32file = new ORAC::TempFile( 0 );
+   $params = "in=$linemask_r out=$temp30file box=$wings wlim=1";
    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-   $params = "in=$linemask_r ref=$temp10file out=$temp11file";
+   $params = "in=$linemask_r ref=$temp30file out=$temp31file";
    $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
 
+# Restrict lines to an earlier (usually original) line mask.
+   if ( defined $refmask ) {
+      $params = "in1=$temp31file in2=$refmask out=$temp32file";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
 # Apply the emission mask to the average reference spectrum.
-   $params = "in1=$in in2=$temp11file out=$temp1file";
-   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+      $params = "in1=$in in2=$temp32file out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Apply the emission mask to the average reference spectrum.
+   } else {
+      $params = "in1=$in in2=$temp31file out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   }
    orac_say "  Apply mask of reference emission lines.";
 
 # The last resort is to subtract the emission above the noise.
 # ============================================================
 } else {
+
+# Restrict lines to an earlier line mask.
+   my $in_to_use = $in;
+   my $restricted_in = new ORAC::TempFile( 0 );
+   if ( defined $refmask ) {
+      $params = "in1=$in in2=$refmask out=$restricted_in";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+      $in_to_use = $restricted_in;
+   }
 
 # Remove signal below the noise.  We do not want to remove genuine
 # emission not yet masked.  Instead the goal is to subtract the
@@ -274,7 +302,7 @@ if ( defined( $linemap_r ) && $nlines_r > 0 ) {
 # steps from removing selected parts of the mean non-emission spectrum
 # provided this primitive is called after baseline subtraction.
    my $thrlo = 2 * $rms;
-   $params = "in=$in out=$temp1file ";
+   $params = "in=$in_to_use out=$temp1file ";
    $params .= "thrlo=$thrlo newlo=0 thrhi=1E30 newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
    $text = "mean background emission";
@@ -358,7 +386,6 @@ if ( $nlines_s > 0 ) {
 }
 
 my $specback = new ORAC::TempFile( 0 );
-#my $backsub = new ORAC::TempFile( 0 );
 $suffix = $iteration == 1 ? "_backsub" : "_backsub$iteration";
 my $backsub = $Frm->inout( $suffix );
 
