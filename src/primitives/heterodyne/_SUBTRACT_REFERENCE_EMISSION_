@@ -43,6 +43,17 @@ spectrum.  This argument can be overridden by the
 RECPAR_REF_EMISSION_COMBINE_REFPOS uhdr via the recipe parameter
 system.  [1]
 
+=item ITERATION = INTEGER (Given)
+
+The group-processing iteration number.  It is needed to retain each
+iteration's estimate of the reference spectrum.  [1]
+
+=item ONLY_SOURCE_MASK = BOOLEAN (Given)
+
+If set true the value of USE_SOURCE_MASK or its recipe parameter
+REF_EMISSION_MASK_SOURCE are ignored and forces USE_SOURCE_MASK to 1.
+[0]
+
 =item USE_SOURCE_MASK = STRING (Given)
 
 This controls the use the mask of source emission alreasdy detected.
@@ -116,7 +127,7 @@ the current Frame.
 =head1 TASKS
 
 KAPPA: ADD, ARDMASK, BLOCK, CMULT, COLLAPSE, FILLBAD, GAUSMOOTH, MANIC,
-       MATHS, NDFCOPY, NDFTRACE, SETUNITS, SUB.
+       MATHS, NDFCOPY, NDFTRACE, SETUNITS, STATS, SUB.
 
 =head1 REQUIRED PERL MODULES
 
@@ -160,6 +171,9 @@ my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_EMISSION" ) ) ?
 if ( ! $apply ) { goto RETURN }
 
 my $combine_refpos = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_REFPOS", 1 );
+my $iteration = get_prim_arg( $_PRIM_ARGS_, "ITERATION", 1 );
+my $only_mask_default = $iteration > 1 ? 0 : 1;
+my $only_masked = get_prim_arg( $_PRIM_ARGS_, "ONLY_SOURCE_MASK", $only_mask_default );
 my $usemasked = get_prim_arg( $_PRIM_ARGS_, "USE_SOURCE_MASK", "Both" );
 
 $combine_refpos = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS" ) ) ?
@@ -200,7 +214,8 @@ if ( defined( $rem_regions ) ) {
 $usemasked = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE" ) ) ?
                $Frm->uhdr( "RECPAR_REF_EMISSION_MASK_SOURCE"  )            :
                $usemasked );
-my $both = lc( $usemasked ) =~ /^b/ && !$user_region;
+my $both = lc( $usemasked ) =~ /^b/ && ! $user_region && ! $only_masked ;
+$usemasked = $only_masked ? 1 : $usemasked;
 my @combine = ( $usemasked );
 @combine = ( 1, 0 ) if $both;
 
@@ -220,6 +235,7 @@ my ( @mean_spectra, @mean_weights );
 my ( @masks, $params, @weight );
 my ( $in, $out, $esp, $ressp, $text );
 my ( $mrsp, $resm );
+my ( $array, @receptors, $nreceptor );
 
 # Loop over the common reference positions or current group.
 # ----------------------------------------------------------
@@ -279,12 +295,20 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
                $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
             }
 
-            $params = "in=$temp2file out=$temp3file estimator=mean wlim=0.0 axis=2";
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-            orac_say "  Collapse using the mode on the time axis and the mean by receptor.";
+            if ( $combine_detectors ) {
+               $params = "in=$temp2file out=$temp3file estimator=mean wlim=0.0 axis=2";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+               orac_say "  Collapse using the mode on the time axis and the mean by receptor.";
 
-            $params = "in=$temp3file out=$esp scalar=-1.0";
-            $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+               $params = "in=$temp3file out=$esp scalar=-1.0";
+               $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+            } else {
+               orac_say "  Collapse using the mode on the time axis.";
+
+               $params = "in=$temp2file out=$esp scalar=-1.0";
+               $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+            }
 
 # Request that the flipped spectrum is removed upon completion of the
 # group processing.
@@ -324,8 +348,8 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
          $Grp->push_intermediates( $ressp );
       }
 
-# Form average spectrum for the current reference position.
-# =========================================================
+# Form average spectrum for the current reference position and receptor.
+# ======================================================================
 
 # Find the weighted average of the current reference location's mean
 # spectrum (the one after source emission being masked).
@@ -356,8 +380,9 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
 # Reduce the noise with minimal broadening of the lines.
       my $suffix = $maskspec ? "resmask" : "resmode";
-      ( $junk, $resm ) = $grpFrm->inout( $suffix );
-      $params = "in=$mrsp out=$resm fwhm=1.5";
+      $suffix = $iteration > 1 ? $suffix . "$iteration" : $suffix;
+      $resm = $grpFrm->inout( $suffix );
+      $params = "in=$mrsp out=$resm fwhm=[1.5,0.1] orient=0.0";
       $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
       my $ref_spectrum = new ORAC::TempFile( 0 );
 
@@ -397,7 +422,9 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my ( $ardmask, $boxsize, $maxwidth );
    my ( $lbnd, $ubnd );
    my $temp4file = new ORAC::TempFile( 0 );
-   my ( undef, $refspec ) = $grpFrm->inout( "_refspec" );
+   my $suffix = $iteration == 1 ? "_refspec" : "_refspec$iteration";
+   my $refspec = $grpFrm->inout( $suffix );
+   my $refmask = $grpFrm->inout( "_refmask" ) if ! $user_region;
 
    my $first = 1;
    foreach my $rpFrm ( @Objs ) {
@@ -489,8 +516,94 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
                }
                $text = "mean of reference-emission line regions";
             }
+
+# Attempt automated removal of reference emission receptor by receptor
+# --------------------------------------------------------------------
+         } else {
+
+            if ( $first ) {
+
+# Obtain the number of receptors if analyss is per receptor.
+               $array = new JCMT::ACSIS::Array( File => $in );
+               @receptors = $array->receptors;
+               $nreceptor = scalar( @receptors );
+
+# Create the NDF to hold the reference spectrum for each receptor.
+# Existing approximate reference spectra will be replaced by better
+# estimates.
+               $params = "in=$resm out=$refspec trim trimwcs";
+               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+               my @refspec_files;
+               for ( my $r = 1; $r <= $nreceptor; $r++ ) {
+                  orac_say "Receptor " . $receptors[$r - 1] . ".";
+                  my $Frm = $rpFrm;
+
+# Extract the modal spectra for each receptor.
+                  my $refspec_1r = "$refspec" . "_$r";
+                  if ( $both ) {
+                     my $rs_unmasked_1r = new ORAC::TempFile( 0 );
+                     $params = "in=$refspec_unmasked(,$r) out=$rs_unmasked_1r trim trimwcs";
+                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Check that the receptor still has sufficient valid values to protect
+# calls within _REFINE_REFERENCE_SPECTRUM_.
+                     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$rs_unmasked_1r" );
+                     ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+                     if ( $numgood > 10 ) {
+                        my $rs_masked_1r = new ORAC::TempFile( 0 );
+                        $params = "in=$refspec_masked(,$r) out=$rs_masked_1r trim trimwcs";
+                        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Later iterations use the previous mask for the receptor.
+                        if ( $iteration > 1 ) {
+                           my $rf_mask_1r = new ORAC::TempFile( 0 );
+                           $params = "in=$refmask(,$r) out=$rf_mask_1r trim trimwcs";
+                           $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+                           _REFINE_REFERENCE_SPECTRUM_ IN=$rs_unmasked_1r LOCATION=$rs_masked_1r OUT=$refspec_1r ITERATION=$iteration REFMASK=$rf_mask_1r
+                        } else {
+                           _REFINE_REFERENCE_SPECTRUM_ IN=$rs_unmasked_1r LOCATION=$rs_masked_1r OUT=$refspec_1r ITERATION=$iteration
+                        }
+                    }
+
+# Duplicate but simpler if not using both mode and source masked time series.
+                  } else {
+                     my $rs_1r = new ORAC::TempFile( 0 );
+                     $params = "in=$resm(,$r) out=$rs_1r trim trimwcs";
+                     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Check that the receptor still has sufficient valid values to protect
+# calls within _REFINE_REFERENCE_SPECTRUM_.
+                     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$rs_1r" );
+                     ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+                     if ( $numgood > 10 ) {
+                        if ( $iteration > 1 ) {
+                           my $rf_mask_1r = new ORAC::TempFile( 0 );
+                           $params = "in=$refmask(,$r) out=$rf_mask_1r trim trimwcs";
+                           $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+                           _REFINE_REFERENCE_SPECTRUM_ IN=$rs_1r OUT=$refspec_1r ITERATION=$iteration REFMASK=$rf_mask_1r
+                        } else {
+                           _REFINE_REFERENCE_SPECTRUM_ IN=$rs_1r OUT=$refspec_1r ITERATION=$iteration
+                        }
+                     }
+                  }
+
+# Need to save the output filenames for pasting together.
+                  push @refspec_files, $refspec_1r
+               }
+
+# Paste the improved reference spectra for all receptors into the two-dimensional array
+# of all the reference spectra.  Offset each spectrum by one row.
+               my $to_paste = write_file_list( @refspec_files );
+               $params = "in=^$to_paste out=$refspec shift=[0,1]";
+               $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+               $text = "mean of reference-emission line regions for each receptor";
+            }
          }
-         $first = 0;
 
 # Application phase
 # =================
@@ -501,6 +614,15 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
          $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
          $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
          $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Save the spectrum mask for future iterations.  Later iterations
+# should just be adjusting for missing signal in the previously detected
+# reference-point lines because they were located in source emission
+# previously recognised.
+         if ( $first && $iteration == 1 && ! $user_region ) {
+            $params = "exp='qif(ia.eq.0,<bad>,0)' ia=$refspec out=$refmask";
+            $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+         }
 
 # Subtract the mean reference spectrum from the input file.
          $params = "in1=$in in2=$temp4file out=$out";
@@ -519,6 +641,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Request that the output file is removed upon completion of the
 # group processing.
          $Grp->push_intermediates( $out );
+         $first = 0;
       }
    }
 }
