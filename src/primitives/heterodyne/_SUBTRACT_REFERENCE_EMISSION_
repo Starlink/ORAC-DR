@@ -170,15 +170,28 @@ my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_EMISSION" ) ) ?
               0 );
 if ( ! $apply ) { goto RETURN }
 
+my $combine_detectors = get_prim_arg( $_PRIM_ARGS_, "COMBINE_DETECTORS", 0 );
 my $combine_refpos = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_REFPOS", 1 );
 my $iteration = get_prim_arg( $_PRIM_ARGS_, "ITERATION", 1 );
 my $only_mask_default = $iteration > 1 ? 0 : 1;
 my $only_masked = get_prim_arg( $_PRIM_ARGS_, "ONLY_SOURCE_MASK", $only_mask_default );
 my $usemasked = get_prim_arg( $_PRIM_ARGS_, "USE_SOURCE_MASK", "Both" );
 
+$combine_detectors = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_DETECTORS" ) ) ?
+                       $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_DETECTORS"  )            :
+                       $combine_detectors );
 $combine_refpos = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS" ) ) ?
                     $Frm->uhdr( "RECPAR_REF_EMISSION_COMBINE_REFPOS"  )            :
                     $combine_refpos );
+
+if ( ! $combine_detectors ) {
+   my $isok = eval { require JCMT::ACSIS::Array; 1; };
+   if ( ! $isok ) {
+      orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
+      orac_warn "Will average all receptors to correct for reference spectrum.\n";
+      $combine_detectors = 1;
+   }
+}
 
 my %masked;
 my $user_region = 0;
@@ -392,13 +405,25 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # It should comprise minimal source emission (now in absorption),
 # reference-spectrum emission and noise.  It's the last that we seek.
       if ( ( ! $maskspec && $both ) || ! $both ) {
-         my $rms;
+         my @rms;
          {
             my $Frm = $Frm->new;
-            $Frm->file( $resm );
-            _FIND_MEAN_RMS_ GROUP=0
-            $rms = $Frm->uhdr( "RMS_MEAN" );
-            orac_say "  RMS for the modal spectrum is $rms.";
+            if ( $combine_detectors ) {
+               $Frm->file( $resm );
+               _FIND_MEAN_RMS_ GROUP=0
+               push @rms, $Frm->uhdr( "RMS_MEAN" );
+               orac_say "  RMS for the mean modal spectrum is $rms[0].";
+            } else {
+
+# Find the mean in each receptor's spectrum.
+               my $meanspec = new ORAC::TempFile( 0 );
+               $params = "in=$resm out=$meanspec estimator=mean wlim=0.0 axis=2";
+               $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+               $Frm->file( $meanspec );
+               _FIND_MEAN_RMS_ GROUP=0
+               push @rms, $Frm->uhdr( "RMS_MEAN" );
+               orac_say "  RMS for the modal spectrum is $rms[-1].";
+            }
          }
       }
 
@@ -499,10 +524,10 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
                $text = "mean of chosen line regions";
             }
-         } else {
 
-# Attempt automated removal of reference emission.
-# ------------------------------------------------
+# Attempt automated removal of reference emission from the mean spectrum
+# ----------------------------------------------------------------------
+         } elsif ( $combine_detectors ) {
 
 # Form background-subtracted reference spectrum.  Need to pass
 # the Frame associated with the current reference position to generate
@@ -510,9 +535,17 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
             if ( $first ) {
                my $Frm = $rpFrm;
                if ( $both ) {
-                  _REFINE_REFERENCE_SPECTRUM_ IN=$refspec_unmasked LOCATION=$refspec_masked OUT=$refspec
+                  if ( $iteration > 1 ) {
+                     _REFINE_REFERENCE_SPECTRUM_ IN=$refspec_unmasked LOCATION=$refspec_masked OUT=$refspec ITERATION=$iteration REFMASK=$refmask
+                  } else {
+                     _REFINE_REFERENCE_SPECTRUM_ IN=$refspec_unmasked LOCATION=$refspec_masked OUT=$refspec ITERATION=$iteration
+                  }
                } else {
-                  _REFINE_REFERENCE_SPECTRUM_ IN=$resm OUT=$refspec
+                  if ( $iteration > 1 ) {
+                     _REFINE_REFERENCE_SPECTRUM_ IN=$resm OUT=$refspec ITERATION=$iteration REFMASK=$refmask
+                  } else {
+                     _REFINE_REFERENCE_SPECTRUM_ IN=$resm OUT=$refspec ITERATION=$iteration
+                  }
                }
                $text = "mean of reference-emission line regions";
             }
@@ -610,10 +643,17 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
 # Grow the background mean reference spectrum to match the original time
 # series.
-         $params = "in=$refspec out=$temp4file axes=[1,0,0] ";
-         $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
-         $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
-         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+         if ( $combine_detectors ) {
+            $params = "in=$refspec out=$temp4file axes=[1,0,0] ";
+            $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
+            $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
+            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+         } else {
+            $params = "in=$refspec out=$temp4file axes=[1,2,0] ";
+            $params .= "lbound=" . $lbnd->[2] . " ";
+            $params .= "ubound=" . $ubnd->[2];
+            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+         }
 
 # Save the spectrum mask for future iterations.  Later iterations
 # should just be adjusting for missing signal in the previously detected
