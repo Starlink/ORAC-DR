@@ -122,6 +122,7 @@ All Rights Reserved.
 =cut
 
 use Astro::FITS::CFITSIO qw/:constants/;
+use Storable qw/dclone/;
 
 my $display = get_prim_arg( $_PRIM_ARGS_, "DISPLAY", 1 );
 my $file = $_PRIM_ARGS_->{FILE};
@@ -140,6 +141,9 @@ my $remove_extensions = get_prim_arg( $_PRIM_ARGS_, 'REMOVE_EXTENSIONS', undef )
 $product = defined( $product ) ? $product : $suffix;
 
 my $Obj = ( $group ? $Grp : $Frm );
+
+# Create temporary frame / group, unless in "UPDATE" mode.
+$Obj = dclone($Obj) unless ($update and not $preview_only);
 
 my $jsa_tiles = $Obj->uhdr('JSA_TILES') // 0;
 my ( $in, $out ) = $jsa_tiles ? $Obj->inout_jsatile($suffix, 1)
@@ -163,22 +167,9 @@ unless ( $preview_only ) {
   $out = $in;
 }
 
-# Product identifier for the header.  If there is a product ID prefix in play
-# then we must use it rather than forcing the use of the product name as the
-# product ID prefix.  Normally the product_id method would handle this logic,
-# but unfortunately in this case we don't set the product in the object so
-# product_id can't see it.
-my $productID = $Obj->can("product_id") ?
-                $Obj->product_id($Obj->get_product_id_prefix() // $product) :
-                "";
-my $productIDcomment = 'Product ID';
-
-unless ( $preview_only ) {
-  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$product COMMENT=$comment
-  if ( $productID ) {
-    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODID VALUE=$productID COMMENT=$productIDcomment
-  }
-}
+# Product identifier for the header.
+$Obj->force_product_update($product, $out);
+my $productID = $Obj->can("product_id") ?  $Obj->product_id() : "";
 
 # If we are also processing a FITS vector file, then attempt to do the
 # equivalent FITS header operation to it too.
@@ -223,6 +214,5 @@ if ( defined( $vector_file ) ) {
 }
 
 if ( $update and not $preview_only ) {
-  $Obj->force_product_update( $product, $out );
   $Obj->tagset( $suffix );
 }
