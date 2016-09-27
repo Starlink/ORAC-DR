@@ -1,0 +1,162 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SUBTRACT_SMOOTHED_BASELINE_
+
+=head1 DESCRIPTION
+
+This primitive removes the baseline from each spectrum in a cube,
+by block smoothing with a median.  It assumes that any lines are narrow.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = LOGICAL (Given)
+
+Whether or not to operate on the current Group object. [0]
+
+=item TAG = LOGICAL (Given)
+
+Whether or not to tag the resulting cubes as 'reduced'. [0]
+
+=item VELOCITY_WIDTH = REAL (Given)
+
+This should be at least the width of widest spectral line in km/s.  [3.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS observations.
+
+=item *
+
+This primitive is suitable for spectral line observations. Removing
+the baseline from continuum observations may not be desirable.
+
+=item *
+
+This primitive will run if the REMOVE_BASELINE uhdr in the current
+Frame object is defined and true.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+KAPPA: BLOCK, NDFCOPY, NDFTRACE, SUB.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+# Deal with arguments.
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $linewidth = get_prim_arg( $_PRIM_ARGS_, "VELOCITY_WIDTH", 3.0 );
+
+# Write a heading to structure the commentary.
+orac_say "\n\nBaseline removal by block smooth";
+my $underline = "-" x 45;
+orac_say "$underline\n";
+
+# Handle group/file.
+my $Obj;
+if ( $group ) {
+   $Obj = $Grp;
+} else {
+   $Obj = $Frm;
+}
+
+# Only run if we've been told to.
+if ( defined( $Frm->uhdr( "REMOVE_BASELINE" ) ) &&
+     $Frm->uhdr( "REMOVE_BASELINE" ) == 0 ) {
+   orac_warn "REMOVE_BASELINE uhdr set to false. Not baselining by smoothing.\n\n";
+   return 0;
+}
+
+my $jsatile = defined( $Obj->uhdr( "JSA_TILES" ) ) && $Obj->uhdr( "JSA_TILES" );
+
+foreach my $i ( 1 .. $Obj->nfiles ) {
+
+   my ( $in, $out ) = $jsatile ?
+                      $Obj->inout_jsatile( "_bsm", $i ) :
+                      $Obj->inout( "_bsm", $i );
+
+   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+   ( my $ORAC_STATUS, my @pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+   ( $ORAC_STATUS, my @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+   ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+
+# Convert maximum line width in km/s to channels with a scaling to
+# create a box size for which lines will not affect the median unduly.
+# This will be the smallest box width in the smoothing.
+   my $min_width = 2.0 * $linewidth / $pixscale[2];
+
+# Set the maximum smoothing box in channels as half the width of the
+# spectral axis.
+   my $max_width = 0.5 * abs( $ubnd[ 2 ] - $lbnd[ 2 ] );
+
+# Create some temporary-NDF names.
+   my $temp1file = new ORAC::TempFile( 0 );
+   my $temp2file = new ORAC::TempFile( 0 );
+   my $temp3file = new ORAC::TempFile( 0 );
+         
+# Perform multi-resolution smooth in powers of two.
+   my $width = $max_width;
+   my $to_smooth = $in;
+   my @boxes;
+   while ( $width > $min_width ) {
+      my $box = int( $width );
+      $box += ( $box + 1 ) % 2;
+
+# Set up parameters for BLOCK.
+      my $params = "in=$to_smooth out=$temp1file box=[1,1,$box] estimator=median";
+      push @boxes, $box;
+
+# Smooth and subtract.
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+      $Mon{'kappa_mon'}->obeyw( "sub", "in1=$to_smooth in2=$temp1file out=$temp2file" );
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp2file out=$temp3file" );
+      $to_smooth = $temp3file;
+      $width /= 2.0;
+   }
+         
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp2file out=$out" );
+
+# Report to user.
+   orac_print "$in to $out:\n";
+   my $boxstring = join( ", ", @boxes );
+   orac_print " Removed baseline using median block smoothing with kernels $boxstring channels.\n";
+
+# Update Frame object;
+   $Obj->file( $i, $out );
+
+}
+
+# Display.
+$Display->display_data( $Obj ) if defined $Display;
+
+# Tidy-up output.
+orac_say "";
