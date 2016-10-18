@@ -143,6 +143,18 @@ sub collate_headers {
     push ( @toappend, $obsidss_hdr );
   }
 
+  # Check whether BWMODE is missing, i.e. we defined it but it isn't in the
+  # file.
+  if (defined $self->hdr('BWMODE') and not defined $hdr->value('BWMODE')) {
+    orac_warn("BWMODE defined but missing from data. Adding to synced headers.\n");
+    push @toappend, new Astro::FITS::Header::Item(
+        Keyword => 'BWMODE',
+        Value => $self->hdr('BWMODE'),
+        Comment => 'ACSIS total bandwidth set up',
+        Type => 'STRING',
+    );
+  }
+
   $header->append( \@toappend );
   return $header;
 }
