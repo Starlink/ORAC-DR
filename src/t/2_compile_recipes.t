@@ -73,12 +73,18 @@ BEGIN {
 
 use Test::More tests => $n_recipe;
 
+# Set up ORAC-DR environment variables.
+$ENV{'ORAC_DIR'} //= File::Spec->rel2abs('.');
+$ENV{'ORAC_CAL_ROOT'} //= File::Spec->catdir(
+    File::Spec->rel2abs(File::Spec->updir()), 'cal');
+
 # Iterate over instruments and try to load each recipe.
 foreach my $instrument (@instruments) {
     my $name = $instrument->{'name'};
 
     print STDERR "Checking instrument: $name\n" if $VERBOSE;
 
+    $ENV{'ORAC_INSTRUMENT'} = $instrument unless $instrument =~ /^PICARD/;
     my $override = $instrument->{'override'} // {};
     my $skip = $instrument->{'skip'} // {};
 
@@ -100,6 +106,8 @@ foreach my $instrument (@instruments) {
             }
         }
     }
+
+    delete $ENV{'ORAC_INSTRUMENT'};
 }
 
 sub check_recipe {
