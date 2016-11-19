@@ -1,0 +1,121 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_ESTIMATE_IMAGE_ALIGNMENT_ - estimates image alignment
+
+=head1 SYNOPSIS
+
+    _ESTIMATE_IMAGE_ALIGNMENT_
+
+=head1 DESCRIPTION
+
+This primitive waits until the end of the group when it estimates
+the alignment between the reference file and its input files.
+
+=head1
+
+=over 4
+
+=item THRESH_LEVEL
+
+Thresholding level.
+
+=item THRESH_SMOOTH
+
+Thresholding image smoothing.
+
+=back
+
+=head1 RECIPE PARAMETERS
+
+=over 4
+
+=item REFERENCE
+
+The reference image.
+
+=back
+
+=head1 LOG FILES
+
+Results are written to the file F<log.alignment>.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 East Asian Observatory.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+
+orac_termerr('Frame has more than 1 file') unless $Frm->nfiles() == 1;
+
+return ORAC__OK unless $Grp->lastmember($Frm);
+
+my $fitvals = 1;
+my $reference = $RECPARS{'REFERENCE'};
+orac_termerr('No REFERENCE image specified') unless defined $reference;
+
+my $thresh_level = get_prim_arg($_PRIM_ARGS_, 'THRESH_LEVEL', 3);
+my $thresh_smooth = get_prim_arg($_PRIM_ARGS_, 'THRESH_SMOOTH', 3);
+
+# Threshold the reference image.  Use a temporary frame rather than tagging
+# so that we don't put the input file in the intermediates list!
+my $reference_thresh;
+do {
+    my $tmpFrm = $Frm->new();
+    $tmpFrm->files($reference);
+
+    do {
+        my $Frm = $tmpFrm;
+        _THRESHOLD_IMAGE_ COMP=SNR INVERT=0 THRESH=$thresh_level SMOOTH=$thresh_smooth
+    };
+
+    $Frm->push_intermediates($tmpFrm->intermediates());
+    $reference_thresh = $tmpFrm->file(1);
+};
+
+my @input_files = ();
+my @all_files = ();
+
+foreach my $grpFrm ($Grp->members()) {
+    orac_termerr('Frame has more than 1 file') unless $Frm->nfiles() == 1;
+    push @input_files, $grpFrm->file(1);
+
+    do {
+        my $Frm = $grpFrm;
+        _THRESHOLD_IMAGE_ COMP=SNR INVERT=0 THRESH=$thresh_level SMOOTH=$thresh_smooth
+    };
+
+    push @all_files, $grpFrm->file(1);
+    $Frm->push_intermediates($grpFrm->intermediates());
+}
+
+$Grp->files(@all_files);
+
+_ESTIMATE_SCUBA2_IMAGE_ALIGNMENT_ REFERENCE=$reference_thresh GROUP=1 FITVALS=$fitvals
+my $results = $_ESTIMATE_SCUBA2_IMAGE_ALIGNMENT_{'RESULTS'};
+
+my $log_params = [qw/reference input dx dy/];
+push @$log_params, qw/scale offset/ if $fitvals;
+
+for (my $i = 0; $i < $Grp->nfiles(); $i ++) {
+    my $log_entries = [$reference, shift @input_files, @{$results->[$i]}];
+    _ADD_LOG_ENTRY_ LOGFILE=alignment PARAMS=$log_params ENTRIES=$log_entries PARLIST=NONE
+}
+
