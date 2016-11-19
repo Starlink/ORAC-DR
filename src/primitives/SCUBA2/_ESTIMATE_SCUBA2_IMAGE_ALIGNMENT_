@@ -1,0 +1,146 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_ESTIMATE_SCUBA2_IMAGE_ALIGNMENT_ - estimates SCUBA-2 image alignment
+
+=head1 SYNOPSIS
+
+    _ESTIMATE_SCUBA2_IMAGE_ALIGNMENT_ REFERENCE=$reference
+
+=head1 DESCRIPTION
+
+This primitive estimates the alignment offsets between an image and
+a reference image using the KAPPA ALIGN2D program.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FITVALS
+
+ALIGN2D FITVALS option.
+
+=item GROUP
+
+Whether to use the group (if true) or frame (otherwise) files.
+
+=item REFERENCE
+
+Reference image.
+
+=back
+
+=head1 OUTPUT
+
+The primitive hash C<%_ESTIMATE_SCUBA2_IMAGE_ALIGNMENT_> contains:
+
+=over 4
+
+=item RESULTS
+
+The results.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2016 East Asian Observatory.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+use Astro::PAL qw/:constants/;
+use Math::Trig;
+
+my $Obj = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0) ? $Grp : $Frm;
+my $reference = get_prim_arg($_PRIM_ARGS_, 'REFERENCE', undef);
+my $fitvals = get_prim_arg($_PRIM_ARGS_, 'FITVALS', 0);
+
+orac_termerr('Reference image not specified') unless defined $reference;
+
+# Create new array to hold results.
+my $results = $_ESTIMATE_SCUBA2_IMAGE_ALIGNMENT_{'RESULTS'} = [];
+
+# Run ALIGN2D then convert to sky offsets.
+for (my $i = 0; $i < $Grp->nfiles(); $i ++) {
+    my ($file, $trim) = $Grp->inout('_trim', $i + 1);
+    my $ORAC_STATUS;
+
+    orac_say("Analysing $file with ALIGN2D");
+    my $args = "in=$file ref=$reference out=! form=3";
+    $args .= " fitvals" if $fitvals;
+    $Mon{'kappa_mon'}->obeyw("align2d", "$args");
+    ($ORAC_STATUS, my @tr) = $Mon{'kappa_mon'}->get('align2d', 'tr');
+    my $dx = $tr[0];
+    my $dy = $tr[3];
+    orac_say("Found pixel offsets: $dx $dy");
+
+    my $scale = undef;
+    my $offset = undef;
+    if ($fitvals) {
+        $scale = $tr[6];
+        $offset = $tr[7];
+        orac_say("Found scale: $scale and offset: $offset");
+    }
+
+    # Convert to offsets in arcseconds.  Duplicates method of SMURF POL2SCAN.
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$file out=$trim trim");
+    $Grp->push_intermediates($trim);
+
+    $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$trim");
+    ($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
+    ($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
+
+    my $cenx = ($lbnd[0] + $ubnd[0]) / 2.0;
+    my $ceny = ($lbnd[1] + $ubnd[1]) / 2.0;
+
+    my $offx = $cenx + $dx;
+    my $offy = $ceny + $dy;
+
+    $Mon{'atools_mon'}->obeyw('asttran2', "this=$trim forward=yes xin=$cenx yin=$ceny");
+    ($ORAC_STATUS, my $cenx_a) = $Mon{'atools_mon'}->get('asttran2', 'xval');
+    ($ORAC_STATUS, my $ceny_a) = $Mon{'atools_mon'}->get('asttran2', 'yval');
+
+    $Mon{'atools_mon'}->obeyw('asttran2', "this=$trim forward=yes xin=$offx yin=$offy");
+    ($ORAC_STATUS, my $offx_a) = $Mon{'atools_mon'}->get('asttran2', 'xval');
+    ($ORAC_STATUS, my $offy_a) = $Mon{'atools_mon'}->get('asttran2', 'yval');
+
+    $Mon{'atools_mon'}->obeyw('astdistance', "this=$trim point1=[$cenx_a,$ceny_a] point2=[$offx_a,$ceny_a]");
+    ($ORAC_STATUS, my $dx_a) = $Mon{'atools_mon'}->get('astdistance', 'distance');
+
+    $Mon{'atools_mon'}->obeyw('astdistance', "this=$trim point1=[$cenx_a,$ceny_a] point2=[$cenx_a,$offy_a]");
+    ($ORAC_STATUS, my $dy_a) = $Mon{'atools_mon'}->get('astdistance', 'distance');
+
+    $dx_a *= DR2AS;
+    $dy_a *= DR2AS;
+
+    # Correct sign: astdistance always returns positive values.
+    my $sx = $offx_a - $cenx_a;
+    $sx -= pi while $sx > pi;
+    $sx += pi while $sx < (-1.0 * pi);
+    $dx_a *= -1.0 if $sx < 0.0;
+
+    my $sy = $offy_a - $ceny_a;
+    $dy_a *= -1.0 if $sy < 0.0;
+
+    orac_say("Converted to sky offsets: $dx_a $dy_a");
+
+    my @result_entries = ($dx_a, $dy_a);
+    push @result_entries, $scale, $offset if $fitvals;
+    push @$results, \@result_entries;
+}
