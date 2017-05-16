@@ -1136,7 +1136,8 @@ sub orac_calib_override {
 
 This routine parses the text file which has a list of the files to be
 processed, this should have one filename per line, filenames are
-assumed to be relative to ORAC_DATA_IN.
+assumed to be relative to ORAC_DATA_IN.  If there are any duplicates
+an error will be thrown.
 
    my @obs = orac_parse_files( $opt_files );
 
@@ -1171,6 +1172,13 @@ sub orac_parse_files {
     push(@obs, $f);
   }
   close($fh);
+
+  # Check for any duplication that may cause problems in some recipes.
+  my %seen;
+  foreach my $f (@obs) {
+     next unless $seen{$f}++;
+     throw ORAC::Error::FatalError( "List of input files contains a duplicate $f.", ORAC__FATAL);
+  }
 
   return ( @obs );
 }
