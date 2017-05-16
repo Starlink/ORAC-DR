@@ -1167,7 +1167,7 @@ sub orac_parse_files {
     chomp($f);
     $f =~ s/\#.*//;             # comments
     $f =~ s/^\s+//;             # leading whitespace
-    $f =~ s/\s+$//;             # trailin whitespace
+    $f =~ s/\s+$//;             # trailing whitespace
     next unless $f =~ /\w/;
     push(@obs, $f);
   }
