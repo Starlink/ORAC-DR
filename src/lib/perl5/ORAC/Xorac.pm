@@ -191,7 +191,7 @@ sub xorac_about {
   # text
   my $string;
   if ( defined $ENV{"ORAC_INSTRUMENT"} ) {
-    $string = "\nXORAC-DR $xoracdr_version\nPerl Version $]\nTk version $Tk::VERSION\n\nInstrument: $ENV{'ORAC_INSTRUMENT'}\nSupport: $ENV{'ORAC_PERSON'}\@jach.hawaii.edu\nDocumentation: SUN/$ENV{'ORAC_SUN'}"
+    $string = "\nXORAC-DR $xoracdr_version\nPerl Version $]\nTk version $Tk::VERSION\n\nInstrument: $ENV{'ORAC_INSTRUMENT'}\nSupport: $ENV{'ORAC_PERSON'}\nDocumentation: SUN/$ENV{'ORAC_SUN'}"
   } else {
     $string = "\nXORAC-DR $xoracdr_version\nPerl Version $]\nTk version $Tk::VERSION\n";
   }
