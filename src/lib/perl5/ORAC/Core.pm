@@ -1523,6 +1523,7 @@ sub orac_main_data_loop {
         $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation number ' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
+        $orac_prt->respre("#${fnumber}: ");
 
         # Store the Frame in the Group
         my $Grp = orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups,
@@ -1574,6 +1575,7 @@ sub orac_main_data_loop {
         # Reset the obs number labels
         $orac_prt->errpre('Error: ');
         $orac_prt->warpre('Warning: ');
+        $orac_prt->respre('');
         $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
 
       }
@@ -1661,6 +1663,7 @@ sub orac_main_data_loop {
         $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
+        $orac_prt->respre("#${fnumber}: ");
         # Actually process the observation
         # Includes recipe configurations since the recipe
         # object is not instantiated until the recipe name is
@@ -1707,6 +1710,7 @@ sub orac_main_data_loop {
         # Reset the obs number labels
         $orac_prt->errpre('Error: ');
         $orac_prt->warpre('Warning: ');
+        $orac_prt->respre('');
         $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
       }
     }
