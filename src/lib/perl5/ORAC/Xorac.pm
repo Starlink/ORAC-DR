@@ -511,7 +511,7 @@ sub xorac_log_window {
                           -font=>$FONT)->pack(-side => "left");
 
   $textw1 = $MW->Scrolled('TextANSIColor',
-                          -scrollbars=>'w',
+                          -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -width  => 90,
@@ -528,7 +528,7 @@ sub xorac_log_window {
   # ORAC_WARN messages
   $lab2   = $MW->Label(-text=>'Warnings',-font=>$FONT)->pack;
   $textw2 = $MW->Scrolled('TextANSIColor',
-                          -scrollbars=>'w',
+                          -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
@@ -542,7 +542,7 @@ sub xorac_log_window {
   # ORAC Error messages
   $lab1   = $MW->Label(-text=>'Errors',-font=>$FONT)->pack;
   $textw3 = $MW->Scrolled('TextANSIColor',
-                          -scrollbars=>'w',
+                          -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
@@ -557,7 +557,7 @@ sub xorac_log_window {
   # ORAC Result messages
   $lab4   = $MW->Label(-text=>'Results',-font=>$FONT)->pack;
   $textw4 = $MW->Scrolled('TextANSIColor',
-                          -scrollbars=>'w',
+                          -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
@@ -628,7 +628,7 @@ sub xorac_recipe_window {
   my ( @PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
 
   # scrolled listbox
-  my $lbox = $top_level->Scrolled('Listbox', -scrollbars => 'w',
+  my $lbox = $top_level->Scrolled('Listbox', -scrollbars => 'e',
                                   -borderwidth        => 1,
                                   -selectbackground    => 'blue',
                                   -selectforeground    => 'white',
