@@ -99,6 +99,7 @@ use ORAC::Constants qw/:status/; # ORAC__ABORT ORAC__FATAL
 #
 use File::Spec;
 use Tk;
+use Tk::Adjuster;
 use Tk::TextANSIColor;
 use Tk::ORAC::RecipeSelect;
 
@@ -522,6 +523,8 @@ sub xorac_log_window {
   $textw1->insert('end',"ORAC-DR status log\n");
   tie *TEXT1,  "Tk::TextANSIColor", $textw1;
 
+  $MW->Adjuster()->packAfter($textw1, -side => 'top');
+
   # ORAC_WARN messages
   $lab2   = $MW->Label(-text=>'Warnings',-font=>$FONT)->pack;
   $textw2 = $MW->Scrolled('TextANSIColor',
@@ -531,7 +534,8 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack( -fill => 'x' );
+                         )->pack( -expand => 1,
+                                  -fill => 'both' );
   $textw2->insert('end',"ORAC-DR warning messages\n");
   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
@@ -544,7 +548,8 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack( -fill => 'x' );
+                         )->pack( -expand => 1,
+                                  -fill => 'both' );
   $textw3->insert('end',"ORAC-DR error messages\n");
   $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT3,  "Tk::TextANSIColor", $textw3;
@@ -558,7 +563,8 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack( -fill => 'x' );
+                         )->pack( -expand => 1,
+                                  -fill => 'both' );
   $textw4->insert('end',"ORAC-DR results\n");
   $textw4->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT4,  "Tk::TextANSIColor", $textw4;
