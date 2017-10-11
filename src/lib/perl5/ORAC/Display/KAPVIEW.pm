@@ -83,6 +83,7 @@ sub new {
 				Obj => undef, # kapview object
 				EngineLaunch => new ORAC::Msg::EngineLaunch,
 				Regions => {},
+				@_,
 			       );
 
   # Split the launching and configuration into separate subroutines.
@@ -354,6 +355,13 @@ sub create_dev {
   # can hide the error message. Otherwise I need to check to see whether
   # the window is there beforehand (e.g. with the ps command).
 
+  my $plain_device = $device;
+  $plain_device =~ s/^xwindows;//;
+  system(
+    $ENV{'STARLINK_DIR'} . '/bin/xmake',
+    $plain_device,
+    '-title',
+    sprintf('%s (%s)', $self->{'TitleInfo'} // $device, $window));
 
   # Now every time we open a new device we need to configure
   # lookup table.

@@ -75,7 +75,8 @@ sub new {
  # Create a new instance from the base class
   my $disp = $class->SUPER::new(Obj => undef,    # Messaging object
 				EngineLaunch => new ORAC::Msg::EngineLaunch,
-				NBS => undef     # Notice board location
+				NBS => undef,    # Notice board location
+				@_,
 			       );
 
   my $status = ORAC__OK;

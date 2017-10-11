@@ -38,6 +38,7 @@ use ORAC::Inst::SetupEnv;
 
 @EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally
                orac_force_abspath orac_chdir_output_dir orac_exit_if_error
+               orac_make_title_info
             /;
 
 $VERSION = '1.0';
@@ -94,6 +95,12 @@ behaviour. Options are:
   - monitor =>  configure as a monitor (default is to be master) (false)
   - nolocal =>  disable master display, monitor files only.
                 Default is to display locally (false)
+  - orac_instrument => additional information for display title (where possible)
+  - picard_recipe => additional information for display title (where possible)
+  - recsuffix => additional information for display title (where possible)
+
+=back
+
 
 Monitor files are always written if a master.
 
@@ -135,6 +142,9 @@ sub orac_setup_display {
     }
   }
 
+  # Prepare information to be show in display title (where possible).
+  $Display->title_info(orac_make_title_info(%options));
+
   # Set the location of the display definition file
   # (we do not currently use NBS for that)
 
@@ -164,6 +174,24 @@ sub orac_setup_display {
 
   # orac_err('GUI not launched');
   return $Display;
+}
+
+=item B<orac_make_title_info>
+
+Make informational string to be shown in window titles given the parameters
+passed as options.
+
+=cut
+
+sub orac_make_title_info {
+  my %opt = @_;
+
+  my $title = (exists $opt{'picard_recipe'}) ? 'PICARD' : 'ORAC-DR';
+  $title .= ' ' . $opt{'picard_recipe'} if exists $opt{'picard_recipe'};
+  $title .= ' ' . $opt{'orac_instrument'} if exists $opt{'orac_instrument'};
+  $title .= ' ' . $opt{'recsuffix'} if exists $opt{'recsuffix'}
+                                    and defined $opt{'recsuffix'};
+  return $title;
 }
 
 =item B<orac_exit_normally>

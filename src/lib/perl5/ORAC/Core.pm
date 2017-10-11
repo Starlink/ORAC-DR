@@ -541,13 +541,7 @@ sub orac_launch_tk {
   eval { require Tk; require Tk::TextANSIColor; require ORAC::Xorac};
   unless( $@ ) {
     $MW = MainWindow->new();
-    my $title = (exists $opt->{'picard_recipe'}) ? 'PICARD' : 'ORAC-DR';
-    $title .= ' ' . $opt->{'picard_recipe'} if exists $opt->{'picard_recipe'};
-    $title .= ' ' . $opt->{'orac_instrument'} if exists $opt->{
-                                                        'orac_instrument'};
-    $title .= ' ' . $opt->{'recsuffix'} if exists $opt->{'recsuffix'}
-                                        and defined $opt->{'recsuffix'};
-    $MW->title($title);
+    $MW->title(orac_make_title_info(%$opt));
     ORAC::Event->register($win_str=>$MW);
   }
   return $MW;
@@ -1011,22 +1005,25 @@ This routine is a wrapper for the orac_setup_display() subroutine in
 ORAC::Basic. It starts the ORAC display unless $nodisplay is
 set.
 
-   my $Display = orac_start_display( $nodisplay );
+   my $Display = orac_start_display( $nodisplay, %opt );
 
 the routine returns the display object $Display.
 
 Note that an object is returned in all cases, but if display
 is disabled the display is created in monitor mode.
 
+Additional options are passed to orac_setup_display.
+
 =cut
 
 sub orac_start_display {
 
   croak 'Usage: orac_start_display( $opt_nodisplay )'
-    unless scalar(@_) == 1 ;
+    unless scalar(@_) >= 1 ;
 
   # Read the argument list
-  my ($opt_nodisplay) = @_;
+  my ($opt_nodisplay) = shift;
+  my %opt = @_;
 
   # launch display
   # -nodisplay suppresses display,
@@ -1036,12 +1033,12 @@ sub orac_start_display {
   if ($opt_nodisplay) {
     orac_printp("No display will be used\n","blue");
     # Enable monitoring output
-    $Display = orac_setup_display( nolocal => 1 );
+    $Display = orac_setup_display( nolocal => 1, %opt );
   } else {
 
     # Local display and monitoring output
     orac_print ("Setting up display infrastructure (display tools will not be started until necessary)...", 'blue');
-    $Display = orac_setup_display;
+    $Display = orac_setup_display(%opt);
     orac_print ("Done\n","blue");
 
     # Could configure debug option in $Display at this point

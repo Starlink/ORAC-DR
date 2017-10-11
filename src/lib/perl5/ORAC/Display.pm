@@ -78,6 +78,7 @@ sub new {
   $disp->{MONITOR_HDL} = undef; # File handle for monitor file opened for write
   $disp->{IS_MASTER} = 1; # By default this class is a master not a monitor
   $disp->{DOES_MASTER_DISPLAY} = 1; # Controls whether the Master does any displaying at all
+  $disp->{'TITLE_INFO'} = undef; # Information to show in display title.
 
   bless ($disp, $class);
 
@@ -255,6 +256,20 @@ sub does_master_display {
     $self->{DOES_MASTER_DISPLAY} = shift;
   }
   return $self->{DOES_MASTER_DISPLAY};
+}
+
+=item B<title_info>
+
+Set or return information to show in window titles (where possible).
+
+=cut
+
+sub title_info {
+  my $self = shift;
+  if (@_) {
+    $self->{'TITLE_INFO'} = shift;
+  }
+  return $self->{'TITLE_INFO'};
 }
 
 =back
@@ -467,7 +482,7 @@ sub display_data {
         # available)
         if (UNIVERSAL::can($class, 'new')) {
 
-          $current_tool = $class->new;
+          $current_tool = $class->new(TitleInfo => $self->title_info());
 
           # If the returned value is undef then we had a problem creating
           # the tool

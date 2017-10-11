@@ -67,12 +67,12 @@ sub new {
   my $class = ref($proto) || $proto;
 
   # Create a new instance from the base class
-  # Dont allow any arguments.
   # Probably should turn off -w here
   my $disp = $class->SUPER::new(Sock => undef,
                                 Sel => IO::Select->new,
                                 ConnectToRemoteGAIA => 1,
                                 Launchable => 1,
+                                @_,
                                );
 
   # SPECIAL CASE UKIRT FOR NOW
@@ -468,7 +468,8 @@ sub configure {
 
   # Tweak the identity if we have an ORAC_INSTRUMENT
   if (exists $ENV{ORAC_INSTRUMENT}) {
-    my $string = "$default configure -ident {$ENV{ORAC_INSTRUMENT} - }";
+    my $title = $self->{'TitleInfo'} // $ENV{'ORAC_INSTRUMENT'};
+    my $string = "$default configure -ident {$title - }";
     ($status, $result) = $self->send_to_gaia($string);
     if ($status != ORAC__OK) {
       orac_err "ORAC::Display::GAIA - unable to set instrument label in GAIA window\n";
