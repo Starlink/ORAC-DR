@@ -31,6 +31,7 @@ use base qw/ ORAC::Display::Base /;  # Base class
 use ORAC::Print;
 use ORAC::Constants qw/:status/;
 
+use File::Spec;
 use IO::Socket;  # For socket connection to Gaia
 use IO::Select;
 
@@ -410,6 +411,19 @@ Returns ORAC status.
 sub configure {
 
   my $self = shift;
+
+  if (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{'ORAC_DATA_OUT'}) {
+    my ($status, $message) = $self->send_to_gaia(
+        'gaia::Gaia::set_history_catalog {' .
+        File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, '.skycat_history') .
+        '}');
+
+    if ($status != ORAC__OK) {
+      orac_err "ORAC::Display::GAIA - Unable to configure history file\n";
+      orac_err "Error: $message\n";
+      return ORAC__ERROR;
+    }
+  }
 
   my $startup = "$ENV{ORAC_DIR}/images/orac_start.sdf";
 
