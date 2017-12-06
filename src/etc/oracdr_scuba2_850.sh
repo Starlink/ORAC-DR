@@ -108,5 +108,5 @@ export ORAC_INSTRUMENT=SCUBA2_850
 
 # Set stripchart alias
 if test -n $ORAC_DATA_CAL; then
-  alias xstripchart="${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_450.ini &"
+  alias xstripchart="${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_450.ini -title='SCUBA2_850' &"
 fi
