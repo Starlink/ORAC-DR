@@ -63,20 +63,20 @@ $DEBUG = 0;                     # Turn off debugging mode
 # order START and END are inclusive.
 
 my %FCFS = ('850' => [             # Assumed to be in date order
-		      {
-		       START => 20060101, # Beginning of SCUBA-2 history
-		       ARCSEC=> 2.34,
-		       BEAM  => 537,
-		      }
-		     ],
-	    '450' => [
-		      {
-		       START => 20060101, # Beginning of SCUBA-2 history
-		       ARCSEC => 4.71,
-		       BEAM   => 491,
-		      }
-		     ],
-	   );
+                      {
+                       START => 20060101, # Beginning of SCUBA-2 history
+                       ARCSEC=> 2.34,
+                       BEAM  => 537,
+                      }
+                     ],
+            '450' => [
+                      {
+                       START => 20060101, # Beginning of SCUBA-2 history
+                       ARCSEC => 4.71,
+                       BEAM   => 491,
+                      }
+                     ],
+           );
 
 # These NEPs are the specifications in the dark which the arrays are
 # expected to meet
@@ -95,9 +95,9 @@ my %ASECFLUXES = (
                               '450' => 10.3,
                              },
                   'CRL618' => {
-		               '850' => 5.0,
-		               '450' => 12.1,
-		              },
+                               '850' => 5.0,
+                               '450' => 12.1,
+                              },
                   'CRL2688' => {
                                 '850' => 6.13,
                                 '450' => 29.2,
@@ -147,7 +147,7 @@ my %ASECFLUXES = (
                                 },
                   'HD169142' => {
                                  '850' => 0.58,
-				 '450' => 2.78,
+                                 '450' => 2.78,
                                 },
                   'BVP1' => {
                              '850' => 1.55,
@@ -188,7 +188,7 @@ my %BEAMFLUXES = (
                                '450' => 5.2,
                               },
                   'KKOPH' => {
-		              '850' => 0.091,
+                              '850' => 0.091,
                              },
                   'MWC349' => {
                                '850' => 2.21,
@@ -212,7 +212,7 @@ my %BEAMFLUXES = (
                                 },
                   'HD169142' => {
                                  '850' => 0.52,
-				 '450' => 2.21,
+                                 '450' => 2.21,
                                 },
                   'BVP1' => {
                              '850' => 1.37,
@@ -230,27 +230,27 @@ $ASECFLUXES{MWC349A} = $ASECFLUXES{MWC349};
 # JCMT beam parameters from SCUBA-2 calibration paper. FRAC1 and FRAC2
 # are the proportion of the flux contained within the primary and
 # error beams respectively.
-my %BEAMPAR = (	'850' => {
-			  FWHM1 => 13.0,
-			  FWHM2 => 48.0,
-			  AMP1 => 0.98,
-			  AMP2 => 0.02,
-			  FRAC1 => 0.43,
-			  FRAC2 => 0.57
-			 },
-		'450' => {
-			  FWHM1 => 7.9,
-			  FWHM2 => 25.0,
-			  AMP1 => 0.94,
-			  AMP2 => 0.06,
-			  FRAC1 => 0.33,
-			  FRAC2 => 0.67
-			 }
-	      );
+my %BEAMPAR = ( '850' => {
+                          FWHM1 => 13.0,
+                          FWHM2 => 48.0,
+                          AMP1 => 0.98,
+                          AMP2 => 0.02,
+                          FRAC1 => 0.43,
+                          FRAC2 => 0.57
+                         },
+                '450' => {
+                          FWHM1 => 7.9,
+                          FWHM2 => 25.0,
+                          AMP1 => 0.94,
+                          AMP2 => 0.06,
+                          FRAC1 => 0.33,
+                          FRAC2 => 0.67
+                         }
+              );
 
 # Default beam area
 my %BEAMAREA = ( '850' => 229.75,
-		 '450' => 100.0
+                 '450' => 100.0
                );
 
 # SCUBA-2 secondary calibrators commonly observed at the wrong position.
@@ -266,12 +266,12 @@ my %CATALOG_POSITION = (
 # Setup the object structure
 __PACKAGE__->CreateBasicAccessors( mask => {},
                                    resp => {},
-				   fastflat => {},
-				   flat => {},
-				   dark => {},
-				   setupflat => {},
-				   noise => {},
-				   nep => {},
+                                   fastflat => {},
+                                   flat => {},
+                                   dark => {},
+                                   setupflat => {},
+                                   noise => {},
+                                   nep => {},
                                    zeropath => {},
                                    zeropath_fwd => {},
                                    zeropath_bck => {},
@@ -350,7 +350,7 @@ be passed as array references. A hash reference containing the beam
 parameters is returned.
 
   $Cal->beamfit( majfwhm => \@majfwhm, minfwhm => \@minfwhm,
-		 orient => \@orient, gamma => $gamma );
+                 orient => \@orient, gamma => $gamma );
 
   $Cal->beamfit( %beamfit );
 
@@ -377,13 +377,13 @@ sub beamfit {
     my %beamargs = @_;
     my @majfwhm = @{$beamargs{majfwhm}} if (defined $beamargs{majfwhm});
     my %beamfit = ( BeamA => $majfwhm[0],
-		    BeamAErr => $majfwhm[1],
-		    BeamB => $beamargs{minfwhm}->[0],
-		    BeamBErr => $beamargs{minfwhm}->[1],
-		    BeamComp => (@majfwhm > 2) ? 2 : 1,
-		    PA => $beamargs{orient}->[0],
-		    PAErr => $beamargs{orient}->[1],
-		    Gamma => $beamargs{gamma}
+                    BeamAErr => $majfwhm[1],
+                    BeamB => $beamargs{minfwhm}->[0],
+                    BeamBErr => $beamargs{minfwhm}->[1],
+                    BeamComp => (@majfwhm > 2) ? 2 : 1,
+                    PA => $beamargs{orient}->[0],
+                    PAErr => $beamargs{orient}->[1],
+                    Gamma => $beamargs{gamma}
       );
 
     # Store fitted FWHM for main and error beams
@@ -912,8 +912,8 @@ sub makemap_config {
     if (defined $args{pipeline}) {
       # Make exceptions for the moon and bright_compact
       $pipeline = lc($args{pipeline})
-	unless ($config_type &&
-		($config_type eq "moon" || $config_type eq "bright_compact"));
+        unless ($config_type &&
+                ($config_type eq "moon" || $config_type eq "bright_compact"));
     }
     if ($pipeline eq "ql" || $pipeline eq "summit") {
       # Note different base dir
@@ -997,19 +997,19 @@ sub respstats {
     if ( @_ ) {
       my $respref = shift;
       if ( ref($respref) eq "HASH" ) {
-	$self->{RespStats} = { $subarray => $respref };
-	return $self->{RespStats};
+        $self->{RespStats} = { $subarray => $respref };
+        return $self->{RespStats};
       } else {
-	orac_throw "Error: second argument must be a hash reference";
+        orac_throw "Error: second argument must be a hash reference";
       }
     } else {
       # With just one argument, return info for given subarray if
       # defined, else return undef
       my $respref = $self->{RespStats};
       if ( defined $$respref{$subarray} ) {
-	return $$respref{$subarray};
+        return $$respref{$subarray};
       } else {
-	return undef;
+        return undef;
       }
     }
   }

@@ -87,10 +87,10 @@ sub new {
   # This is because if we do run configure via the constructor
   # the rawfixedpart and rawsuffix will be undefined.
   my $self = $class->SUPER::new({
-				 Subs => [],
-				 Filters => [],
-				 WaveLengths => [],
-				});
+                                 Subs => [],
+                                 Filters => [],
+                                 WaveLengths => [],
+                                });
 
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
@@ -333,7 +333,7 @@ sub findgroup {
     # construct group name
     $group = $self->hdr('MODE') .
       $self->hdr('OBJECT').
-	$self->hdr('FILTER');
+        $self->hdr('FILTER');
 
     # If we are doing an EMII scan map we need to make sure
     # the group is different from a normal map
@@ -447,21 +447,21 @@ sub findrecipe {
 
       # Check for jiggle maps with phot pixels
       if ($self->hdr('SUB_1') =~ /P2000|P1350|P1100/) {
-	$recipe = 'SCUBA_JIGPHOTMAP';
+        $recipe = 'SCUBA_JIGPHOTMAP';
       } else {
-	$recipe = 'SCUBA_JIGMAP';
+        $recipe = 'SCUBA_JIGMAP';
       }
 
       # old style Polarimetry
       if ($self->hdr('OBJ_TYPE') =~ /^POL/i) {
-	$recipe = 'SCUBA_JIGPOLMAP';
+        $recipe = 'SCUBA_JIGPOLMAP';
       }
 
     } else {
       if ($self->hdr('CHOP_CRD') eq 'LO') {
-	$recipe = 'SCUBA_EM2SCAN';
+        $recipe = 'SCUBA_EM2SCAN';
       } else {
-	$recipe = 'SCUBA_EKHSCAN';
+        $recipe = 'SCUBA_EKHSCAN';
       }
     }
   }
@@ -699,9 +699,9 @@ sub findfilters {
     my $found = 0;
     for my $part ($part1, $part2) {
       if ($part =~ /$filter/) { # grep is overkill
-	push(@filter, $part);
-	$found = 1;
-	last;
+        push(@filter, $part);
+        $found = 1;
+        last;
       }
     }
 

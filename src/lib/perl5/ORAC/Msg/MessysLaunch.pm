@@ -92,10 +92,10 @@ sub new {
   if ($unq || !defined $THIS) {
 
     $obj = {
-	    MessageSystems => {},
-	    ConfigOptions => {},
-	    Preserve => 0,
-	   };
+            MessageSystems => {},
+            ConfigOptions => {},
+            Preserve => 0,
+           };
 
     # bless into the correct class
     bless( $obj, $class);
@@ -187,9 +187,9 @@ sub messys {
 
       # Store it - need to check ISA at some point
       if (defined $obj) {
-	$self->{MessageSystems}->{$name} = $obj;
+        $self->{MessageSystems}->{$name} = $obj;
       } else {
-	warnings::warnif("engine: Supplied object does not have a contactw method");
+        warnings::warnif("engine: Supplied object does not have a contactw method");
       }
 
     } elsif (exists $self->{MessageSystems}->{$name}) {
@@ -304,7 +304,7 @@ sub configure_messys {
     if ($messys->can($option)) {
 
       print "Configuring $name option $option: $config{$option}\n"
-	if $DEBUG;
+        if $DEBUG;
       $messys->$option( $config{$option});
 
     }
@@ -362,17 +362,17 @@ sub init_messys {
       my $status = $obj->init( $self->preserve );
       if ($status == ORAC__OK) {
 
-	# Store it
-	$self->messys( $name, $obj );
+        # Store it
+        $self->messys( $name, $obj );
 
-	# Configure it
-	$self->configure_messys( $name );
+        # Configure it
+        $self->configure_messys( $name );
 
-	# Return it
-	return $obj;
+        # Return it
+        return $obj;
 
       } else {
-	orac_warn("Unable to initialise $name message system\n");
+        orac_warn("Unable to initialise $name message system\n");
       }
 
     }

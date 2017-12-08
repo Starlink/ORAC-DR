@@ -138,12 +138,12 @@ sub editor_about {
                      -file=>"$ENV{ORAC_DIR}/images/starlink_logo.gif");
   my $image1 = $image_frame->Label( -image  => $orac_logo,
                                    -relief => 'flat',
-		  		   -anchor => 'n');
+                                     -anchor => 'n');
   $image1->grid( -column => 0, -row => 0, -sticky => 'nsew' );
 
   my $image2 = $image_frame->Label( -image  => $starlink_logo,
                                    -relief => 'flat',
-		  		   -anchor => 'n');
+                                     -anchor => 'n');
   $image2->grid( -column => 1, -row => 0, -sticky => 'nsew' );
 
   $image_frame->grid( -column => 0, -row => 0, -sticky => 'nsew' );
@@ -154,9 +154,9 @@ sub editor_about {
   my $foot = $about_frame->Label( -textvariable    => \$string,
                                   -relief  => 'flat',
                                   -font    => $font,
-				  -justify => 'center',
-				  -anchor  => 'n',
-				  -borderwidth => 5 );
+                                  -justify => 'center',
+                                  -anchor  => 'n',
+                                  -borderwidth => 5 );
   $foot->grid( -column => 1, -row => 0, -sticky => 'nsew' );
 
   # credits
@@ -179,10 +179,10 @@ sub editor_about {
   # close button
   my $close_button = $top_level->Button( -text    => "Close",
                                          -font    => $font,
-					 -activeforeground => 'white',
+                                         -activeforeground => 'white',
                                          -activebackground => 'blue',
                                          -command =>
-					    sub { $top_level->destroy } );
+                                            sub { $top_level->destroy } );
   $close_button->grid( -column => 0, -row => 3, -sticky => 'e' );
 
 }
@@ -219,9 +219,9 @@ sub editor_open_header {
   } else {
      # unidentified
      $MW->Dialog(-title => 'Error',
-   		 -text => "File $$file_select[0] is of an unknown file type.\n",
-   	         -bitmap => 'error',
-		 -font => $font)->Show;
+                    -text => "File $$file_select[0] is of an unknown file type.\n",
+                    -bitmap => 'error',
+                 -font => $font)->Show;
      return;
   }
 
@@ -230,9 +230,9 @@ sub editor_open_header {
   unless ( open ( FH, $filename ) )
   {
      $MW->Dialog( -title => 'Error',
-   		  -text => "File $filename not found.\n",
-   	          -bitmap => 'error',
-		  -font => $font)->Show;
+                     -text => "File $filename not found.\n",
+                     -bitmap => 'error',
+                  -font => $font)->Show;
      return;
   }
 
@@ -249,9 +249,9 @@ sub editor_open_header {
      if ($@) {
 
         $MW->Dialog( -title => 'Error',
-   		-text => "Error opening NDF: $@\n",
-   	        -bitmap => 'error',
-		-font => $font)->Show;
+                   -text => "Error opening NDF: $@\n",
+                   -bitmap => 'error',
+                -font => $font)->Show;
         return;
      }
 
@@ -263,9 +263,9 @@ sub editor_open_header {
   if ( ! defined $header ) {
 
      $MW->Dialog( -title => 'Error',
-   		  -text => "Error opening file $filename.\n",
-   	          -bitmap => 'error',
-		  -font => $font)->Show;
+                     -text => "Error opening file $filename.\n",
+                     -bitmap => 'error',
+                  -font => $font)->Show;
      return;
   }
 
@@ -317,25 +317,25 @@ sub editor_display_header {
                                             -width   => 3,
                                             -borderwidth => 2 ) );
      push (@key, $keyword_widget->Label( -text    => $header_keyword[$i],
-	  		                 -relief  => 'flat',
+                                         -relief  => 'flat',
                                          -font    => $font,
-		                         -justify => 'left',
-			                 -anchor  => 'w',
-				         -width   => 15,
-		                         -borderwidth => 2 ) );
+                                         -justify => 'left',
+                                         -anchor  => 'w',
+                                         -width   => 15,
+                                         -borderwidth => 2 ) );
      $number[$i]->grid( -column => 0, -row => $i+1, -sticky => 'ew' );
      $key[$i]->grid( -column => 1, -row => $i+1, -sticky => 'ew' );
      if( $header_type[$i] eq "COMMENT" ) {
         push ( @comment, $keyword_widget->Entry(
-	                                  -exportselection     => 1,
+                                          -exportselection     => 1,
                                           -font                => $font,
-				          -selectbackground    => 'blue',
-				          -selectforeground    => 'white',
-				          -justify             => 'left',
-					 -textvariable => \$header_comment[$i],
-				          -width               => 80 ) );
+                                          -selectbackground    => 'blue',
+                                          -selectforeground    => 'white',
+                                          -justify             => 'left',
+                                          -textvariable => \$header_comment[$i],
+                                          -width               => 80 ) );
        $comment[$i]->grid( -columnspan => 2, -column => 2, -row => $i+1,
-	                    -sticky => 'ew' );
+                            -sticky => 'ew' );
      } elsif ( $header_type[$i] eq "END" ) {
          $blank = $keyword_widget->Label( -text    => " ",
                                           -relief  => 'groove',
@@ -348,21 +348,21 @@ sub editor_display_header {
                          -sticky => 'ew' );
      } else {
          $value[$i] = $keyword_widget->Entry(
-	                                  -exportselection     => 1,
+                                          -exportselection     => 1,
                                           -font                => $font,
-				          -selectbackground    => 'blue',
-				          -selectforeground    => 'white',
-				          -justify             => 'left',
-					  -textvariable => \$header_value[$i],
-				          -width               => 30 );
+                                          -selectbackground    => 'blue',
+                                          -selectforeground    => 'white',
+                                          -justify             => 'left',
+                                          -textvariable => \$header_value[$i],
+                                          -width               => 30 );
          push ( @comment, $keyword_widget->Entry(
-	                                  -exportselection     => 1,
+                                          -exportselection     => 1,
                                           -font                => $font,
-				          -selectbackground    => 'blue',
-				          -selectforeground    => 'white',
-				          -justify             => 'left',
-					 -textvariable => \$header_comment[$i],
-				          -width               => 50 ) );
+                                          -selectbackground    => 'blue',
+                                          -selectforeground    => 'white',
+                                          -justify             => 'left',
+                                         -textvariable => \$header_comment[$i],
+                                          -width               => 50 ) );
          $value[$i]->grid( -column => 2, -row => $i+1, -sticky => 'ew' );
          $comment[$i]->grid( -column => 3, -row => $i+1, -sticky => 'ew' );
      }

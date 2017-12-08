@@ -159,7 +159,7 @@ sub mergehdr {
     if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
       $status = &NDF::SAI__ERROR;
       err_rep(' ',"hsd2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
-	      $status);
+              $status);
     }
 
     # Read the FITS array
@@ -174,7 +174,7 @@ sub mergehdr {
 
     # Now we need to open the input file and modify the FITS entries
     ndf_open(&NDF::DAT__ROOT, $new, 'UPDATE', 'OLD', $indf, my $place,
-	     $status);
+             $status);
 
     # Check to see if there is a FITS component in the output file
     ndf_xstat($indf, 'FITS', my $there, $status);
@@ -189,13 +189,13 @@ sub mergehdr {
 
       # Must be 1D
       if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
-	$status = &NDF::SAI__ERROR;
-	err_rep(' ',"hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",$status);
+        $status = &NDF::SAI__ERROR;
+        err_rep(' ',"hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",$status);
       }
 
       # Read the second FITS array
       dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status)
-	if $status == &NDF::SAI__OK; # -w protection
+        if $status == &NDF::SAI__OK; # -w protection
 
       # Annul the locator
       dat_annul($xloc, $status);

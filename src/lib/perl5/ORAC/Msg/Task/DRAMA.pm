@@ -67,8 +67,8 @@ sub new {
 
   # create the hash and object
   my $task = bless {
-		    TASKNAME => undef,
-		   }, $class;
+                    TASKNAME => undef,
+                   }, $class;
 
   # If we have arguments then we are trying to do a load
   # as well
@@ -172,19 +172,19 @@ sub load {
       # task using this name
       if (!$self->contact()) {
 
-	# The DramaLoad system requires that IMP master networking
-	# task is running. ORAC-DR does not (yet) need networking so
-	# for now, we will run up the application ourself.
-	my $pid = new Proc::Simple;
+        # The DramaLoad system requires that IMP master networking
+        # task is running. ORAC-DR does not (yet) need networking so
+        # for now, we will run up the application ourself.
+        my $pid = new Proc::Simple;
 
-	my $status = $pid->start( $path );
+        my $status = $pid->start( $path );
 
-	if ($status == 1) {
-	  $status = ORAC__OK;
-	  $self->_pid( $pid );
-	} else {
-	  $status = ORAC__ERROR;
-	}
+        if ($status == 1) {
+          $status = ORAC__OK;
+          $self->_pid( $pid );
+        } else {
+          $status = ORAC__ERROR;
+        }
       }
     }
   }
@@ -223,19 +223,19 @@ sub obeyw {
   # run the obeyw
   # wrapping the parameters into an SDS structure
   DRAMA::obeyw( $self->taskname,
-		$action,
-		( @params ? _tosds( @params ) : () ),
-		{
-		 -info => \&cbinfo,
-		 -infofull => \&cbinfofull,
-		 -success => sub { $status = ORAC__OK; },
-		 -error => sub {
-		   # need to trap BadEng status
-		   $status = _translate_err( $_[2] );
-		   &cberror( $_[1] );
-		 },
-		 -timeout => $timeout,
-		});
+                $action,
+                ( @params ? _tosds( @params ) : () ),
+                {
+                 -info => \&cbinfo,
+                 -infofull => \&cbinfofull,
+                 -success => sub { $status = ORAC__OK; },
+                 -error => sub {
+                   # need to trap BadEng status
+                   $status = _translate_err( $_[2] );
+                   &cberror( $_[1] );
+                 },
+                 -timeout => $timeout,
+                });
   return $status;
 }
 
@@ -278,16 +278,16 @@ sub get {
 
   my $status;
   my $result = DRAMA::pgetw( $self->taskname,
-			     $param,
-			     {
-			      -info => \&cbinfo,
-			      -infofull => \&cbinfofull,
-			      -error => sub {
-				$status = _translate_err( $_[2] );
-				&cberror( $_[1] );
-			      },
-			      -timeout => $timeout,
-			     });
+                             $param,
+                             {
+                              -info => \&cbinfo,
+                              -infofull => \&cbinfofull,
+                              -error => sub {
+                                $status = _translate_err( $_[2] );
+                                &cberror( $_[1] );
+                              },
+                              -timeout => $timeout,
+                             });
 
   # error?
   return ( wantarray ? ( defined $status ? $status : ORAC__ERROR) : undef )
@@ -345,18 +345,18 @@ sub set {
 
   my $status;
   DRAMA::pset( $self->taskname,
-	       $param, $value,
-	       {
-		-wait => 1,
-		-info => \&cbinfo,
-		-infofull => \&cbinfofull,
-		-timeout => $timeout,
-		-error => sub {
-		  $status = _translate_err($_[2]);
-		  &cberror( $_[1] );
-		},
-		-success => sub { }, # Hide default success message
-	       });
+               $param, $value,
+               {
+                -wait => 1,
+                -info => \&cbinfo,
+                -infofull => \&cbinfofull,
+                -timeout => $timeout,
+                -error => sub {
+                  $status = _translate_err($_[2]);
+                  &cberror( $_[1] );
+                },
+                -success => sub { }, # Hide default success message
+               });
 
   return (defined $status ? $status : ORAC__OK );
 }
@@ -413,10 +413,10 @@ sub contact {
   # availability so we will have to either switch technique or trap
   # UNKNOWN ACTION.
   DRAMA::obeyw $self->taskname, "PING", {
-					 # do not care about output text
-				         -info => sub { },
-					 -success => sub { $con = 1 },
-					 -error => sub {
+                                         # do not care about output text
+                                         -info => sub { },
+                                         -success => sub { $con = 1 },
+                                         -error => sub {
                                            my $statval = shift;
                                            if ($statval == $unknact) {
                                              $con = 1;
@@ -424,7 +424,7 @@ sub contact {
                                              $con = 0;
                                            }
                                          },
-				 };
+                                 };
   return $con;
 }
 
@@ -476,13 +476,13 @@ sub DESTROY {
     # we started this task so trigger the EXIT
     # and if that fails set the kill_on_destroy() flag
     DRAMA::obeyw $self->taskname, "EXIT", {
-					   -success => sub {
-#					     print "shutdown cleanly\n";
-					   },
-					   -error => sub {
-					     $pid->kill_on_destroy(1);
-					   },
-					  };
+                                           -success => sub {
+                                             # print "shutdown cleanly\n";
+                                           },
+                                           -error => sub {
+                                             $pid->kill_on_destroy(1);
+                                           },
+                                          };
 
   }
   return;
@@ -547,20 +547,20 @@ sub cbinfofull {
       # good status
       $task = colored($task, 'green');
       if ($ms->messages && defined $stdout) {
-	print $stdout $task.$msg->{message}. "\n";
+        print $stdout $task.$msg->{message}. "\n";
       }
     } else {
       my $status = $msg->{status};
       if (!$err) {
-	# first error chunk
-	$err = 1;
-	$prefix = "##";
+        # first error chunk
+        $err = 1;
+        $prefix = "##";
       } else {
-	$prefix = "# ";
+        $prefix = "# ";
       }
       $task = colored($task, 'green');
       if ($ms->errors && defined $stderr) {
-	print $stderr $prefix.$task.$msg->{message}."\n";
+        print $stderr $prefix.$task.$msg->{message}."\n";
       }
     }
   }

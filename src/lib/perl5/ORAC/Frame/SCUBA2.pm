@@ -844,7 +844,7 @@ sub subarray {
       # deeper - now we take notice of the input argument
       my $inarg = shift;
       if ( !defined $inarg ) {
-	orac_err "No input file: unable to determine subarray from subheaders\n";
+        orac_err "No input file: unable to determine subarray from subheaders\n";
       }
       my $subarray;
 
@@ -855,11 +855,11 @@ sub subarray {
       use Astro::FITS::Header::NDF;
       my $fitshdr = new Astro::FITS::Header::NDF( File => $file );
       if ( $fitshdr ) {
-	$subarray = $fitshdr->value("SUBARRAY");
+        $subarray = $fitshdr->value("SUBARRAY");
       } else {
-	# Error...
-	orac_warn "Unable to read FITS header for file $file - subarray unknown\n";
-	$subarray = undef;
+        # Error...
+        orac_warn "Unable to read FITS header for file $file - subarray unknown\n";
+        $subarray = undef;
       }
 
       # Store in Frm uhdr if defined
@@ -1051,15 +1051,15 @@ sub filter_darks {
 
   # Filter out Dark frames from DREAM/STARE data
   if ( ($self->uhdr("ORAC_OBSERVATION_MODE") =~ /dream/ ||
-	$self->uhdr("ORAC_OBSERVATION_MODE") =~ /stare/) &&
+        $self->uhdr("ORAC_OBSERVATION_MODE") =~ /stare/) &&
        $self->uhdr("ORAC_OBSERVATION_TYPE") !~ /flatfield/ ) {
 
     my (@darks, @nondarks);
     for my $i ( 1 .. $self->nfiles ) {
       if ( $self->hdrval("SHUTTER", $i-1) == 1.0 ) {
-	push ( @nondarks, $self->file($i) );
+        push ( @nondarks, $self->file($i) );
       } else {
-	push ( @darks, $self->file($i) );
+        push ( @darks, $self->file($i) );
       }
     }
     my $ndarks = $#darks + 1;

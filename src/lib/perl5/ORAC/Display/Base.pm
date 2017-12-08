@@ -56,9 +56,9 @@ sub new {
 
   # Create new instance
   my $disp = {
-	      Dev => {},
-	      @_
-	     };
+              Dev => {},
+              @_
+             };
 
   # Bless into class
   bless $disp, $class;

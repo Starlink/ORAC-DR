@@ -213,11 +213,11 @@ sub xorac_start_process {
     ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
       $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
         orac_print_configuration(
-				 $log_options, $win_str,
-				 $CURRENT_RECIPE,
-				 [ 'xoracdr' ],
-				 %$options
-				);
+                                 $log_options, $win_str,
+                                 $CURRENT_RECIPE,
+                                 [ 'xoracdr' ],
+                                 %$options
+                                );
   }
   catch ORAC::Error::FatalError with
   {
@@ -279,8 +279,8 @@ sub xorac_start_process {
   try {
      orac_main_data_loop( $options, $loop,
                           $instrument, $obs, $Display, $orac_prt,
-		          $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
-			  $CURRENT_PRIMITIVE, $Use_Recipe );
+                          $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
+                          $CURRENT_PRIMITIVE, $Use_Recipe );
      orac_print ("Pipeline processing complete\n", "green");
      return;
   }

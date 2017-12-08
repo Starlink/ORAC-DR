@@ -99,15 +99,15 @@ sub coaddsread {
 
       if ($coadds_there) {
 
-	# Read the .COADDS array
-	my (@coadds, $el);
-	cmp_getvi($xloc, 'COADDS', 10000, @coadds, $el, $status);
+        # Read the .COADDS array
+        my (@coadds, $el);
+        cmp_getvi($xloc, 'COADDS', 10000, @coadds, $el, $status);
 
-	# Store the coadds if good status
-	if ($status == &NDF::SAI__OK) {
-	  $self->coadds(@coadds);
-	  $read_coadds = 1;
-	}
+        # Store the coadds if good status
+        if ($status == &NDF::SAI__OK) {
+          $self->coadds(@coadds);
+          $read_coadds = 1;
+        }
       }
 
       dat_annul($xloc, $status);
@@ -154,7 +154,7 @@ sub coaddswrite {
     my ($indf, $place, $xloc);
     ndf_begin();
     ndf_open(&NDF::DAT__ROOT(), $self->file, 'UPDATE','OLD', $indf, $place,
-	     $status);
+             $status);
 
     # Look for an ORAC extension
     ndf_xstat($indf, 'ORAC', my $orac_there, $status);

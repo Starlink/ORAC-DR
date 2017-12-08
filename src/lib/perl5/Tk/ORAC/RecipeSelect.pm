@@ -84,10 +84,10 @@ sub Populate {
 
   my $label_text = "Choose a directory: ";
   my $label = $self->Label( -textvariable    => \$label_text,
-			    -relief  => 'flat',
-		            -justify => 'left',
-			    -anchor  => 'w',
-		            -borderwidth => 5 );
+                            -relief  => 'flat',
+                            -justify => 'left',
+                            -anchor  => 'w',
+                            -borderwidth => 5 );
   $label->grid( -column => 0 ,-row => 0, -columnspan => 2, -sticky => 'nsew' );
   # Listbox frame
   # -------------
@@ -115,11 +115,11 @@ sub Populate {
 
   my $lbox = $lbox_frame->Listbox( -borderwidth         => 1,
                                    -selectbackground    => 'blue',
-	 		           -selectforeground    => 'white',
-			           -selectmode          => 'single',
-				   -height              => 10,
-				   -width               => 35,
-				   -yscrollcommand      => ['set'=>$scrollbar]);
+                                   -selectforeground    => 'white',
+                                   -selectmode          => 'single',
+                                   -height              => 10,
+                                   -width               => 35,
+                                   -yscrollcommand      => ['set'=>$scrollbar]);
   $lbox->insert('end',sort @dir_list);
 
   $scrollbar->configure( -command => [ 'yview' => $lbox ]);
@@ -134,15 +134,15 @@ sub Populate {
   # Cancel button
   # --------------
   my $cancel_button = $self->Button( -text             =>'Cancel',
-			             -activeforeground => 'white',
+                                     -activeforeground => 'white',
                                      -activebackground => 'blue',
-	 	                     -command => [ "Cancel", $self ] );
+                                     -command => [ "Cancel", $self ] );
   $cancel_button->grid( -column => 0 ,-row => 2, -sticky => 'e' );
 
   # OK button
   # ---------
   my $ok_button = $self->Button( -text             => 'OK',
-			         -activeforeground => 'white',
+                                 -activeforeground => 'white',
                                  -activebackground => 'blue' );
 
   my ( $flag, $filename, $directory );
@@ -158,7 +158,7 @@ sub Populate {
                            $self->{Directory} = $$selected[0];
                            opendir ( DIR, $self->{Directory}) or
                            throw ORAC::Error::FatalError(
-			               " Directory $$selected[0] not found",
+                                       " Directory $$selected[0] not found",
                                        ORAC__FATAL );
 
                            # directory listing
@@ -166,21 +166,21 @@ sub Populate {
                            foreach ( readdir DIR ) {
                               push( @contents, $_ )
                                           if -T File::Spec->
-		                              catfile($self->{Directory},$_); }
+                                              catfile($self->{Directory},$_); }
                             closedir DIR;
 
                            # re-configure the OK button
                            $ok_button->configure(-command => sub { &$sub_ok2;});
-			   # reconfigure double click
-			   $lbox->bind("<Double-Button-1>", sub { &$sub_ok2; });
+                           # reconfigure double click
+                           $lbox->bind("<Double-Button-1>", sub { &$sub_ok2; });
                    } };
 
    $sub_ok2 = sub { if ( defined $$selected[0] ) {
-			        # get the filename
-			        $self->{Filename} = $$selected[0];
-			        # untie variables
-			        untie @contents;
-			        untie $selected; }};
+                                # get the filename
+                                $self->{Filename} = $$selected[0];
+                                # untie variables
+                                untie @contents;
+                                untie $selected; }};
 
    $ok_button->configure( -command => sub { &$sub_ok1; } );
    $ok_button->grid( -column => 1 ,-row => 2, -sticky => 'we' );

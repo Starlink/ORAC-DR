@@ -110,10 +110,10 @@ sub new {
   if ($unq || !defined $THIS) {
 
     $obj = {
-	    Engines => {},
-	    EngineID => {},
-	    MessysLaunch => new ORAC::Msg::MessysLaunch(),
-	   };
+            Engines => {},
+            EngineID => {},
+            MessysLaunch => new ORAC::Msg::MessysLaunch(),
+           };
 
     # bless into the correct class
     bless( $obj, $class);
@@ -175,9 +175,9 @@ sub engine {
 
       # Store it
       if (defined $obj && UNIVERSAL::can($obj, "contactw")) {
-	$self->{Engines}->{$name} = $obj;
+        $self->{Engines}->{$name} = $obj;
       } else {
-	warnings::warnif "engine: Supplied object does not have a contactw method"
+        warnings::warnif "engine: Supplied object does not have a contactw method"
       }
 
     } elsif (exists $self->{Engines}->{$name}) {
@@ -419,22 +419,22 @@ sub launch {
       # Make sure the messaging class is available
       eval "use $pars{CLASS}";
       if ($@) {
-	orac_warn "Unable to load class $pars{CLASS} for engine $engine\n";
-	orac_throw "$@";
+        orac_warn "Unable to load class $pars{CLASS} for engine $engine\n";
+        orac_throw "$@";
       }
 
       my $messys = $self->_get_engine_messys_object( $engine )
-	or return;
+        or return;
 
       # First check to see if PATH is a coderef
       my ($path, $cleanup);
       if (ref($pars{PATH}) eq 'CODE') {
-	# Execute it
-	print "Executing helper task for $engine..." if $DEBUG;
-	($path, $cleanup) = $pars{PATH}->();
-	print "okay\n" if $DEBUG;
+        # Execute it
+        print "Executing helper task for $engine..." if $DEBUG;
+        ($path, $cleanup) = $pars{PATH}->();
+        print "okay\n" if $DEBUG;
       } else {
-	$path = $pars{PATH};
+        $path = $pars{PATH};
       }
 
       # Launch it if we can find the path. Remote tasks
@@ -447,9 +447,9 @@ sub launch {
       # that can not reuse system identifiers
       my $obj;
       if (!$path || -e $path) {
-	my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
-		     : $engine );
-	$obj = $pars{CLASS}->new($engid, $path );
+        my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
+                     : $engine );
+        $obj = $pars{CLASS}->new($engid, $path );
 
         # If we can silence set silent tasks
         if (exists $pars{SILENT} && @{$pars{SILENT}} &&
@@ -464,43 +464,43 @@ sub launch {
       # check that we have something
       if (defined $obj) {
 
-	# Flag to use to indicate that engine is okay
-	# assume it is
-	my $isokay = 1;
+        # Flag to use to indicate that engine is okay
+        # assume it is
+        my $isokay = 1;
 
-	# Some things only happen when launching a single engine
-	# for efficiency
-	if ($#engines == 0) {
+        # Some things only happen when launching a single engine
+        # for efficiency
+        if ($#engines == 0) {
 
-	  # Make sure we can talk to it
-	  print "Waiting for engine $engine..."
-	    if $DEBUG;
+          # Make sure we can talk to it
+          print "Waiting for engine $engine..."
+            if $DEBUG;
 
-	  # Prior to running contactw we need to shorten the
-	  # timeout
-	  my $timeout = $messys->timeout;
-	  $messys->timeout($WAIT);
+          # Prior to running contactw we need to shorten the
+          # timeout
+          my $timeout = $messys->timeout;
+          $messys->timeout($WAIT);
 
-	  $isokay = ( $obj->contactw ? 1 : 0);
+          $isokay = ( $obj->contactw ? 1 : 0);
 
-	  $messys->timeout($timeout);
+          $messys->timeout($timeout);
 
-	  if ($DEBUG) {
-	    print "not " unless $isokay;
-	    print "okay\n";
-	  }
+          if ($DEBUG) {
+            print "not " unless $isokay;
+            print "okay\n";
+          }
 
-	}
+        }
 
-	# store it if it looks okay
-	if ($isokay) {
-	  # Store the result
-	  $self->engine( $engine, $obj);
+        # store it if it looks okay
+        if ($isokay) {
+          # Store the result
+          $self->engine( $engine, $obj);
 
-	  # ...and in local hash
-	  $objs{ $engine } = $obj;
+          # ...and in local hash
+          $objs{ $engine } = $obj;
 
-	}
+        }
 
       }
 

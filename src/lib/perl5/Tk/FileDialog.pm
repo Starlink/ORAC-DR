@@ -29,7 +29,7 @@
 #   ??-???-?? BBP:
 #        Initial implementation
 #   15-Jan-96 EKR:
-#	 Fixed dialogue box creation.
+#        Fixed dialogue box creation.
 #        Added option for selecting directories.
 #   29-Feb-96 BBP:
 #        Rewrote and componentized, and added a bunch of options.
@@ -43,7 +43,7 @@
 #        refixed problem with click in empty list (couldn't click the
 #        first entry in list box). Altered single character navigation to
 #        prevent nudging the mouse while in an entry from grabbing focus.
-#	 Altered single character navigation to go from first to next to next
+#        Altered single character navigation to go from first to next to next
 #        to first (et al) & Finished keyboard navigation with tabs.
 #   03-Jun-96 BBP:
 #        Version 1.2: Added Version, ship
@@ -114,39 +114,39 @@ is required.
  my($fname);
 
  my($LoadDialog) = $main->FileDialog(-Title =>'This is my title',
- 				    -Create => 0);
+                                     -Create => 0);
 
  print "Using FileDialog Version ",$LoadDialog->Version,"\n";
 
  $LoadDialog->configure(-FPat => '*pl',
- 		       -ShowAll => 'NO');
+                        -ShowAll => 'NO');
 
  $main->Entry(-textvariable => \$fname)
- 	->pack(-expand => 1,
- 	       -fill => 'x');
+         ->pack(-expand => 1,
+                -fill => 'x');
 
  $main->Button(-text => 'Kick me!',
- 	      -command => sub {
- 		  $fname = $LoadDialog->Show(-Horiz => $Horiz);
- 		  if (!defined($fname)) {
- 		      $fname = "Fine,Cancel, but no Chdir anymore!!!";
- 		      $LoadDialog->configure(-Chdir =>'NO');
- 		  }
- 	      })
- 	->pack(-expand => 1,
- 	       -fill => 'x');
+               -command => sub {
+                   $fname = $LoadDialog->Show(-Horiz => $Horiz);
+                   if (!defined($fname)) {
+                       $fname = "Fine,Cancel, but no Chdir anymore!!!";
+                       $LoadDialog->configure(-Chdir =>'NO');
+                   }
+               })
+         ->pack(-expand => 1,
+                -fill => 'x');
 
  $main->Checkbutton(-text => 'Horizontal',
- 		   -variable => \$Horiz)
- 	->pack(-expand => 1,
- 	       -fill => 'x');
+                    -variable => \$Horiz)
+         ->pack(-expand => 1,
+                -fill => 'x');
 
  $main->Button(-text => 'Exit',
- 	      -command => sub {
- 		  $main->destroy;
- 	      })
- 	->pack(-expand => 1,
- 	       -fill => 'x');
+               -command => sub {
+                   $main->destroy;
+               })
+         ->pack(-expand => 1,
+                -fill => 'x');
 
  MainLoop;
 
@@ -485,15 +485,15 @@ my(@bothFill) = (-fill => 'both');
 my(@expand) = (-expand => 1);
 
 my(@TabOrder) = qw (DirList
-		    FileList
-		    FileEntry
-		    DirEntry
-		    PatEntry
-		    SABox
-		    OK
-		    Rescan
-		    Can
-		    DirList);
+                    FileList
+                    FileEntry
+                    DirEntry
+                    PatEntry
+                    SABox
+                    OK
+                    Rescan
+                    Can
+                    DirList);
 
 sub Populate {
     ## File Dialog constructor, inherits new from Toplevel
@@ -504,14 +504,14 @@ sub Populate {
     $FDialog->withdraw;
 
     $FDialog->protocol('WM_DELETE_WINDOW' => sub {
-	if (defined($FDialog->{'Can'}) && $FDialog->{'Can'}->IsWidget ) {
-	    $FDialog->{'Can'}->invoke;
-	}
+        if (defined($FDialog->{'Can'}) && $FDialog->{'Can'}->IsWidget ) {
+            $FDialog->{'Can'}->invoke;
+        }
     });
     $FDialog->transient($FDialog->Parent->toplevel);
 
     foreach (@TabOrder) {
-	$FDialog->{'TabSel'}->{$_} = 1;
+        $FDialog->{'TabSel'}->{$_} = 1;
     }
 
     ## Initialize variables that won't be initialized later
@@ -527,33 +527,33 @@ sub Populate {
     $FDialog->{'backgroundcol'} = $FDialog->{'SABox'}->cget(-background);
 
     $FDialog->ConfigSpecs(-Font                 => ['PASSIVE', undef, undef, 'Helvetica 8'],
-                          -Chdir		=> ['PASSIVE', undef, undef, 1],
-			  -Create		=> ['PASSIVE', undef, undef, 1],
-			  -DisableShowAll	=> ['PASSIVE', undef, undef, 0],
-			  -FPat			=> ['PASSIVE', undef, undef, '*'],
-			  -File			=> ['PASSIVE', undef, undef, ''],
-			  -Geometry		=> ['PASSIVE', undef, undef, undef],
-			  -Grab			=> ['PASSIVE', undef, undef, 1],
-			  -Horiz		=> ['PASSIVE', undef, undef, 1],
-			  -Path			=> ['PASSIVE', undef, undef, "$ENV{'HOME'}"],
-			  -SelDir		=> ['PASSIVE', undef, undef, 0],
-			  -DirLBCaption		=> ['PASSIVE', undef, undef, 'Directories:'],
-			  -FileLBCaption	=> ['PASSIVE', undef, undef, 'File:'],
-			  -FileEntryLabel	=> ['METHOD', undef, undef, 'Filename:'],
-			  -PathEntryLabel	=> ['METHOD', undef, undef, 'Pathname:'],
-			  -FltEntryLabel	=> ['METHOD', undef, undef, 'Filter:'],
-			  -ShowAllLabel		=> ['METHOD', undef, undef, 'ShowAll'],
-			  -OKButtonLabel	=> ['METHOD', undef, undef, 'OK'],
-			  -RescanButtonLabel	=> ['METHOD', undef, undef, 'Rescan'],
-			  -CancelButtonLabel	=> ['METHOD', undef, undef, 'Cancel'],
-			  -SelHook		=> ['PASSIVE', undef, undef, undef],
-			  -ShowAll		=> ['PASSIVE', undef, undef, 0],
-			  -Title		=> ['PASSIVE', undef, undef, "Select File:"],
-			  -EDlgTitle		=> ['PASSIVE', undef, undef,
-						   'File does not exist!'],
-			  -EDlgText		=> ['PASSIVE', undef, undef,
-						    "You must specify an existing file.\n"
-						    . "(\$filename not found)"]);
+                          -Chdir                => ['PASSIVE', undef, undef, 1],
+                          -Create               => ['PASSIVE', undef, undef, 1],
+                          -DisableShowAll       => ['PASSIVE', undef, undef, 0],
+                          -FPat                 => ['PASSIVE', undef, undef, '*'],
+                          -File                 => ['PASSIVE', undef, undef, ''],
+                          -Geometry             => ['PASSIVE', undef, undef, undef],
+                          -Grab                 => ['PASSIVE', undef, undef, 1],
+                          -Horiz                => ['PASSIVE', undef, undef, 1],
+                          -Path                 => ['PASSIVE', undef, undef, "$ENV{'HOME'}"],
+                          -SelDir               => ['PASSIVE', undef, undef, 0],
+                          -DirLBCaption         => ['PASSIVE', undef, undef, 'Directories:'],
+                          -FileLBCaption        => ['PASSIVE', undef, undef, 'File:'],
+                          -FileEntryLabel       => ['METHOD', undef, undef, 'Filename:'],
+                          -PathEntryLabel       => ['METHOD', undef, undef, 'Pathname:'],
+                          -FltEntryLabel        => ['METHOD', undef, undef, 'Filter:'],
+                          -ShowAllLabel         => ['METHOD', undef, undef, 'ShowAll'],
+                          -OKButtonLabel        => ['METHOD', undef, undef, 'OK'],
+                          -RescanButtonLabel    => ['METHOD', undef, undef, 'Rescan'],
+                          -CancelButtonLabel    => ['METHOD', undef, undef, 'Cancel'],
+                          -SelHook              => ['PASSIVE', undef, undef, undef],
+                          -ShowAll              => ['PASSIVE', undef, undef, 0],
+                          -Title                => ['PASSIVE', undef, undef, "Select File:"],
+                          -EDlgTitle            => ['PASSIVE', undef, undef,
+                                                   'File does not exist!'],
+                          -EDlgText             => ['PASSIVE', undef, undef,
+                                                    "You must specify an existing file.\n"
+                                                    . "(\$filename not found)"]);
 }
 
 
@@ -571,8 +571,8 @@ sub CancelButtonLabel {
 sub SetButton {
     my($widg, $self, $title) = @_;
     if (defined($title)) {
-	## This is a configure
-	$self->{$widg}->configure(-font => $self->{Configure}{-Font}, -text => $title);
+        ## This is a configure
+        $self->{$widg}->configure(-font => $self->{Configure}{-Font}, -text => $title);
     }
     ## Return the current value
     $self->{$widg}->cget(-text);
@@ -593,8 +593,8 @@ sub ShowAllLabel {
 sub SetLabel {
     my($widg, $self, $title) = @_;
     if (defined($title)) {
-	## This is a configure
-	$self->{$widg}->{'Label'}->configure(-font => $self->{Configure}{-Font},  -text => $title);
+        ## This is a configure
+        $self->{$widg}->{'Label'}->configure(-font => $self->{Configure}{-Font},  -text => $title);
     }
     ## Return the current value
     $self->{$widg}->{'Label'}->cget(-text);
@@ -609,23 +609,23 @@ sub SetFlag {
     ## We know it's defined as there was a ConfigDefault call after the Populate
     ## call.  Therefore, all we have to do is parse the non-numerics
     if (&IsNum($self->{Configure}{$flag})) {
-	$self->{Configure}{$flag} = 1 unless $self->{Configure}{$flag} == 0;
+        $self->{Configure}{$flag} = 1 unless $self->{Configure}{$flag} == 0;
     } else {
-	my($val) = $self->{Configure}{$flag};
+        my($val) = $self->{Configure}{$flag};
 
-	my($fc) = lc(substr($val,0,1));
+        my($fc) = lc(substr($val,0,1));
 
-	if (($fc eq 'y') || ($fc eq 't')) {
-	    $val = 1;
-	} elsif (($fc eq 'n') || ($fc eq 'f')) {
-	    $val = 0;
-	} else {
-	    ## bad value, complain about it
-	    carp ("\"$val\" is not a valid flag ($flag)!");
-	    $dflt = 0 if !defined($dflt);
-	    $val = $dflt;
-	}
-	$self->{Configure}{$flag} = $val;
+        if (($fc eq 'y') || ($fc eq 't')) {
+            $val = 1;
+        } elsif (($fc eq 'n') || ($fc eq 'f')) {
+            $val = 0;
+        } else {
+            ## bad value, complain about it
+            carp ("\"$val\" is not a valid flag ($flag)!");
+            $dflt = 0 if !defined($dflt);
+            $val = $dflt;
+        }
+        $self->{Configure}{$flag} = $val;
     }
     return $self->{Configure}{$flag};
 }
@@ -647,18 +647,18 @@ sub Show {
     $self->SetFlag('SelDir');
 
     croak "Can't SelDir and Not ChDir" if $self->{Configure}{-SelDir} &&
-	    !$self->{Configure}{-Chdir};
+            !$self->{Configure}{-Chdir};
 
     ## Set up, or remove, the directory box
     &BuildListBoxes($self);
 
     ## Enable, or disable, the show all box
     if ($self->{Configure}{-DisableShowAll}) {
-	$self->{'SABox'}->configure(-state => 'disabled');
-	$self->{'TabSel'}->{'SABox'} = 0;
+        $self->{'SABox'}->configure(-state => 'disabled');
+        $self->{'TabSel'}->{'SABox'} = 0;
     } else {
-	$self->{'SABox'}->configure(-state => 'normal');
-	$self->{'TabSel'}->{'SABox'} = 1;
+        $self->{'SABox'}->configure(-state => 'normal');
+        $self->{'TabSel'}->{'SABox'} = 1;
     }
 
     # Fix the fonts for FileEntry, DirEntry and PatEntry
@@ -668,11 +668,11 @@ sub Show {
 
     ## Enable or disable the file entry box
     if ($self->{Configure}{-SelDir}) {
-	$self->{Configure}{-File} = '';
-	$self->{'FileEntry'}->configure(-state => 'disabled',
-	                                -font => $self->{Configure}{-Font},
-					-foreground => $self->{'inactivefore'});
-	$self->{'FileList'}->configure(-selectforeground => $self->{'inactivefore'});
+        $self->{Configure}{-File} = '';
+        $self->{'FileEntry'}->configure(-state => 'disabled',
+                                        -font => $self->{Configure}{-Font},
+                                        -foreground => $self->{'inactivefore'});
+        $self->{'FileList'}->configure(-selectforeground => $self->{'inactivefore'});
 
         # we have -DirSel forget the file entry widget
         $self->{'FEF'}->packForget();
@@ -681,15 +681,15 @@ sub Show {
         $self->{'FileList'}->configure(-takefocus => 0,
                               -selectbackground => $self->{'backgroundcol'});
 
-	$self->{'FileList'}->configure(-foreground => $self->{'inactivefore'});
-	$self->{'TabSel'}->{'FileEntry'} = $self->{'TabSel'}->{'FileList'} = 0;
+        $self->{'FileList'}->configure(-foreground => $self->{'inactivefore'});
+        $self->{'TabSel'}->{'FileEntry'} = $self->{'TabSel'}->{'FileList'} = 0;
     } else {
-	$self->{'FileEntry'}->configure(-state => 'normal',
-	                                -font => $self->{Configure}{-Font},
-					-foreground => $self->{'activefore'});
-	$self->{'FileList'}->configure(-selectforeground => $self->{'activefore'});
-	$self->{'FileList'}->configure(-foreground => $self->{'activefore'});
-	$self->{'TabSel'}->{'FileEntry'} = $self->{'TabSel'}->{'FileList'} = 1;
+        $self->{'FileEntry'}->configure(-state => 'normal',
+                                        -font => $self->{Configure}{-Font},
+                                        -foreground => $self->{'activefore'});
+        $self->{'FileList'}->configure(-selectforeground => $self->{'activefore'});
+        $self->{'FileList'}->configure(-foreground => $self->{'activefore'});
+        $self->{'TabSel'}->{'FileEntry'} = $self->{'TabSel'}->{'FileList'} = 1;
     }
 
     ## Set the title
@@ -698,12 +698,12 @@ sub Show {
     ## Create window position (Center unless configured)
     $self->update;
     if (defined($self->{Configure}{-Geometry})) {
-	$self->geometry($self->{Configure}{-Geometry});
+        $self->geometry($self->{Configure}{-Geometry});
     } else {
-	my($x,$y);
-	$x = int(($self->screenwidth - $self->reqwidth)/2 - $self->parent->vrootx);
-	$y = int(($self->screenheight - $self->reqheight)/2 - $self->parent->vrooty);
-	$self->geometry("+$x+$y");
+        my($x,$y);
+        $x = int(($self->screenwidth - $self->reqwidth)/2 - $self->parent->vrootx);
+        $y = int(($self->screenheight - $self->reqheight)/2 - $self->parent->vrooty);
+        $self->geometry("+$x+$y");
     }
 
     ## Set up the tab order
@@ -724,22 +724,22 @@ sub Show {
 
     my($i) = 0;
     while (!$i) {
-	$self->tkwait('variable',\$self->{'Retval'});
-	$i = $self->{'Retval'};
-	if ($i != -1) {
-	    ## No cancel, so call the hook if it's defined
-	    if (defined($self->{Configure}{-SelHook})) {
-		## The hook returns 0 to ignore the result,
-		## non-zero to accept.  Must release the grab before calling
-		$self->grab('release') if (defined($self->grab('current')));
+        $self->tkwait('variable',\$self->{'Retval'});
+        $i = $self->{'Retval'};
+        if ($i != -1) {
+            ## No cancel, so call the hook if it's defined
+            if (defined($self->{Configure}{-SelHook})) {
+                ## The hook returns 0 to ignore the result,
+                ## non-zero to accept.  Must release the grab before calling
+                $self->grab('release') if (defined($self->grab('current')));
 
-		$i = &{$self->{Configure}{-SelHook}}($self->{'RetFile'});
+                $i = &{$self->{Configure}{-SelHook}}($self->{'RetFile'});
 
-		$self->grab if ($self->{Configure}{-Grab});
-	    }
-	} else {
-	    $self->{'RetFile'} = undef;
-	}
+                $self->grab if ($self->{Configure}{-Grab});
+            }
+        } else {
+            $self->{'RetFile'} = undef;
+        }
     }
 
     $self->grab('release') if (defined($self->grab('current')));
@@ -771,26 +771,26 @@ sub TabNext {
     ## Find the object with the matching focus...
     my($i) = 0;
     foreach (@TabOrder) {
-	if ($self->{$_} eq $f) {
-	    $i = $#TabOrder if !$i && $inc == -1;
+        if ($self->{$_} eq $f) {
+            $i = $#TabOrder if !$i && $inc == -1;
 
-	    $i += $inc;
+            $i += $inc;
 
-	    while (!defined($TabOrder[$i]) ||
-		   !ref($self->{$TabOrder[$i]}) ||
-		   !$self->{$TabOrder[$i]}->IsWidget ||
-		   !($self->{'TabSel'}->{$TabOrder[$i]})) {
-# 		   (($TabOrder[$i] == 'FileList') &&
-# 		    $self->{Configure}{-SelDir}) ) {
-		$i += $inc;
-		$i = $#TabOrder if !$i && $inc == -1;
-		$i = 0 if $i > $#TabOrder && $inc == 1;
-	    }
-	    $self->{$TabOrder[$i]}->focus;
-	    $self->break;
-	    return;
-	}
-	$i++;
+            while (!defined($TabOrder[$i]) ||
+                   !ref($self->{$TabOrder[$i]}) ||
+                   !$self->{$TabOrder[$i]}->IsWidget ||
+                   !($self->{'TabSel'}->{$TabOrder[$i]})) {
+                   # (($TabOrder[$i] == 'FileList') &&
+                   #  $self->{Configure}{-SelDir}) ) {
+                $i += $inc;
+                $i = $#TabOrder if !$i && $inc == -1;
+                $i = 0 if $i > $#TabOrder && $inc == 1;
+            }
+            $self->{$TabOrder[$i]}->focus;
+            $self->break;
+            return;
+        }
+        $i++;
     }
 }
 
@@ -798,12 +798,12 @@ sub SetTabs {
     my($self) = shift;
 
     foreach (@TabOrder) {
-	next if (!defined($self->{$_}) ||
-		 !ref $self->{$_} ||
-		 !$self->{$_}->IsWidget);
+        next if (!defined($self->{$_}) ||
+                 !ref $self->{$_} ||
+                 !$self->{$_}->IsWidget);
 
-	$self->{$_}->bind("<Tab>", sub {\&TabNext($self, 1);});
-	$self->{$_}->bind("<Shift-Tab>", sub {\&TabNext($self, -1);});
+        $self->{$_}->bind("<Tab>", sub {\&TabNext($self, 1);});
+        $self->{$_}->bind("<Shift-Tab>", sub {\&TabNext($self, -1);});
     }
 }
 
@@ -812,26 +812,26 @@ sub BuildListBox {
 
     ## Create the subframe
     $self->{"$fvar"} = $self->{'DFFrame'}->Frame
-	    ->pack(-side => $self->{Configure}{-Horiz} ? $hpack : $vpack,
-		   -anchor => 'center',
-		   @bothFill, @expand);
+            ->pack(-side => $self->{Configure}{-Horiz} ? $hpack : $vpack,
+                   -anchor => 'center',
+                   @bothFill, @expand);
 
     ## Create the label
     $self->{"$fvar"}->Label(-font => $self->{Configure}{-Font},
                             -relief => 'flat', -text => "$flabel")
-	    ->pack(@topPack, @xfill);
+            ->pack(@topPack, @xfill);
 
     ## Create the frame for the list box
     my($fbf) = $self->{"$fvar"}->Frame
-	    ->pack(@topPack, @bothFill, @expand);
+            ->pack(@topPack, @bothFill, @expand);
 
     ## And the scrollbar and listbox in it
     $self->{"$listvar"} = $fbf->Listbox( -borderwidth         => 1,
                                   -selectbackground    => 'blue',
-				  -font                => $self->{Configure}{-Font},
-				  -selectforeground    => 'white',
-				  -selectmode          => 'single')
-	    ->pack(@leftPack, @expand, @bothFill);
+                                  -font                => $self->{Configure}{-Font},
+                                  -selectforeground    => 'white',
+                                  -selectmode          => 'single')
+            ->pack(@leftPack, @expand, @bothFill);
 
     $fbf->AddScrollbars($self->{"$listvar"});
     $fbf->configure(-scrollbars => 'rse');
@@ -844,14 +844,14 @@ sub DirSel {
     return if !defined($np);
     $np = $lbdir->get($np);
     if ($np eq "..") {
-	## Moving up one directory
-	$_ = $self->{Configure}{-Path};
-	chop if m!/$!;
-	s!(.*/)[^/]*$!$1!;
-	$self->{Configure}{-Path} = $_;
+        ## Moving up one directory
+        $_ = $self->{Configure}{-Path};
+        chop if m!/$!;
+        s!(.*/)[^/]*$!$1!;
+        $self->{Configure}{-Path} = $_;
     } else {
-	## Going down into a directory
-	$self->{Configure}{-Path} .= "/" . "$np/";
+        ## Going down into a directory
+        $self->{Configure}{-Path} .= "/" . "$np/";
     }
     $self->{Configure}{-Path} =~ s!//*!/!g;
     \&RescanFiles($self);
@@ -882,10 +882,10 @@ sub BindDir {
 sub FileSel {
     my($self) = shift;
     if (!$self->{Configure}{-SelDir}) {
-	my($f) = $self->{'FileList'}->curselection;
-	return if !defined($f);
-	$self->{'File'} = $self->{'FileList'}->get($f);
-	$self->{'OK'}->invoke;
+        my($f) = $self->{'FileList'}->curselection;
+        return if !defined($f);
+        $self->{'File'} = $self->{'FileList'}->get($f);
+        $self->{'OK'}->invoke;
     }
 }
 
@@ -897,25 +897,25 @@ sub BindFile {
 
     ## A single click selects the file...
     $self->{'FileList'}->bind("<ButtonRelease-1>", sub {
-	if (!$self->{Configure}{-SelDir}) {
-	    my($n);
-	    return if (!defined($n=$self->{'FileList'}->curselection));
-	    ($self->{Configure}{-File} = $self->{'FileList'}->get($n));
-	    ##if defined($n);
-	}
+        if (!$self->{Configure}{-SelDir}) {
+            my($n);
+            return if (!defined($n=$self->{'FileList'}->curselection));
+            ($self->{Configure}{-File} = $self->{'FileList'}->get($n));
+            ##if defined($n);
+        }
     });
     ## A double-click selects the file for good
     $self->{'FileList'}->bind("<Double-1>", sub {&FileSel($self);});
 
     # binding to take focus if clicked
     $self->{'FileList'}->bind("<1>", sub{
-				 $self->{'FileList'}->focus;
-			     });
+                                 $self->{'FileList'}->focus;
+                             });
 
     # binding to attract focus if mouse over list
     $self->{'FileList'}->bind("<Enter>", sub{
-				  &listFocus($self, 'FileList');
-			      });
+                                  &listFocus($self, 'FileList');
+                              });
 
     # binding to select and be done if someone hits return
     $self->{'FileList'}->bind("<Return>", sub {&FileSel($self);});
@@ -934,24 +934,24 @@ sub BuildEntry {
 
     ## Create the entry frame
     my $eFrame = $self->Frame()
-	    ->pack(@topPack, @xfill);
+            ->pack(@topPack, @xfill);
 
     ## Now create and pack the title and entry
     $eFrame->{'Label'} = $eFrame->Label( -relief => 'flat', -font => $self->{Configure}{-Font})
-	    ->pack(@leftPack);
+            ->pack(@leftPack);
 
     $self->{"$entry"} = $eFrame->Entry(
-			-textvariable => \$self->{Configure}{$LabelVar},
+                        -textvariable => \$self->{Configure}{$LabelVar},
                                -exportselection     => 1,
                               -font                => $self->{Configure}{-Font},
-			       -selectbackground    => 'blue',
-			       -selectforeground    => 'white',
-			       -justify             => 'left' )
-	    ->pack(@rightPack, @expand, @xfill);
+                               -selectbackground    => 'blue',
+                               -selectforeground    => 'white',
+                               -justify             => 'left' )
+            ->pack(@rightPack, @expand, @xfill);
 
     $self->{"$entry"}->bind("<Return>",sub {
-	&RescanFiles($self);
-	$self->{'OK'}->focus;
+        &RescanFiles($self);
+        $self->{'OK'}->focus;
     });
 
     return $eFrame;
@@ -962,26 +962,26 @@ sub BuildListBoxes {
 
     ## Destroy both, if they're there
     if ($self->{'DFFrame'} && $self->{'DFFrame'}->IsWidget) {
-	$self->{'DFFrame'}->destroy;
+        $self->{'DFFrame'}->destroy;
     }
 
     $self->{'DFFrame'} = $self->Frame;
     $self->{'DFFrame'}->pack(-before => $self->{'FEF'},
-			     @topPack, @bothFill, @expand);
+                             @topPack, @bothFill, @expand);
 
     ## Build the file window before the directory window, even
     ## though the file window is below the directory window, we'll
     ## pack the directory window before.
     &BuildListBox($self, 'FileFrame',
-		  $self->{Configure}{-FileLBCaption},
-		  'FileList','right','bottom');
+                  $self->{Configure}{-FileLBCaption},
+                  'FileList','right','bottom');
     ## Set up the bindings for the file list
     &BindFile($self);
 
     if ($self->{Configure}{-Chdir}) {
-	&BuildListBox($self,'DirFrame',$self->{Configure}{-DirLBCaption},
-		      'DirList','left','top');
-	&BindDir($self);
+        &BuildListBox($self,'DirFrame',$self->{Configure}{-DirLBCaption},
+                      'DirList','left','top');
+        &BindDir($self);
     }
 
     $self->{'FileList'}->configure(-selectforeground => 'white' );
@@ -1000,33 +1000,33 @@ sub BuildFDWindow {
 
     ### Now comes the multi-part frame
     my $patFrame = $self->Frame()
-	    ->pack(@topPack, @xfill);
+            ->pack(@topPack, @xfill);
 
     ## Label first...
     $self->{'patFrame'}->{'Label'} = $patFrame->Label(-relief => 'flat',
                                                       -font => $self->{Configure}{-Font})
-	    ->pack(@leftPack);
+            ->pack(@leftPack);
 
     ## Now the entry...
     $self->{'PatEntry'} = $patFrame->Entry(-font => $self->{Configure}{-Font},
                                -exportselection     => 1,
                               -font                => $self->{Configure}{-Font},
-			       -selectbackground    => 'blue',
-			       -selectforeground    => 'white',
-			       -justify             => 'left',
+                               -selectbackground    => 'blue',
+                               -selectforeground    => 'white',
+                               -justify             => 'left',
                              -textvariable => \$self->{Configure}{-FPat})
-	    ->pack(@leftPack, @expand, @xfill);
+            ->pack(@leftPack, @expand, @xfill);
     $self->{'PatEntry'}->bind("<Return>",sub {\&RescanFiles($self);});
 
 
     ## and the Check box
     $self->{'SABox'} = $patFrame->Checkbutton(  -font        => $self->{Configure}{-Font},
-						-text        => 'Insert',
-						-selectcolor => 'blue',
-						-onvalue     => 'plain',
-			        -variable => \$self->{Configure}{-ShowAll},
-					     -command => sub {\&RescanFiles($self);})
-	    ->pack(@leftPack);
+                                                -text        => 'Insert',
+                                                -selectcolor => 'blue',
+                                                -onvalue     => 'plain',
+                                -variable => \$self->{Configure}{-ShowAll},
+                                             -command => sub {\&RescanFiles($self);})
+            ->pack(@leftPack);
 
     ### FINALLY!!! the button frame
     my $butFrame = $self->Frame();
@@ -1035,26 +1035,26 @@ sub BuildFDWindow {
     $self->{'OK'} = $butFrame->Button(-font             => $self->{Configure}{-Font},
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
-					-command => sub {
-	\&GetReturn($self);
+                                        -command => sub {
+        \&GetReturn($self);
     })
-	    ->pack(@leftPack, @expand, @xfill);
+            ->pack(@leftPack, @expand, @xfill);
 
     $self->{'Rescan'} = $butFrame->Button(-font             => $self->{Configure}{-Font},
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
-					-command => sub {
-	\&RescanFiles($self);
+                                        -command => sub {
+        \&RescanFiles($self);
     })
-	    ->pack(@leftPack, @expand, @xfill);
+            ->pack(@leftPack, @expand, @xfill);
 
     $self->{'Can'} = $butFrame->Button(-font             => $self->{Configure}{-Font},
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
-					-command => sub {
-	$self->{'Retval'} = -1;
+                                        -command => sub {
+        $self->{'Retval'} = -1;
     })
-	    ->pack(@leftPack, @expand, @xfill);
+            ->pack(@leftPack, @expand, @xfill);
 }
 
 sub RescanFiles {
@@ -1070,13 +1070,13 @@ sub RescanFiles {
     ### Remove a final / if it is there, and add it
     $path = '' if !defined($path);
     if ((length($path) == 0) || (substr($path,-1,1) ne '/')) {
-	$path .= '/';
-	$self->{Configure}{-Path} = $path;
+        $path .= '/';
+        $self->{Configure}{-Path} = $path;
     }
     ### path now has a trailing / no matter what
     if (!-d $path) {
-	carp "$path is NOT a directory\n";
-	return 0;
+        carp "$path is NOT a directory\n";
+        return 0;
     }
 
     $self->configure(-cursor => 'watch');
@@ -1092,24 +1092,24 @@ sub RescanFiles {
 
     ## First, get the directories...
     if ($chdir) {
-	$dl->delete(0,'end');
-	my %see; # hold index if first occurrence of first character of direntry
-	my $n=0; # number of entry in list
-	foreach $direntry (sort @allfiles) {
-	    next if !-d "$path$direntry";
-	    next if $direntry eq ".";
-	    if (   !$show
-		&& (substr($direntry,0,1) eq ".")
-		&& $direntry ne "..") {
-		next;
-	    }
-	    $dl->insert('end',$direntry);
-	    if(! exists($see{substr($direntry,0,1)})){
-	       $see{substr($direntry,0,1)}=$n;
-	    }
-	    $n++;
-	}
-	$self->{see_Dir}=\%see;
+        $dl->delete(0,'end');
+        my %see; # hold index if first occurrence of first character of direntry
+        my $n=0; # number of entry in list
+        foreach $direntry (sort @allfiles) {
+            next if !-d "$path$direntry";
+            next if $direntry eq ".";
+            if (   !$show
+                && (substr($direntry,0,1) eq ".")
+                && $direntry ne "..") {
+                next;
+            }
+            $dl->insert('end',$direntry);
+            if(! exists($see{substr($direntry,0,1)})){
+               $see{substr($direntry,0,1)}=$n;
+            }
+            $n++;
+        }
+        $self->{see_Dir}=\%see;
     }
 
     ## Now, get the files
@@ -1130,15 +1130,15 @@ sub RescanFiles {
     my $n=0; # number of entry in list
     my $fileentry;
     foreach $fileentry (sort @allfiles) {
-	if (-f $fileentry) {
-	    $fileentry =~ s!.*/!!; # mkr s!.*/([^/]*)$!$1!;
-	    $fl->insert('end',$fileentry);
-	    if(! exists($see{substr($fileentry,0,1)})){
-	       $see{substr($fileentry,0,1)}=$n;
-	    }
-	    $n++;
-	}
-	$self->{see_File}=\%see;
+        if (-f $fileentry) {
+            $fileentry =~ s!.*/!!; # mkr s!.*/([^/]*)$!$1!;
+            $fl->insert('end',$fileentry);
+            if(! exists($see{substr($fileentry,0,1)})){
+               $see{substr($fileentry,0,1)}=$n;
+            }
+            $n++;
+        }
+        $self->{see_File}=\%see;
     }
     $self->configure(-cursor => 'top_left_arrow');
 
@@ -1159,33 +1159,33 @@ sub GetReturn {
     $path .= "/" if (substr($path, -1, 1) ne '/');
 
     if ($self->{Configure}{-SelDir}) {
-	$fname = $self->{'DirList'};
+        $fname = $self->{'DirList'};
 
-	if (defined($fname->curselection)) {
-	    $fname = $fname->get($fname->curselection);
-	} else {
-	    $fname = '';
-	}
-	$fname = $path . $fname;
-	$fname =~ s/\/$//;
+        if (defined($fname->curselection)) {
+            $fname = $fname->get($fname->curselection);
+        } else {
+            $fname = '';
+        }
+        $fname = $path . $fname;
+        $fname =~ s/\/$//;
     } else {
-	$fname = $path . $self->{Configure}{-File};
-	## Make sure that the file exists, if the user is not allowed
-	## to create
-	if (!$self->{Configure}{-Create} && !(-f $fname)) {
-	    ## Put up no create dialog
-	    my($path) = $self->{Configure}{-Path};
-	    my($file) = $self->{Configure}{-File};
-	    my($filename) = $fname;
-	    eval "\$fname = \"$self->{Configure}{-EDlgText}\"";
-	    $self->Dialog(-title => $self->{Configure}{-EDlgTitle},
-			  -text => $fname,
-			  -bitmap => 'error',
-			  -font => $self->{Configure}{-Font})
-		    ->Show;
-	    ## And return
-	    return;
-	}
+        $fname = $path . $self->{Configure}{-File};
+        ## Make sure that the file exists, if the user is not allowed
+        ## to create
+        if (!$self->{Configure}{-Create} && !(-f $fname)) {
+            ## Put up no create dialog
+            my($path) = $self->{Configure}{-Path};
+            my($file) = $self->{Configure}{-File};
+            my($filename) = $fname;
+            eval "\$fname = \"$self->{Configure}{-EDlgText}\"";
+            $self->Dialog(-title => $self->{Configure}{-EDlgTitle},
+                          -text => $fname,
+                          -bitmap => 'error',
+                          -font => $self->{Configure}{-Font})
+                    ->Show;
+            ## And return
+            return;
+        }
     }
 
     $self->{'RetFile'} = $fname;
@@ -1200,10 +1200,10 @@ sub listFocus {
 
     my($f) = $self->{$lb}->focusCurrent;
     if (defined($f) &&
-	$f ne $self->{'FileEntry'} &&
-	$f ne $self->{'DirEntry'} &&
-	$f ne $self->{'PatEntry'}) {
-	$self->{$lb}->focus;
+        $f ne $self->{'FileEntry'} &&
+        $f ne $self->{'DirEntry'} &&
+        $f ne $self->{'PatEntry'}) {
+        $self->{$lb}->focus;
     }
 }
 
@@ -1214,38 +1214,38 @@ sub list_see{
     my $see=$self->{"see_$what"};    # index hash
     my $char=$list->XEvent->A;       # key pressed
     if (exists($see->{$char})) {     # line with char there?
-	## Yes, it is...
-	my ($ndx) = $see->{$char};
+        ## Yes, it is...
+        my ($ndx) = $see->{$char};
 
-	## Is it already selected?
-	my($cs) = $list->curselection;
-	if (defined($cs)) {
+        ## Is it already selected?
+        my($cs) = $list->curselection;
+        if (defined($cs)) {
 
-	    if (($cs == $ndx) ||
-		(substr($list->get($cs),0,1) eq $char)) {
-		## does the next in the list start with the same char?
-		if (defined($list->get($cs + 1)) &&
-		    (substr($list->get($cs + 1),0,1) eq $char)) {
-		    $ndx = ++$cs;
-		}
-	    }
-	}
-	$list->see($ndx);    # yes, so show it.
-	$list->selection('clear',0,'end');
-	return if $self->{Configure}{-SelDir};
-	$list->selection('set', $ndx);
-	$self->{Configure}{-File} = $list->get($ndx) if $what eq 'File';
+            if (($cs == $ndx) ||
+                (substr($list->get($cs),0,1) eq $char)) {
+                ## does the next in the list start with the same char?
+                if (defined($list->get($cs + 1)) &&
+                    (substr($list->get($cs + 1),0,1) eq $char)) {
+                    $ndx = ++$cs;
+                }
+            }
+        }
+        $list->see($ndx);    # yes, so show it.
+        $list->selection('clear',0,'end');
+        return if $self->{Configure}{-SelDir};
+        $list->selection('set', $ndx);
+        $self->{Configure}{-File} = $list->get($ndx) if $what eq 'File';
     } else {                          # search next line in sequence
-	while(!exists($see->{$char}) && length($char) == 1) {
-	    $char++;
-	}
-	if(exists($see->{$char})){
-	    $char = $see->{$char};
-	    $list->see($char-1) if $char;    # Show the one before
-	    $list->see($char);    # and show this one...
-# 	} else {
-# 	    $list->bell;
-	}
+        while(!exists($see->{$char}) && length($char) == 1) {
+            $char++;
+        }
+        if(exists($see->{$char})){
+            $char = $see->{$char};
+            $list->see($char-1) if $char;    # Show the one before
+            $list->see($char);    # and show this one...
+        # } else {
+        #     $list->bell;
+        }
     }
 }
 

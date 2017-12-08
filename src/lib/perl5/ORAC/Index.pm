@@ -383,9 +383,9 @@ sub slurpindex {
         if ( defined( $entry ) && uc( $entry ) eq BLANK_VALUE ) {
           $entry = " ";
         }
-	# Add whitespace back to strings
-	my $space = SPACE;
-	if ( defined( $entry ) && uc( $entry ) =~ /$space/ ) {
+        # Add whitespace back to strings
+        my $space = SPACE;
+        if ( defined( $entry ) && uc( $entry ) =~ /$space/ ) {
           $entry =~ s/$space/ /g;
         }
       }
@@ -600,11 +600,11 @@ sub index_to_text {
       if ( /^\s+$/ ) {
         BLANK_VALUE;
       } elsif ( /\s+/ ) {
-	my $entry = $_;
-	my $space = SPACE;
-	$entry =~ s/^\s+//;	# removing leading whitespace
-	$entry =~ s/\s/$space/g;	# remaining whitespace is replaced with SPACE
-	$entry;
+        my $entry = $_;
+        my $space = SPACE;
+        $entry =~ s/^\s+//;       # removing leading whitespace
+        $entry =~ s/\s/$space/g;  # remaining whitespace is replaced with SPACE
+        $entry;
       } else {
         $_
       }

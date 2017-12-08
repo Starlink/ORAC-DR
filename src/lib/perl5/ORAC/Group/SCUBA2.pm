@@ -212,11 +212,11 @@ sub sort_by_subarray {
     my %files = $frmobj->get_files_by_subarray;
     foreach my $subarray ( keys %files ) {
       if ( defined $rawdata{$subarray}) {
-	my @data = @{ $rawdata{$subarray} };
-	push(@data, @{ $files{$subarray} });
-	$rawdata{$subarray} = \@data;
+        my @data = @{ $rawdata{$subarray} };
+        push(@data, @{ $files{$subarray} });
+        $rawdata{$subarray} = \@data;
       } else {
-	$rawdata{$subarray} = $files{$subarray};
+        $rawdata{$subarray} = $files{$subarray};
       }
     }
   }

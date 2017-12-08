@@ -871,7 +871,7 @@ sub _expand_primitive {
 
     # Check for primitive insert directives
     if ($line =~ /^\s*_/ ) {
-      $line =~ s/^\s+//;	# zap leading blanks
+      $line =~ s/^\s+//;        # zap leading blanks
       $line =~ s/\s*$//;        # Zap trailing blanks
       my ($primitive_name, $rest) = split(/\s+/,$line,2);
       $rest = '' unless defined $rest; # -w protection for next line
@@ -1094,9 +1094,9 @@ Provides the code for automatic status checking of recipes.
 sub _check_status_string {
 
   my @newlines =  (' if ($ORAC_STATUS != ORAC__OK) {' ,
-		   '   orac_err ("Error in pipeline\n"); ' ,
-		   '   return $ORAC_STATUS; ' ,
-		   ' } ');
+                   '   orac_err ("Error in pipeline\n"); ' ,
+                   '   return $ORAC_STATUS; ' ,
+                   ' } ');
 
   # Add newlines to each line of the text so that it appears
   # correctly when recipe is listed
@@ -1134,28 +1134,28 @@ sub _check_obey_status_string {
 
   my $montext = (defined $monolith ? $monolith : "(None)");
   my @statuslines = (
-		     'if ($OBEYW_STATUS != ORAC__OK) {',
-		     "  orac_err (\"Error in obeyw to monolith $montext (task=$task): \$OBEYW_STATUS\\n\");" ,
-		     '  my $obeyw_args = "'. $args . '";',
-		     '  orac_print("Arguments were: ","blue");',
+                     'if ($OBEYW_STATUS != ORAC__OK) {',
+                     "  orac_err (\"Error in obeyw to monolith $montext (task=$task): \$OBEYW_STATUS\\n\");" ,
+                     '  my $obeyw_args = "'. $args . '";',
+                     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); '
-		    );
+                    );
 
   # If we have been unable to determine the monolith name we can not
   # add the following - could use splice rather than two pushes
   if (defined $monolith) {
     push (@statuslines,
-	  '  if ($OBEYW_STATUS == ORAC__BADENG) {',
-	  "    orac_err(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
-	  "    delete \$Mon{$monolith};",
-	  '  }'
-	 );
+          '  if ($OBEYW_STATUS == ORAC__BADENG) {',
+          "    orac_err(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
+          "    delete \$Mon{$monolith};",
+          '  }'
+         );
   }
 
   # finish
   push (@statuslines,
-	'  return $OBEYW_STATUS;',
-	'}'
+        '  return $OBEYW_STATUS;',
+        '}'
        );
 
   # Add newlines to each line of the text so that it appears

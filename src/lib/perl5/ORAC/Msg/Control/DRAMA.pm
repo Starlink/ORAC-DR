@@ -60,13 +60,13 @@ sub new {
 
   # create the hash for the object and bless it
   my $drama = bless {
-		     Running => 0,
-		     STDERR => \*STDERR,
-		     STDOUT => \*STDOUT,
-		     MESSAGES => 1,
-		     ERRORS => 1,
-		     TIMEOUT => 30,
-	      }, $class;
+                     Running => 0,
+                     STDERR => \*STDERR,
+                     STDOUT => \*STDOUT,
+                     MESSAGES => 1,
+                     ERRORS => 1,
+                     TIMEOUT => 30,
+              }, $class;
 
 
   # Deal with the true argument

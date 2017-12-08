@@ -85,13 +85,13 @@ sub sort_my_groups {
 
   sub by_grouptype {
     my %sorthash = (
-      	      	    BIAS => 0,
-		    DARK => 1,
-		    FLAT => 2,
-		    SKYFLAT => 2,
-		    OBJECT => 3,
-		    EXPOSE => 3,
-		  );
+                    BIAS => 0,
+                    DARK => 1,
+                    FLAT => 2,
+                    SKYFLAT => 2,
+                    OBJECT => 3,
+                    EXPOSE => 3,
+                  );
     if ($sorthash{$a->members->[0]->uhdr( "ORAC_OBSERVATION_TYPE")} < $sorthash{$b->members->[0]->uhdr( "ORAC_OBSERVATION_TYPE")}) {
       return -1;
     } elsif ($sorthash{$a->members->[0]->uhdr( "ORAC_OBSERVATION_TYPE")} == $sorthash{$b->members->[0]->uhdr( "ORAC_OBSERVATION_TYPE")}) {

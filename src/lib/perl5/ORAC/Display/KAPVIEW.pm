@@ -80,11 +80,11 @@ sub new {
 
   # Create a new instance from the base class
   my $disp = $class->SUPER::new(
-				Obj => undef, # kapview object
-				EngineLaunch => new ORAC::Msg::EngineLaunch,
-				Regions => {},
-				@_,
-			       );
+                                Obj => undef, # kapview object
+                                EngineLaunch => new ORAC::Msg::EngineLaunch,
+                                Regions => {},
+                                @_,
+                               );
 
   # Split the launching and configuration into separate subroutines.
   $disp->launch;
@@ -515,12 +515,12 @@ sub config_regions {
   # Store the definitions in a hash, the key is the region label.
 
   my %regions = (
-		 0 => "cc [1,1]",
-		 5 => "cl [0.5,1.0]",
-		 6 => "cr [0.5,1.0]",
-		 7 => "tl [1.0,0.5]",
-		 8 => "bl [1.0,0.5]",
-		);
+                 0 => "cc [1,1]",
+                 5 => "cl [0.5,1.0]",
+                 6 => "cr [0.5,1.0]",
+                 7 => "tl [1.0,0.5]",
+                 8 => "bl [1.0,0.5]",
+                );
 
   # Loop over the regions, running PICDEF and PICLABEL.
   foreach my $region (keys %regions) {
@@ -583,7 +583,7 @@ sub config_regions {
       $piclabels{$region} = "ORAC${n}_$kappan";
 
       orac_print("Region $region : $piclabels{$region}\n",'cyan')
-	if $DEBUG;
+        if $DEBUG;
 
     }
 
@@ -1657,20 +1657,20 @@ sub sigma {
 
       # Reshape the NDF.
       if ($self->ndfpack->contactw) {
-	$tempfile = "dr_reshape$$";
+        $tempfile = "dr_reshape$$";
 
-	$status = $self->ndfpack->obeyw("reshape","in=$file out=$tempfile vectorize");
-	if ($status != ORAC__OK) {
-	  orac_err("Error reshaping data file to 1D\n");
-	  return $status;
-	}
+        $status = $self->ndfpack->obeyw("reshape","in=$file out=$tempfile vectorize");
+        if ($status != ORAC__OK) {
+          orac_err("Error reshaping data file to 1D\n");
+          return $status;
+        }
 
-	# Copy to $file.
-	$file = $tempfile;
+        # Copy to $file.
+        $file = $tempfile;
 
       } else {
-	orac_err("Error contacting ndfpack_mon\n");
-	return ORAC__ERROR
+        orac_err("Error contacting ndfpack_mon\n");
+        return ORAC__ERROR
       }
 
     }
@@ -1861,9 +1861,9 @@ sub datamodel {
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
       if (starversion_lt('kappa','0.13-0')) {
-	$range = "axlim=false";
+        $range = "axlim=false";
       } else {
-	$range = ' ';
+        $range = ' ';
       }
     } else {
 
@@ -1875,11 +1875,11 @@ sub datamodel {
       if (starversion_lt('kappa','0.13-0')) {
 
         # KAPPA 0.12 and older used this to specify range
-	$range = "axlim=true abslim=! ordlim=[$min,$max]";
+        $range = "axlim=true abslim=! ordlim=[$min,$max]";
       } else {
 
         # New form to specify range of Y axis
-	$range = "ytop=$max ybot=$min";
+        $range = "ytop=$max ybot=$min";
       }
     }
   }
@@ -2024,18 +2024,18 @@ sub histogram {
   if (exists $options{ZAUTOSCALE}) {
     unless ($options{ZAUTOSCALE}) {
       if (defined $options{SIGMA}) {
-	$range = "range='sig,$options{SIGMA}'";
+        $range = "range='sig,$options{SIGMA}'";
       } else {
-	# Set the Y range
-	my $min = 0;
-	my $max = 1;
-	$min = $options{ZMIN} if defined $options{ZMIN};
-	$max = $options{ZMAX} if defined $options{ZMAX};
-	if (starversion_gt('kappa','0.15-3')) { # Histogram changed at 0.15-4
-	  $range = "range='$min,$max'";
-	} else {
-	  $range = "range=[$min,$max]";
-	}
+        # Set the Y range
+        my $min = 0;
+        my $max = 1;
+        $min = $options{ZMIN} if defined $options{ZMIN};
+        $max = $options{ZMAX} if defined $options{ZMAX};
+        if (starversion_gt('kappa','0.15-3')) { # Histogram changed at 0.15-4
+          $range = "range='$min,$max'";
+        } else {
+          $range = "range=[$min,$max]";
+        }
       }
     }
   }

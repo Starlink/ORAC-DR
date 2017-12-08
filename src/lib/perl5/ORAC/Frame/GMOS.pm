@@ -433,7 +433,7 @@ sub inout {
 
       dat_there($loc, $rest, my $there, $status);
       if ($there) {
-	dat_erase($loc, $rest, $status);
+        dat_erase($loc, $rest, $status);
       };
 
       dat_annul($loc, $status);

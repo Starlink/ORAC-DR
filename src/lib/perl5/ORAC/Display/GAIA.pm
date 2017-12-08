@@ -621,7 +621,7 @@ sub send_to_gaia {
       # to work on Solaris -- check for $! explicitly instead!!!
       recv ($sock, my $reply2, $recvbytes, 0);
       return (ORAC__ERROR, "Error reading data from GAIA socket: $!")
-	if $!;
+        if $!;
 
       # Return with an error if the socket read returns a null string
       return (ORAC__ERROR, "Read null string from GAIA socket. Assuming GAIA has died\n") if $reply2 eq '';
@@ -778,13 +778,13 @@ sub image {
       $device =~ /(\d+)$/;
       my $name = $1;
       if (defined $name) {
-	orac_warn "Attempting to restart GAIA window $window ($device)\n";
-	$status = $self->create_dev($window, $name);
-	return $status if $status == ORAC__ERROR;
+        orac_warn "Attempting to restart GAIA window $window ($device)\n";
+        $status = $self->create_dev($window, $name);
+        return $status if $status == ORAC__ERROR;
       } else {
-	orac_err "Could not determine GAIA name from $device\n";
-	orac_err "Therefore could not try to relaunch clone window $window\n";
-	return ORAC__ERROR;
+        orac_err "Could not determine GAIA name from $device\n";
+        orac_err "Therefore could not try to relaunch clone window $window\n";
+        return ORAC__ERROR;
       }
 
     }
@@ -813,8 +813,8 @@ sub image {
     orac_err "Lost connection to GAIA window! Did you close it by mistake?\n".
       "Will attempt to relaunch GAIA next time around\n".
       "Restart the pipeline at a convenient time if this fails\n".
-	"If you want to have fewer GAIA windows\n".
-	  "configure your display - type \"oracman Display\" for info.\n";
+      "If you want to have fewer GAIA windows\n".
+      "configure your display - type \"oracman Display\" for info.\n";
 
     return ORAC__ERROR;
   }
@@ -872,9 +872,9 @@ sub image {
       ($status, $junk) = $self->send_to_gaia("$dispwid cut $min $max");
 
       if ($status != ORAC__OK) {
-	orac_err "ORAC::Display::GAIA - Error setting max/min display window: $dispwid\n";
-	orac_err "Error: $junk\n";
-	return ORAC__ERROR;
+        orac_err "ORAC::Display::GAIA - Error setting max/min display window: $dispwid\n";
+        orac_err "Error: $junk\n";
+        return ORAC__ERROR;
       }
 
     }

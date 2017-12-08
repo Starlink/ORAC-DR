@@ -129,27 +129,27 @@ sub erase {
       hds_open($hdsfile, 'READ', my $loc, $hdsstat);
       if ($hdsstat == &NDF::SAI__OK) {
 
-	# Find out how many we have
-	dat_ncomp($loc, my $ncomp, $hdsstat);
+        # Find out how many we have
+        dat_ncomp($loc, my $ncomp, $hdsstat);
 
-	if ($ncomp == 0) {
-	  # always unlink if we have nothing left
-	  $dounlink = 1;
-	} elsif ($ncomp == 1) {
-	  # Need to special case when we have a .HEADER
-	  # Get locator to component
-	  dat_index($loc, 1, my $cloc, $hdsstat);
+        if ($ncomp == 0) {
+          # always unlink if we have nothing left
+          $dounlink = 1;
+        } elsif ($ncomp == 1) {
+          # Need to special case when we have a .HEADER
+          # Get locator to component
+          dat_index($loc, 1, my $cloc, $hdsstat);
 
-	  # Find its name
-	  dat_name($cloc, my $name, $hdsstat);
+          # Find its name
+          dat_name($cloc, my $name, $hdsstat);
 
-	  # Delete file if this is .HEADER
-	  $dounlink = 1 if $name eq $HDR;
+          # Delete file if this is .HEADER
+          $dounlink = 1 if $name eq $HDR;
 
-	  # Release locator
-	  dat_annul( $cloc, $hdsstat);
+          # Release locator
+          dat_annul( $cloc, $hdsstat);
 
-	}
+        }
 
       }
 
@@ -158,14 +158,14 @@ sub erase {
 
       # Remove the file if HDS status is good
       if ($hdsstat == &NDF::SAI__OK) {
-	$hdsfile .= ".sdf";
-	$status = unlink($hdsfile) if $dounlink;
+        $hdsfile .= ".sdf";
+        $status = unlink($hdsfile) if $dounlink;
       } else {
-	# Annul hds status
-	err_annul($status);
+        # Annul hds status
+        err_annul($status);
 
-	# Set status to bad
-	$status = 0;
+        # Set status to bad
+        $status = 0;
       }
 
       # End error context
@@ -332,70 +332,70 @@ sub inout {
       # Create the new HDS container and name the root component after the
       # first 9 characters of the output filename
       hds_new ($outfile,substr($outfile,0,9),"ORACDR_HDS",
-	       0,@null,my $loc,$status);
+               0,@null,my $loc,$status);
       dat_annul($loc, $status);
 
       if ($status == &NDF::SAI__OK) {
 
-	# HEADER propogation
-	# propagate header if it is there to copy
+        # HEADER propogation
+        # propagate header if it is there to copy
 
-	# is it there?
-	err_mark();
-	my $lstat = &NDF::SAI__OK;
-	($lstat, my @locators) = retrieve_locs($root. ".$HDR", 'READ',$lstat);
-	my $hdrok;
-	$hdrok = 1 if $lstat == &NDF::SAI__OK;
-	dat_annul( $_, $lstat) for @locators;
-	err_annul( $lstat ) if $lstat != &NDF::SAI__OK;
-	err_rlse();
+        # is it there?
+        err_mark();
+        my $lstat = &NDF::SAI__OK;
+        ($lstat, my @locators) = retrieve_locs($root. ".$HDR", 'READ',$lstat);
+        my $hdrok;
+        $hdrok = 1 if $lstat == &NDF::SAI__OK;
+        dat_annul( $_, $lstat) for @locators;
+        err_annul( $lstat ) if $lstat != &NDF::SAI__OK;
+        err_rlse();
 
-	$hdrok = 0;
+        $hdrok = 0;
 
-	if ($hdrok) {
-	  $status = copobj($root.".$HDR",$outfile.".header",$status);
+        if ($hdrok) {
+          $status = copobj($root.".$HDR",$outfile.".header",$status);
 
-	  if ($status != &NDF::SAI__OK) {
-	    orac_err("Failed to propagate FITS header to output container!");
-	    err_annul( $status );
-	  }
-	} else {
-	  # write our own
-	  # open the output file for update
-	  hds_open($outfile, 'UPDATE', my $loc, $status);
+          if ($status != &NDF::SAI__OK) {
+            orac_err("Failed to propagate FITS header to output container!");
+            err_annul( $status );
+          }
+        } else {
+          # write our own
+          # open the output file for update
+          hds_open($outfile, 'UPDATE', my $loc, $status);
 
-	  # create the NDF in there
-	  ndf_place( $loc, $HDR, my $place, $status);
-	  my @ubnd = (1);
-	  my @lbnd = (1);
-	  ndf_new( '_INTEGER', 1, @lbnd, @ubnd, $place, my $indf, $status);
+          # create the NDF in there
+          ndf_place( $loc, $HDR, my $place, $status);
+          my @ubnd = (1);
+          my @lbnd = (1);
+          ndf_new( '_INTEGER', 1, @lbnd, @ubnd, $place, my $indf, $status);
 
-	  # free the HDS locator
-	  dat_annul( $loc, $status );
+          # free the HDS locator
+          dat_annul( $loc, $status );
 
-	  # now need to write some data to it to prevent complaints
-	  ndf_map( $indf, 'DATA', '_INTEGER', 'WRITE', my $pntr, my $el,
-		   $status);
-	  my @data = (1);
-	  NDF::array2mem(@data, "i*", $pntr) if $status == &NDF::SAI__OK;
+          # now need to write some data to it to prevent complaints
+          ndf_map( $indf, 'DATA', '_INTEGER', 'WRITE', my $pntr, my $el,
+                   $status);
+          my @data = (1);
+          NDF::array2mem(@data, "i*", $pntr) if $status == &NDF::SAI__OK;
 
-	  ndf_unmap( $indf, 'DATA', $status );
+          ndf_unmap( $indf, 'DATA', $status );
 
-	  # now write the fits header
-	  my $fits = $self->fits;
+          # now write the fits header
+          my $fits = $self->fits;
 
-	  # rebless to NDF subclass. This is horrible - the API needs
-	  # fixing
-	  $fits = bless( $fits, "Astro::FITS::Header::NDF");
-	  $fits->writehdr( ndfID => $indf );
+          # rebless to NDF subclass. This is horrible - the API needs
+          # fixing
+          $fits = bless( $fits, "Astro::FITS::Header::NDF");
+          $fits->writehdr( ndfID => $indf );
 
-	  # close the NDF
-	  ndf_annul( $indf, $status );
-	}
+          # close the NDF
+          ndf_annul( $indf, $status );
+        }
       } else {
-	orac_err("Failed to create HDS output container '$outfile'!")
-	  if $status != &NDF::SAI__OK;
-	err_annul( $status );
+        orac_err("Failed to create HDS output container '$outfile'!")
+          if $status != &NDF::SAI__OK;
+        err_annul( $status );
       }
     }
 

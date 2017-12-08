@@ -328,8 +328,8 @@ sub orac_calc_instrument_settings {
       my $drN = $hostname;
       $drN =~ s/sc2//;
       if( $drN !~ /^dr\d$/ ) {
-	$drN = $dr_default{$root};
-	print STDERR colored("Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n","red");
+        $drN = $dr_default{$root};
+        print STDERR colored("Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n","red");
       }
       push(@drn, $drN);
     }
@@ -509,14 +509,14 @@ sub orac_calc_instrument_settings {
     if (exists $options{mode} && defined $options{mode}) {
       if ($options{mode} eq 'QL') {
         push(@rec, "-recsuffix", "QL", "-grptrans", undef, "-nobatch", undef);
-	$nobatch = 1;
+        $nobatch = 1;
         # SCUBA2 disables the display in QL mode and uses DRAMA
         if ($inst eq 'SCUBA2') {
           push(@rec,  "-loop", "task");
         }
       } elsif ($options{mode} eq 'SUMMIT') {
         push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef);
-	$nobatch = 1;
+        $nobatch = 1;
       }
     } else {
       # If mode is not given then the pipeline is running offline so

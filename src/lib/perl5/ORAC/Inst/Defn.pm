@@ -271,7 +271,7 @@ my %MonolithDefns = (
                           PATH => ( defined( $ENV{'HDSTOOLS_DIR'} ) ? "$ENV{HDSTOOLS_DIR}/hdstools_mon" : "" ),
                          },
          # Testing
-	 CSOMON => {
+         CSOMON => {
            MESSYS => 'DRAMA',
            CLASS => 'ORAC::Msg::Task::DRAMA',
            PATH => '/tmp/getcso.pl',
@@ -287,9 +287,9 @@ my %MessageSystemDefns = (
           # shell does not require messaging
           CLASS => 'ORAC::Msg::Control::ADAMShell',
          },
-	DRAMA => {
-	  CLASS => 'ORAC::Msg::Control::DRAMA',
-	},
+        DRAMA => {
+          CLASS => 'ORAC::Msg::Control::DRAMA',
+        },
        );
 
 =head1 FUNCTIONS
@@ -1372,7 +1372,7 @@ sub orac_determine_initial_algorithm_engines {
   } elsif ($inst eq 'SPEX') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
-		  ccdpack_res /;
+                  ccdpack_res /;
 
   } elsif ($inst eq 'PICARD') {
 

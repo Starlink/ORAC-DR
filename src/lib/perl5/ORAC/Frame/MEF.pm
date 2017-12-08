@@ -83,8 +83,8 @@ sub new {
 
     my %newitems = (SubFrmNo    => undef,
                     SubFrms     => [],
-		    FitsSuffix  => undef
-		    );
+                    FitsSuffix  => undef
+                    );
 
     # Now call the base class constructor
 
@@ -173,9 +173,9 @@ sub file_exists {
 
     # Check for file existence
     if (-e $file) {
-	return 1;
+        return 1;
     } else {
-	return 0;
+        return 0;
     }
 }
 
@@ -222,9 +222,9 @@ sub configure {
       my $fnamesref = shift;
       $fname = ( ref $fnamesref ? $fnamesref->[0] : $fnamesref );
     } elsif (scalar(@_) == 2) {
-	$fname = $self->pattern_from_bits(@_);
+        $fname = $self->pattern_from_bits(@_);
     } else {
-	croak 'Wrong number of arguments to configure: 1 or 2 args only';
+        croak 'Wrong number of arguments to configure: 1 or 2 args only';
     }
 
     # Set the filename
@@ -266,9 +266,9 @@ sub configure {
             $subFrm->raw($sfname);
             $subFrm->fits($allextn[$i-1]);
             $subFrm->subfrmnumber($i);
-	    my $a = $self->hdr;
-	    delete $$a{'END'};
-	    $subFrm->hdr(%$a);
+            my $a = $self->hdr;
+            delete $$a{'END'};
+            $subFrm->hdr(%$a);
             push @subfrms,$subFrm;
         }
         $self->{SubFrms} = [@subfrms];

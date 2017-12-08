@@ -55,10 +55,10 @@ Tk::Methods('activate','bbox','curselection','delete','get','index',
             'xview','yview');
 
 use Tk::Submethods ( 'selection' => [qw(anchor clear includes set)],
-		     'scan'      => [qw(mark dragto)],
-		     'xview'     => [qw(moveto scroll)],
-		     'yview'     => [qw(moveto scroll)],
-		     );
+                     'scan'      => [qw(mark dragto)],
+                     'xview'     => [qw(moveto scroll)],
+                     'yview'     => [qw(moveto scroll)],
+                     );
 
 *Getselected = \&getSelected;
 
@@ -194,8 +194,8 @@ the same job).
 sub TIEARRAY {
   my ( $class, $obj, %options ) = @_;
   return bless {
-	    OBJECT => \$obj,
-	    OPTION => \%options }, $class;
+            OBJECT => \$obj,
+            OPTION => \%options }, $class;
 }
 
 =item Tied Scalars
@@ -268,8 +268,8 @@ you must pass a reference to the tied scalar between subroutines.
 sub TIESCALAR {
   my ( $class, $obj, %options ) = @_;
   return bless {
-	    OBJECT => \$obj,
-	    OPTION => \%options }, $class;
+            OBJECT => \$obj,
+            OPTION => \%options }, $class;
 }
 
 # FETCH
@@ -302,14 +302,14 @@ sub FETCH {
         if ( $options{ReturnType} eq "index" ) {
            $result = [$self->curselection];
         } elsif ( $options{ReturnType} eq "element" ) {
-	   foreach my $selection ( $self->curselection ) {
+           foreach my $selection ( $self->curselection ) {
               push(@array,$self->get($selection)); }
            $result = \@array;
-	} elsif ( $options{ReturnType} eq "both" ) {
-	   foreach my $selection ( $self->curselection ) {
+        } elsif ( $options{ReturnType} eq "both" ) {
+           foreach my $selection ( $self->curselection ) {
               %hash = ( %hash, $selection => $self->get($selection)); }
            $result = \%hash;
-	}
+        }
      } else {
         # return elements (default)
         foreach my $selection ( $self->curselection ) {
@@ -351,28 +351,28 @@ sub STORE {
            for ( my $i=0; $i < scalar(@$selected) ; $i++ ) {
               for ( my $j=0; $j < $self->size() ; $j++ ) {
                   if( $j == $$selected[$i] ) {
-	             $self->selectionSet($j); last; }
+                     $self->selectionSet($j); last; }
               }
            }
         } elsif ( $options{ReturnType} eq "element" ) {
            for ( my $k=0; $k < scalar(@$selected) ; $k++ ) {
               for ( my $l=0; $l < $self->size() ; $l++ ) {
                  if( $self->get($l) eq $$selected[$k] ) {
-	            $self->selectionSet($l); last; }
+                    $self->selectionSet($l); last; }
               }
            }
-	} elsif ( $options{ReturnType} eq "both" ) {
+        } elsif ( $options{ReturnType} eq "both" ) {
            foreach my $key ( keys %$selected ) {
               $self->selectionSet($key)
-	              if $$selected{$key} eq $self->get($key);
-	   }
-	}
+                      if $$selected{$key} eq $self->get($key);
+           }
+        }
      } else {
         # return elements (default)
         for ( my $k=0; $k < scalar(@$selected) ; $k++ ) {
            for ( my $l=0; $l < $self->size() ; $l++ ) {
               if( $self->get($l) eq $$selected[$k] ) {
-	         $self->selectionSet($l); last; }
+                 $self->selectionSet($l); last; }
            }
         }
      }
@@ -492,14 +492,14 @@ sub SPLICE {
       if ( $offset < 0 ) {
          my $start = $self->size() + $offset;
          if ( $start > 0 ) {
-	    @elements = $self->get($start,'end');
+            @elements = $self->get($start,'end');
             $self->delete($start,'end');
-	    return wantarray ? @elements : $elements[scalar(@elements)-1];
+            return wantarray ? @elements : $elements[scalar(@elements)-1];
          } else {
             return undef;
-	 }
+         }
       } else {
-	 @elements = $self->get($offset,'end');
+         @elements = $self->get($offset,'end');
          $self->delete($offset,'end');
          return wantarray ? @elements : $elements[scalar(@elements)-1];
       }
@@ -510,15 +510,15 @@ sub SPLICE {
       if ( $offset < 0 ) {
          my $start = $self->size() + $offset;
          my $end = $self->size() + $offset + $length - 1;
-	 if ( $start > 0 ) {
-	    @elements = $self->get($start,$end);
+         if ( $start > 0 ) {
+            @elements = $self->get($start,$end);
             $self->delete($start,$end);
-	    return wantarray ? @elements : $elements[scalar(@elements)-1];
+            return wantarray ? @elements : $elements[scalar(@elements)-1];
          } else {
             return undef;
-	 }
+         }
       } else {
-	 @elements = $self->get($offset,$offset+$length-1);
+         @elements = $self->get($offset,$offset+$length-1);
          $self->delete($offset,$offset+$length-1);
          return wantarray ? @elements : $elements[scalar(@elements)-1];
       }
@@ -529,18 +529,18 @@ sub SPLICE {
       if ( $offset < 0 ) {
          my $start = $self->size() + $offset;
          my $end = $self->size() + $offset + $length - 1;
-	 if ( $start > 0 ) {
-	    @elements = $self->get($start,$end);
+         if ( $start > 0 ) {
+            @elements = $self->get($start,$end);
             $self->delete($start,$end);
-	    $self->insert($start,@list);
-	    return wantarray ? @elements : $elements[scalar(@elements)-1];
+            $self->insert($start,@list);
+            return wantarray ? @elements : $elements[scalar(@elements)-1];
          } else {
             return undef;
-	 }
+         }
       } else {
-	 @elements = $self->get($offset,$offset+$length-1);
+         @elements = $self->get($offset,$offset+$length-1);
          $self->delete($offset,$offset+$length-1);
-	 $self->insert($offset,@list);
+         $self->insert($offset,@list);
          return wantarray ? @elements : $elements[scalar(@elements)-1];
       }
    }
