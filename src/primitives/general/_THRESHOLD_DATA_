@@ -100,6 +100,7 @@ my $tlow = $low;
 my $thigh = $high;
 
 # Determine if the source is one not to be thresholded.
+my $skip_thresh = 0;
 if ( defined( $ignore ) ) {
    my @ignore_names = split( ",", uc( $ignore ) );
    my $object_name = $Frm->uhdr( "ORAC_OBJECT" );
@@ -109,7 +110,7 @@ if ( defined( $ignore ) ) {
          orac_say "Omit thresholding because object name $object_name " .
                   "has a match in the list to ignore (because of its\n" .
                   "exceptional brightness or dynamic range).\n";
-         goto NOTHRESH;
+         $skip_thresh = 1;
       }
    }
 }
@@ -118,48 +119,57 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
   my ( $in, $out ) = $Frm->inout( "_thr", $i );
 
-  # First run stats to see if there are even any values to
-  # threshold. Doing this will save us some time on larger files.
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in order=true" );
-  my ( $ORAC_STATUS, $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
-  ( $ORAC_STATUS, my $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
-  ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+  unless ($skip_thresh) {
+    # First run stats to see if there are even any values to
+    # threshold. Doing this will save us some time on larger files.
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in order=true" );
+    my ( $ORAC_STATUS, $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+    ( $ORAC_STATUS, my $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+    ( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
 
-  if ( $calc_median ) {
-    $tlow = $low + $median;
-    $thigh = $high + $median;
-    my $fs_median = sprintf( "%.3g", $median );
-    orac_print "Thresholding about the median at $fs_median.\n";
-  }
-
-  if ( $median != &NDF::VAL__BADD() &&
-       lc( $median ) != "nan" && lc( $median ) !~ /inf/ ) {
-    if ( $max > $thigh || $min < $tlow ) {
-      my $params = "in=$in out=$out thrhi=$thigh newhi=$newhigh thrlo=$tlow newlo=$newlow";
-      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
-
-      # Report to user.
-      orac_print "$in to $out:\n";
-      my $fs_low = sprintf( "%.1f", $tlow );
-      my $fs_high = sprintf( "%.1f", $thigh );
-      orac_print " Thresholded. Values below $fs_low set to $newlow.\n";
-      orac_print "              Values above $fs_high set to $newhigh.\n";
-    } else {
-
-      hardlink( "$in.sdf", "$out.sdf" ) or orac_throw "Could not create link between $in.sdf and $out.sdf: $!\n";
-
-      # Report to user.
-      orac_print "$in to $out:\n";
-      orac_print " Thresholding between $low and $high is not required.\n";
-
+    unless ( $median != &NDF::VAL__BADD() &&
+        lc( $median ) != "nan" && lc( $median ) !~ /inf/ ) {
+      orac_print " Computed median value is bad - can not apply threshold.\n";
+      $skip_thresh = 1;
     }
+    else {
+      if ( $calc_median ) {
+        $tlow = $low + $median;
+        $thigh = $high + $median;
+        my $fs_median = sprintf( "%.3g", $median );
+        orac_print "Thresholding about the median at $fs_median.\n";
+      }
 
-    # Set the product.
-    $Frm->product( "thr" );
-
-    # Update the Frame object.
-    $Frm->file( $i, $out );
+      unless ( $max > $thigh || $min < $tlow ) {
+        orac_print " Thresholding between $low and $high is not required.\n";
+        $skip_thresh = 1;
+      }
+    }
   }
+
+  unless ($skip_thresh) {
+    my $params = "in=$in out=$out thrhi=$thigh newhi=$newhigh thrlo=$tlow newlo=$newlow";
+    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+    # Report to user.
+    orac_print "$in to $out:\n";
+    my $fs_low = sprintf( "%.1f", $tlow );
+    my $fs_high = sprintf( "%.1f", $thigh );
+    orac_print " Thresholded. Values below $fs_low set to $newlow.\n";
+    orac_print "              Values above $fs_high set to $newhigh.\n";
+  }
+  else {
+    hardlink( "$in.sdf", "$out.sdf" ) or orac_throw "Could not create link between $in.sdf and $out.sdf: $!\n";
+
+    # Report to user.
+    orac_print "$in to $out:\n";
+  }
+
+  # Set the product.
+  $Frm->product( "thr" );
+
+  # Update the Frame object.
+  $Frm->file( $i, $out );
 }
 
 # Display, if necessary.
@@ -167,5 +177,3 @@ $Display->display_data( $Frm ) if defined $Display;
 
 # Tidy-up output.
 orac_print "\n";
-
-NOTHRESH:
