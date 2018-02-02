@@ -434,7 +434,9 @@ sub gain {
     my $generic;
     ($generic = $filt ) =~ s/\D+$//;
 
-    $gain = $self->_get_default_fcf( $filt, $units, $self->thing->{ORACUT});
+    $gain = $self->_get_default_fcf(
+        $filt, $units, $self->thing->{ORACUT},
+        $self->thing()->{'ORAC_WIND_BLIND'});
 
     orac_err "No gain exists for the specified filter ($filt)\n"
       unless defined $gain;
@@ -976,7 +978,7 @@ Given a filter, FCF units (BEAM or ARCSEC) and the UT date (in ORACUT
 format) returns the default FCF values as derived from an automated
 reduction of the complete data archive.
 
-  $fcf = $self->_get_default_fcf( $filter, 'ARCSEC', '19980215');
+  $fcf = $self->_get_default_fcf( $filter, 'ARCSEC', '19980215', 'GORE-TEX 1');
 
 Returns undef if no FCF is available for the specified combination.
 
@@ -985,11 +987,21 @@ Returns undef if no FCF is available for the specified combination.
 sub _get_default_fcf {
 
   my $self = shift;
-  my ($filter, $units, $ut) = @_;
+  my ($filter, $units, $ut, $wind_blind) = @_;
 
   $filter = uc($filter); # upper cased keys
   $units  = uc($units);
   $ut = int($ut);  # only changes on integer days
+
+  # Upper-case wind blind material and assume the Gore-Tex membrane
+  # if undefined or unknown.
+  if (defined $wind_blind and $wind_blind !~ /^UNKNOWN$/i) {
+    $wind_blind = uc($wind_blind);
+  }
+  else {
+    $wind_blind = 'GORE-TEX 1';
+    orac_warn("Unknown wind blind material: assuming ${wind_blind}\n");
+  }
 
   # First check to see if the filter is present in the %FCFS hash
   my %FCFS = $self->default_fcfs();
@@ -1004,6 +1016,11 @@ sub _get_default_fcf {
   my $infstart = 19900101; # infinity low and high
   my $infend   = 30000101;
   for my $h (@$details) {
+    # If we have a wind blind material-specific value, skip unless
+    # it matches.
+    if (exists $h->{'WIND_BLIND'}) {
+      next unless $wind_blind eq $h->{'WIND_BLIND'};
+    }
 
     # Just force a start and end and then check to see whether
     # the reference date is inside
