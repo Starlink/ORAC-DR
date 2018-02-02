@@ -343,7 +343,6 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::IRCAM2";
     $calclass   = "ORAC::Calib::IRCAM";
     $instclass  = "ORAC::Inst::IRCAM";
-    $inst  = 'IRCAM'; # to pick up IRCAM recipes
 
   } elsif ($inst eq 'INGRID') {
     $groupclass = "ORAC::Group::INGRID";
@@ -386,7 +385,6 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::UFTI2";
     $calclass   = "ORAC::Calib::UFTI";
     $instclass  = "ORAC::Inst::IRCAM";
-    $inst = 'UFTI'; # to pick UFTI recipes and primitives as they are
 
   } elsif ($inst =~ /^WFCAM/) {
     $groupclass = "ORAC::Group::WFCAM";
@@ -405,7 +403,6 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::OCGS4";
     $calclass   = "ORAC::Calib::CGS4";
     $instclass  = "ORAC::Inst::CGS4";
-    $inst = 'CGS4'; # to pick up CGS4 recipes and primitives
 
   } elsif ($inst eq 'SCUBA') {
     $groupclass = "ORAC::Group::SCUBA";
