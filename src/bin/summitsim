@@ -46,6 +46,25 @@ Allow existing files in the output directory to be overwritten.
 
 Time in seconds to pause between writing entries to OK files.
 
+=item B<--offset>
+
+Vary the number of entries written to each OK file at each step
+in order to introduce "offsets" between the subscans to be
+written simultaneously.  This is given as a set of comma-separated
+specifiers, each of which is of the form:
+
+    <cycle number>:<OK file number>:<lines to write>
+
+Examples:
+
+To delay the 5th file for subarray 'd' to the 6th step:
+
+    --offset 5:4:0,6:4:2
+
+To attempt to reproduce the order seen in fault 20180309.005:
+
+    --offset 80:4:0,81:4:2,82:2:2,82:3:2
+
 =item B<--out>
 
 Directory in which to write OK (and meta) files.
@@ -67,12 +86,14 @@ my $help = undef;
 my $delay = 30;
 my $out_dir = undef;
 my $clobber = undef;
+my $offset_spec = undef;
 
 GetOptions(
     help => \$help,
     'clobber!' => \$clobber,
     'delay=i' => \$delay,
     'out=s' => \$out_dir,
+    'offset=s' => \$offset_spec,
 ) or exit(1);
 
 pod2usage(1) if $help;
@@ -83,6 +104,19 @@ die 'Output location is not a directory' unless -d $out_dir;
 
 local $, = ' ';
 local $\ = "\n";
+
+# Process any given offset specification.
+my @offsets = ();
+if (defined $offset_spec) {
+    foreach my $spec (split /,/, $offset_spec) {
+        my @spec = split /:/, $spec;
+        die 'Did not understand offset specifier "' . $spec . '"'
+            unless 3 == scalar @spec;
+
+        # Convert to zero-based indexing and store in our array.
+        push @offsets, [$spec[0] - 1, $spec[1] - 1, $spec[2]];
+    }
+}
 
 foreach my $pathname (@ARGV) {
     die 'Given file "' . $pathname . '" does not exist' unless -e $pathname;
@@ -162,30 +196,44 @@ foreach my $pathname (@ARGV) {
     # Write entries to OK files.  Track which line from the file listing
     # we want to write next, in order to allow us to simulate offsets.
     my @lines = (0) x scalar @files;
+    my $n_iter = 0;
 
     while () {
-        my $n = 0;
+        my $n_written = 0;
 
         for (my $i = 0; $i <= $#files; $i ++) {
-            my $files = $files[$i]->[1];
+            # Check if we have an offset spec for this iteration and OK file.
+            my $n_entries = 1;
+            foreach my $offset (@offsets) {
+                $n_entries = $offset->[2]
+                    if $offset->[0] == $n_iter and $offset->[1] == $i;
+            }
 
-            next if $lines[$i] > $#$files;
+            # Write as many entries as requested to the output file, if
+            # we have lines left to write.
+            for (my $j = 0; $j < $n_entries; $j ++) {
+                my $files = $files[$i]->[1];
 
-            my $entry =  $files->[$lines[$i]];
+                next if $lines[$i] > $#$files;
 
-            print STDERR '    Writing entry:', $entry;
+                my $entry =  $files->[$lines[$i]];
 
-            my $fh = $fhs[$i];
-            print $fh $entry;
+                print STDERR '    Writing entry:', $entry;
 
-            $lines[$i] ++;
-            $n ++;
+                my $fh = $fhs[$i];
+                print $fh $entry;
+
+                $lines[$i] ++;
+                $n_written ++;
+            }
         }
 
-        last unless $n;
+        last unless $n_written;
 
         print STDERR 'Pausing for', $delay, 'seconds ...';
         sleep $delay;
+
+        $n_iter ++;
     }
 
 
