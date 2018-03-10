@@ -1,0 +1,247 @@
+#!perl
+
+=head1 NAME
+
+summitsim - Simulated OK file writer for summit pipeline testing
+
+=head1 SYNOPSIS
+
+    summitsim --out OUTPUT_DIRECTORY [--delay 30] FILENAME.meta ...
+
+=head1 DESCRIPTION
+
+Some ORAC-DR pipeline recipes run in a "summit" mode in which they processes
+subscans incrementally as they are added to existing OK files.  This simulator
+provides a way to simulate the observing process to allow such recipes to be
+tested.
+
+ORAC-DR should be set up as normal, but with ORAC_DATA_IN changed to be a
+directory where the simulated OK files are to be written:
+
+    $ oracdr_scuba2_850_summit -cwd 20180309
+    $ mkdir /tmp/ok
+    $ setenv ORAC_DATA_IN /tmp/ok
+    $ oracdr -loop flag --from 41
+
+Then this script should be started, writing to that same directory:
+
+    $ perl summitsim --out /tmp/ok /jcmtdata/raw/scuba2/ok/20180309/s8_20180309_00041.meta
+
+This script can be given either one or more "meta" files (in the case
+that the instrument writes multiple OK files) or individual OK files.
+Each given file ("meta" or OK) will be used in turn to provide a simulation.
+Therefore for an instrument which uses "meta" files, a "meta" file should
+be provided so that the OK files are written simultaneously rather than
+sequentially.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<--clobber>
+
+Allow existing files in the output directory to be overwritten.
+
+=item B<--delay>
+
+Time in seconds to pause between writing entries to OK files.
+
+=item B<--out>
+
+Directory in which to write OK (and meta) files.
+
+=back
+
+=cut
+
+use warnings;
+use strict;
+
+use File::Basename;
+use File::Spec;
+use Getopt::Long;
+use IO::File;
+use Pod::Usage;
+
+my $help = undef;
+my $delay = 30;
+my $out_dir = undef;
+my $clobber = undef;
+
+GetOptions(
+    help => \$help,
+    'clobber!' => \$clobber,
+    'delay=i' => \$delay,
+    'out=s' => \$out_dir,
+) or exit(1);
+
+pod2usage(1) if $help;
+
+die 'Output directory not specified' unless defined $out_dir;
+die 'Output directory does not exist' unless -e $out_dir;
+die 'Output location is not a directory' unless -d $out_dir;
+
+local $, = ' ';
+local $\ = "\n";
+
+foreach my $pathname (@ARGV) {
+    die 'Given file "' . $pathname . '" does not exist' unless -e $pathname;
+    my ($file, $path, $suffix) = fileparse($pathname, qw/.ok .meta/);
+
+    # Create list of [OK file, path] pairs.  Do this first so that we can
+    # subsequently handle meta-driven and individually given OK files alike.
+    my @okfiles = ();
+    my $metafile = undef;
+
+    if ($suffix eq '.ok') {
+        push @okfiles, [$file . $suffix, $path];
+    }
+    elsif ($suffix eq '.meta') {
+        $metafile = $file . $suffix;
+
+        print STDERR 'Reading meta file:', $pathname;
+        foreach my $okfile (@{read_file($pathname)}) {
+            $okfile = File::Spec->catfile($path, $okfile)
+                unless File::Spec->file_name_is_absolute($okfile);
+            die 'OK file "' . $okfile . '" from "' . $pathname . '" does not exist'
+                unless -e $okfile;
+            push @okfiles, [fileparse($okfile)];
+        }
+    }
+    else {
+        die 'Input file suffix not recognized';
+    }
+
+    # Read OK file contents to make [OK file, \@pathnames] list.  Convert the
+    # entries to absolute paths so that $out_dir can be anywhere.
+    my @files = ();
+
+    foreach my $okfile (@okfiles) {
+        my ($file, $path) = @$okfile;
+        my @entries = ();
+
+        my $okpathname = File::Spec->catfile($path, $file);
+        print STDERR 'Reading OK file:', $okpathname;
+        foreach my $entry (@{read_file($okpathname)}) {
+            $entry = File::Spec->catfile($path, $entry)
+                unless File::Spec->file_name_is_absolute($entry);
+
+            push @entries, $entry;
+        }
+
+        push @files, [$file, \@entries];
+    }
+
+    # Write new meta file, if we were given a meta file to process.
+    if (defined $metafile) {
+        my $newmeta = File::Spec->catfile($out_dir, $metafile);
+        die 'New meta file "' . $newmeta . '" already exists'
+            if -e $newmeta && ! $clobber;
+
+        print STDERR 'Writing new meta file:', $newmeta;
+        my $fh = new IO::File($newmeta, 'w');
+        foreach my $okfile (@files) {
+            print $fh $okfile->[0];
+        }
+        $fh->close();
+    }
+
+    # Open new OK files, all with auto-flush turned on.
+    my @fhs = ();
+    foreach my $okfile (@files) {
+        my $newok = File::Spec->catfile($out_dir, $okfile->[0]);
+        die 'New OK file "' . $newok . '" already exists'
+            if -e $newok && ! $clobber;
+
+        print STDERR 'Opening new OK file:', $newok;
+        my $fh = new IO::File($newok, 'w');
+        $fh->autoflush(1);
+        push @fhs, $fh;
+    }
+
+    # Write entries to OK files.  Track which line from the file listing
+    # we want to write next, in order to allow us to simulate offsets.
+    my @lines = (0) x scalar @files;
+
+    while () {
+        my $n = 0;
+
+        for (my $i = 0; $i <= $#files; $i ++) {
+            my $files = $files[$i]->[1];
+
+            next if $lines[$i] > $#$files;
+
+            my $entry =  $files->[$lines[$i]];
+
+            print STDERR '    Writing entry:', $entry;
+
+            my $fh = $fhs[$i];
+            print $fh $entry;
+
+            $lines[$i] ++;
+            $n ++;
+        }
+
+        last unless $n;
+
+        print STDERR 'Pausing for', $delay, 'seconds ...';
+        sleep $delay;
+    }
+
+
+    # Close new OK files.
+    for (my $i = 0; $i <= $#files; $i ++) {
+        my $newok = File::Spec->catfile($out_dir, $files[$i]->[0]);
+        print STDERR 'Closing new OK file:', $newok;
+        $fhs[$i]->close();
+    }
+
+}
+
+exit(0);
+
+sub read_file {
+    my $path = shift;
+    my @lines = ();
+
+    my $fh = new IO::File($path, 'r');
+
+    local $/ = "\n";
+
+    foreach my $line (<$fh>) {
+        $line =~ s/^\s*//;
+        $line =~ s/\s*$//;
+        next unless $line;
+        push @lines, $line;
+    }
+
+    $fh->close();
+
+    return \@lines;
+}
+
+__END__
+
+=head1 SEE ALSO
+
+F<qlsim>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2018 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
