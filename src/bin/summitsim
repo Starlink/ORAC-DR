@@ -69,6 +69,13 @@ To attempt to reproduce the order seen in fault 20180309.005:
 
 Directory in which to write OK (and meta) files.
 
+=item B<--skip>
+
+Skip certain entries.  This should be a comma-separated list
+of individual entries or first-last ranges.  E.g.:
+
+    --skip 1,10-20,31
+
 =back
 
 =cut
@@ -87,6 +94,7 @@ my $delay = 30;
 my $out_dir = undef;
 my $clobber = undef;
 my $offset_spec = undef;
+my $skip_spec = undef;
 
 GetOptions(
     help => \$help,
@@ -94,6 +102,7 @@ GetOptions(
     'delay=i' => \$delay,
     'out=s' => \$out_dir,
     'offset=s' => \$offset_spec,
+    'skip=s' => \$skip_spec,
 ) or exit(1);
 
 pod2usage(1) if $help;
@@ -115,6 +124,25 @@ if (defined $offset_spec) {
 
         # Convert to zero-based indexing and store in our array.
         push @offsets, [$spec[0] - 1, $spec[1] - 1, $spec[2]];
+    }
+}
+
+# Process any given skip specification.
+my %skip = ();
+if (defined $skip_spec) {
+    foreach my $spec (split /,/, $skip_spec) {
+        my @spec = split /-/, $spec;
+        if (1 == scalar @spec) {
+            $skip{$spec[0] - 1} = 1;
+        }
+        elsif (2 == scalar @spec) {
+            for (my $i = $spec[0] - 1; $i < $spec[1]; $i ++) {
+                $skip{$i} = 1;
+            }
+        }
+        else {
+            die 'Did not understand skip specifier "' . $spec . '"';
+        }
     }
 }
 
@@ -199,6 +227,16 @@ foreach my $pathname (@ARGV) {
     my $n_iter = 0;
 
     while () {
+        if ($skip{$n_iter}) {
+            for (my $i = 0; $i <= $#files; $i ++) {
+                $lines[$i] ++;
+            }
+
+            $n_iter ++;
+            print STDERR 'Skipping step:', $n_iter;
+            next;
+        }
+
         my $n_written = 0;
 
         for (my $i = 0; $i <= $#files; $i ++) {
