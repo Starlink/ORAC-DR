@@ -192,39 +192,27 @@ if ($Frm->hdr("OBS_TYPE") =~ /pointing|science/i) {
   } else {
     # Multiple subscans in Frame - this should not be reached in PICARD
 
-    # Does the Frame contain nothing but science data, or no science data at all?
-    my $all_sci = (defined $Frm->hdr("SEQ_TYPE") && $Frm->hdr("SEQ_TYPE") =~ /point|science/i) ? 1 : 0;
-    my $no_sci_data = (defined $Frm->hdr("SEQ_TYPE") && !$all_sci) ? 1 : 0;
+    # Things get fiddly here - need to allow for the case where data
+    # turns up for only some of the subarrays
+
+    # First, check for multiple subarrays and sort data by subarray
+    my $maxscan = 0;
+    my $subarray = undef;
+    # Find the subarray with the most recent subscan number -
+    # store that and the corresponding subscan number
+    for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+      next unless $Frm->hdrval('SEQ_TYPE', $i) =~ /point|science/i;
+
+      my $nsubscan = $Frm->hdrval('NSUBSCAN', $i);
+
+      if ($nsubscan > $maxscan) {
+        $maxscan = $nsubscan;
+        $subarray = $Frm->hdrval('SUBARRAY', $i);
+      }
+    }
 
     # Proceed if the Frame contains science data
-    unless ($no_sci_data) {
-      # Things get fiddly here - need to allow for the case where data
-      # turns up for only some of the subarrays
-
-      my @subhdrs;
-      # First, check for multiple subarrays and sort data by subarray
-      my $maxscan = 0;
-      if (defined $Frm->hdr->{SUBHEADERS}->[0]->{SUBARRAY}) {
-        my $subarray;
-        # Find the subarray with the most recent subscan number -
-        # store that and the corresponding subscan number
-        foreach my $subhdr (@{$Frm->hdr->{SUBHEADERS}}) {
-          my $is_sci = ($all_sci || (defined $subhdr->{SEQ_TYPE} && $subhdr->{SEQ_TYPE} =~ /point|science/i)) ? 1 : 0;
-          if ($is_sci && $subhdr->{NSUBSCAN} > $maxscan) {
-            $maxscan = $subhdr->{NSUBSCAN};
-            $subarray = $subhdr->{SUBARRAY};
-          }
-        }
-        # Store the subheaders for the reference subarray, provided we
-        # have some science data (indicated by maxscan being non-zero)
-        @subhdrs = map { $_ } grep { $_->{SUBARRAY} eq $subarray } @{$Frm->hdr->{SUBHEADERS}} if ($maxscan);
-      } else {
-        # Single subarray: just use existing subheaders - note these
-        # will still include (and may be entirely composed of)
-        # non-science data
-        @subhdrs = @{$Frm->hdr->{SUBHEADERS}};
-      }
-
+    if (defined $subarray) {
       # Retrieve existing RMS/NEFD data
       my %checkrms = %{$Obj->uhdr("CHECK_RMS_DATA")}
         if (defined $Obj->uhdr("CHECK_RMS_DATA"));
@@ -235,47 +223,50 @@ if ($Frm->hdr("OBS_TYPE") =~ /pointing|science/i) {
       my %data = (elsum => 0, csosum => 0, tauzsum => 0, tausum => 0, transum => 0,
                   numval => 0);
       # Initial subheader is necessary for selecting the right values
-      my $startsubhdr;
+      my $i_minscan = undef;
       # Plus keep track of the final (most recent) subheader to get end values
-      my $lastsubhdr;
-      foreach my $subhdr (@subhdrs) {
+      my $i_maxscan = undef;
+      for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
         # Skip non-science sequences
-        next if (defined $subhdr->{SEQ_TYPE} && $subhdr->{SEQ_TYPE} !~ /point|science/i);
+        next unless $Frm->hdrval('SEQ_TYPE', $i) =~ /point|science/i;
+        # Skip entries for other subarrays.
+        next unless $Frm->hdrval('SUBARRAY', $i) eq $subarray;
         # Skip this subheader if the subscan number is the same as the
         # existing one since the values will have already been
         # counted. This catches the times where data for one subarray
         # turns after the others have already been included.
-        next if (%checkrms && $checkrms{NSUBSCAN} == $subhdr->{NSUBSCAN});
+        next if (%checkrms && $checkrms{NSUBSCAN} == $Frm->hdrval('NSUBSCAN', $i));
         # Define the reference subheader
-        $startsubhdr = $subhdr unless (defined $startsubhdr);
+        $i_minscan = $i unless defined $i_minscan;
         # Accumulate values
-        $data{elsum} += $subhdr->{ELEND};
-        $data{csosum} += $subhdr->{WVMTAUEN};
+        $data{elsum} += $Frm->hdrval('ELEND', $i);
+        $data{csosum} += $Frm->hdrval('WVMTAUEN', $i);
         my ($tauen, $taustatus) = JCMT::Tau::SCUBA2::get_tau($Frm->hdr("FILTER"),
                                                              "CSO",
-                                                             $subhdr->{WVMTAUEN});
+                                                             $Frm->hdrval('WVMTAUEN', $i));
         $data{tauzsum} += $tauen;
-        $data{tausum}  += ($tauen * $subhdr->{AMEND});
-        $data{transum} += (exp(-$tauen * $subhdr->{AMEND}));
+        $data{tausum}  += ($tauen * $Frm->hdrval('AMEND', $i));
+        $data{transum} += (exp(-$tauen * $Frm->hdrval('AMEND', $i)));
         $data{numval}++;
 
         # Store the most recent subheader
-        $lastsubhdr = $subhdr if ($subhdr->{NSUBSCAN} == $maxscan);
+        $i_maxscan = $i if $Frm->hdrval('NSUBSCAN', $i) == $maxscan;
       }
 
       # Proceed if we have valid first/last subheaders
-      if ($startsubhdr && $lastsubhdr) {
+      if ((defined $i_minscan) && (defined $i_maxscan)) {
         my ($taust, $taustatus) = JCMT::Tau::SCUBA2::get_tau($Frm->hdr("FILTER"),
                                                              "CSO",
-                                                             $startsubhdr->{WVMTAUST});
-        my $dt_obs = DateTime::Format::ISO8601->parse_datetime($startsubhdr->{'DATE-OBS'});
-        my $dt_end = DateTime::Format::ISO8601->parse_datetime($lastsubhdr->{'DATE-END'});
+                                                             $Frm->hdrval('WVMTAUST', $i_minscan));
+
+        my $dt_obs = DateTime::Format::ISO8601->parse_datetime($Frm->hdrval('DATE-OBS', $i_minscan));
+        my $dt_end = DateTime::Format::ISO8601->parse_datetime($Frm->hdrval('DATE-END', $i_maxscan));
         # Store initial data
-        my %startdata = (elsum => $startsubhdr->{ELSTART},
-                         csosum => $startsubhdr->{WVMTAUST},
+        my %startdata = (elsum => $Frm->hdrval('ELSTART', $i_minscan),
+                         csosum => $Frm->hdrval('WVMTAUST', $i_minscan),
                          tauzsum => $taust,
-                         tausum => ($taust * $startsubhdr->{AMSTART}),
-                         transum => (exp(-$taust * $startsubhdr->{AMSTART})),
+                         tausum => ($taust * $Frm->hdrval('AMSTART', $i_minscan)),
+                         transum => (exp(-$taust * $Frm->hdrval('AMSTART', $i_minscan))),
                          numval => 1,
                         );
         # Next check for existing data
