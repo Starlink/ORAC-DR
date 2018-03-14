@@ -105,7 +105,9 @@ unless ( $Frm->tagexists("dark") ) {
     my ($inlist, $outlist) = write_file_list_inout( $Frmobj, "_ff", 0 );
 
     # Define a convenient temporary file name for the OUTFILES parameter
-    my $outfiles = "flatfield.$$";
+    my $outfiles_obj = new ORAC::TempFile(0);
+    my $outfiles = $outfiles_obj->file();
+    unlink $outfiles;
 
     # Flatfield the data
     my $args = "in=^$inlist outfiles=$outfiles out=^$outlist";
@@ -114,23 +116,32 @@ unless ( $Frm->tagexists("dark") ) {
     my $ffstatus = $Mon{smurf_mon}->obeyw("flatfield","$args");
 
     # Check flatfield status before continuing
-    if ($ffstatus == ORAC__OK) {
-      # Obtain the filenames corresponding to flatfielded data
-      my @out = read_file_list( $outfiles );
-
-      # Register new file names in current Frame
-      $Frm->force_product_update("flatfield", @out);
-      $Frm->tagset("flatfield");
-      $Frm->readhdr;
-
-      # Finished
-      orac_print "Flatfield applied to ".scalar(@out)." files\n";
-    } else {
+    unless ($ffstatus == ORAC__OK) {
       orac_warn "Flatfield failed for some reason - marking frame as bad\n";
       $Frm->isgood(0);
     }
-    # Delete the outfiles file
-    unlink $outfiles if (-e $outfiles);
+    elsif (not -e $outfiles) {
+      # Print warning, but ignore the problem for now.
+      orac_warn "Flatfield did not generate an output file list\n";
+    }
+    else {
+      # Obtain the filenames corresponding to flatfielded data
+      my @out = read_file_list( $outfiles );
+
+      unless (scalar @out) {
+        # Print warning, but ignore the problem for now.
+        orac_warn "Flatfield generated an empty output file list\n";
+      }
+      else {
+        # Register new file names in current Frame
+        $Frm->force_product_update("flatfield", @out);
+        $Frm->tagset("flatfield");
+        $Frm->readhdr;
+
+        # Finished
+        orac_print "Flatfield applied to ".scalar(@out)." files\n";
+      }
+    }
   } else {
     orac_warn "All flatfields bad - unable to process these files\n";
   }
