@@ -69,54 +69,34 @@ MA 02111-1307, USA.
 
 my $infile;
 my $outfile;
-my $i=0;
-my $no_of_files_in_frame=0;
+my $i = 0;
+my $no_of_files_in_frame = 0;
 
-# Create a list of input and output images.
+if ( scalar( @{$Frm->files} ) > 1 ) {
 
-if( scalar( @{$Frm->files} ) > 1 ) {
+  # Create a temporary file containing a list of the input files.
+  my $listtomos = write_file_list( $Frm->files );
+  my $listfile = basename( $listtomos->file );
 
-  my $inputlist = "inlist.list$$";
-  unlink( $inputlist );
+  # Set the name of the mosaic, and form the mosaic.
+  my ( $in, $out ) = $Frm->inout( "_cube", 1 );
+  orac_print "Forming cube $out from " . join( ", ", $Frm->files ) . "...";
 
-  open( my $fh_inlist, ">$inputlist" ) ||
-    orac_throw "Unable to open $inputlist to create a list of spectra to mosaic. Error: $!\n";
-
-  my $out;
-  my @infiles;
-  foreach my $i ( 1..$Frm->nfiles ) {
-
-    my ( $in, $tmp ) = $Frm->inout( "_cube", $i );
-    if( $i == 1 ) {
-      $out = $tmp;
-    }
-    print $fh_inlist "$in\n";
-    push @infiles, $in;
-  }
-
-  close( $fh_inlist );
-
-  orac_print "Forming cube $out from " . join( ", ", @infiles ) . "...";
-  my $args = "in=^$inputlist noscale nozero method=mean title='Full ACSIS cube'";
+  my $args = "in=^$listfile noscale nozero method=mean title='Full ACSIS cube'";
   $Mon{'ccdpack_reg'}->obeyw( "makemos", "$args out=$out" );
   orac_print "done.\n";
 
-  unlink( $inputlist);
-
-  # Now update the frame file list so that it only contains 1 file
-  my @frame_array;
-  $frame_array[0]=$out;
-  $Frm->files(@frame_array);
-
 } else {
   my ( $in, $out ) = $Frm->inout( "_cube" );
-  orac_print "Only one spectrum in current observation. Copying to $out...";
+  orac_print "Only one file in the current observation. Copying to $out...";
   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out title='Full ACSIS cube'" );
   orac_print "done.\n";
-  my @frame_array;
-  $frame_array[0] = $out;
-  $Frm->files( @frame_array );
 }
+
+# Now update the Frame file list so that it only contains one file.
+my @frame_array;
+$frame_array[0] = $out;
+$Frm->files( @frame_array );
 
 # Tidy up output.
 orac_print "\n";
