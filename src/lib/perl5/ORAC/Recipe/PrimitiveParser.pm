@@ -920,7 +920,7 @@ sub _expand_primitive {
 
       # Try to extract a meaningful monolith name
       my $remote = '';
-      if ($line =~ /Mon{(.*)}->/) {
+      if ($line =~ /Mon\{(.*)\}->/) {
         $remote = $1;
         # strip none word characters
         $remote =~ s/\W//g;
