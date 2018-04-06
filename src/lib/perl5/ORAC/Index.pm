@@ -30,7 +30,7 @@ use vars qw/$VERSION/;
 use ORAC::Print;
 
 use Data::Dumper;             # For serialization of arrays and hashes
-use POSIX qw/tmpnam/;         # For unique keys
+use File::Temp qw/tmpnam/;    # For unique keys
 
 $VERSION = '1.0';
 
