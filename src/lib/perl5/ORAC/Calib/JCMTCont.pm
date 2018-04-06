@@ -28,7 +28,7 @@ use warnings;
 use strict;
 
 use File::Spec;
-use JCMT::Tau;         # Tau conversion
+use JCMT::Tau qw//;    # Tau conversion
 use JCMT::Tau::CsoFit; # Fits to CSO data
 
 use ORAC::Msg::EngineLaunch;
@@ -1060,7 +1060,7 @@ instrument-specific tau relation is used.
 sub _get_tau {
   my $self = shift;
   # Have to split up @_ due to prototype definition in JCMT::Tau
-  return get_tau($_[0], $_[1], $_[2]);
+  return JCMT::Tau::get_tau($_[0], $_[1], $_[2]);
 }
 
 =back
