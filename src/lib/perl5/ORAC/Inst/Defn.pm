@@ -910,7 +910,7 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, "WFCAM" ) );
     push( @path, File::Spec->catdir( $imaging_root, 'WFCAM' ) );
     push( @path, $imaging_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP' or $inst eq 'MICHGEM') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
