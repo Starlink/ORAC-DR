@@ -178,6 +178,10 @@ All Rights Reserved.
 
 use ORAC::Bounds qw/ retrieve_bounds /;
 
+# Try to load the Image::ExifTool module for adding headers.
+my $have_exiftool = eval "use Image::ExifTool qw/ :Public /; 1; ";
+orac_warn "Could not load Image::ExifTool: $@\n"
+    unless $have_exiftool;
 
 # Arguments
 # ==========
@@ -279,7 +283,8 @@ if ( $#nondegen > 1 ) {
 
 # Create the graphic
 # ==================
-my $exif = undef;
+my @keywords = ();
+my $pixscale_orig = undef;
 my $tempimg = 'temp_image_for_device';
 for ( my $i = 0; $i < $nx; $i++ ) {
    my ( $outfile, $outvecfile, $outclumpfile, $outcatfile, $outtextfile, $params );
@@ -512,18 +517,9 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 # ===============================================
 
 # Since the metadata are the same for each graphic, only form the list
-# of keywords once.
-      if ( $i == 0 ) {
-
-# Try to load the Image::ExifTool module to add a header.
-         my $isok = eval "use Image::ExifTool qw/ :Public /; 1; ";
-
-# Check that we have made a graphic.
-         if ( ! $isok ) {
-            orac_warn "Could not load Image::ExifTool: $@\n";
-
-         } else {
-            my @keywords;
+# of keywords once, except for those which change depending on the resolution.
+      if ($have_exiftool) {
+         if ( $i == 0 ) {
 
 # JSA metadata
 # ------------
@@ -620,25 +616,25 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 # accordingly.
                $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
                my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
-               my $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
-                                         $fpixscale[1] * $fpixscale[1] );
-               my $longest_file = ( $nondegen[0] > $nondegen[1] ? $nondegen[0] : $nondegen[1] );
-               my $longest_img = ( $xres > $yres ? $xres : $yres );
-               my $pixscale_new = $longest_file * $pixscale_orig / $longest_img;
-               push @keywords, "astro:pixelScale=$pixscale_new";
-
-            }
-
-# Write the EXIF information.
-            $exif = new Image::ExifTool;
-            foreach my $keyword ( @keywords ) {
-               $exif->SetNewValue( Keywords => $keyword );
+               $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
+                                      $fpixscale[1] * $fpixscale[1] );
             }
          }
 
-      }
+         # Prepare resolution-specific keywords.
+         my @keywords_extra = ();
 
-      if ( defined $exif ) {
+         if (defined $pixscale_orig) {
+            my $longest_file = ( $nondegen[0] > $nondegen[1] ? $nondegen[0] : $nondegen[1] );
+            my $longest_img = ( $xres > $yres ? $xres : $yres );
+            my $pixscale_new = $longest_file * $pixscale_orig / $longest_img;
+            push @keywords_extra, "astro:pixelScale=$pixscale_new";
+         }
+
+         # Write the EXIF information.
+         my $exif = new Image::ExifTool;
+         $exif->SetNewValue( Keywords => [@keywords, @keywords_extra] );
+
          orac_say " Adding EXIF header to $outfile.";
          $exif->WriteInfo( $outfile )
             or orac_warn("Error adding EXIF header to $outfile: " .
