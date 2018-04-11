@@ -99,8 +99,6 @@ behaviour. Options are:
   - picard_recipe => additional information for display title (where possible)
   - recsuffix => additional information for display title (where possible)
 
-=back
-
 
 Monitor files are always written if a master.
 
