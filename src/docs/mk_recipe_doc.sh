@@ -35,8 +35,8 @@ function echo_sst_stub()
 	namedest=$(basename $dest)
 	name=$(basename $1)
 
-	name_escaped="${name//_/\_}"
-	dest_escaped="${namedest//_/\_}"
+	name_escaped="${name//_/\\\_}"
+	dest_escaped="${namedest//_/\\\_}"
 	result=$"\sstroutine{\n
 $name_escaped\n
 }{\n
@@ -44,7 +44,7 @@ alias for $dest_escaped\n
 }{\n
 \sstdescription{This recipe is an alias for
 the recipe
-\\xref{$dest_escaped}{$2}{$dest_escaped}.}\n
+\\xref{$dest_escaped}{$2}{$namedest}.}\n
 }\n"
 	echo -e $result >> "$3".tex
     else
