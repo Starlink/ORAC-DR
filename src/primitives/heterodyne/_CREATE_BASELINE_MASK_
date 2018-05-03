@@ -16,6 +16,28 @@ the resulting mask masks out any emission.
 
 =over 4
 
+=item CLIP = STRING (Given)
+
+A comma-separated list of standard-deviation limits for progressive
+clipping of outlying binned (see NUMBIN) residuals to an initial
+linear fit to the baseline.  This is used to determine the fitting
+ranges automatically.  Its purpose is to exclude features that are not
+part of the trends.
+
+Pixels are rejected at the ith clipping cycle if they lie beyond plus
+or minus CLIP(i) times the dispersion about the median of the
+remaining good pixels.  Thus lower values of CLIP will reject more
+pixels.  The normal approach is to start low and progressively
+increase the clipping factors, as the dispersion decreases after the
+exclusion of features.
+
+Between one and five values may be supplied. The minimum value is 1.0.
+If undefined, the default for MFITTREND's CLIP is used, which is fine
+in most cases.  Where the emission is intense and extends over a
+substantial fraction of the spectrum, harsher clipping is need to
+avoid biasing the fits.  This argument can be overridden by the
+RECPAR_BASELINE_EMISSION_CLIP recipe parameter.  [undef]
+
 =item FREQUENCY_SMOOTH = INTEGER (Given)
 
 The number of channels over which the frequency axis is smoothed. [25]
@@ -139,6 +161,7 @@ if ( starversion_gt( 'KAPPA', 'v2.4-3' ) ) {
                $forest );
 }
 
+my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", undef );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
@@ -156,6 +179,12 @@ my $spline = 1 if $order =~ /^spl/;
 $numbin = ( defined( $Frm->uhdr( "RECPAR_BASELINE_NUMBIN" ) ) ?
             $Frm->uhdr( "RECPAR_BASELINE_NUMBIN" )            :
             $numbin );
+
+# Override clipping of residuals by a defined recipe parameter.
+$clip = ( defined( $Frm->uhdr( "RECPAR_BASELINE_EMISSION_CLIP" ) ) ?
+          $Frm->uhdr( "RECPAR_BASELINE_EMISSION_CLIP" )            :
+          $clip );
+if ( ref( $clip ) eq 'ARRAY' ) { $clip = join( ",", @{ $clip } ) };
 
 # Select the objects to analyse.
 my @objs;
@@ -208,7 +237,8 @@ foreach my $Obj ( @objs ) {
     }
 
     # Find line-free regions in the smoothed cube. We do this by doing
-    # an 'auto' fit with a high-order baseline.
+    # an 'auto' fit with a high-order baseline and rejecting outliers by
+    # clipping.
     my $temp3 = new ORAC::TempFile( 0 );
     my $temp3file = $temp3->file;
     $params = "in=$temp2file out=$temp3file axis=3 auto ";
@@ -219,6 +249,7 @@ foreach my $Obj ( @objs ) {
     }
     $params .= "mask=$mask method=single variance subtract=false";
     $params .= " numbin=$numbin" if defined( $numbin );
+    $params .= " clip=[$clip]" if defined( $clip );
     $params .= " forest" if $forest;
     $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
