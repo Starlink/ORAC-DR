@@ -403,249 +403,249 @@ if ( defined( $b_regions ) && ! $base_auto ) {
 # Only process if we're on the last member of a group.
 # =====================================================
 
-if( $Grp->lastallmembers( $Frm ) ) {
-  my $copyGrp = $Grp;
-  my @members = $Grp->members;
-  my ( $good, $bad ) = $Grp->check_membership;
+if ( $Grp->lastallmembers( $Frm ) ) {
+   my $copyGrp = $Grp;
+   my @members = $Grp->members;
+   my ( $good, $bad ) = $Grp->check_membership;
 
-  my $frame_legacy = defined( $Frm->uhdr( "LEGACY" ) ) ? $Frm->uhdr( "LEGACY" ): 0;
-  my $group_legacy = defined( $Grp->uhdr( "LEGACY" ) ) ? $Grp->uhdr( "LEGACY" ): 0;
-  my $legacy = $frame_legacy || $ group_legacy;
+   my $frame_legacy = defined( $Frm->uhdr( "LEGACY" ) ) ? $Frm->uhdr( "LEGACY" ): 0;
+   my $group_legacy = defined( $Grp->uhdr( "LEGACY" ) ) ? $Grp->uhdr( "LEGACY" ): 0;
+   my $legacy = $frame_legacy || $ group_legacy;
 
-  my $makegroup;
-  if( ! @$good ) {
-    orac_warn "No good members in current group. Cannot do group processing.\n";
+   my $makegroup;
+   if ( ! @$good ) {
+      orac_warn "No good members in current group. Cannot do group processing.\n";
 
-    # Write the QA information for each member.
-    foreach my $Obj ( @members ) {
-      _QA_WRITE_REPORT_ OBJ=$Obj
-      _WRITE_NOISESTATS_LOG_ OBJ=$Obj
-    }
-    $makegroup = 0;
-
-    # Create a new group where all the frames are deemed to be good.
-    # ==============================================================
-    #
-    # This particularly includes ones that have failed QA, so that the
-    # observation products are created.
-    $Grp = new $Grp;
-    $Grp->name( $copyGrp->name );
-    $Grp->file( $copyGrp->file );
-    %{$Grp->hdr} = %{$copyGrp->hdr};
-    %{$Grp->uhdr} = %{$copyGrp->uhdr};
-
-    foreach my $Obj ( $copyGrp->allmembers ) {
-
-      # Make a deep copy of the Frame.  The files method copies the
-      # hdr for raw data, but not the uhdr.
-      my @files = $Obj->files;
-      my $tempFrm = $Frm->new( \@files );
-      %{$tempFrm->uhdr} = %{$Obj->uhdr};
-
-      # Store all Frames as good.
-      $tempFrm->isgood( 1 );
-      $Grp->push( $tempFrm );
-
-      # Ensure current Frame matches the final Frame in the new group
-      # so that subsequent # $Grp->lastallmembers checks compare like
-      # with like.
-      $Frm = $tempFrm;
-    }
-
-  } else {
-
-    # We need to write QA info for each member that didn't end up in
-    # the group (i.e. that failed QA)
-    foreach my $badObj ( @$bad ) {
-      _QA_WRITE_REPORT_ OBJ=$badObj
-      _WRITE_NOISESTATS_LOG_ OBJ=$badObj
-    }
-
-    # Write a heading to structure the commentary.
-    orac_say "\n\nBeginning iterative group production.";
-    my $underline = "-" x 51;
-    orac_say "$underline\n";
-    $makegroup = 1;
-  }
-
-  # Summit versions of recipes may wish to omit slower parts of the
-  # processing.
-  my $summit = defined( $Frm->uhdr( "SUMMIT" ) ) ? $Frm->uhdr( "SUMMIT" ) : 0;
-
-  # Merge AST Regions for scans only.
-  if( lc( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) ) eq 'scan' ) {
-    _MERGE_AST_REGIONS_
-  }
-
-  my $iter = 1;
-  while( $iter <= $iterations ) {
-
-    orac_say "Iteration $iter of $iterations.\n";
-
-    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
-
-    if ( defined( $edges ) && $edges > 0 ) {
-      _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
-    } elsif ( $user_region ) {
-      _REMOVE_BASELINE_ LOWER=\@b_lower UPPER=\@b_upper ORDER=$order GROUP=1 TAG=1
-    } else {
-      _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=1
-    }
-
-    if ( lc( $moments ) ne "none" ) {
-      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
-    }
-
-    if ( $legacy ) {
-       _CREATE_NOISE_MAP_ GROUP=1 QA=$qa SURVEY=LEGACY
-    } else {
-       _CREATE_NOISE_MAP_ GROUP=1 QA=$qa
-    }
-
-    if( defined( $rebin ) ) {
-      foreach my $res ( split ",", $rebin ) {
-        _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
+      # Write the QA information for each member.
+      foreach my $Obj ( @members ) {
+         _QA_WRITE_REPORT_ OBJ=$Obj
+         _WRITE_NOISESTATS_LOG_ OBJ=$Obj
       }
-    }
+      $makegroup = 0;
 
-    _RECREATE_MASKED_OBS_FILES_ INTERP=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize TILEBORDER=$tileborder TILE=$tile
+      # Create a new group where all the frames are deemed to be good.
+      # ==============================================================
+      #
+      # This particularly includes ones that have failed QA, so that the
+      # observation products are created.
+      $Grp = new $Grp;
+      $Grp->name( $copyGrp->name );
+      $Grp->file( $copyGrp->file );
+      %{$Grp->hdr} = %{$copyGrp->hdr};
+      %{$Grp->uhdr} = %{$copyGrp->uhdr};
 
-    _REMOVE_BASELINE_MASKED_TIMESERIES_
+      foreach my $Obj ( $copyGrp->allmembers ) {
 
-    my $mask_only = $iter > 1;
-    _SUBTRACT_REFERENCE_EMISSION_ ONLY_SOURCE_MASK=$mask_only ITERATION=$iter
+         # Make a deep copy of the Frame.  The files method copies the
+         # hdr for raw data, but not the uhdr.
+         my @files = $Obj->files;
+         my $tempFrm = $Frm->new( \@files );
+         %{$tempFrm->uhdr} = %{$Obj->uhdr};
 
-    if ( $flatfield ) {
-       if ( lc( $flatmethod ) eq 'ratio' ) {
-          _NORMALIZE_RECEPTOR_RESPONSIVITY_ GROUP=2
-       } elsif ( lc( $flatmethod ) eq 'itersum' ||  lc( $flatmethod ) eq 'sum' ) {
-          _REMOVE_FLAT_FIELD_ITERATE_ GROUP=2 METHOD=$flatmethod
-       } elsif ( lc( $flatmethod ) eq 'index' ) {
-          _REMOVE_FLAT_FIELD_INDEX_ GROUP=2
-       } else {
-          _REMOVE_FLAT_FIELD_ GROUP=2
-       }
-    }
+         # Store all Frames as good.
+         $tempFrm->isgood( 1 );
+         $Grp->push( $tempFrm );
 
-    _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
-
-    # Create the observation products for the next iteration.  This will only produce legacy tiles
-    # on the final iteration irrespective of the value of $jsatile.
-    my $do_tiling = ( $iter == $iterations ) & $jsatile;
-    my $underline = "-" x 41;
-    orac_say "Iterations completed.\n\nCreating final Frame products.\n$underline\n" if $do_tiling;
-
-    foreach my $Frm ( $Grp->members ) {
-
-      # Some code looks to see if JSA_TILES is defined rather than being true.
-      $Frm->uhdr( "JSA_TILES", 1 ) if $do_tiling;
-
-      # Generate the observation cube
-      _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling CHUNK=1
-
-      # Want trimmed velocity range for final product?
-      if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
-        _RESTRICT_VELOCITY_RANGE_ GROUP=0 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+         # Ensure current Frame matches the final Frame in the new group
+         # so that subsequent # $Grp->lastallmembers checks compare like
+         # with like.
+         $Frm = $tempFrm;
       }
 
-      # Tag the observation cube.
-      _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=0 FLAG_QUAL_BAD=1
-      orac_print "\n";
-    }
+   } else {
 
-    if ( lc( $moments ) ne "none" ) {
-      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
-    }
-
-    my $writeqa = ( $iter == $iterations );
-    if ( $legacy ) {
-       _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa SURVEY=LEGACY
-    } else {
-       _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
-    }
-
-    _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
-
-    $iter++;
-  }
-
-  if ( $makegroup ) {
-    my $underline = "-" x 41;
-    orac_say "Creating final Group products.\n$underline\n";
-
-    # Switch on JSA tiling.
-    $Grp->uhdr( "JSA_TILES", $jsatile );
-
-    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$jsatile
-
-    # Do final baseline subtraction.
-    my $tagit = ( ! ( defined( $lower_vel ) || defined( $upper_vel ) ) );
-    if ( $edges ) {
-      _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=$tagit
-    } else {
-      _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=$tagit
-    }
-
-    # Trim final cube, and hence subsequent products from it.
-    if ( !$tagit ) {
-      _RESTRICT_VELOCITY_RANGE_ GROUP=1 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
-      _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 FLAG_QUAL_BAD=1
-    }
-
-    if ( lc( $moments ) ne "none" ) {
-       _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
-    }
-
-    _CREATE_LV_IMAGE_
-
-    if ( $legacy ) {
-       _CREATE_NOISE_MAP_ GROUP=1 QA=$qa STOREQA=1 SURVEY=LEGACY
-    } else {
-       _CREATE_NOISE_MAP_ GROUP=1 QA=$qa STOREQA=1
-    }
-
-    # Obtain and store two noise statistics for the group spectral cube.
-    # First, the mean RMS for individual observations is derived from the
-    # time series in _QA_SENSITIVITY_VARIATION_, so attempt to reproduce
-    # this calculation from the group cube.  Second, MAKECUBE will only
-    # generate a Tsys array, and hence a median Tsys header (MEDTYS),
-    # for a limited set of input parameters.
-    _FIND_MEAN_RMS_ GROUP=1
-    if ( ! defined( $Grp->hdr( "MEDTSYS" ) ) & ! $summit ) {
-       _CALCULATE_MEDIAN_TSYS_ GROUP=1
-    }
-
-    if( defined( $rebin ) ) {
-      foreach my $res ( split ",", $rebin ) {
-        _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
+      # We need to write QA info for each member that didn't end up in
+      # the group (i.e. that failed QA)
+      foreach my $badObj ( @$bad ) {
+         _QA_WRITE_REPORT_ OBJ=$badObj
+         _WRITE_NOISESTATS_LOG_ OBJ=$badObj
       }
-    }
 
-  } else {
+      # Write a heading to structure the commentary.
+      orac_say "\n\nBeginning iterative group production.";
+      my $underline = "-" x 51;
+      orac_say "$underline\n";
+      $makegroup = 1;
+   }
 
-    # Restore the original group with the bad observations flagged.
-    $Grp = $copyGrp;
+   # Summit versions of recipes may wish to omit slower parts of the
+   # processing.
+   my $summit = defined( $Frm->uhdr( "SUMMIT" ) ) ? $Frm->uhdr( "SUMMIT" ) : 0;
 
-    # The iteration does generate a first pass at the group objects,
-    # but these were based upon entirely bad data, so must be removed.
-    orac_print( "Removing group files which were derived from bad observations.\n");
-    unlink glob( $Grp->file . "*" );
-  }
+   # Merge AST Regions for scans only.
+   if ( lc( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) ) eq 'scan' ) {
+      _MERGE_AST_REGIONS_
+   }
 
-  # Write QA report.
-  foreach my $goodObj( $Grp->members ) {
-    _QA_WRITE_REPORT_ OBJ=$goodObj
-    _WRITE_NOISESTATS_LOG_ OBJ=$goodObj
-  }
-  if ( $makegroup ) {
-    _QA_WRITE_REPORT_ OBJ=$Grp
-    _WRITE_NOISESTATS_LOG_ OBJ=$Grp
-  }
+   my $iter = 1;
+   while ( $iter <= $iterations ) {
 
-  # Delete the intermediate files needed for group processing or are
-  # archive products.
-  my $saved = $jsatile ? "raw,_healpix" : "raw,_reduced,_cube,_lv";
-  _DELETE_TEMP_FILES_ ALSOGRP=1 KEEP=$saved
+      orac_say "Iteration $iter of $iterations.\n";
+
+      _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
+
+      if ( defined( $edges ) && $edges > 0 ) {
+         _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
+      } elsif ( $user_region ) {
+         _REMOVE_BASELINE_ LOWER=\@b_lower UPPER=\@b_upper ORDER=$order GROUP=1 TAG=1
+      } else {
+         _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=1
+      }
+
+      if ( lc( $moments ) ne "none" ) {
+         _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+      }
+
+      if ( $legacy ) {
+         _CREATE_NOISE_MAP_ GROUP=1 QA=$qa SURVEY=LEGACY
+      } else {
+         _CREATE_NOISE_MAP_ GROUP=1 QA=$qa
+      }
+
+      if ( defined( $rebin ) ) {
+         foreach my $res ( split ",", $rebin ) {
+            _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
+         }
+      }
+
+      _RECREATE_MASKED_OBS_FILES_ INTERP=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize TILEBORDER=$tileborder TILE=$tile
+
+      _REMOVE_BASELINE_MASKED_TIMESERIES_
+
+      my $mask_only = $iter > 1;
+      _SUBTRACT_REFERENCE_EMISSION_ ONLY_SOURCE_MASK=$mask_only ITERATION=$iter
+
+      if ( $flatfield ) {
+         if ( lc( $flatmethod ) eq 'ratio' ) {
+            _NORMALIZE_RECEPTOR_RESPONSIVITY_ GROUP=2
+         } elsif ( lc( $flatmethod ) eq 'itersum' ||  lc( $flatmethod ) eq 'sum' ) {
+            _REMOVE_FLAT_FIELD_ITERATE_ GROUP=2 METHOD=$flatmethod
+         } elsif ( lc( $flatmethod ) eq 'index' ) {
+            _REMOVE_FLAT_FIELD_INDEX_ GROUP=2
+         } else {
+            _REMOVE_FLAT_FIELD_ GROUP=2
+         }
+      }
+
+      _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+
+      # Create the observation products for the next iteration.  This will only produce legacy tiles
+      # on the final iteration irrespective of the value of $jsatile.
+      my $do_tiling = ( $iter == $iterations ) & $jsatile;
+      my $underline = "-" x 41;
+      orac_say "Iterations completed.\n\nCreating final Frame products.\n$underline\n" if $do_tiling;
+
+      foreach my $Frm ( $Grp->members ) {
+
+         # Some code looks to see if JSA_TILES is defined rather than being true.
+         $Frm->uhdr( "JSA_TILES", 1 ) if $do_tiling;
+
+         # Generate the observation cube.
+         _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling CHUNK=1
+
+         # Want trimmed velocity range for final product?
+         if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
+            _RESTRICT_VELOCITY_RANGE_ GROUP=0 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+         }
+
+         # Tag the observation cube.
+         _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=0 FLAG_QUAL_BAD=1
+         orac_print "\n";
+      }
+
+      if ( lc( $moments ) ne "none" ) {
+         _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+      }
+
+      my $writeqa = ( $iter == $iterations );
+      if ( $legacy ) {
+         _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa SURVEY=LEGACY
+      } else {
+         _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
+      }
+
+      _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+
+      $iter++;
+   }
+
+   if ( $makegroup ) {
+      my $underline = "-" x 41;
+      orac_say "Creating final Group products.\n$underline\n";
+
+      # Switch on JSA tiling.
+      $Grp->uhdr( "JSA_TILES", $jsatile );
+
+      _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$jsatile
+
+      # Do final baseline subtraction.
+      my $tagit = ( ! ( defined( $lower_vel ) || defined( $upper_vel ) ) );
+      if ( $edges ) {
+         _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=$tagit
+      } else {
+         _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=$tagit
+      }
+
+      # Trim final cube, and hence subsequent products from it.
+      if ( !$tagit ) {
+         _RESTRICT_VELOCITY_RANGE_ GROUP=1 AXIS=3 LOWER=$lower_vel UPPER=$upper_vel
+         _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 FLAG_QUAL_BAD=1
+      }
+
+      if ( lc( $moments ) ne "none" ) {
+         _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
+      }
+
+      _CREATE_LV_IMAGE_
+
+      if ( $legacy ) {
+        _CREATE_NOISE_MAP_ GROUP=1 QA=$qa STOREQA=1 SURVEY=LEGACY
+      } else {
+        _CREATE_NOISE_MAP_ GROUP=1 QA=$qa STOREQA=1
+      }
+
+      # Obtain and store two noise statistics for the group spectral cube.
+      # First, the mean RMS for individual observations is derived from the
+      # time series in _QA_SENSITIVITY_VARIATION_, so attempt to reproduce
+      # this calculation from the group cube.  Second, MAKECUBE will only
+      # generate a Tsys array, and hence a median Tsys header (MEDTYS),
+      # for a limited set of input parameters.
+      _FIND_MEAN_RMS_ GROUP=1
+      if ( ! defined( $Grp->hdr( "MEDTSYS" ) ) & ! $summit ) {
+         _CALCULATE_MEDIAN_TSYS_ GROUP=1
+      }
+
+      if ( defined( $rebin ) ) {
+         foreach my $res ( split ",", $rebin ) {
+            _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
+         }
+      }
+
+   } else {
+
+     # Restore the original group with the bad observations flagged.
+     $Grp = $copyGrp;
+
+     # The iteration does generate a first pass at the group objects,
+     # but these were based upon entirely bad data, so must be removed.
+     orac_print( "Removing group files which were derived from bad observations.\n");
+     unlink glob( $Grp->file . "*" );
+   }
+
+   # Write QA report.
+   foreach my $goodObj( $Grp->members ) {
+      _QA_WRITE_REPORT_ OBJ=$goodObj
+      _WRITE_NOISESTATS_LOG_ OBJ=$goodObj
+   }
+   if ( $makegroup ) {
+      _QA_WRITE_REPORT_ OBJ=$Grp
+      _WRITE_NOISESTATS_LOG_ OBJ=$Grp
+   }
+
+   # Delete the intermediate files needed for group processing or are
+   # archive products.
+   my $saved = $jsatile ? "raw,_healpix" : "raw,_reduced,_cube,_lv";
+   _DELETE_TEMP_FILES_ ALSOGRP=1 KEEP=$saved
 }
 
 # Tidy-up output.
