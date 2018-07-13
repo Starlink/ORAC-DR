@@ -525,49 +525,58 @@ sub xorac_log_window {
 
   $MW->Adjuster()->packAfter($textw1, -side => 'top');
 
+  # Create frame for smaller message windows.
+  my $subframe = $MW->Frame()->pack(
+    -padx => 0, -pady => 0, -fill => 'both', -expand => 1);
+
   # ORAC_WARN messages
-  $lab2   = $MW->Label(-text=>'Warnings',-font=>$FONT)->pack;
-  $textw2 = $MW->Scrolled('TextANSIColor',
+  $lab2   = $subframe->Label(-text=>'Warnings',-font=>$FONT)->grid(-row => 0, -column => 0, -sticky => 'nesw');
+  $textw2 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack( -expand => 1,
-                                  -fill => 'both' );
+                         )->grid( -row => 1, -column => 0,
+                                  -sticky => 'nesw' );
   $textw2->insert('end',"ORAC-DR warning messages\n");
   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
   # ORAC Error messages
-  $lab1   = $MW->Label(-text=>'Errors',-font=>$FONT)->pack;
-  $textw3 = $MW->Scrolled('TextANSIColor',
+  $lab1   = $subframe->Label(-text=>'Errors',-font=>$FONT)->grid(-row => 2, -column => 0, -sticky => 'nesw');
+  $textw3 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack( -expand => 1,
-                                  -fill => 'both' );
+                         )->grid( -row => 3, -column => 0,
+                                  -sticky => 'nesw' );
   $textw3->insert('end',"ORAC-DR error messages\n");
   $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 
   # ORAC Result messages
-  $lab4   = $MW->Label(-text=>'Results',-font=>$FONT)->pack;
-  $textw4 = $MW->Scrolled('TextANSIColor',
+  $lab4   = $subframe->Label(-text=>'Results',-font=>$FONT)->grid(-row => 4, -column => 0, -sticky => 'nesw');
+  $textw4 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack( -expand => 1,
-                                  -fill => 'both' );
+                         )->grid( -row => 5, -column => 0,
+                                  -sticky => 'nesw' );
   $textw4->insert('end',"ORAC-DR results\n");
   $textw4->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT4,  "Tk::TextANSIColor", $textw4;
+
+  $subframe->gridColumnconfigure(0, -weight => 1);
+  $subframe->gridRowconfigure(1, -weight => 1);
+  $subframe->gridRowconfigure(3, -weight => 1);
+  $subframe->gridRowconfigure(5, -weight => 1);
 
   # Routine returns references to packed Tk variable and
   # references to output, warning and error file handles
