@@ -581,8 +581,10 @@ sub xorac_log_window {
   $subframe->gridRowconfigure(3, -weight => 1);
   $subframe->gridRowconfigure(5, -weight => 1);
 
-  $MW->eventAdd('<<FontGrow>>', '<KeyPress-plus>', '<KeyPress-equal>');
-  $MW->eventAdd('<<FontShrink>>', '<KeyPress-minus>', '<KeyPress-underscore>');
+  $MW->eventAdd('<<FontGrow>>',
+    '<KeyPress-plus>', '<KeyPress-equal>', '<KeyPress-KP_Add>');
+  $MW->eventAdd('<<FontShrink>>',
+    '<KeyPress-minus>', '<KeyPress-underscore>', '<KeyPress-KP_Subtract>');
 
   $MW->bind('<<FontGrow>>', sub {
     my $size = $MW->fontConfigure($text_font, '-size') + 2;
