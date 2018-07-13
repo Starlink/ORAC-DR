@@ -470,6 +470,9 @@ sub xorac_log_window {
                              ORAC::Event->unregister($win_str);
                            } ] );
 
+  my $text_font = $MW->fontCreate(
+    'textfont', -family => 'Helvetica', -size => 12);
+
   # New frame for the top messages
   my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
 
@@ -515,7 +518,7 @@ sub xorac_log_window {
                           -background=>'#555555',
                           -foreground=>'white',
                           -width  => 90,
-                          -font    => $FONT
+                          -font    => $text_font
                          )->pack( -expand => 1,
                                   -fill => 'both' );
   $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
@@ -530,28 +533,28 @@ sub xorac_log_window {
     -padx => 0, -pady => 0, -fill => 'both', -expand => 1);
 
   # ORAC_WARN messages
-  $lab2   = $subframe->Label(-text=>'Warnings',-font=>$FONT)->grid(-row => 0, -column => 0, -sticky => 'nesw');
+  $lab2   = $subframe->Label(-text=>'Warnings',-font=>$text_font)->grid(-row => 0, -column => 0, -sticky => 'nesw');
   $textw2 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
                           -width  => 90,
-                          -font    => $FONT
+                          -font    => $text_font
                          )->grid( -row => 1, -column => 0,
                                   -sticky => 'nesw' );
   $textw2->insert('end',"ORAC-DR warning messages\n");
   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
   # ORAC Error messages
-  $lab1   = $subframe->Label(-text=>'Errors',-font=>$FONT)->grid(-row => 2, -column => 0, -sticky => 'nesw');
+  $lab1   = $subframe->Label(-text=>'Errors',-font=>$text_font)->grid(-row => 2, -column => 0, -sticky => 'nesw');
   $textw3 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
                           -width  => 90,
-                          -font    => $FONT
+                          -font    => $text_font
                          )->grid( -row => 3, -column => 0,
                                   -sticky => 'nesw' );
   $textw3->insert('end',"ORAC-DR error messages\n");
@@ -559,14 +562,14 @@ sub xorac_log_window {
   tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 
   # ORAC Result messages
-  $lab4   = $subframe->Label(-text=>'Results',-font=>$FONT)->grid(-row => 4, -column => 0, -sticky => 'nesw');
+  $lab4   = $subframe->Label(-text=>'Results',-font=>$text_font)->grid(-row => 4, -column => 0, -sticky => 'nesw');
   $textw4 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
                           -foreground=>'white',
                           -height => 5,
                           -width  => 90,
-                          -font    => $FONT
+                          -font    => $text_font
                          )->grid( -row => 5, -column => 0,
                                   -sticky => 'nesw' );
   $textw4->insert('end',"ORAC-DR results\n");
@@ -577,6 +580,20 @@ sub xorac_log_window {
   $subframe->gridRowconfigure(1, -weight => 1);
   $subframe->gridRowconfigure(3, -weight => 1);
   $subframe->gridRowconfigure(5, -weight => 1);
+
+  $MW->eventAdd('<<FontGrow>>', '<KeyPress-plus>', '<KeyPress-equal>');
+  $MW->eventAdd('<<FontShrink>>', '<KeyPress-minus>', '<KeyPress-underscore>');
+
+  $MW->bind('<<FontGrow>>', sub {
+    my $size = $MW->fontConfigure($text_font, '-size') + 2;
+    $MW->fontConfigure($text_font, -size => $size);
+  });
+
+  $MW->bind('<<FontShrink>>', sub {
+    my $size = $MW->fontConfigure($text_font, '-size') - 2;
+    $size = 6 if $size < 6;
+    $MW->fontConfigure($text_font, -size => $size);
+  });
 
   # Routine returns references to packed Tk variable and
   # references to output, warning and error file handles
