@@ -757,10 +757,10 @@ sub Show {
 ####  PRIVATE METHODS AND SUBROUTINES ####
 sub IsNum {
     my($parm) = @_;
-    my($warnSave) = $;
-    $ = 0;
+    my($warnSave) = $^W;
+    $^W = 0;
     my($res) = (($parm + 0) eq $parm);
-    $ = $warnSave;
+    $^W = $warnSave;
     return $res;
 }
 
