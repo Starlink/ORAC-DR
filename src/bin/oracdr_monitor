@@ -138,8 +138,10 @@ use Tk::TextANSIColor;
 use File::Temp qw/ tempdir /;
 
 use ORAC::Basic qw/ orac_setup_display orac_chdir_output_dir /;
+use ORAC::Event;
 use ORAC::Frame;
 use ORAC::Display;
+use ORAC::Xorac;
 
 # Process Tk command line options
 Tk::CmdLine::SetArguments();
@@ -206,6 +208,7 @@ if ($opt_tty) {
            Message => \*STDOUT,
            Warning => \*STDOUT,
            Error   => \*STDERR,
+           Result  => \*STDOUT,
           );
 
 } else {
@@ -230,49 +233,15 @@ $frame->Button( -text=>'Exit ORAC-DR monitor',
                 -activebackground => 'blue',
                 -command => [\&Cancel, $MW, \$CURRENT_FH])->pack(-side =>"left");
 
-my $textw1 = $MW->Scrolled('TextANSIColor',
-                           -scrollbars=>'e',
-                           -background=>'#555555',
-                           -foreground=>'white',
-                           -height => 30,
-                           -width  => 90,
-                          )->pack;
-$textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
-$textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
-$textw1->insert('end',"ORAC-DR status log\n");
-tie *TEXT1,  "Tk::TextANSIColor", $textw1;
-
-# ORAC_WARN messages
-my $lab2   = $MW->Label(-text=>'Warnings')->pack;
-my $textw2 = $MW->Scrolled('TextANSIColor',
-                           -scrollbars=>'e',
-                           -background=>'#555555',
-                           -foreground=>'white',
-                           -height => 5,
-                           -width  => 90,
-                          )->pack;
-$textw2->insert('end',"ORAC-DR warning messages\n");
-tie *TEXT2,  "Tk::TextANSIColor", $textw2;
-
-# ORAC Error messages
-my $lab1   = $MW->Label(-text=>'Errors')->pack;
-my $textw3 = $MW->Scrolled('TextANSIColor',
-                           -scrollbars=>'e',
-                           -background=>'#555555',
-                           -foreground=>'white',
-                           -height => 5,
-                           -width  => 90,
-                          )->pack;
-$textw3->insert('end',"ORAC-DR error messages\n");
-$textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
-tie *TEXT3,  "Tk::TextANSIColor", $textw3;
-
+ORAC::Event->register('Tk' => $MW);
+my (undef, $TEXT1, $TEXT2, $TEXT3, $TEXT4) = xorac_log_window('Tk', undef);
 
 # Store the tied filehandles so they can be passed to the callback
 %hdls = (
-         Message => \*TEXT1,
-         Warning => \*TEXT2,
-         Error   => \*TEXT3,
+         Message => $TEXT1,
+         Warning => $TEXT2,
+         Error   => $TEXT3,
+         Result  => $TEXT4,
         );
 
 }
@@ -473,6 +442,9 @@ sub deal_with_line {
     print $hdl $line;
   } elsif ($line =~ /Warning:/) {
     my $hdl = $hdls->{"Warning"};
+    print $hdl $line;
+  } elsif ($line =~ /#\d+:/) {
+    my $hdl = $hdls->{'Result'};
     print $hdl $line;
   } else {
     my $hdl = $hdls->{"Message"};

@@ -435,11 +435,14 @@ of the Tk device used for the log window (usually either "Tk" for the
 MainWindow or "TL" for a TopLevel widget) and a reference to the current
 ORAC::Print object
 
-  my ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3 ) =
+  my ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3, $TEXT4 ) =
           xorac_log_window( $win_str, \$orac_prt );
 
 returns references to the packed Tk variabe $ORAC_MESSAGE, and references
-to the output, warning and error file handles.
+to the output, warning, error and results file handles.
+
+The control frame at the top of the window (and E<lt>DestroyE<gt> event
+binding) is not added if C<$orac_prt> is undefined.
 
 =cut
 
@@ -457,61 +460,64 @@ sub xorac_log_window {
     unless defined $MW;
   $MW->configure( -cursor => "tcross" );
 
-  $MW->bind("<Destroy>", [ sub {
-                             $$orac_prt->outhdl(\*STDOUT);
-                             $$orac_prt->warhdl(\*STDOUT);
-                             $$orac_prt->errhdl(\*STDERR);
-                             $$orac_prt->reshdl(\*STDOUT);
-                             record ORAC::Error::UserAbort( "Destroy from Log Window",
-                                                            ORAC__ABORT );
-
-                             # destroy the Tk widget
-                             ORAC::Event->destroy($win_str);
-                             ORAC::Event->unregister($win_str);
-                           } ] );
-
   my $text_font = $MW->fontCreate(
     -family => 'Helvetica', -size => 12);
+  my $ORAC_MESSAGE;
 
-  # New frame for the top messages
-  my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
+  if (defined $orac_prt) {
+    $MW->bind("<Destroy>", [ sub {
+                               $$orac_prt->outhdl(\*STDOUT);
+                               $$orac_prt->warhdl(\*STDOUT);
+                               $$orac_prt->errhdl(\*STDERR);
+                               $$orac_prt->reshdl(\*STDOUT);
+                               record ORAC::Error::UserAbort( "Destroy from Log Window",
+                                                              ORAC__ABORT );
 
-  # Create easy exit button
-  $frame->Button( -text=>'Exit ORAC-DR',
-                  -font=>$FONT,
-                  -activeforeground => 'white',
-                  -activebackground => 'blue',
-                  -command => sub {
+                               # destroy the Tk widget
+                               ORAC::Event->destroy($win_str);
+                               ORAC::Event->unregister($win_str);
+                             } ] );
 
-                    # Need to remove the tie - just use STDOUT and STDERR
-                    $$orac_prt->outhdl(\*STDOUT);
-                    $$orac_prt->warhdl(\*STDOUT);
-                    $$orac_prt->errhdl(\*STDERR);
-                    $$orac_prt->reshdl(\*STDOUT);
+    # New frame for the top messages
+    my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
 
-                    # store an error to be flushed on the next update
-                    record ORAC::Error::UserAbort( "Exited from log window",
-                                                   ORAC__ABORT );
+    # Create easy exit button
+    $frame->Button( -text=>'Exit ORAC-DR',
+                    -font=>$FONT,
+                    -activeforeground => 'white',
+                    -activebackground => 'blue',
+                    -command => sub {
 
-                    # destroy the Tk widget
-                    ORAC::Event->destroy($win_str);
-                    ORAC::Event->unregister($win_str);
-                  })->pack(-side => "left");
+                      # Need to remove the tie - just use STDOUT and STDERR
+                      $$orac_prt->outhdl(\*STDOUT);
+                      $$orac_prt->warhdl(\*STDOUT);
+                      $$orac_prt->errhdl(\*STDERR);
+                      $$orac_prt->reshdl(\*STDOUT);
 
-  # Create a pause button
-  $frame->Button( -text=>'Pause ORAC-DR',
-                  -font=>$FONT,
-                  -activeforeground => 'white',
-                  -activebackground => 'blue',
-                  -command => sub {
-                    xorac_pause ( $MW );
-                  } )->pack(-side => "left");
+                      # store an error to be flushed on the next update
+                      record ORAC::Error::UserAbort( "Exited from log window",
+                                                     ORAC__ABORT );
 
-  # ORAC_PRINT messages
-  my $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
-  $msg1   = $frame->Label(-width=>60,
-                          -textvariable=>\$ORAC_MESSAGE,
-                          -font=>$FONT)->pack(-side => "left");
+                      # destroy the Tk widget
+                      ORAC::Event->destroy($win_str);
+                      ORAC::Event->unregister($win_str);
+                    })->pack(-side => "left");
+
+    # Create a pause button
+    $frame->Button( -text=>'Pause ORAC-DR',
+                    -font=>$FONT,
+                    -activeforeground => 'white',
+                    -activebackground => 'blue',
+                    -command => sub {
+                      xorac_pause ( $MW );
+                    } )->pack(-side => "left");
+
+    # ORAC_PRINT messages
+    $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
+    $msg1   = $frame->Label(-width=>60,
+                            -textvariable=>\$ORAC_MESSAGE,
+                            -font=>$FONT)->pack(-side => "left");
+  }
 
   $textw1 = $MW->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
