@@ -471,7 +471,7 @@ sub xorac_log_window {
                            } ] );
 
   my $text_font = $MW->fontCreate(
-    'textfont', -family => 'Helvetica', -size => 12);
+    -family => 'Helvetica', -size => 12);
 
   # New frame for the top messages
   my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
