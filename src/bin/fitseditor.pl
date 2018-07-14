@@ -289,6 +289,9 @@ $left_scrollbar->grid( -column => 1, -row => 0, -sticky => 'nsew');
 $files->insert('end', sort @file_list);
 $files->grid( -column => 0, -row => 0, -sticky => 'nsew');
 
+$main_frame->gridColumnconfigure(2, -weight => 1);
+$main_frame->gridRowconfigure(0, -weight => 1);
+
 # Bind the 2nd mouse button to the Tk::Listbox and use the scan method
 $main_frame->bind("Listbox", "<2>",['scan','mark',Ev('x'),Ev('y')]);
 $main_frame->bind("Listbox", "<B2-Motion>",['scan','dragto',Ev('x'),Ev('y')]);
@@ -316,6 +319,9 @@ my $keyword_widget = $right_frame->Scrolled( "Pane", Name  => 'keyword_frame',
 $keyword_widget->Frame;
 $keyword_widget->grid( -columnspan => 2,
                        -column => 0, -row => 0, -sticky => 'nsew' );
+
+$right_frame->gridColumnconfigure(0, -weight => 1);
+$right_frame->gridRowconfigure(0, -weight => 1);
 
 # A D D   K E  Y W O R D   P A N E L -----------------------------------------
 
@@ -996,6 +1002,9 @@ $main_frame->grid( -column => 0, -row => 2, -sticky => 'nsew' );
 # pack the status frame
 $status_frame->grid( -column => 0, -row => 3, -columnspan => 2, -sticky =>'ew');
 $CURRENT_STATUS = "FITS Editor $VERSION - no file selected";
+
+$MW->gridColumnconfigure(0, -weight => 1);
+$MW->gridRowconfigure(2, -weight => 1);
 
 # E N D ---------------------------------------------------------------------
 
