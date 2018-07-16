@@ -132,17 +132,26 @@ foreach my $oracenv ( @orac_envs ) {
   print "\n" if $debug;
 }
 
-# Build up an argument string for oracdr alias
+# Build up an argument string for oracdr alias and include a possible
+# subset of them as arguments for the oracdr_monitor alias.
 my $oracdr_args = '';
+my $oracdr_monitor_args = '';
+my @oracdr_monitor_allow = (qr/-+recsuffix/);
 if (exists $env{args}) {
   for my $k (keys %{$env{args}}) {
     $oracdr_args .= "$k ";
     $oracdr_args .= $env{args}->{$k}. " " if defined $env{args}->{$k};
+    if (grep {$k =~ $_} @oracdr_monitor_allow) {
+      $oracdr_monitor_args .= "$k ";
+      $oracdr_monitor_args .= $env{args}->{$k}. " " if defined $env{args}->{$k};
+    }
   }
   print "ORAC-DR arguments = '$oracdr_args'\n" if $debug;
+  print "ORAC-DR monitor arguments = '$oracdr_monitor_args'\n" if $debug;
 
-  # And for now write this out as a shell variable
+  # And for now write this out as shell variables
   print toshellvar( $shell, "oracdr_args", $oracdr_args );
+  print toshellvar( $shell, "oracdr_monitor_args", $oracdr_monitor_args );
 }
 
 # Validate the data directories

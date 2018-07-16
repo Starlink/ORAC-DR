@@ -106,13 +106,16 @@ if test -e $starperl; then
   if test -z "${oracdr_args}"; then
     oracdr_args=''
   fi
+  if test -z "${oracdr_monitor_args}"; then
+    oracdr_monitor_args=''
+  fi
 
 alias oracdr="$starperl ${ORAC_DIR}/bin/oracdr ${oracdr_args}"
 alias oracdr_db="$starperl -d ${ORAC_DIR}/bin/oracdr"
 alias oracdr_nuke="$starperl ${ORAC_DIR}/bin/oracdr_nuke"
 alias oracdisp="$starperl ${ORAC_DIR}/bin/oracdisp"
 alias oracdr_parse_recipe="$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
-alias oracdr_monitor="$starperl ${ORAC_DIR}/bin/oracdr_monitor"
+alias oracdr_monitor="$starperl ${ORAC_DIR}/bin/oracdr_monitor ${oracdr_monitor_args}"
 
 # These are shell scripts
 
@@ -193,3 +196,4 @@ fi
 
 unset starperl
 unset oracdr_args
+unset oracdr_monitor_args

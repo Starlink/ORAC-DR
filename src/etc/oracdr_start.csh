@@ -125,13 +125,16 @@ if ( -e $starperl ) then
   if !($?oracdr_args) then
     set oracdr_args ''
   endif
+  if !($?oracdr_monitor_args) then
+    set oracdr_monitor_args ''
+  endif
 
   alias oracdr      "$starperl  ${ORAC_DIR}/bin/oracdr $oracdr_args"
   alias oracdr_db   "$starperl -d ${ORAC_DIR}/bin/oracdr"
   alias oracdr_nuke "$starperl  ${ORAC_DIR}/bin/oracdr_nuke"
   alias oracdisp    "$starperl  ${ORAC_DIR}/bin/oracdisp"
   alias oracdr_parse_recipe "$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
-  alias oracdr_monitor "$starperl ${ORAC_DIR}/bin/oracdr_monitor"
+  alias oracdr_monitor "$starperl ${ORAC_DIR}/bin/oracdr_monitor $oracdr_monitor_args"
 
   # These are shell scripts
 
@@ -202,4 +205,5 @@ else
 endif
 
 unset oracdr_args
+unset oracdr_monitor_args
 unset starperl
