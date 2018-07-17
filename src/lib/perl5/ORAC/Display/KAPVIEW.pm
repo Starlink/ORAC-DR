@@ -262,7 +262,12 @@ each 'win'.
       $hostname =~ s/\..*//;
     }
 
-    my $dev = "xwindows;" . "$win" ."_oracdrxwin_$hostname";
+    my $suffix_var = 'ORAC_KAPVIEW_DEV';
+    my $suffix = (exists $ENV{$suffix_var} and defined $ENV{$suffix_var})
+        ? $ENV{$suffix_var}
+        : $hostname . '_'. $$;
+
+    my $dev = "xwindows;" . "$win" ."_odxw_${suffix}";
 
     return $dev;
   }
