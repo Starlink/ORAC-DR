@@ -61,9 +61,15 @@ every request even if that means it falls behind the pipeline. With this option
 only the most recent request will be handled with the exception that Group
 display requests are always processed.
 
+=item B<--useloc>
+
+Use the location "declared" by a file in ORAC_LOCATION_DIR (default
+/jac_sw/oracdr-locations) as ORAC_DATA_OUT.
+
 =item B<--recsuffix>
 
-Specifies a preferred recipe suffix.
+Specifies a preferred recipe suffix.  This affects the pipeline location
+file used if the C<--useloc> option is given.
 
 =back
 
@@ -123,14 +129,6 @@ BEGIN {
   }
 }
 
-# No point continuing if ORAC_DATA_OUT is not set
-BEGIN {
-  unless (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT}) {
-    print STDERR "ORAC_DATA_OUT must be set before running this program\n";
-    exit(1);
-  }
-}
-
 
 use File::Spec;
 use Getopt::Long;
@@ -142,6 +140,7 @@ use Tk::TextANSIColor;
 use File::Temp qw/ tempdir /;
 
 use ORAC::Basic qw/ orac_setup_display orac_chdir_output_dir /;
+use ORAC::Core qw/orac_retrieve_location/;
 use ORAC::Event;
 use ORAC::Frame;
 use ORAC::Display;
@@ -161,6 +160,7 @@ my $status = GetOptions(
                         "skip" => \$opt_skip,
                         "nodisplay" => \$opt_nodisplay,
                         'recsuffix=s' => \$opt{'recsuffix'},
+                        'useloc' => \$opt{'useloc'},
                        );
 
 pod2usage(1) if $opt_help;
@@ -169,6 +169,24 @@ pod2usage(-exitstatus => 0, -verbose => 2) if $opt_man;
 # If the display is not set use tty
 unless (exists $ENV{DISPLAY}) {
   $opt_tty  = 1;
+}
+
+# If "useloc" is requested, retrieve ORAC_DATA_OUT from the location file.
+if ($opt{'useloc'}) {
+  my $dir = orac_retrieve_location(%opt);
+
+  unless (defined $dir) {
+    print STDERR "Could not determine pipeline directory from location file\n";
+    exit(1);
+  }
+
+  $ENV{'ORAC_DATA_OUT'} = $dir;
+}
+elsif (not (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT})) {
+  # No point continuing if ORAC_DATA_OUT is not set
+  print STDERR "ORAC_DATA_OUT must be set before running this program\n";
+  print STDERR "(Or give the --useloc option to try to use a location file\n";
+  exit(1);
 }
 
 # This is the current file name
