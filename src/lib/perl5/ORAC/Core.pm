@@ -88,7 +88,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
              orac_calib_override orac_process_argument_list
              orac_main_data_loop orac_parse_files orac_parse_recparams
              orac_print_config_with_defaults orac_declare_location
-             orac_print_recipe_summary /;
+             orac_retrieve_location orac_print_recipe_summary /;
 
 $VERSION = '1.0';
 
@@ -570,12 +570,6 @@ where %options is the command line options hash.
 sub orac_declare_location {
   my %options = @_;
 
-  # get the output dir
-  my $locdir = "/jac_sw/oracdr-locations";
-  $locdir = $ENV{ORAC_LOCATION_DIR} if (exists $ENV{ORAC_LOCATION_DIR} &&
-                                        defined $ENV{ORAC_LOCATION_DIR});
-  return unless -d $locdir;
-
   # Default to today if not given. Also check to see if we have
   # been told to use today
   my $istoday;
@@ -588,11 +582,60 @@ sub orac_declare_location {
 
   return unless $istoday;
 
+  my $locfile = _determine_location_path(\%options);
+
+  return unless defined $locfile;
+
+  if ( open(my $fh, ">", $locfile) ) {
+    print $fh $ENV{ORAC_DATA_OUT} ."\n";
+    close($fh);
+    chmod  S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, $locfile;
+  } else {
+    print STDERR "Unable to write file to locate DR ($locfile) : $!\n";
+  }
+}
+
+=item B<orac_retrieve_location>
+
+Attempt to retrive the pipeline output directory from a file in
+ORAC_LOCATION_DIR.  See L<orac_declare_location> for the details
+of this file.
+
+=cut
+
+sub orac_retrieve_location {
+  my %options = @_;
+
+  my $locfile = _determine_location_path(\%options);
+
+  return unless (defined $locfile and -e $locfile);
+
+  my $fh = new IO::File($locfile, 'r');
+
+  return unless $fh;
+
+  my $location = <$fh>;
+  chomp $location;
+
+  $fh->close();
+
+  return $location;
+}
+
+sub _determine_location_path {
+  my $options = shift;
+
+  # get the output dir
+  my $locdir = "/jac_sw/oracdr-locations";
+  $locdir = $ENV{ORAC_LOCATION_DIR} if (exists $ENV{ORAC_LOCATION_DIR} &&
+                                        defined $ENV{ORAC_LOCATION_DIR});
+  return unless -d $locdir;
+
   my $type = lc($ENV{ORAC_INSTRUMENT});
 
   # get the mode information from recsuffix
-  if (exists $options{recsuffix}) {
-    my $recsuffix = $options{recsuffix};
+  if (exists $options->{recsuffix}) {
+    my $recsuffix = $options->{recsuffix};
     # If recsuffix has not been converted to a array ref yet do it here
     if (defined $recsuffix && ! ref($recsuffix) ) {
       $recsuffix = [ split /,/, $recsuffix];
@@ -606,14 +649,7 @@ sub orac_declare_location {
     }
   }
 
-  my $locfile = File::Spec->catdir( $locdir, $type );
-  if ( open(my $fh, ">", $locfile) ) {
-    print $fh $ENV{ORAC_DATA_OUT} ."\n";
-    close($fh);
-    chmod  S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, $locfile;
-  } else {
-    print STDERR "Unable to write file to locate DR ($locfile) : $!\n";
-  }
+  return File::Spec->catdir( $locdir, $type );
 }
 
 =item B<orac_print_configuration>
