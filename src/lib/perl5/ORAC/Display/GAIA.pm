@@ -412,10 +412,18 @@ sub configure {
 
   my $self = shift;
 
-  if (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{'ORAC_DATA_OUT'}) {
+  my $history_dir = undef;
+
+  if (exists $ENV{'ORAC_HISTORY_DIR'} && defined $ENV{'ORAC_HISTORY_DIR'}) {
+    $history_dir = $ENV{'ORAC_HISTORY_DIR'};
+  }
+  elsif (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{'ORAC_DATA_OUT'}) {
+    $history_dir = $ENV{'ORAC_DATA_OUT'};
+  }
+  if (defined $history_dir) {
     my ($status, $message) = $self->send_to_gaia(
         'gaia::Gaia::set_history_catalog {' .
-        File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, '.skycat_history') .
+        File::Spec->catfile($history_dir, '.skycat_history') .
         '}');
 
     if ($status != ORAC__OK) {
