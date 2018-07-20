@@ -855,6 +855,7 @@ sub orac_print_configuration {
         my $pdir = ($ENV{ORAC_PRIMITIVE_DIR} || '<undefined>');
         print $logfh "\tAdditional Recipe Dir   : $rdir\n";
         print $logfh "\tAdditional Primitive Dir : $pdir\n";
+        print $logfh "\tRecipe suffix : " . ($opt{'recsuffix'} // '<undefined>') . "\n";
 
 
         print $logfh "\nSystem environment:\n\n";
