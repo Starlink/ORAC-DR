@@ -186,15 +186,6 @@ elsif (not (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT})) {
   exit(1);
 }
 
-# This is the current file name
-my $CURRENT;
-
-# The current filehandle
-my $CURRENT_FH;
-
-# The current Display monitor filehandle
-my $CURRENT_DISP_FH;
-
 # We need to make sure that the display system does not interfere with the
 # running pipeline. We therefore use temporary directories. Note that
 # we override ORACDR_TMP even if it has been set externally. We do this
@@ -260,8 +251,8 @@ my (undef, $TEXT1, $TEXT2, $TEXT3, $TEXT4) = xorac_log_window('Tk', undef);
 
 }
 
-# Setup a repeating callback that checks for the newest file
-# and then sets up a fileevent on it. This allows for people killing
+# Setup a repeating callback that checks for the newest file.
+# This allows for people killing
 # and restarting the pipeline without having to restart the monitor
 
 # Start it first - there is a problem with this if we end
@@ -270,12 +261,12 @@ my (undef, $TEXT1, $TEXT2, $TEXT3, $TEXT4) = xorac_log_window('Tk', undef);
 # the end of the text. The kluge is either to delay this for the
 # repeat to kick in (but that could take 5 seconds or more) or
 # we display the text widget immediately using update
-# and then configure the fileevent
+# and then configure the callback.
 
 $MW->update;
 
 # This calls itself from the mainloop
-check_file_using_fileevent( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
+monitor_file($MW, 'log', \&open_log_file, \&deal_with_line, \%hdls, []);
 
 # Create a display object unless display is disabled
 # We need to chdir to the ORAC_DATA_OUT so that the files are local
@@ -283,8 +274,7 @@ if (!$opt_nodisplay) {
   orac_chdir_output_dir(0);
   my $Display = orac_setup_display( monitor => 1 );
   if (defined $Display) {
-    check_display_file_using_fileevent( $MW, $Display, \$CURRENT_DISP_FH,
-                                      \%hdls);
+    monitor_file($MW, 'display', \&open_display_file, \&deal_with_display, \%hdls, [$Display]);
   }
 }
 
@@ -293,21 +283,61 @@ MainLoop;
 
 exit;
 
-# Check to see which file is currently in use. If we find a new one,
-# reconfigure fileevent. If we have an EOF disable the fileevent
-# and try again in XX seconds
 
-# The fileevent is very susceptible to race conditions between
-# starting the fileevent and worrying about EOF
+sub monitor_file {
+  my ($w, $name, $open_func, $line_func, $hdls, $extra_args) = @_;
 
-sub check_file_using_fileevent {
-  my ($w, $nref, $fhref, $hdls) = @_;
+  my $i = -1;
+  my $fh = undef;
+  my $buff = '';
 
-  my $fh  = $$fhref;
-  my $name= $$nref;
+  my $handler; $handler = sub {
+    unless ($i = ($i + 1) % 4) {
+      eval {
+        my $prev_fh = $fh;
+        $fh = $open_func->($hdls, @$extra_args);
+        $buff = '' if (defined $prev_fh) && ($fh != $prev_fh);
+      };
+      if ($@) {
+        print STDERR "Error checking for new $name file: $@\n";
+      }
+    }
+
+    if (defined $fh) {
+      eval {
+        while (read $fh, $buff, 256, length($buff)) {
+          while (my $len = 1 + index $buff, "\n") {
+            $line_func->($w, $hdls, substr($buff, 0, $len, ''), @$extra_args);
+          }
+        }
+        $line_func->($w, $hdls, undef, @$extra_args);
+      };
+      if ($@) {
+        print STDERR "Error monitoring $name file: $@\n";
+      }
+      eval {
+        seek($fh, 0, SEEK_CUR);
+      };
+    }
+
+    $w->after(500, $handler);
+  };
+
+  $w->after(500, $handler);
+}
+
+
+# Check to see which file is currently in use.
+
+{
+my $name;
+my $fh;
+
+sub open_log_file {
+  my $hdls = shift;
 
   # Get the newest filename
-  my $newest = &find_log_file();
+  my $newest = find_log_file();
 
   # Is file there? Otherwise try again later.
   if (defined $newest) {
@@ -316,14 +346,9 @@ sub check_file_using_fileevent {
     if (!defined $name or $newest ne $name) {
 
       if (defined $fh) {
-        # Clear previous fileevent (should happen automatically)
-        $w->fileevent( $fh, 'readable' ,'')
-          if $w->fileevent( $fh, 'readable');
-
         # Close the old one
         close($fh); # dont care about status
         undef $fh;
-
       }
 
       # Need to open it
@@ -343,24 +368,13 @@ sub check_file_using_fileevent {
       }
       print STDERR "Monitoring file $newest\n";
 
-      # Store it
-      $$fhref = $fh;
-
-      # Associate with a fileevent
-      $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent,
-                                           $w, $fhref, $hdls]);
-
       # Store the new filename
-      $$nref = $newest;
-
+      $name = $newest;
     }
   }
 
-  # Recheck everything again in XX milli seconds
-  $w->after(2000, [\&check_file_using_fileevent, $w,
-                 $nref, $fhref, $hdls]);
-
-  return;
+  return $fh;
+}
 }
 
 
@@ -369,6 +383,8 @@ sub deal_with_line {
   my $w = shift;
   my $hdls = shift;
   my $line = shift;
+
+  return unless defined $line;
 
   # Does this look like the instrument setting of an "ORAC Environment" block?
   if ($line =~ '^\tInstrument : (\w+)$') {
@@ -387,64 +403,6 @@ sub deal_with_line {
   } else {
     my $hdl = $hdls->{"Message"};
     print $hdl $line;
-  }
-
-}
-
-# Callback for filevent. Given a widget, and ref to filehandle and
-# hash of filehandles as args
-# called by fileevent
-
-sub deal_with_fileevent {
-  my $w = shift;
-  my $fhref = shift;
-  my $fh = $$fhref;
-  my $hdls = shift;
-
-  my $line = <$fh>;
-
-  my $length;
-  if (defined $line) {
-    $length = length($line);
-  } else {
-    $length = 0;
-  }
-
-  if ($length > 0) {
-    deal_with_line($w, $hdls, $line);
-  } else {
-    # Disable the fileevent if we have EOF
-    $w->fileevent($fh, 'readable', '');
-
-    # Restart it in XX milli seconds. Need to make sure we only restart
-    # fileevent if one is not currently registered. This lets us
-    # deal with the case where we have opened a new file in the meantime
-    $w->after(501, [ \&restart_fileevent, $w, $fhref, $hdls, $fh]);
-  }
-
-}
-
-# Restart the fileeevent monitoring if there is no fileevent
-# currently associated with this filehandle.
-# recieves a widget object and ref to a filehandle.
-# + output file handles
-
-sub restart_fileevent {
-  my $w = shift;
-  my $fhref = shift;
-  my $hdls = shift;
-  my $old = shift;
-
-  return unless defined $$fhref;
-
-  # Only restart this fileevent if the filehandle we have
-  # now is the same one we were reading when the after() was set up
-  # This seems to be more relaiable test than reading from fileevent
-  # and checking for undef
-  if ($old eq $$fhref) {
-    # Restart fileeevent
-    $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent,
-                                         $w, $fhref, $hdls]);
   }
 
 }
@@ -488,29 +446,22 @@ sub find_log_file {
   return $sorted[-1]->[0];
 }
 
-# This routine configures the file event monitoring for changes to the
-# display file.
-
-# Arguments:
-#   - Mainwindow
-#   - Display object
-#   - Reference to variable to contain open monitor file handle
-
-# If an EOF occurs retry
-
 {
-my $curpos = undef;
-sub check_display_file_using_fileevent {
-  my ($w, $Display, $fhref, $hdls) = @_;
+my $curpos;
+my $curfh;
+
+sub open_display_file {
+  my $hdls = shift;
+  my $Display = shift;
 
   # Get the display system to open the file for read
   my $fh = $Display->monitor_handle;
   if ($fh) {
 
-    # if the filehandle has changed we disable the fileevent
-    # and reset the current position. Indicates that the pipeline reopened the file.
-    if (defined $$fhref && $fh != $$fhref) {
-      $w->fileevent( $$fhref, 'readable', '' ) if $w->fileevent($$fhref, 'readable');
+    # if the filehandle has changed we
+    # reset the current position. Indicates that the pipeline reopened the file.
+    if (defined $curfh && $fh != $curfh) {
+      close($curfh);
       $curpos = undef;
       for (qw/Warning/) {
         my $outfh = $hdls->{$_};
@@ -521,36 +472,25 @@ sub check_display_file_using_fileevent {
     # This could be a reopened filehandle or the same one as last time
     # so we need to find out where the file marker is positioned in order
     # to determine whether it has moved or not.
-    # Sometimes we get a Tk::Event::IO error when it can't find the TELL method.
-    # we just try again if this happens.
     my $thispos;
     eval {
-      $thispos = CORE::tell( $fh );
+      $thispos = tell($fh);
     };
-#    if ($@) {
-#      print STDERR "Got the TELL error with curpos = ".
-#       (defined $curpos ? $curpos : "<undef>") . " and thispos = ".
-#       (defined $thispos ? $thispos : "<undef>")." for $fh\n";
-#    }
 
     if (defined $thispos && (!defined $curpos || $thispos < $curpos)) {
       # The position in the file has shrunk (so the pipeline has
-      # reopened it). So we need to set up a new filevent and seek to the
+      # reopened it). So we need to seek to the
       # end
 
       # Seek to the end of the file so as not to get hit with lots
       # of old display requests
-      CORE::seek($fh, 0, SEEK_END );
+      seek($fh, 0, SEEK_END );
 
       # Store the current position (ie the end of the file when we opened it)
-      $curpos = CORE::tell( $fh );
+      $curpos = tell($fh);
 
       # Store the filehandle
-      $$fhref = $fh;
-
-      # And setup the fileevent
-      $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent_display,
-                                           $w, $Display, $fhref, $hdls]);
+      $curfh = $fh;
     }
 
     # if the file has been read since the last check we sync up curpos
@@ -562,24 +502,18 @@ sub check_display_file_using_fileevent {
 
   }
 
-  # Recheck to see if the file appears again
-  $w->after(2000, [\&check_display_file_using_fileevent, $w,
-                   $Display, $fhref, $hdls]);
-
+  return $fh;
 }
 }
 
-# Callback for fileevent trigger for display requests
+# Callback for trigger for display requests
 {
 my $previous;
-sub deal_with_fileevent_display {
+sub deal_with_display {
   my $w = shift;
-  my $Display = shift;
-  my $fhref = shift;
   my $hdls = shift;
-
-  my $fh = $$fhref;
-  my $line = <$fh>;
+  my $line = shift;
+  my $Display = shift;
 
   my $length = 0;
   if (defined $line) {
@@ -612,31 +546,8 @@ sub deal_with_fileevent_display {
       process_display_request( $Display, $previous );
       $previous = undef;
     }
-
-    # Disable fileevent with EOF
-    $w->fileevent( $$fhref, 'readable', '');
-    seek($$fhref, 0, SEEK_CUR);
-
-    # and restart to see if we have cleared the EOF
-    $w->after(501, [ \&restart_display_fileevent, $w, $Display, $fhref, $hdls, $fh ] );
   }
 }
-}
-
-sub restart_display_fileevent {
-  my $w = shift;
-  my $Display = shift;
-  my $fhref = shift;
-  my $hdls = shift;
-  my $old = shift;
-
-  return unless defined $$fhref;
-
-  if ($old eq $$fhref) {
-    # same file handle
-    $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent_display,
-                                         $w, $Display, $fhref, $hdls]);
-  }
 }
 
 sub process_display_request {
