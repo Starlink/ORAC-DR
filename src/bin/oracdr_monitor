@@ -136,7 +136,7 @@ use Tk;
 use Tk::TextANSIColor;
 use File::Temp qw/ tempdir /;
 
-use ORAC::Basic qw/ orac_setup_display orac_chdir_output_dir /;
+use ORAC::Basic qw/ orac_setup_display orac_chdir_output_dir orac_make_title_info /;
 use ORAC::Core qw/orac_retrieve_location/;
 use ORAC::Event;
 use ORAC::Frame;
@@ -266,17 +266,18 @@ my (undef, $TEXT1, $TEXT2, $TEXT3, $TEXT4) = xorac_log_window('Tk', undef);
 
 $MW->update;
 
-# This calls itself from the mainloop
-monitor_file($MW, 'log', \&open_log_file, \&deal_with_line, \%hdls, []);
-
 # Create a display object unless display is disabled
 # We need to chdir to the ORAC_DATA_OUT so that the files are local
+my $Display = undef;
 if (!$opt_nodisplay) {
   orac_chdir_output_dir(0);
-  my $Display = orac_setup_display( monitor => 1 );
-  if (defined $Display) {
-    monitor_file($MW, 'display', \&open_display_file, \&deal_with_display, \%hdls, [$Display]);
-  }
+  $Display = orac_setup_display( monitor => 1 );
+}
+
+# This calls itself from the mainloop
+monitor_file($MW, 'log', \&open_log_file, \&deal_with_line, \%hdls, [$Display]);
+if (defined $Display) {
+  monitor_file($MW, 'display', \&open_display_file, \&deal_with_display, \%hdls, [$Display]);
 }
 
 # Start the event loop
@@ -380,16 +381,34 @@ sub open_log_file {
 
 
 # Subroutine to read a line from a filehandle and print it to somewhere
+{
+my $instrument;
+my $recsuffix;
+
 sub deal_with_line {
   my $w = shift;
   my $hdls = shift;
   my $line = shift;
+  my $Display = shift;
 
   return unless defined $line;
 
-  # Does this look like the instrument setting of an "ORAC Environment" block?
-  if ($line =~ '^\tInstrument : (\w+)$') {
-    $w->title('ORAC-DR monitor: ' . $1);
+  # Does this look like the instrument/recsuffix setting
+  # of an "ORAC Environment" block?
+  my $title_changed = 0;
+  if ($line =~ '^\tInstrument : (.+)$') {
+    $instrument = $1;
+    $title_changed = 1
+  }
+  elsif ($line =~ '^\tRecipe suffix : (.+)$') {
+    $recsuffix = $1 eq '<undefined>' ? undef : $1;
+    $title_changed = 1;
+  }
+  if ($title_changed) {
+      my $title = orac_make_title_info(monitor => 1,
+        orac_instrument => $instrument, recsuffix => $recsuffix);
+      $w->title($title);
+      $Display->title_info($title) if defined $Display;
   }
 
   if ($line =~ /Error:|Err:/) {
@@ -405,7 +424,7 @@ sub deal_with_line {
     my $hdl = $hdls->{"Message"};
     print $hdl $line;
   }
-
+}
 }
 
 # Find the most recent oracdr log file in ORAC_DATA_OUT

@@ -185,6 +185,7 @@ sub orac_make_title_info {
   my %opt = @_;
 
   my $title = (exists $opt{'picard_recipe'}) ? 'PICARD' : 'ORAC-DR';
+  $title .= ' monitor' if exists $opt{'monitor'} and $opt{'monitor'};
   $title .= ' ' . $opt{'picard_recipe'} if exists $opt{'picard_recipe'};
   $title .= ' ' . $opt{'orac_instrument'} if exists $opt{'orac_instrument'};
   $title .= ' ' . $opt{'recsuffix'} if exists $opt{'recsuffix'}
