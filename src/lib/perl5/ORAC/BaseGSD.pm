@@ -113,10 +113,6 @@ picked up correctly.
 
 L<ORAC::Frame::GSD>, L<ORAC::Group::GSD>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>

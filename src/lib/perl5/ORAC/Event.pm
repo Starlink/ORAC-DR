@@ -22,9 +22,6 @@ package ORAC::Event;
 #    Alasdair Allan (aa@astro.ex.ac.uk)
 #     {enter_new_authors_here}
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 2008 Science and Technology Facilities Council.
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
@@ -62,10 +59,6 @@ associated classes to manipulate a hash table of Tk references. The
 class wraps Tk::update and Tk::MainLoop and allows the existance
 of a GUI to be fairly transparent to ORAC-DR as updates, and other
 such actions on a widget, are only called if the widget is defined.
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 

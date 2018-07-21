@@ -96,10 +96,6 @@ None
 
 L<ORAC::Group>, L<ORAC::BaseFITS>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Jim Lewis E<lt>jrl@ast.cam.ac.ukE<gt>

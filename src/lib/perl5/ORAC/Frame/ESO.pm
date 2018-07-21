@@ -114,10 +114,6 @@ L<ORAC::Frame::CGS4>
 L<ORAC::Frame::ISAAC>
 L<ORAC::Frame::NACO>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>

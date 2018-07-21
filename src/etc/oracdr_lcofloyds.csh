@@ -68,9 +68,6 @@
 #     25 Feb 2013 (tlister)
 #        Modified to read and pass camera code from cmdline.
 
-#  Revision:
-#     $Id: oracdr_lcofloyds.csh 7414 2014-01-17 22:26:32Z tlister $
-
 #  Copyright:
 #     Copyright (C) 2011-2013 Las Cumbres Observatory Global Telescope Inc.  All
 #     Rights Reserved.

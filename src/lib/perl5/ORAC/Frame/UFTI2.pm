@@ -192,10 +192,6 @@ sub number {
 
 L<ORAC::Group>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu)

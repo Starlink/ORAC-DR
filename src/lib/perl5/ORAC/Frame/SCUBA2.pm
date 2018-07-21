@@ -1195,10 +1195,6 @@ sub _find_processed_images {
 
 L<ORAC::Frame>, L<ORAC::Frame::NDF>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)

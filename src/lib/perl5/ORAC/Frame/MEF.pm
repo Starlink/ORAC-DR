@@ -404,10 +404,6 @@ Currently this module requires the L<Astro::FITS::CFITSIO> module.
 
 L<ORAC::Group>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Jim Lewis (jrl@ast.cam.ac.uk)

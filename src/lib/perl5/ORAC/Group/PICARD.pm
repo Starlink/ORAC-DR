@@ -121,8 +121,6 @@ L<ORAC::Frame::PICARD>
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
-$Id$
-
 =head1 COPYRIGHT
 
 Copyright (C) 2007 Science and Technology Facilities Council.

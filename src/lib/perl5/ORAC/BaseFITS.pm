@@ -143,10 +143,6 @@ picked up correctly.
 
 L<ORAC::Frame::MEF>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Jim Lewis E<lt>jrl@ast.cam.ac.ukE<gt>

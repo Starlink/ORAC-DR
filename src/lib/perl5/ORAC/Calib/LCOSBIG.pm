@@ -269,10 +269,6 @@ sub mask {
 
 =back
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Lister (tlister@lcogt.net)

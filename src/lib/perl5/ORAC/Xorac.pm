@@ -20,9 +20,6 @@ package ORAC::Xorac;
 #    Alasdair Allan (aa@astro.ex.ac.uk)
 #     {enter_new_authors_here}
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
@@ -65,10 +62,6 @@ ORAC::Xorac - routines called from the Xoracdr launcher GUI
 
 This module contains the routines called from Xoracdr and handles most of
 the GUI functionality
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 

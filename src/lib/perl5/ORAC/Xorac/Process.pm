@@ -19,9 +19,6 @@ package ORAC::Xorac::Process;
 #    Alasdair Allan (aa@astro.ex.ac.uk)
 #     {enter_new_authors_here}
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
@@ -50,10 +47,6 @@ ORAC::Xorac:: - process launcher routines called from Xoracdr
 =head1 DESCRIPTION
 
 This module contains the process launching routines for Xoracdr
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 

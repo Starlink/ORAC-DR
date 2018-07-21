@@ -464,10 +464,6 @@ This module requires the Starlink::AMS::Task module.
 
 L<Starlink::AMS::Task>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,

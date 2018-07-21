@@ -89,10 +89,6 @@ sub new {
 
 L<ORAC::Group>, L<ORAC::Group::NDF>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,

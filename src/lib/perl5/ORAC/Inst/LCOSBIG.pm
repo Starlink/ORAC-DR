@@ -23,7 +23,7 @@ Algorithm engine definitions can be found in C<ORAC::Inst::Defn>.
 use Carp;
 use strict;
 use vars qw/$VERSION/;
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.00';
 
 use base qw/ ORAC::Inst /;
 
@@ -110,10 +110,6 @@ sub sort_my_groups {
 =head1 SEE ALSO
 
 L<ORAC::Inst::LCOSPECTRAL>,  L<ORAC::Inst::IRCAM>
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 

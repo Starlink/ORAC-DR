@@ -704,10 +704,6 @@ sub get_frameset_via_template {
 
 Starlink::AST, Astro::Coords.
 
-=head1 REVISION
-
-$Id: $
-
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>

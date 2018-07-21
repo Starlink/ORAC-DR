@@ -127,10 +127,6 @@ sub file_exists {
 
 L<ORAC::Frame>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>

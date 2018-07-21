@@ -272,10 +272,6 @@ sub template {
 
 L<ORAC::Group>, L<ORAC::Frame::NDF>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>

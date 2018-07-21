@@ -32,9 +32,6 @@
 #  Authors:
 #    MJC: Malcolm J. Currie (Starlink)
 
-#  Revision:
-#    $Id$
-
 #  Copyright:
 #    Copyright (C) 2004 Particle Physics and Astronomy Research
 #    Council. All Rights Reserved.
@@ -120,10 +117,6 @@ The first date in I<yyyymmdd> format.
 The second date in I<yyyymmdd> format.
 
 =back
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 

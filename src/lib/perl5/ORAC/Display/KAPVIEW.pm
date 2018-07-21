@@ -2208,10 +2208,6 @@ sub vector {
 
 L<ORAC::Display>, L<ORAC::Display::GAIA>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)

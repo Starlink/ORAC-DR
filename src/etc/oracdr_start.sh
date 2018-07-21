@@ -49,9 +49,6 @@
 #     2013 December 21 (MJC):
 #        Do not report the SUN number if is XXX, meaninig there is no SUN.
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 2006 Particle Physics and Astronomy Research
 #     Council. Copyright (C) 2007, 2009 Science and Technology Facilities

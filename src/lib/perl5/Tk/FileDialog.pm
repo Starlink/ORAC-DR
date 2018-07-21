@@ -16,9 +16,6 @@
 #  Language:
 #    Perl
 
-#  Revision:
-#     $Id$
-
 #  Authors:
 #    BBP: Brent B. Powers (powers@swaps-comm.ml.com)
 #    EKR: Erik K. Ringger (ringger@cs.rochester.edu)

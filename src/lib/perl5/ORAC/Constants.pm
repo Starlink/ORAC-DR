@@ -183,10 +183,6 @@ or
 
 L<constants>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHOR
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> and

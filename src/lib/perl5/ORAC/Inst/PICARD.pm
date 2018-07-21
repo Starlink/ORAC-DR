@@ -74,10 +74,6 @@ sub return_possible_calibrations {
 
 L<ORAC::Inst::Defn>
 
-=head1 REVISION
-
-$Id: ACSIS.pm 5445 2004-06-03 00:11:27Z bradc $
-
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>

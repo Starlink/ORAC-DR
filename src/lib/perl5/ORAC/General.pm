@@ -683,10 +683,6 @@ L<POSIX>,
 L<List::Util>,
 L<Math::Trig>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt> and

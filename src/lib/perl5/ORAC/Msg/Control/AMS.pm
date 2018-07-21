@@ -248,10 +248,6 @@ This module requires the Starlink::AMS::Init module.
 
 L<Starlink::AMS::Init>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)

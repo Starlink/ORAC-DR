@@ -38,9 +38,6 @@
 #     Revision 1.1  2001/07/02 23:09:08  allan
 #     FITS Editor, basic functionality only. Menus not working
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.

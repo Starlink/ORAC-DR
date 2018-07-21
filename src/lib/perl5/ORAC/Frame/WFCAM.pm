@@ -429,10 +429,6 @@ sub ehukeys {
 
 L<ORAC::Group>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Brad Cavanagh <b.cavanagh@jach.hawaii.edu>

@@ -319,10 +319,6 @@ sub template {
 
 L<ORAC::Frame::CGS4>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>,

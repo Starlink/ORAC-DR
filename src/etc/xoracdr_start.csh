@@ -53,9 +53,6 @@
 #
 #
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 2007 Science and Technology Facilities Council.
 #     Copyright (C) 1998-2007 Particle Physics and Astronomy Research

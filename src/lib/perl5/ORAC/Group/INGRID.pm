@@ -91,10 +91,6 @@ sub new {
 
 L<ORAC::Group::NDF>, L<ORAC::Group::Michelle>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>

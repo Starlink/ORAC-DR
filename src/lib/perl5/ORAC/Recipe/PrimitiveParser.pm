@@ -1282,10 +1282,6 @@ Tracking of "Current" primitive relies on ORAC::Recipe->current_primitive().
 
 L<ORAC::Frame>, L<ORAC::Recipe>, L<ORAC::Recipe::Primitive>
 
-=head1 REVISION
-
-$Id: BaseFile.pm 7256 2007-11-28 02:39:22Z timj $
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>

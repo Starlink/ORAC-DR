@@ -237,10 +237,6 @@ sub mergehdr {
 
 L<ORAC::Frame::CGS4>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,

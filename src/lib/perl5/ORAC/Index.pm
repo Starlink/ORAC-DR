@@ -1200,10 +1200,6 @@ sub _rules_keys {
 
 L<ORAC::Index::Extern>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt> and

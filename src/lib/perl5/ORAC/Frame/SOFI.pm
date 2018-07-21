@@ -121,10 +121,6 @@ sub new {
 
 L<ORAC::Frame::ESO>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>,

@@ -186,8 +186,6 @@ L<ORAC::Group::PICARD>
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-$Id$
-
 =head1 COPYRIGHT
 
 Copyright (C) 2007 Science and Technology Facilities Council.

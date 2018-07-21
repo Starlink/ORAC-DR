@@ -55,7 +55,7 @@ require Tk::Button;
 #   Version
 #
 use vars qw/$VERSION/;
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.00';
 
 #
 #   Widget Constructor

@@ -57,10 +57,6 @@ those available from B<ORAC::Group>.
 
 L<ORAC::Group::NDF>, L<ORAC::Group::UKIRT>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>

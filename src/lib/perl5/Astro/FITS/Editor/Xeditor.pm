@@ -20,9 +20,6 @@ package Astro::FITS::Editor::Xeditor;
 #    Alasdair Allan (aa@astro.ex.ac.uk)
 #     {enter_new_authors_here}
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
@@ -52,10 +49,6 @@ Editor::Xeditor - routines called from the FITS Editor GUI
 
 This module contains the routines called from FITS Editor and handles most of
 the GUI functionality
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 
@@ -89,7 +82,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @EXPORT = qw/ editor_about editor_open_header editor_write_header
               editor_display_header /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.00';
 
 # S U B R O U T I N E S -----------------------------------------------------
 

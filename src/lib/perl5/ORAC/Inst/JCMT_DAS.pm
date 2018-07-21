@@ -78,10 +78,6 @@ sub return_possible_algorithms {
 
 L<ORAC::Inst::IRCAM>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>,

@@ -434,10 +434,6 @@ sub contactw {
 
 =back
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHOR
 
 Tim Jenness (t.jenness@jach.hawaii.edu).

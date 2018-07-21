@@ -244,10 +244,6 @@ sub inout {
 
 L<ORAC::Group>, L<ORAC::Frame::NDF>, L<ORAC::Frame>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)

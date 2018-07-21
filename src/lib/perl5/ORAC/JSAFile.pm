@@ -349,10 +349,6 @@ sub jsa_pub_asn_id {
 
 L<ORAC::BaseFile>, L<ORAC::BaseNDF>
 
-=head1 REVISION
-
-$Id: $
-
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>

@@ -84,10 +84,6 @@ sub return_possible_calibrations {
 
 L<ORAC::Inst::IRCAM>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,

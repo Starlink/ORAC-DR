@@ -244,10 +244,6 @@ sub _launch_algorithm_engines {
 
 =end __PRIVATE_METHODS__
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,

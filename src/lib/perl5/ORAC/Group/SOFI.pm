@@ -94,10 +94,6 @@ sub new {
 
 L<ORAC::Group::NDF>, L<ORAC::Group::Michelle>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>

@@ -66,9 +66,6 @@
 #     15 Mar 2012 (tlister)
 #        Original Version based on oracdr_lcosbig.csh
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 2012 Las Cumbres Observatory Global Telescope Inc.  All
 #     Rights Reserved.

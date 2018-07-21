@@ -1880,10 +1880,6 @@ sub orac_print_recipe_summary {
 
 =back
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,

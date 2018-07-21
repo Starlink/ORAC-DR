@@ -36,7 +36,7 @@
 package Tk::Listbox;
 
 use vars qw($VERSION);
-$VERSION = '3.031'; # $Id$
+$VERSION = '3.031';
 
 use Tk qw(Ev $XS_VERSION);
 use Tk::Clipboard ();

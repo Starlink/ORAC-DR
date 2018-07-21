@@ -756,10 +756,6 @@ sub process_monitor_request {
 
 Related ORAC display devices (eg L<ORAC::Display::KAPVIEW>)
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>

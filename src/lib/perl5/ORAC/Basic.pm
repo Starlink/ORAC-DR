@@ -392,10 +392,6 @@ sub orac_chdir_output_dir {
 
 =back
 
-=head1 REVISION
-
-$Id$
-
 =head1 SEE ALSO
 
 L<ORAC::Core>, L<ORAC::General>

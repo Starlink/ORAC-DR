@@ -211,10 +211,6 @@ This module requires the L<NDF> module.
 
 L<ORAC::Group>, L<ORAC::BaseNDF>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>

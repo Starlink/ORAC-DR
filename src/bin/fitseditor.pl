@@ -21,9 +21,6 @@
 #  Authors:
 #    Alasdair Allan (aa@astro.ex.ac.uk)
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
@@ -52,11 +49,6 @@ fitseditor - Manipulate FITS headers using a GUI
 C<fitseditor> is an X Windows GUI that can be used to modify headers
 of a FITS file or a Starlink NDF.
 
-
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Alasdair Allan (aa@astro.ex.ac.uk)
@@ -73,7 +65,7 @@ All Rights Reserved.
 #  Version number - do this before anything else so that we dont have to
 #  wait for all the modules to load - very quick
 BEGIN {
-  $VERSION = sprintf "%d", q$Revision$ =~ /(\d+)/;
+  $VERSION = '1.00';
 
   #  Check for version number request - do this before real options handling
   foreach (@ARGV) {

@@ -331,10 +331,6 @@ sub DEBUG {
 
 L<IO::File>, L<File::MkTemp>, L<POSIX/tmpnam()>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>

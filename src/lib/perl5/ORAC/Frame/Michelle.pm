@@ -116,10 +116,6 @@ This section describes sub-classed methods.
 
 L<ORAC::Frame::CGS4>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu)

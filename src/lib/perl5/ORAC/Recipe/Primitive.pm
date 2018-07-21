@@ -235,10 +235,6 @@ sub name {
 
 L<ORAC::Recipe::PrimitiveParser>, L<ORAC::Recipe>
 
-=head1 REVISION
-
-$Id: BaseFile.pm 7256 2007-11-28 02:39:22Z timj $
-
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>

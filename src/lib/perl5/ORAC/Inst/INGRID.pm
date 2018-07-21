@@ -81,10 +81,6 @@ sub return_possible_calibrations {
 
 L<ORAC::Inst::SCUBA>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,

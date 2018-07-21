@@ -311,10 +311,6 @@ sub findrecipe {
 
 L<ORAC::Frame>, L<ORAC::Frame::GSD>
 
-=head1 REVISION
-
-$Id$
-
 =head1 AUTHORS
 
 Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
