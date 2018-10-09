@@ -1,0 +1,178 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_BIN_VELOCITY_AXIS_
+
+=head1 DESCRIPTION
+
+This primitive bins the velocity axis of a cube by a given factor.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BIN = INTEGER (Given)
+
+The requested binning factor.  Each contiguosu set of BIN channels
+along the velocity axis are summed form one pixel in the output.  This
+is normally a power of two.  This argument can be overridden by the
+RECPAR_VELOCITY_BIN_FACTOR uhdr via the recipe parameter system.  If
+the value is undefined, not an integer or an integer less than 2, no 
+binning occurs.  [undef]
+
+=item GROUP = INTEGER (Given)
+
+How to process group files.  0 means use the current Frame object.  1
+means use the current Group object.  2 means use each Frame member of
+the current Group object.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS raw or reduced spatial/spectral cubes,
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The rebinned cube with suffix _E<lt>factorE<gt> binned, where factor is the
+binning factor.
+
+=item *
+
+This primitive should be invoked after any call to 
+L<_FLAG_HIGHFREQ_INTERFERENCE_SPECTRA|_FLAG_HIGHFREQ_INTERFERENCE_SPECTRA>,
+as the high-frequency noise is usually comprises alternating bright and dark
+in adjacent channels.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COMPAVE
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2018 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Obtain parameters and any recipe-parameter overrides.
+my $bin = get_prim_arg( $_PRIM_ARGS_, "BIN", undef );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+
+$bin = ( defined( $Frm->uhdr( "RECPAR_VELOCITY_BIN_FACTOR" ) ) ?
+       $Frm->uhdr( "RECPAR_VELOCITY_BIN_FACTOR" )              :
+       $bin );
+
+# Validate that the binning factor is an integer of at least 2.
+my $proceed = 0;
+if ( defined( $bin ) ) {
+   $proceed = 1 if ( $bin =~ /^[+]?\d+$/ && $bin >= 2 );
+}
+
+return 0 if !$proceed;
+
+# Handle Frame/Group.
+my @Objs;
+if ( $group == 0 ) {
+    push @Objs, $Frm;
+} elsif(  $group == 1 ) {
+    push @Objs, $Grp;
+} elsif ( $group == 2 ) {
+    @Objs = $Grp->members;
+}
+
+if ( ! $group ||
+     $group && $Grp->lastallmembers( $Frm ) ) {
+
+# Write a heading to structure the commentary.
+   orac_say "\nBin velocity scale";
+   my $underline = "-" x 26;
+   orac_say "$underline\n";
+
+   orac_say "Rebinning velocity axis by a factor of $bin.";
+
+   foreach my $Obj ( @Objs ) {
+
+      my $outsuffix = "_" . $bin . "bin";
+
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+
+         my ( $in, $out ) = defined( $Obj->uhdr( "JSA_TILES" ) ) && $Obj->uhdr( "JSA_TILES" ) ?
+                            $Obj->inout_jsatile( $outsuffix, $i ) :
+                            $Obj->inout( $outsuffix, $i );
+
+# FInd the number of dimensions and the WCS labels.
+         $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+         my ( $ORAC_STATUS, $ndim ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ndim" );
+         ( $ORAC_STATUS, my @label ) =$Mon{'ndfpack_mon'}->get("ndftrace", "flabel" );
+         ( $ORAC_STATUS, my @fpixelscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+
+         my $pixelscale;
+         
+# Form comma-separated list of compression factors.  Only the spectral axis needs binning.
+         my $compress = "[";
+         for ( my $count = 0; $count < $ndim; $count++ )  {
+            if ( $label[$count] =~ /velocity/ ) {
+               $compress .= "$bin";
+               $pixelscale = $bin * $fpixelscale[$count];
+            } else {
+               $compress .= "1";
+            }
+            $compress .= ( $count < $ndim -1 ) ? "," : "]";
+         }
+
+#  Perform the binning.  The alignment retains the pixel origin.
+         my $params = "in=$in out=$out compress=$compress align=origin trim";
+         $Mon{'kappa_mon'}->obeyw( "compave", "$params" );
+
+         orac_say "$in to $out:";
+         orac_say sprintf( " Binned to %0.3f km/s pixelscale.", $pixelscale );
+
+# Update the object.
+         $Obj->product( "velbin" );
+         $Obj->file( $i, $out );
+
+      }
+   }
+
+   orac_say "";
+
+}
