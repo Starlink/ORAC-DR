@@ -532,7 +532,7 @@ sub xorac_log_window {
     -padx => 0, -pady => 0, -fill => 'both', -expand => 1);
 
   # ORAC_WARN messages
-  $lab2   = $subframe->Label(-text=>'Warnings',-font=>$text_font)->grid(-row => 0, -column => 0, -sticky => 'nesw');
+  $lab2   = $subframe->Label(-text=>'Warnings',-font=>$text_font)->grid(-row => 2, -column => 0, -sticky => 'nesw');
   $textw2 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
@@ -540,13 +540,13 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $text_font
-                         )->grid( -row => 1, -column => 0,
+                         )->grid( -row => 3, -column => 0,
                                   -sticky => 'nesw' );
   $textw2->insert('end',"ORAC-DR warning messages\n");
   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
   # ORAC Error messages
-  $lab1   = $subframe->Label(-text=>'Errors',-font=>$text_font)->grid(-row => 2, -column => 0, -sticky => 'nesw');
+  $lab1   = $subframe->Label(-text=>'Errors',-font=>$text_font)->grid(-row => 0, -column => 0, -sticky => 'nesw');
   $textw3 = $subframe->Scrolled('TextANSIColor',
                           -scrollbars=>'e',
                           -background=>'#555555',
@@ -554,7 +554,7 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $text_font
-                         )->grid( -row => 3, -column => 0,
+                         )->grid( -row => 1, -column => 0,
                                   -sticky => 'nesw' );
   $textw3->insert('end',"ORAC-DR error messages\n");
   $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
