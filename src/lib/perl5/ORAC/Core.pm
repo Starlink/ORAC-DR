@@ -59,7 +59,7 @@ use ORAC::Event;                # Tk event
 use ORAC::General;              # parse_* routines
 use ORAC::Inst::Defn qw/ orac_determine_inst_classes orac_guess_instrument /;
 use ORAC::Error qw/:try/;
-use ORAC::Constants qw/:status/; # ORAC status varaibles
+use ORAC::Constants qw/:status/; # ORAC status variables
 use ORAC::Recipe::Parameters;
 use ORAC::LogFile;
 use ORAC::LogHTML;
@@ -414,7 +414,7 @@ sub orac_process_frame {
                 throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
               };
 
-  # delete symlink to raw data file or actual data file if marked with
+  # Delete symlink to raw data file or actual data file if marked with
   # temporary status - we rely on the temporary flags even if
   # the ORAC_DATA_IN == ORAC_DATA_OUT and it's not a symlink.
   my @istempraw = $Frm->tempraw;
@@ -1144,7 +1144,7 @@ sub orac_calib_override {
 
         $Cal->$key($calibs{$key});
 
-        # if we have a noupdate method to enforce overrides, use it.
+        # If we have a noupdate method to enforce overrides, use it.
         my $noupdate = $key."noupdate";
         $Cal->$noupdate(1) if $Cal->can($noupdate);
 
@@ -1667,8 +1667,8 @@ sub orac_main_data_loop {
       }
       my @all_insts = keys %instrume_hdr;
       if (scalar @all_insts == 1 && $all_insts[0] ne $undef_inst ) {
-        # this is the instrument we should recommend using,
-        # But we prefix with "PICARD_" to ensure that the search path
+        # This is the instrument we should recommend using,
+        # but we prefix with "PICARD_" to ensure that the search path
         # for primitives will include the PICARD search tree.
         $instrument = "PICARD_". $all_insts[0];
         $ENV{ORAC_INSTRUMENT} = $instrument;
@@ -1781,7 +1781,7 @@ sub orac_store_recipe_status {
              ORAC__BADFRAME, "BADFRAME",
              ORAC__BADENG, "BADENG");
 
-  # initialise good and bad to make things easier later on.
+  # Initialise good and bad to make things easier later on.
   for my $k (qw/ GOOD BAD /) {
     $href->{$k} = 0 unless exists $href->{$k};
   }
@@ -1854,7 +1854,7 @@ sub orac_print_recipe_summary {
       $text = $file_sop . " being processed when an error occurred:\n " . $stats->{FILES};
       push(@messages,$text);
 
-      # handle the error states.
+      # Handle the error states.
       if (exists $stats->{BADENG} && $stats->{BADENG} > 0) {
         my $badeng = $stats->{BADENG};
         push(@messages, "with $badeng having ".($badeng==1 ? "a " :"").
