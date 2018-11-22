@@ -1585,14 +1585,15 @@ sub orac_main_data_loop {
                                           RecSuffix => $recsuffix,
                                           RecPars => $recpars,
                                          );
-          orac_store_recipe_status( \%Stats, $status );
+          my $errorfile = $status == ORAC__BADFRAME ? $Frm->raw :$Frm->file;
+          orac_store_recipe_status( \%Stats, $status, $errorfile );
         }
           catch ORAC::Error::FatalError with {
             my $Error = shift;
             $Error->throw unless $skip_error;
             ORAC::Error->flush();
             orac_err("SKIPPING ERROR: $Error\n");
-            orac_store_recipe_status( \%Stats, ORAC__TERMERR );
+            orac_store_recipe_status( \%Stats, ORAC__TERMERR, $Frm->file );
           }
             catch ORAC::Error::UserAbort with {
               my $Error = shift;
@@ -1603,7 +1604,7 @@ sub orac_main_data_loop {
                 throw ORAC::Error::FatalError("$Error", ORAC__FATAL)
                     unless $skip_error;
                 orac_err("SKIPPING ERROR: $Error\n");
-                orac_store_recipe_status( \%Stats, ORAC__TERMERR );
+                orac_store_recipe_status( \%Stats, ORAC__TERMERR, $Frm->file );
               };
 
         # Reset the obs number labels
@@ -1720,14 +1721,15 @@ sub orac_main_data_loop {
                                           RecSuffix => $recsuffix,
                                           RecPars => $recpars,
                                          );
-          orac_store_recipe_status( \%Stats, $status );
+          my $errorfile = $status == ORAC__BADFRAME ? $Frm->raw :$Frm->file;
+          orac_store_recipe_status( \%Stats, $status, $errorfile );
         }
           catch ORAC::Error::FatalError with {
             my $Error = shift;
             $Error->throw unless $skip_error;
             ORAC::Error->flush();
             orac_err("SKIPPING ERROR: $Error\n");
-            orac_store_recipe_status( \%Stats, ORAC__TERMERR );
+            orac_store_recipe_status( \%Stats, ORAC__TERMERR, $Frm->file );
           }
             catch ORAC::Error::UserAbort with {
               my $Error = shift;
@@ -1738,7 +1740,7 @@ sub orac_main_data_loop {
                 throw ORAC::Error::FatalError("$Error", ORAC__FATAL)
                     unless $skip_error;
                 orac_err("SKIPPING ERROR: $Error\n");
-                orac_store_recipe_status( \%Stats, ORAC__TERMERR );
+                orac_store_recipe_status( \%Stats, ORAC__TERMERR, $Frm->file );
               };
 
         # Reset the obs number labels
@@ -1758,16 +1760,18 @@ sub orac_main_data_loop {
 
 =item B<orac_store_recipe_status>
 
-Translates a return status from "orac_process_frame" into a
-hash entry for tracking statistics.
+Translates a return status from "orac_process_frame" into a hash entry
+for tracking statistics, and recording the filenames where the processing
+failed or the supplied data were deemed bad.
 
-  orac_store_recipe_status( \%ongoing, $status );
+  orac_store_recipe_status( \%ongoing, $status, $filename );
 
 =cut
 
 sub orac_store_recipe_status {
   my $href = shift;
   my $status = shift;
+  my $filename = shift;
 
   # Do not use => in hash contructor since we do not want
   # ORAC__OK to become "ORAC__OK" we want it to become the value
@@ -1795,6 +1799,13 @@ sub orac_store_recipe_status {
     $href->{GOOD}++;
   } elsif ($key ne "BAD") {
     $href->{BAD}++;
+  }
+  if ($status != ORAC__OK && $status != ORAC__TERM && $status != ORAC__BADENG ) {
+    if ( defined( $href->{FILES} ) ) {
+      $href->{FILES} .= $filename ."\n ";
+    } else {
+      $href->{FILES} = $filename ."\n ";
+    }
   }
 }
 
@@ -1840,6 +1851,10 @@ sub orac_print_recipe_summary {
       my $text = $stats->{BAD}. " completed with an error";
       push(@messages,$text);
       # handle the error states
+      my $file_sop = ( $stats->{BAD} > 1 ) ? "Files" : "File";
+      $text = $file_sop . " being processed when an error occurred:\n " . $stats->{FILES};
+      push(@messages,$text);
+
       if (exists $stats->{BADENG} && $stats->{BADENG} > 0) {
         my $badeng = $stats->{BADENG};
         push(@messages, "with $badeng having ".($badeng==1 ? "a " :"").
@@ -1865,6 +1880,9 @@ sub orac_print_recipe_summary {
         $text = "$badfrm frames were marked bad with good recipe status";
       }
       push(@messages, $text);
+
+      $text = "Bad files:\n " . $stats->{FILES};
+      push(@messages,$text);
     }
 
     my $text = join("\n",@messages);
