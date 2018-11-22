@@ -65,7 +65,7 @@ use ORAC::LogFile;
 use ORAC::LogHTML;
 
 # Need to use this class so that we can pre-configure the
-# message systems on the basis of command line switches
+# message systems on the basis of command-line switches.
 use ORAC::Msg::MessysLaunch;
 
 #general modules
@@ -416,7 +416,7 @@ sub orac_process_frame {
 
   # delete symlink to raw data file or actual data file if marked with
   # temporary status - we rely on the temporary flags even if
-  # the ORAC_DATA_IN == ORAC_DATA_OUT and it's not a symlink
+  # the ORAC_DATA_IN == ORAC_DATA_OUT and it's not a symlink.
   my @istempraw = $Frm->tempraw;
   for my $raw ( $Frm->raw ) {
     my $istemp = shift(@istempraw);
@@ -424,7 +424,7 @@ sub orac_process_frame {
   }
 
   # Now we try again but be a bit more careful about removing
-  # files
+  # files.
   # Only want to do this if we created it initially as a soft link
   # and if ORAC_DATA_IN is not the same directory as ORAC_DATA_OUT
   if ( defined( $ENV{'ORAC_DATA_IN'} ) &&
@@ -839,7 +839,7 @@ sub orac_print_configuration {
       for my $logfh (@logfiles) {
         $logfh->autoflush(1);
 
-        # Write a header
+        # Write a header.
         print $logfh "$app logfile - created on " . scalar(gmtime) ." UT\n";
         print $logfh "\nORAC Environment:\n\n";
         print $logfh "\tPipeline Version: ". ORAC::Version->getVersion ."\n";
@@ -1132,12 +1132,12 @@ sub orac_calib_override {
 
   }
 
-  # For each calibration configure the cal object
+  # For each calibration configure the cal object.
   foreach my $key (keys %calibs) {
 
     # Since we can manipulate the hash values via the GUI a key may
     # exist with an undef value, we have to check each key to see
-    # that it has a value
+    # that it has a value.
     if ( defined $calibs{$key} ) {
 
       if ($Cal->can($key)) {    # set appropriate method
@@ -1188,7 +1188,7 @@ sub orac_parse_files {
 
   my ( $opt_files ) = @_;
 
-  # Absolute path is okay, else will be relative to ORAC_DATA_IN
+  # Absolute path is okay, else will be relative to ORAC_DATA_IN.
   my $filename = $opt_files;
 
   my $fh;
@@ -1411,14 +1411,14 @@ sub orac_process_argument_list {
 
 =item B<orac_main_data_loop>
 
-This routine handles the main data processing
+This routine handles the main data processing.
 
   orac_main_data_loop( \%options, $loop, $instrument, \@obs,
                        $Display, $orac_prt,
                        $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST,
                        $CURRENT_PRIMITIVE, $Override_Recipe );
 
-There are two approaches to the data processing
+There are two approaches to the data processing.
 
 =over 4
 
@@ -1497,16 +1497,16 @@ sub orac_main_data_loop {
   my $grptrans = $opts->{grptrans};
   my $skip_error = exists $opts->{'skip_error'} && defined $opts->{'skip_error'};
 
-  # If recsuffix has not been converted to a array ref yet do it here
+  # If recsuffix has not been converted to a array ref yet do it here.
   if (defined $recsuffix && ! ref($recsuffix) ) {
     $recsuffix = [ split /,/, $recsuffix];
   } else {
     $recsuffix = [];
   }
 
-  # Given the instrument name derive all the classes
+  # Given the instrument name derive all the classes.
 
-  # Initialise for this "instrument" and create a basic instrument object
+  # Initialise for this "instrument" and create a basic instrument object.
   my ($frameclass, $groupclass, $calclass, $instclass) =
     orac_determine_inst_classes( $instrument );
   die "Could not determine core classes from instrument name $instrument"
@@ -1519,10 +1519,10 @@ sub orac_main_data_loop {
   orac_message_launch( $opt_nomsgtmp, $opt_verbose );
   my $Mon = orac_start_algorithm_engines( $opt_noeng, $InstObj );
 
-  # Keep track of success and failure
+  # Keep track of success and failure.
   my %Stats;
 
-  # Default is to process data in order of arrival
+  # Default is to process data in order of arrival.
   unless ($opt_batch) {
 
     # Loop forever
@@ -1535,9 +1535,9 @@ sub orac_main_data_loop {
         %Groups = ();
       }
 
-      # Return back the current frame
-      # This will also configure the frame object
-      # Turn off strict
+      # Return back the current frame.
+      # This will also configure the frame object.
+      # Turn off strict.
       my @Frms;
       {
         no strict 'refs';
@@ -1667,17 +1667,17 @@ sub orac_main_data_loop {
       }
       my @all_insts = keys %instrume_hdr;
       if (scalar @all_insts == 1 && $all_insts[0] ne $undef_inst ) {
-        # this is the instrument we should recommend using
+        # this is the instrument we should recommend using,
         # But we prefix with "PICARD_" to ensure that the search path
-        # for primitives will include the picard search tree
+        # for primitives will include the PICARD search tree.
         $instrument = "PICARD_". $all_insts[0];
         $ENV{ORAC_INSTRUMENT} = $instrument;
 
-        # Override some  class definitions
+        # Override some class definitions.
         my ($nframeclass, $ngroupclass, $ncalclass, $ninstclass) =
           orac_determine_inst_classes( $instrument );
 
-        # So redefine the calibration object
+        # So redefine the calibration object.
         $calclass = $ncalclass;
         $Cal = orac_calib_override( $calclass, @$opt_calib );
 
@@ -1689,7 +1689,7 @@ sub orac_main_data_loop {
     orac_print("Sorting Groups\n");
     @Groups = @{ $instclass->sort_my_groups(\@Groups) };
 
-    # Now loop over groups and frames
+    # Now loop over groups and frames.
     foreach my $Grp (@Groups) {
       foreach my $Frm ($Grp->members) {
         orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
@@ -1774,14 +1774,14 @@ sub orac_store_recipe_status {
   my $filename = shift;
 
   # Do not use => in hash contructor since we do not want
-  # ORAC__OK to become "ORAC__OK" we want it to become the value
+  # ORAC__OK to become "ORAC__OK" we want it to become the value.
   my %lut = (ORAC__OK, "OK",
              ORAC__TERM, "TERM",
              ORAC__TERMERR, "TERMERR",
              ORAC__BADFRAME, "BADFRAME",
              ORAC__BADENG, "BADENG");
 
-  # initialise good and bad to make things easier later on
+  # initialise good and bad to make things easier later on.
   for my $k (qw/ GOOD BAD /) {
     $href->{$k} = 0 unless exists $href->{$k};
   }
@@ -1831,30 +1831,30 @@ sub orac_print_recipe_summary {
   return 0 unless exists $stats->{TOTAL};
 
   if ($stats->{TOTAL} == 1) {
-    my $text = "which completed successfully";
+    my $text = ", which completed successfully";
     if ( exists $stats->{TERM} && $stats->{TERM} ) {
-      $text = "which was terminated early";
+      $text = ", which was terminated early";
     } elsif (exists $stats->{BADENG} && $stats->{BADENG}) {
-      $text = "which had a bad algorithm engine";
+      $text = ", which had a bad algorithm engine";
     } elsif (exists $stats->{TERMERR} && $stats->{TERMERR}) {
-      $text = "which was terminated early with an error";
+      $text = ", which was terminated early with an error";
     } elsif (exists $stats->{BADFRAME} && $stats->{BADFRAME}) {
-      $text = "which completed without error but the frame was marked bad";
+      $text = ", which completed without error but the frame was marked bad";
     } elsif ( $stats->{GOOD} == 0 ) {
       $text = "which completed with an error";
     }
-    orac_print( "Processed one recipe $text\n", $color );
+    orac_print( "Processed one recipe$text\n", $color );
   } else {
     my @messages;
 
     if ($stats->{BAD} > 0) {
       my $text = $stats->{BAD}. " completed with an error";
       push(@messages,$text);
-      # handle the error states
       my $file_sop = ( $stats->{BAD} > 1 ) ? "Files" : "File";
       $text = $file_sop . " being processed when an error occurred:\n " . $stats->{FILES};
       push(@messages,$text);
 
+      # handle the error states.
       if (exists $stats->{BADENG} && $stats->{BADENG} > 0) {
         my $badeng = $stats->{BADENG};
         push(@messages, "with $badeng having ".($badeng==1 ? "a " :"").
