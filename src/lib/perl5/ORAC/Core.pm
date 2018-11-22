@@ -1554,7 +1554,11 @@ sub orac_main_data_loop {
 
         # Set the ORAC::Print prefix
         my $fnumber = $Frm->number;
-        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation number ' . $fnumber;
+
+        # This assumes the observation source prefix is only one
+        # character.
+        my $fdate = substr( $Frm->file, 1, 8 );
+        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fdate . ' #' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
         $orac_prt->respre("#${fnumber}: ");
@@ -1695,7 +1699,11 @@ sub orac_main_data_loop {
         orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
         # Set the ORAC::Print prefix
         my $fnumber = $Frm->number;
-        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fnumber;
+
+        # This assumes the observation source prefix is only one
+        # character.
+        my $fdate = substr( $Frm->file, 1, 8 );
+        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fdate . ' #' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
         $orac_prt->respre("#${fnumber}: ");
