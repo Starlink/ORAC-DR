@@ -1,0 +1,149 @@
+=head1 NAME
+
+_COMPARE_SPECIES_
+
+=head1 DESCRIPTION
+
+This primitive compares the molecular species, i.e. the molecule and
+transitions of the current Frame or Group (see Argument OBJ) against a
+reference dataset (Argument REF).  Depending on the setting of
+Argument ABORT, a mismatch will either abort the reduction, or merely
+issue a warning listing the differences.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ABORT = BOOOLEAN (Given)
+
+If set to 1 (true), the if the species do not match, an error message
+is reported and the recipe aborts. If set to 0 (false), only a warning
+message is reported.  The later caters for cases with missing metadata
+where the two observations are of the same molecule and transition.
+[0]
+
+=item OBJ = ORAC::Frame/ORAC::Group object (Given)
+
+The ORAC::Frame or ORAC::Group object from which the MOLECULE and TRANSITI
+headers are taken.  [current ORAC::Frame object]
+
+=item REF = STRING (Given)
+
+The name of the reference file against which to compare the species.  This 
+should currently be an NDF of an ACSIS observation.  An error will occur if
+no name is supplied.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+It converts the molecule and transition to the form <molecule(<transition>)
+with all whitespace removed.  If there is a mismatch, the message reports the
+two species in this form.
+
+=over 4
+
+=head 1 TASKS
+
+None.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Preliminaries
+# =============
+
+# Handle arguments.
+my $abort = get_prim_arg( $_PRIM_ARGS_, "ABORT", 0 );
+my $Obj = get_prim_arg( $_PRIM_ARGS_, "OBJ", $Frm );
+my $ref = get_prim_arg( $_PRIM_ARGS_, "REF", "undef" );
+
+if ( ! defined( $ref ) ) {
+   orac_err "_COMPARE_SPECIES_: Programming error.  A reference " .
+            "file must be supplied via Argument REF.\n";
+}
+
+# Obtain the headers from the reference data file.
+my $refFrm = new $Frm;
+$refFrm->file( $ref );
+$refFrm->readhdr();
+
+# Compare the molecules and transitions
+# =====================================
+
+# The comparison is between the current Frame or Group filoe and the
+# reference file, to advise whether or not a combination of the two
+# makes sense.
+
+# Convert the current Group or Frame object's molecule and transition
+# to a standard form removing whitespace.
+my $molecule = "";
+my $transition = "";
+if ( defined( $Obj->hdr( "MOLECULE" ) ) ) {
+   $molecule = $Obj->hdr( "MOLECULE" );
+   $molecule =~ s/\s//g;
+   if ( defined( $Obj->hdr( "TRANSITI" ) ) ) {
+      $transition .=  $Obj->hdr( "TRANSITI" );
+      $transition =~ s/\s//g;
+   }
+}
+
+# Convert the reference data file's molecule and tranisiion to a
+# standard form removing whitespace.
+my $molecule_ref = "";
+my $transition_ref = "";
+if ( defined( $refFrm->hdr( "MOLECULE" ) ) ) {
+   $molecule_ref = $refFrm->hdr( "MOLECULE" );
+   $molecule_ref =~ s/\s//g;
+   if ( defined( $refFrm->hdr( "TRANSITI" ) ) ) {
+      $transition_ref .= $refFrm->hdr( "TRANSITI" );
+      $transition_ref =~ s/\s//g;
+   }
+}
+
+# Create the standard formats, and finally perform the comparison.
+my $moletran = $molecule . "(" . $transition . ")";
+my $moletran_ref = $molecule_ref . "(" . $transition_ref . ")";
+if ( $moletran ne $moletran_ref ) {
+   if ( $abort ) {
+      orac_err "The molecule and/or transition of the current " .
+               "observation ($moletran) do not match that of the " .
+               "reference data ($moletran_ref).\n";
+   } else {
+      orac_warn "The molecule and/or transition of the current " .
+                "observation ($moletran) do not match that of the " .
+                "reference data ($moletran_ref).\n";
+   }
+}
+
