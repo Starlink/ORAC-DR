@@ -85,6 +85,20 @@ RECPAR_PIXSIZE uhdr via the recipe parameter system. []
 
 Override the default "cube" product designation.
 
+=item REFERENCE = STRING (Given)
+
+The name of an NDF spectral cube that defines the grid on to which the
+output group spectral cube will be aligned.  This rarely used option
+permits observations taken with different spectral and/or spatial
+resolutions to be combined later.  The reference cube is normally one
+with wider spectral channels.  This facility does not operate if the
+reference NDF is undefined or the NDF does not exist or if the
+observation is hybrid.  A warning is issued if the current group data
+and the reference NDF do not have matching molecules and transitions.
+
+This argument can be overridden by the RECPAR_REFERENCE_PPV uhdr via
+the recipe parameter system.  [undef]
+
 =item SPREAD = STRING (Given)
 
 The interpolation method to use when regridding the cube. This can be
@@ -179,12 +193,12 @@ None.
 
 =head1 AUTHORS
 
-Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
-Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2010, 2012-2015 Science and Technology Facilities Council.
+Copyright (C) 2008, 2010, 2012-2015, 2019 Science and Technology Facilities Council.
 Copyright (C) 2006-2007 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
@@ -231,6 +245,7 @@ my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 my $chunksize = get_prim_arg( $_PRIM_ARGS_, "CHUNKSIZE", 5120 );
 my $jsatile = get_prim_arg( $_PRIM_ARGS_, "JSATILE", 0 );
+my $refppv = get_prim_arg( $_PRIM_ARGS_, "REFERENCE", undef );
 my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", ! $jsatile );
 my $chunk = get_prim_arg( $_PRIM_ARGS_, "CHUNK", 0 );
 
@@ -260,6 +275,9 @@ if( $override ) {
   $pixsize = ( defined( $Frm->uhdr( "RECPAR_PIXSIZE" ) ) ?
                $Frm->uhdr( "RECPAR_PIXSIZE" )            :
                $pixsize );
+  $refppv = ( defined( $Frm->uhdr( "RECPAR_REFERENCE_PPV" ) ) ?
+              $Frm->uhdr( "RECPAR_REFERENCE_PPV" )            :
+              $refppv );
   $spread = ( defined( $Frm->uhdr( "RECPAR_SPREAD_METHOD" ) ) ?
               $Frm->uhdr( "RECPAR_SPREAD_METHOD" )            :
               $spread );
@@ -374,10 +392,25 @@ if( ! defined( $pixsize ) ) {
 _GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$spread PIXSIZE=$pixsize
 my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
 
-if( ! $Frm->uhdr( "SPARSE" ) ) {
-  $params = "pixsize=$pixsize crota=$crota autogrid=$autogrid";
+# Is there a reference cube to define the WCS, and is it permitted?
+my $useref = defined $refppv && -e $refppv && ! $Frm->uhdr( "ISHYBRID" );
+if ( $useref ) {
+  orac_say "Aligning the output spectral cube to $refppv.";
+
+  # Check that the current Frame and the reference file are observations
+  # of the same molecule and transition.
+  _COMPARE_SPECIES_ OBJ=$Frm REF=$refppv ABORT=0
+
+  # Must not be 'AND' lest we not find any overlap with the reference
+  # cube.
+  $mc_hash->{badmask} = 'OR';
+
 } else {
-  $params = "autogrid";
+  if ( ! $Frm->uhdr( "SPARSE" ) ) {
+    $params = "pixsize=$pixsize crota=$crota autogrid=$autogrid";
+  } else {
+    $params = "autogrid";
+  }
 }
 $params .= " system=$system spread=$spread params=$sp_params";
 
@@ -392,16 +425,18 @@ foreach my $mc_param ( qw/ detectors usedetpos badmask alignsys / ) {
 # spectrum for example, the autogrid centring can change by a spatial
 # pixel.  This is catastrophic for a single spectrum cube as the masked
 # and unmasked data have non-overlapping bounds.
-my @refpix;
-if ( $Frm->uhdr( "SPARSE" ) || $autogrid eq 'yes' && $type ne "raster" ) {
-   if ( ! defined $Frm->uhdr( "REFPIX1" ) ) {
+if ( ! $useref ) {
+  my @refpix;
+  if ( $Frm->uhdr( "SPARSE" ) || $autogrid eq 'yes' && $type ne "raster" ) {
+    if ( ! defined $Frm->uhdr( "REFPIX1" ) ) {
       ( my $ORAC_STATUS, @refpix ) = $Mon{'smurf_mon'}->get( "makecube", "pixref" );
       $Frm->uhdr( "REFPIX1", $refpix[0] );
       $Frm->uhdr( "REFPIX2", $refpix[1] );
-   } else {
+    } else {
       @refpix = ( $Frm->uhdr( "REFPIX1" ), $Frm->uhdr( "REFPIX2" ) );
       $params .= " refpix1=$refpix[0] refpix2=$refpix[1]";
-   }
+    }
+  }
 }
 
 # Get the tiling dimensions, but only if we're not doing a pointing
@@ -445,6 +480,9 @@ if( $tsysmean < 0 && $tsysmean != VAL__BADD ) {
     $params .= " genvar=spread inweight=false";
   }
 }
+
+# Specify the reference cube.
+$params .= " ref=$refppv" if $useref;
 
 $params .= " jsatiles" if $jsatile;
 
@@ -498,7 +536,8 @@ my $prlb = sprintf( "%.3f", $flbnd[2] );
 my $prub = sprintf( "%.3f", $fubnd[2] );
 
 my $specbounds = "'" . $prlb . "," . $prub . "'";
-$params .= " reflon=$reflon reflat=$reflat specunion specbounds=$specbounds";
+$params .= " reflon=$reflon reflat=$reflat " if ( ! $useref );
+$params .= " specunion specbounds=$specbounds";
 if ( !$jsatile ) {
    $params .= " lbnd=[" . $lbound[0] . "," . $lbound[1] . "]";
    $params .= " ubnd=[" . $ubound[0] . "," . $ubound[1] . "]";
@@ -508,7 +547,7 @@ if ( !$jsatile ) {
 # This is per DSB's advice (20110326) to avoid double counting
 # pixels when chunking and mosaicking.  MAKECUBE sometimes
 # sometimes gives borders one pixel more than would be expected.
-$params .= " refpix1=$prx refpix2=$pry";
+$params .= " refpix1=$prx refpix2=$pry" if ( ! $useref );
 $params =~ s/autogrid /autogrid=n / if ( $totalsize > $chunksize && $chunk );
 
 # Obtain the total number of tiles.
