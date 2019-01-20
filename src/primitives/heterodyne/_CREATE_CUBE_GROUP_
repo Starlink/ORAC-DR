@@ -347,43 +347,40 @@ if( $Grp->lastallmembers( $Frm ) ) {
       my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
       $mc_params .= " jsatiles" if $jsatile;
 
-      if( lc( $obstype ) ne 'raster' ) {
+      # If we're not doing a raster, then we have to run MAKECUBE in
+      # autogrid, then determine the pixel scale from the result of
+      # that. _GET_MAKECUBE_PARAMS_ returns autogrid=yes for
+      # anything that isn't a raster.
+      if ( ! $useref ) {
+        if ( lc( $obstype ) ne 'raster' ) {
+          my $inlist = write_file_list ( $Frm->files );
 
-        # If we're not doing a raster, then we have to run MAKECUBE in
-        # autogrid, then determine the pixel scale from the result of
-        # that. _GET_MAKECUBE_PARAMS_ returns autogrid=yes for
-        # anything that isn't a raster.
+          orac_print "Determining parameters for output cube...";
+          $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^$inlist' out=!" );
+          orac_print "done.\n";
 
-        my $inlist = write_file_list ( $Frm->files );
+          # Get the returned pixsize and crota, but only if this isn't a
+          # sparse cube.
+          my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
+          if ( uc( $sparse ) eq 'FALSE' ) {
+            ( $ORAC_STATUS, my $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+            ( $ORAC_STATUS, my $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
 
-        orac_print "Determining parameters for output cube...";
-        $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^$inlist' out=!" );
-        orac_print "done.\n";
+            # Stick these into the hash.
+            $pixsize{$Frm->file(1)} = $pixsize;
+            $crota{$Frm->file(1)} = $crota;
+          }
+        } else {
 
-        # Get the returned pixsize and crota, but only if this isn't a
-        # sparse cube.
-        my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
-        if( uc( $sparse ) eq 'FALSE' ) {
-          ( $ORAC_STATUS, my $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
-          ( $ORAC_STATUS, my $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
-
-          # Stick these into the hash.
-          $pixsize{$Frm->file(1)} = $pixsize;
-          $crota{$Frm->file(1)} = $crota;
+          # Raster parameters come directly from the
+          # _GET_MAKECUBE_PARAMS_ primitive results.
+          $pixsize{$Frm->file} = ( defined( $ppixsize ) ? $ppixsize : $mc_hash->{pixsize} );
+          $crota{$Frm->file} = $mc_hash->{crota};
         }
-      } else {
-
-        # Raster parameters come directly from the
-        # _GET_MAKECUBE_PARAMS_ primitive results.
-        $pixsize{$Frm->file} = ( defined( $ppixsize ) ? $ppixsize : $mc_hash->{pixsize} );
-        $crota{$Frm->file} = $mc_hash->{crota};
       }
       $usedetpos{$Frm->file(1)} = defined( $mc_hash->{usedetpos} ) ? $mc_hash->{usedetpos} : 'no';
       $system{$Frm->file(1)} = $mc_hash->{system};
     }
-
-    # Define a variable that'll hold parameters to MAKECUBE.
-    my $params = '';
 
     # We have a hash with a bunch of systems in it. If they're all the
     # same, use that. Otherwise set the system to 'ICRS'.
@@ -402,8 +399,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
     my $pixsize;
     my $crota;
 
-    # Is there a reference cube to define the WCS?
-    my $useref = defined $refppv && -e $refppv;
+    # This MAKECUBE command line will be assembled in this string.
+    my $params = "";
 
     if ( $useref ) {
 
@@ -413,8 +410,12 @@ if( $Grp->lastallmembers( $Frm ) ) {
       orac_say "Aligning the output spectral cube to $refppv.";
 
       # Check that the current Frame and the reference file are
-      # observations of the same molecule and transition.
+      # observations of the same molecule and transition.  Only issue
+      # warning if there is a mismatch.
       _COMPARE_SPECIES_ OBJ=$Grp REF=$refppv ABORT=0
+
+      # Specify the reference cube.
+      $params = "ref=$refppv";
 
     } else {
 
@@ -490,19 +491,20 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     # Set up MAKECUBE parameters.
     if ( $sp_params eq  "''" ) {
-      $params  = "spread=$spread usedetpos=$usedetpos";
+      $params .= " spread=$spread usedetpos=$usedetpos";
     } else {
-      $params  = "spread=$spread params=$sp_params usedetpos=$usedetpos";
+      $params .= " spread=$spread params=$sp_params usedetpos=$usedetpos";
     }
 
+    # No WCS parameters needed here.
     if ( $useref ) {
-      $params .= " ref=$refppv";
       if ( $tile ) {
         $params .= " tiledims=$tiledims system=$system tileborder=$tileborder trim=n trimtiles";
       } else {
         $params .= " tiledims=! system=$system trim=n";
       }
 
+    # Apply the WCS values determined earlier.
     } else {
       $params .= " pixsize=$pixsize crota=$crota";
       if ( $tile && ! $jsatile ) {
@@ -514,8 +516,11 @@ if( $Grp->lastallmembers( $Frm ) ) {
       }
     }
 
-    # Always use badmask=and unless with a reference NDF.
-    $params .= " badmask=and" if ( ! $useref );
+    # Always use badmask=and unless working with a reference NDF.
+    if ( $useref ) {
+      $params .= " badmask=or";
+    } else {
+      $params .= " badmask=and";
 
     # Quick hack for hybrid-mode observations.
     if( $Frm->uhdr( "ISHYBRID" ) ) {
