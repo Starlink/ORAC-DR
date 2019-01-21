@@ -221,6 +221,9 @@ MA 02111-1307, USA.
 
 =cut
 
+# Definitions
+# ===========
+
 use ORAC::Constants qw/ :badvalues /;
 use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 
@@ -236,6 +239,8 @@ use constant MEGABYTE => 1048576;
 use constant JSACHUNK => 1000;
 
 # Deal with parameters.
+# =====================
+
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512 );
 my $spread = uc( get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' ) );
@@ -298,14 +303,15 @@ $chunksize = JSACHUNK if $jsatile;
 # as MAKECUBE deals with smoothing border internally.
 my $tileborder = 0;
 
-my @files;
+# Main processing begins here.
+# ============================
 
 # Create a list of input images.
-
 my $out = $Frm->inout( $suffix );
 
 $Frm->uhdr( "JSA_TILES", 1 ) if $jsatile;
 
+my @files;
 foreach my $i ( 1..$Frm->nfiles ) {
   my $in = $Frm->file( $i );
   push @files, $in;
@@ -316,6 +322,10 @@ my $inlist = write_file_list ( @files );
 # Fix the output filename to remove the subscan number.
 $out =~ s/_\d{4}_/_/;
 
+# Create the command-line parameters for MAKECUBE.
+# ================================================
+
+# This MAKECUBE command line will be assembled in this string.
 my $params = '';
 
 # Is there a reference cube to define the WCS, and is it permitted?
@@ -351,6 +361,8 @@ my $alignsys = $mc_hash->{alignsys};
 my $ORAC_STATUS;
 
 if( $type ne "raster" ) {
+# Determine the grid from the reference file.
+# -------------------------------------------
 
   # Check that the current Frame and the reference file are observations
   # of the same molecule and transition.  Only issue a warning if there
@@ -453,6 +465,9 @@ foreach my $mc_param ( qw/ detectors usedetpos badmask alignsys / ) {
   }
 }
 
+# Append other MAKECUBE parameters to the command line.
+# -----------------------------------------------------
+
 # Figure out the spread parameters.
 _GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$spread PIXSIZE=$pixsize
 my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
@@ -483,6 +498,9 @@ if ( $Frm->uhdr("ISHYBRID") ) {
   # badmask.
   $params .= " badmask=AND specunion";
 }
+
+# Append variance generation and weighting parameters.
+# ----------------------------------------------------
 
 # Check the Tsys values. If the mean is negative, then create the
 # variance from the spread of input pixels. Otherwise, test the
@@ -516,6 +534,9 @@ if( ! $Frm->uhdr( "SPARSE" ) ) {
   $Grp->uhdr( "MAKECUBE_PARAMETERS", $params );
 }
 
+# Form list of input filenames.
+# ----------------------------
+
 # Form a list of all the input filenames and determine their total size in
 # megabytes.  Also store the filenames in a GRP list text file.
 my @infiles;
@@ -536,7 +557,8 @@ if ( $chunk ) {
   $mean_chunksize = $totalsize / $num_chunk;
 }
 
-#-------------------------------------------------------------------
+# Extract reference co-ordinates and bounds.
+#-------------------------------------------
 
 # Do not create the output file, thus this is a quick operation.
 $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^$inlist' out=!" );
@@ -576,7 +598,8 @@ $params =~ s/autogrid /autogrid=n / if ( $totalsize > $chunksize && $chunk );
 # Obtain the total number of tiles.
 ( $ORAC_STATUS, my $totaltile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
 
-#-----------------------------------------------------------------
+# Make the spectral cubes.
+# ========================
 
 my @jsatilelist;
 my $makecube_outfile;
@@ -598,6 +621,9 @@ if ( $totalsize <= $chunksize || !$chunk || $num_chunk < 2 ) {
     ( $ORAC_STATUS, $totaltile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
     orac_say "Total number of HPX tiles spanned is $totaltile";
   }
+
+  # Create a VARIANCE component, if absent.
+  # =======================================
 
   # See if MAKECUBE created a VARIANCE component.  CADC demands that one be
   # present in reduced products.  Create one if variance is absent and fill
@@ -659,6 +685,9 @@ if ( $totalsize <= $chunksize || !$chunk || $num_chunk < 2 ) {
     }
   }
 
+# Chunking
+# ========
+
 # Divide and conquer.  For JSA tiles the chunks are numbered by their
 # HPX tile indices.
 } else {
@@ -671,6 +700,9 @@ if ( $totalsize <= $chunksize || !$chunk || $num_chunk < 2 ) {
     orac_say "Total number of chunked tiles to reassemble is $totaltile";
   }
 }
+
+# Rename the output cubes.
+# ========================
 
 if ( $totaltile > 1 || $jsatile ) {
 
@@ -696,6 +728,9 @@ if ( $totaltile > 1 || $jsatile ) {
        $makecube_outfile = "${out}_$j" . ".sdf";
        $outfile = "${out}" . sprintf( "%03d", $outfilenumber ) . ".sdf";
     }
+
+    # Report processing statistics.
+    # =============================
 
     if ( -e $makecube_outfile ) {
 
@@ -732,6 +767,9 @@ if ( $totaltile > 1 || $jsatile ) {
   # The HEALPix TILENUM headers written by MAKECUBE should be known to ORAC-DR.
   $Frm->readhdr() if $jsatile;
 
+# Rename for a single spectral cube.
+# ==================================
+
 } elsif ( $totaltile == 1 ) {
 
   # We want the output file to be named _cube001.
@@ -748,6 +786,9 @@ if ( $totaltile > 1 || $jsatile ) {
   orac_throw " No cube product formed.  Aborting.\n";
 }
 
+# Tagging
+# =======
+
 # Set the product.
 $Frm->product( $product );
 $Frm->sync_headers;
@@ -758,6 +799,8 @@ if( $tag ) {
 }
 
 # Retrieve and set the Group REFLAT/REFLON if they're not already set.
+# ====================================================================
+
 if( ! defined( $Grp->uhdr( "REFLAT" ) ) ) {
   my $ndf = $Frm->file( 1 );
 
@@ -789,6 +832,8 @@ if( ! defined( $Grp->uhdr( "REFLAT" ) ) ) {
   $Grp->uhdr( "REFLON", $reflon );
 
 }
+
+# --------------------------------------------------------------------
 
 # Set a tag on this one so we can retrieve it later if necessary.
 _SET_TAG_ TAG=POST_CREATE_CUBE_FRAME
