@@ -352,83 +352,82 @@ my $ORAC_STATUS;
 
 if( $type ne "raster" ) {
 
-  my $inlist2 = write_file_list( $Frm->files );
-
-  orac_print "Determining parameters for output cube...";
-  $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^$inlist2' out=!" );
-  orac_print "done.\n";
-
-  # Check to see if we have a sparse cube.
-  $Frm->uhdr( "SPARSE", 0 );
-  ( $ORAC_STATUS, my $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
-  if( uc( $sparse ) eq 'TRUE' ) {
-    orac_warn "Resulting cube will be sparse.\n";
-    $Frm->uhdr( "SPARSE", 1 );
-  } else {
-
-    # Get the returned pixsize and crota.
-    ( $ORAC_STATUS, $ppixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
-    ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
-
-    # Check the pixel size. If it's smaller than a quarter of the
-    # beamsize, set it to a quarter of the beamsize, unless it's a
-    # pointing.
-    if( $type ne 'pointing' ) {
-      my $lofreqs = defined( $Frm->hdr( "LOFREQS" ) ) ?
-                    $Frm->hdr( "LOFREQS" )            :
-                    $Frm->jcmtstate( "FE_LOFREQ" );
-
-      my $min_pixsize = int( FREQ2PIXSIZE / $lofreqs + 0.5 );
-      if ( $ppixsize < $min_pixsize ) {
-        orac_warn "Default pixel size enlarged to the minimum pixel (quarter beam size).\n";
-        $ppixsize = $min_pixsize;
-      }
-    }
-  }
-
-} else {
-  $ppixsize = $mc_hash->{pixsize};
-  $crota = $mc_hash->{crota};
-}
-
-# Override the system and crota if the system has been passed in as an
-# argument.
-if( defined( $system_arg ) ) {
-  $system = $system_arg;
-  $crota = 0;
-}
-
-# If we haven't been given an override pixel scale, use the one we
-# just determined.
-if( ! defined( $pixsize ) ) {
-  $pixsize = $ppixsize;
-}
-
-# Figure out the spread parameters.
-_GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$spread PIXSIZE=$pixsize
-my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
-
-# Is there a reference cube to define the WCS, and is it permitted?
-my $useref = defined $refppv && -e $refppv && ! $Frm->uhdr( "ISHYBRID" );
-if ( $useref ) {
-  orac_say "Aligning the output spectral cube to $refppv.";
-
   # Check that the current Frame and the reference file are observations
-  # of the same molecule and transition.
+  # of the same molecule and transition.  Only issue a warning if there
+  # is a mismatch.
   _COMPARE_SPECIES_ OBJ=$Frm REF=$refppv ABORT=0
+  
+# Specify the reference cube.
+  $params = "ref=$refppv";
 
-  # Must not be 'AND' lest we not find any overlap with the reference
-  # cube.
+  # BADMASK must not be 'AND' lest we not find any overlap with the
+  # reference ube.
   $mc_hash->{badmask} = 'OR';
 
 } else {
-  if ( ! $Frm->uhdr( "SPARSE" ) ) {
-    $params = "pixsize=$pixsize crota=$crota autogrid=$autogrid";
+
+# Obtain the pixel scale and rotation angle.
+# ------------------------------------------
+  if ( $type ne "raster" ) {
+
+    my $inlist2 = write_file_list( $Frm->files );
+
+    orac_print "Determining parameters for output cube...";
+    $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^$inlist2' out=!" );
+    orac_print "done.\n";
+
+    # Check to see if we have a sparse cube.
+    $Frm->uhdr( "SPARSE", 0 );
+    ( $ORAC_STATUS, my $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
+    if ( uc( $sparse ) eq 'TRUE' ) {
+      orac_warn "Resulting cube will be sparse.\n";
+      $Frm->uhdr( "SPARSE", 1 );
+    } else {
+
+      # Get the returned pixsize and crota.
+      ( $ORAC_STATUS, $ppixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+      ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
+
+      # Check the pixel size. If it's smaller than a quarter of the
+      # beamsize, set it to a quarter of the beamsize, unless it's a
+      # pointing.
+      if ( $type ne 'pointing' ) {
+        my $lofreqs = defined( $Frm->hdr( "LOFREQS" ) ) ?
+                      $Frm->hdr( "LOFREQS" )            :
+                      $Frm->jcmtstate( "FE_LOFREQ" );
+
+        my $min_pixsize = int( FREQ2PIXSIZE / $lofreqs + 0.5 );
+        if ( $ppixsize < $min_pixsize ) {
+          orac_warn "Default pixel size enlarged to the minimum pixel (quarter beam size).\n";
+          $ppixsize = $min_pixsize;
+        }
+      }
+    }
+
   } else {
-    $params = "autogrid";
+    $ppixsize = $mc_hash->{pixsize};
+    $crota = $mc_hash->{crota};
   }
-}
-$params .= " system=$system spread=$spread params=$sp_params";
+
+  # Override the system and crota if the system has been passed in as an
+  # argument.
+  if ( defined( $system_arg ) ) {
+    $system = $system_arg;
+    $crota = 0;
+  }
+
+  # If we haven't been given an override pixel scale, use the one we
+  # just determined.
+  if ( ! defined( $pixsize ) ) {
+    $pixsize = $ppixsize;
+  }
+
+  $params = "system=$system";
+  if ( ! $Frm->uhdr( "SPARSE" ) ) {
+    $params .= " pixsize=$pixsize crota=$crota autogrid=$autogrid";
+  } else {
+    $params .= " autogrid";
+  }
 
 foreach my $mc_param ( qw/ detectors usedetpos badmask alignsys / ) {
   if( defined( $mc_hash->{$mc_param} ) ) {
@@ -441,7 +440,6 @@ foreach my $mc_param ( qw/ detectors usedetpos badmask alignsys / ) {
 # spectrum for example, the autogrid centring can change by a spatial
 # pixel.  This is catastrophic for a single spectrum cube as the masked
 # and unmasked data have non-overlapping bounds.
-if ( ! $useref ) {
   my @refpix;
   if ( $Frm->uhdr( "SPARSE" ) || $autogrid eq 'yes' && $type ne "raster" ) {
     if ( ! defined $Frm->uhdr( "REFPIX1" ) ) {
@@ -452,6 +450,18 @@ if ( ! $useref ) {
       @refpix = ( $Frm->uhdr( "REFPIX1" ), $Frm->uhdr( "REFPIX2" ) );
       $params .= " refpix1=$refpix[0] refpix2=$refpix[1]";
     }
+  }
+}
+
+# Figure out the spread parameters.
+_GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$spread PIXSIZE=$pixsize
+my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
+
+$params .= " spread=$spread params=$sp_params";
+
+foreach my $mc_param ( qw/ detectors usedetpos badmask alignsys / ) {
+  if ( defined( $mc_hash->{$mc_param} ) ) {
+    $params .= " $mc_param=" . $mc_hash->{$mc_param};
   }
 }
 
@@ -487,6 +497,7 @@ $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys" );
 if( $tsysmean < 0 && $tsysmean != VAL__BADD ) {
   orac_warn "Mean Tsys negative ($tsysmean). Using spread of input pixels for variance creation.\n";
   $params .= " genvar=spread noinweight";
+
 } else {
   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0]" );
   ( $ORAC_STATUS, my $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
@@ -496,9 +507,6 @@ if( $tsysmean < 0 && $tsysmean != VAL__BADD ) {
     $params .= " genvar=spread inweight=false";
   }
 }
-
-# Specify the reference cube.
-$params .= " ref=$refppv" if $useref;
 
 $params .= " jsatiles" if $jsatile;
 
@@ -526,7 +534,6 @@ my ( $num_chunk, $mean_chunksize );
 if ( $chunk ) {
   $num_chunk = int( $totalsize / $chunksize ) + 1;
   $mean_chunksize = $totalsize / $num_chunk;
-
 }
 
 #-------------------------------------------------------------------
