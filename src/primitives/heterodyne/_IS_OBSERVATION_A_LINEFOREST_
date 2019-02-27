@@ -1,0 +1,286 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_IS_OBSERVATION_A_LINEFOREST_
+
+=head1 DESCRIPTION
+
+This primitive tests pre-baseline subtracted spectral cubes to
+determine whether is it possibly a line-forest observation. Perhaps
+more accurately it aims to finds observations that are not of line
+forests.  This is needed because many obervers or PIs are incorrectly
+selecting the L<REDUCE_SCIENCE_LINEFOREST|REDUCE_SCIENCE_LINEFOREST>
+for what are narrow-line data, albeit at a few velocities.  While this
+will normally be fine to determine baselines, the FOREST option in
+MFITTREND that REDUCE_SCIENCE_LINEFOREST uses to find the base level
+between many narrowly separated emission lines is too aggressive for
+narrow-line data.  It can mask most of the spectrum and thereby
+generate an almost arbitrary baseline slope or, at best, a
+less-accurate or biased fit.
+
+The first test to reject narrow-line data is to fin the haeavily
+clipped statistics.  After this a naro line observation will only have
+a few percent of its data above the median plus three sigma, whereas
+a line forest will still have lots of emission signal above this level.
+The threshold is set by Argument CUT.
+
+The second test uses clump finding to count the number of emission
+lines.  If the number is fewer than Argument MAXLINES, the observation
+is deemed not to be a line forest.  Otherwise the observation is
+marked that it may be a line forest.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLIP = STRING (Given)
+
+A comma-separated list of standard-deviation limits for progressive
+clipping of outlying (i.e. emission) data.
+
+Channels are rejected at the ith clipping cycle if they lie beyond plus
+or minus CLIP(i) times the dispersion about the mean of the
+remaining good pixels.  Thus lower values of CLIP will reject more
+channels.  The normal approach is to start low and progressively
+increase the clipping factors, as the dispersion decreases after the
+exclusion of features, however, here it seems to work best to
+have at least three twos to start.
+
+Between one and five values may be supplied but at least four is
+recommended. The minimum value is 1.0.   [2,2,2,2,2]
+
+=item CUT = REAL (Read)
+
+The percentage of good channels with residual emission-line contributions
+after the clipping.  For narrow line data this will typically be a few
+percent, while line forests normally exceed 20 percent.  It is hoped
+that there is a clear demarcation between the types of data.  Until
+thereis a detailed analysis applied to historic data the default here
+is picked out of the air.  It will also depend the choice of CLIP
+clipping levels.  [12]
+
+=item FILE = STRING (Read)
+
+Name of the file to test.  If it is not defined, then defer to the
+current Group file.  []
+
+=item LINEFOREST = BOOLEAN (Returned)
+
+Returns false if the spectra are not line forests or if this primitive
+is being called by a non-line-forest recipe.  If true, the
+spectra may be line forests.
+
+=item MAXLINES = INTEGER (Given)
+
+The maximum number of emission lines for a spectrum not to be regarded
+as a line forest in the second test.  [4]
+
+=item NEIGHBOURHOOD = INTEGER (Given)
+
+The number of pixels in both spatial dimensions over which the cube is
+average about the peak spectrum for rasters.  It is constrained to be
+positive and odd.  [3]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS cubes.
+
+=item *
+
+No action is performed unless processing is part of a line-forest recipe,
+as determined by the value of recipe parameter LINEFOREST_BASELINE
+being 1.
+
+=item *
+
+If there are fewer than five pixels in either of the spatial
+dimensions, then spatial smoothing is not performed.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+None
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDCLUMPS;
+KAPPA: NUMB, STATS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Initialise returned argument.
+my $lineforest = 0;
+
+#  There is no point in executing this primitive if the current recipe
+# is not attepmting a line-forest reduction.
+my $forest = 0;
+if ( starversion_gt( 'KAPPA', 'v2.4-3' ) ) {
+   $forest = defined( $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE" ) ) ?
+             $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE" )            :
+             $forest;
+}
+goto RETURN if ! $forest;
+
+# Handle arguments.
+# =================
+
+my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", $Grp->file );
+my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "2,2,2,2,2" );
+my $cut_percentage = get_prim_arg( $_PRIM_ARGS_, "CUT", 12.0 );
+my $maxlines = get_prim_arg( $_PRIM_ARGS_, "MAXLINES", 4 );
+my $neigh = get_prim_arg( $_PRIM_ARGS_, "NEIGHBOURHOOD", 3 );
+
+$neigh++ if $neigh % 2 == 0;
+$neigh = max( 1, $neigh );
+
+# Turn the clipping levels into a comma-separated list for the 
+# STATS command line.
+if ( ref( $clip ) eq 'ARRAY' ) { $clip = join( ",", @{ $clip } ) };
+
+# Validate that the supplied file is a spectral cube.
+# ===================================================
+
+$Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$file" );
+( my  $ORAC_STATUS, my @domain ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fdomain" );
+( $ORAC_STATUS, my $curframe ) = $Mon{'ndfpack_mon'}->get( "ndftrace","current" );
+( $ORAC_STATUS, my $ndim ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ndim" );
+
+if ( $ndim != 3 ) {
+   orac_warn( "_IS_OBSERVATION_A_LINEFOREST_: $file is not " .
+             "three-dimensional (probable programming error).\n" );
+   goto RETURN;
+}
+
+if ( uc( $domain[$curframe-1] ) !~ /SKY-DSBSPECTRUM/ ) {
+    orac_err( "_IS_OBSERVATION_A_LINEFOREST_: $file is not a " .
+              "spectral cube (probable programming error).\n" );
+   goto RETURN;
+}
+
+# Find the strongest spectrum.
+# ============================
+
+# Try to eliminate artificial peaks by having a small sigma clip.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$file clip=3" );
+( $ORAC_STATUS, my @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
+
+# Rather than rely on a single spectrum, average over touching
+# neighbours, where it is appropriate.  A Stare observation will have
+# just one relevant spectrum.
+_GET_DIMENSIONS_ FILE=$file
+my $dims = $_GET_DIMENSIONS_{DIMS};
+
+my $ndfsect = "$file($maxpos[0],$maxpos[1],)";
+my $obstype = uc( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) );
+if ( ( $dims->[0] > 5 || $dims->[1] > 5 ) && uc( $obstype ) !~ /STARE/ ) {
+   $ndfsect = "$file(" . "$maxpos[0]" . "~" . "$neigh,$maxpos[1]" . "~" . "$neigh,)";
+}
+
+# Obtain the median, standard deviation, and the number of good elements.
+my $params = "ndf=$ndfsect clip=[$clip] order";
+$Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+( $ORAC_STATUS, my $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Set the level above which should be mostly residual emission from lines
+my $clip_thresh = 3.0;
+my $threshold = $median + $clip_thresh * $sigma;
+$params = "in=$ndfsect value=$threshold above";
+$Mon{'kappa_mon'}->obeyw( "numb", "$params" );
+( $ORAC_STATUS, my $numb_above ) = $Mon{'kappa_mon'}->get( "numb", "number" );
+
+# Derive the percentage of channels above the threshold.
+my $line_percentage = sprintf( "%7.3f", ( 100.0 * $numb_above ) / $numgood );
+
+# A low percentage indicates that it is not a line forest.
+goto RETURN if $line_percentage < $cut_percentage; 
+
+# Eliminate broad-line observations.
+# ==================================
+
+# The first test may pass broad-line observations, so count the emission
+# lines are present.  We expect far more lines than three in a line
+# forest.
+
+# Create parameter file for FINDCLUMPS.
+my $fc_param = new ORAC::TempFile( 0 );
+my $min_height = 1.2 * $threshold;
+open my $fc_fh, ">", $fc_param;
+
+print $fc_fh "FellWalker.AllowEdge=1\n";
+print $fc_fh "FellWalker.FwhmBeam=0\n";
+print $fc_fh "FellWalker.MaxBad=9999\n";
+print $fc_fh "FellWalker.VeloRes=0\n";
+print $fc_fh "FellWalker.Noise=2.0*RMS\n";
+print $fc_fh "FellWalker.FlatSlope=1.0*RMS\n";
+print $fc_fh "FellWalker.MinHeight=$min_height\n";
+close $fc_fh;
+
+my $temp = new ORAC::TempFile(0);
+my $tempfile = $temp->file;
+
+# Run FINDCLUMPS with Fellwalker.   Assume that the baseline is
+# reasonably flat.
+my $nclumps = 0;
+my $method = "Fellwalker";
+orac_say " Finding clumps higher than $clip_thresh-sigma using $method.";
+$params = "in=$file rms=$sigma config='^$fc_param' method=$method ";
+$params .= "out=$tempfile outcat=\! deconv=no";
+$Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+
+# Check the number of clumps using NCLUMPS parameter.
+( $ORAC_STATUS, my  $nlines ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+
+goto RETURN if $nlines <= $maxlines;
+
+$lineforest = 1;
+
+# Tidy-up output.
+orac_print "\n";
+
+RETURN:
+
+$_IS_OBSERVATION_A_LINEFOREST_{LINEFOREST} = $lineforest;
