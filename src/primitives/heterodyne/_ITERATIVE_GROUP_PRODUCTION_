@@ -229,6 +229,22 @@ Noise statistics are evaluated and logged for the final cubes.  FOr the
 group cubes these include calculating the median Tsys when MAKECUBE has
 failed to do it, and to find a mean RMS noise.
 
+=item *
+
+If processing with a line-forest recipe, as determined by the
+LINEFOREST_BASELINE recipe parameter being set true, the primitive
+validates the presence of a line forest.  If the spectra have but a
+few lines that don't occupy most of the spectrum, LINEFOREST_BASELINE
+is set false.  The purpose is to avoid the aggressive filtering
+formulation needed for line-forest spectra because unlike a line
+forest the vast majority of the channels are baseline, not emission.
+Without this switch, the baselines are excessively masked leading to
+biased or even nonsense baseline fits.  A warning is issued if the
+line-forest filtering is disabled.
+
+Details of the validation tests may be found
+L<_IS_OBSERVATION_A_LINEFOREST_|_IS_OBSERVATION_A_LINEFOREST_>.
+
 =back
 
 =head1 OUTPUT DATA
@@ -241,7 +257,8 @@ failed to do it, and to find a mean RMS noise.
 
 See _CALCULATE_MEDIAN_TSYS_, _CREATE_CUBE_FRAME_, _CREATE_CUBE_GROUP_,
 _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_, _CREATE_LV_IMAGE_,
-_CREATE_NOISE_MAP_, _FIND_MEAN_RMS_, _NORMALIZE_RECEPTOR_RESPONSIVITY_,
+_CREATE_NOISE_MAP_, _FIND_MEAN_RMS_, _IS_OBSERVATION_A_LINEFOREST_,
+_NORMALIZE_RECEPTOR_RESPONSIVITY_,
 _REBIN_VELOCITY_SCALE_, _REMOVE_BASELINE_, _REMOVE_BASELINE_MASKED_TIMESERIES_,
 _REMOVE_BASELINE_THROUGH_SMOOTHING_, _REMOVE_FLAT_FIELD_,
 _REMOVE_FLAT_FIELD_INDEX_, _REMOVE_FLAT_FIELD_ITERATE_, _RECREATE_MASKED_TIMESERIES_,
@@ -258,8 +275,8 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2011-2016 Science and Technology Facilities
-Council.  All Rights Reserved.
+Copyright (C) 2008, 2011-2016, 2018-2019 Science and Technology
+Facilities Council.  All Rights Reserved.
 
 =head1 LICENCE
 
@@ -487,6 +504,38 @@ if ( $Grp->lastallmembers( $Frm ) ) {
 
       _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile
 
+      # This observation group is ostensibly of a line forest based upon
+      # the chosen recipe.  However, users sometimes erroneously select
+      # this recipe for non line-forest data.  Doing so can cause poor
+      # baseline fitting due to excessive aggressive masking in MFITTREND.
+      # Therefore validate the Group file if it's the sole one, or the
+      # central tile, which is most likely to contain the strongest
+      # signal.  Being the largest increases thre odd too.
+      if ( defined( $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE" ) ) &&
+           $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE" ) ) {
+         my ( $centre_index,  $centre_file, $centre_fileg );
+         if ( $Grp->nfiles == 1 ) {
+            $centre_file = $Grp->file;
+         } else {
+            my @groupfiles = $Grp->files;
+            $centre_index = int( scalar( @groupfiles ) / 2 ) + 1;
+            $centre_file = $Grp->file( $centre_index );
+         }
+
+         # Test if this is of a line forest.  Disable the flag indicating
+         # the line-forest processing in MFITTREBD is needed, should the
+         # validation fail.
+         _IS_OBSERVATION_A_LINEFOREST_ FILE=$centre_file
+         my $is_forest = $_IS_OBSERVATION_A_LINEFOREST_{LINEFOREST};
+         if ( ! $is_forest ) {
+            orac_warn "Observation is not a line forest.  " .
+                      "Adjusting the baseline determination " .
+                      "filtering accordingly.  Consider using " .
+                      "another recipe.\n";
+            $Frm->uhdr( "RECPAR_LINEFOREST_BASELINE", $is_forest );
+         }
+      }
+
       if ( defined( $edges ) && $edges > 0 ) {
          _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
       } elsif ( $user_region ) {
@@ -498,6 +547,7 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       # The Group moment and noise maps, and restricted-velocity cubes need
       # only be made on the final iteration.
       if ( $final_iteration ) {
+
          if ( lc( $moments ) ne "none" ) {
             _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
          }
