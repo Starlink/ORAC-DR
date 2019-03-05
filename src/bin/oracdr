@@ -65,6 +65,11 @@ use ORAC::BaseFile;  # To set header overrides.
 use Pod::Usage;
 use Getopt::Long;                       # command line arguments
 
+#
+#  Optional modules
+#
+my $HaveAudio = eval {require JAC::Audio; 1;};
+
 # check for starlink login
 orac_exit_normally(message => "No starlink login", err => 1) unless exists $ENV{"STAR_LOGIN"};
 
@@ -125,6 +130,7 @@ my $status = GetOptions("nodisplay" => \$opt{nodisplay},
                         "groupid=s" => \$opt{groupid},
                         'headeroverride=s' => \$opt{header_override},
                         'skiperror' => \$opt{skip_error},
+                        'audiosuffix=s' => \$opt{'audio_suffix'},
 		       );
 
 pod2usage(1) if $opt{help};
@@ -231,6 +237,10 @@ orac_exit_if_error( $ErrText );
 orac_warn($recpars_warning)
   if defined $recpars_warning;
 
+# Warn if audio requested by unavailable.
+orac_warn("Audio warnings requested but the JAC::Audio module is unavailable.\n")
+    if (defined $opt{'audio_suffix'}) && (not $HaveAudio);
+
 $CURRENT_RECIPE = "Starting pipeline";
 
 #########################   U  T    D A T E #################################
@@ -333,6 +343,16 @@ otherwise
    my $Error = shift;
    $ErrText = "$Error";
 };
+
+
+# This is the same test as used by orac_exit_if_error.
+if (defined $ErrText) {
+    if ((defined $opt{'audio_suffix'}) and $HaveAudio) {
+        my $audiofile = File::Spec->catfile(
+            $ENV{'ORAC_DIR'}, 'audio', sprintf('stop_err_%s.wav', $opt{'audio_suffix'}));
+        JAC::Audio::play($audiofile) if -e $audiofile;
+    }
+}
 
 orac_exit_if_error( $ErrText );
 

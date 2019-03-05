@@ -334,11 +334,23 @@ sub orac_calc_instrument_settings {
       push(@drn, $drN);
     }
 
+    # If running by SSH from one of the dedicated pipeline display machines,
+    # redirect audio warnings to the corresponding operator desktop.
+    my %ql_display = (
+        acsis10 => 'palila',
+        ou => 'awa',
+    );
+    my $pulse_server = undef;
+    if ((exists $ENV{'REMOTEHOST'}) and (exists $ql_display{$ENV{'REMOTEHOST'}})) {
+        $pulse_server = $ql_display{$ENV{'REMOTEHOST'}};
+    }
+
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
              ORAC_DATA_IN  => File::Spec->catdir( $dataroot, "raw", $root, @eng, $localut ),
              ( $fixout ? () : ( ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @drn, $root, @eng, $localut ) ) ),
              ORAC_SUN => $sun,
              ORAC_PERSON => $auth,
+             ((defined $pulse_server) ? (PULSE_SERVER => $pulse_server) : ()),
            );
   };
 
@@ -513,6 +525,10 @@ sub orac_calc_instrument_settings {
         # SCUBA2 disables the display in QL mode and uses DRAMA
         if ($inst eq 'SCUBA2') {
           push(@rec,  "-loop", "task");
+          # We would also like audio warnings in case the QL exits, so that
+          # the operator can restart it before the next calibration which
+          # requires the QL to be running.
+          push(@rec , '-audiosuffix', $oracinst =~ /_850/ ? 'ql_850' : 'ql_450');
         }
       } elsif ($options{mode} eq 'SUMMIT') {
         push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef);
