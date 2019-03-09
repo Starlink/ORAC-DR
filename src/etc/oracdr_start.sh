@@ -80,6 +80,17 @@ starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 # Set up back door for the version number
 pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
+# Unset ORAC_RECIPE_DIR and ORAC_PRIMITIVE_DIR
+if test -n "$ORAC_RECIPE_DIR"; then
+    echo "Warning: resetting ORAC_RECIPE_DIR"
+    unset ORAC_RECIPE_DIR
+fi
+
+if test -n "$ORAC_PRIMITIVE_DIR"; then
+    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
+    unset ORAC_PRIMITIVE_DIR
+fi
+
 # These are perl programs
 
 if test -e $starperl; then
