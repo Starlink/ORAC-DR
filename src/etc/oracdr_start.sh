@@ -122,90 +122,90 @@ if test -e $starperl; then
     oracdr_monitor_args=''
   fi
 
-alias oracdr="$starperl ${ORAC_DIR}/bin/oracdr ${oracdr_args}"
-alias oracdr_db="$starperl -d ${ORAC_DIR}/bin/oracdr"
-alias oracdr_nuke="$starperl ${ORAC_DIR}/bin/oracdr_nuke"
-alias oracdisp="$starperl ${ORAC_DIR}/bin/oracdisp"
-alias oracdr_parse_recipe="$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
-alias oracdr_monitor="$starperl ${ORAC_DIR}/bin/oracdr_monitor ${oracdr_monitor_args}"
+  alias oracdr="$starperl ${ORAC_DIR}/bin/oracdr ${oracdr_args}"
+  alias oracdr_db="$starperl -d ${ORAC_DIR}/bin/oracdr"
+  alias oracdr_nuke="$starperl ${ORAC_DIR}/bin/oracdr_nuke"
+  alias oracdisp="$starperl ${ORAC_DIR}/bin/oracdisp"
+  alias oracdr_parse_recipe="$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
+  alias oracdr_monitor="$starperl ${ORAC_DIR}/bin/oracdr_monitor ${oracdr_monitor_args}"
 
-# These are shell scripts
+  # These are shell scripts
 
-oracman () {     'csh ${ORAC_DIR}/bin/oracman' ${1+"$@"}; }
+  oracman () {     'csh ${ORAC_DIR}/bin/oracman' ${1+"$@"}; }
 
-# Define default documentation instruction.
-doc_command="'showme sun${ORAC_SUN}'"
+  # Define default documentation instruction.
+  doc_command="'showme sun${ORAC_SUN}'"
 
-# Allow for more than one document per instrument.  Determine whether
-# or not there is a comma in document number.
-set comma_index=`echo ${ORAC_SUN} | awk '{print index($0,",")}'`
-if test -z "$comma_index"; then
-  comma_index=0
-fi
-if test "$comma_index" -gt 0; then
+  # Allow for more than one document per instrument.  Determine whether
+  # or not there is a comma in document number.
+  set comma_index=`echo ${ORAC_SUN} | awk '{print index($0,",")}'`
+  if test -z "$comma_index"; then
+    comma_index=0
+  fi
+  if test "$comma_index" -gt 0; then
 
-# Extract the document numbers.
-   doc_numbers=`echo ${ORAC_SUN} | sed -e 's/,/ /g'`
-   doc_num_array=($doc_numbers)
+    # Extract the document numbers.
+    doc_numbers=`echo ${ORAC_SUN} | sed -e 's/,/ /g'`
+    doc_num_array=($doc_numbers)
 
-# Form concatenated instruction giving options for finding documentation.
-   doc_command="'showme sun${doc_num_array[0]}'"
-   element_count=${#doc_num_array[@]}
-   index=1
-   while [ "$index" -lt "$element_count" ]
-   do
+    # Form concatenated instruction giving options for finding documentation.
+    doc_command="'showme sun${doc_num_array[0]}'"
+    element_count=${#doc_num_array[@]}
+    index=1
+    while [ "$index" -lt "$element_count" ]
+    do
       doc_command="${doc_command} or 'showme sun${doc_num_array[$index]}'"
       let "index = $index + 1"
-   done
-fi
+    done
+ fi
 
-# Start up message
-echo " "
-echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
-echo "     Configured for instrument $ORAC_INSTRUMENT"
-echo " "
-echo '     Type "oracdr -man" for usage'
-if test "${ORAC_SUN}" != "XXX"; then
-   echo "     Type $doc_command to browse the hypertext documentation"
-fi
-echo " "
-echo " "
-echo " Raw data will be read from $ORAC_DATA_IN"
+  # Start up message
+  echo " "
+  echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
+  echo "     Configured for instrument $ORAC_INSTRUMENT"
+  echo " "
+  echo '     Type "oracdr -man" for usage'
+  if test "${ORAC_SUN}" != "XXX"; then
+     echo "     Type $doc_command to browse the hypertext documentation"
+  fi
+  echo " "
+  echo " "
+  echo " Raw data will be read from $ORAC_DATA_IN"
 
-# Check for that `in' directory
-if ! test -d $ORAC_DATA_IN; then
-  $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     !!!!!!!!!!!! but that directory does not exist !!!!!!!!!\n","red");'
-fi
+  # Check for that `in' directory
+  if ! test -d $ORAC_DATA_IN; then
+    $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     !!!!!!!!!!!! but that directory does not exist !!!!!!!!!\n","red");'
+  fi
 
-echo " Reduced data will appear in $ORAC_DATA_OUT"
+  echo " Reduced data will appear in $ORAC_DATA_OUT"
 
-# Check for that `out' directory
-if ! test -d $ORAC_DATA_OUT; then
-  $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     !!!!!!!!!!!! but that directory does not exist !!!!!!!!!\n","red");'
-fi
+  # Check for that `out' directory
+  if ! test -d $ORAC_DATA_OUT; then
+    $starperl -MTerm::ANSIColor -e 'print Term::ANSIColor::colored("     !!!!!!!!!!!! but that directory does not exist !!!!!!!!!\n","red");'
+  fi
 
-echo " "
-echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
-echo ""
-echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON
-echo 'For problems with the ORAC-DR system mail oracdr@eaobservatory.org'
-echo '         http://www.oracdr.org'
-echo ""
-echo ""
+  echo " "
+  echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+  echo ""
+  echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON
+  echo 'For problems with the ORAC-DR system mail oracdr@eaobservatory.org'
+  echo '         http://www.oracdr.org'
+  echo ""
+  echo ""
 
 else
   # Nothing is going to work
   echo "************ Starlink perl could not be located. ********"
   echo "************       Please install STARPERL       ********"
 
-alias oracdr="echo 'Command not available - needs Starlink PERL'"
-alias oracdr_db="echo 'Command not available - needs Starlink PERL'"
-alias oracdr_nuke="echo 'Command not available - needs Starlink PERL'"
-alias oracdisp="echo 'Command not available - needs Starlink PERL'"
-alias oracdr_monitor="echo 'Command not available - needs Starlink PERL'"
+  alias oracdr="echo 'Command not available - needs Starlink PERL'"
+  alias oracdr_db="echo 'Command not available - needs Starlink PERL'"
+  alias oracdr_nuke="echo 'Command not available - needs Starlink PERL'"
+  alias oracdisp="echo 'Command not available - needs Starlink PERL'"
+  alias oracdr_monitor="echo 'Command not available - needs Starlink PERL'"
 
 fi
 
-unset starperl
 unset oracdr_args
 unset oracdr_monitor_args
+unset starperl
