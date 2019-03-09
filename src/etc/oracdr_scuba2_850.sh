@@ -1,7 +1,7 @@
 
 #+
 #  Name:
-#     oracdr_swfcam1
+#     oracdr_scuba2_850
 
 #  Purpose:
 #     Initialise ORAC-DR environment for use with the long-wave
@@ -43,7 +43,7 @@
 #     oracdr_scuba2_850
 #        Will set the variables assuming the current UT date.
 #     oracdr_scuba2_850 19991015
-#        Use UT data 19991015
+#        Use UT date 19991015
 
 #  Notes:
 #     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR
@@ -108,5 +108,5 @@ export ORAC_INSTRUMENT=SCUBA2_850
 
 # Set stripchart alias
 if test -n $ORAC_DATA_CAL; then
-  alias xstripchart="${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_450.ini -title='SCUBA2_850' &"
+  alias xstripchart="${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_850.ini -title='SCUBA2_850' &"
 fi

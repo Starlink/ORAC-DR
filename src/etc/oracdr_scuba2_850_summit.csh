@@ -108,5 +108,5 @@ source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
 if ( $?ORAC_DATA_CAL ) then
-  alias xstripchart "${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_850.ini -title 'SCUBA2_850 SUMMIT' &"
+  alias xstripchart "${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_850.ini -title='SCUBA2_850 SUMMIT' &"
 endif

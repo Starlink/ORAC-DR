@@ -1,17 +1,17 @@
 
 #+
 #  Name:
-#     oracdr_scuba2_450
+#     oracdr_scuba2_850_summit
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with the short-wave
-#     SCUBA-2 arrays
+#     Initialise ORAC-DR environment for use with the long-wave
+#     SCUBA-2 arrays in SUMMIT mode
 
 #  Language:
 #     sh shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_scuba2_450.sh
+#     source ${ORAC_DIR}/etc/oracdr_scuba2_850_summit.sh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -40,9 +40,9 @@
 
 
 #  Examples:
-#     oracdr_scuba2_450
+#     oracdr_scuba2_850_summit
 #        Will set the variables assuming the current UT date.
-#     oracdr_scuba2_450 19991015
+#     oracdr_scuba2_850_summit 19991015
 #        Use UT date 19991015
 
 #  Notes:
@@ -67,7 +67,7 @@
 #     Revision 1.2  2006/09/07 00:35:25  bradc
 #     fix for proper bash scripting
 #
-#     Revision 1.1  2006/09/06 02:30:05  bradc
+#     Revision 1.1  2006/09/06 02:30:03  bradc
 #     initial addition
 #
 #     Revision 1.1  2005/02/26 08:15:04  timj
@@ -101,12 +101,13 @@
 
 #-
 
-export ORAC_INSTRUMENT=SCUBA2_450
+export ORAC_INSTRUMENT=SCUBA2_850
 
 # Source general alias file and print welcome screen
+oracdr_setup_args="--drmode=SUMMIT"
 . $ORAC_DIR/etc/oracdr_start.sh
 
 # Set stripchart alias
 if test -n $ORAC_DATA_CAL; then
-  alias xstripchart="${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_450.ini -title='SCUBA2_450' &"
+  alias xstripchart="${STARLINK_DIR}/bin/starperl ${STARLINK_DIR}/Perl/bin/xstripchart -cfg=$ORAC_DATA_CAL/jcmt_850.ini -title='SCUBA2_850 SUMMIT' &"
 fi

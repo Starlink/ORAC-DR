@@ -85,7 +85,10 @@ pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 if test -e $starperl; then
 
   # Run initialization.
-  orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $*`
+  if test -z "${oracdr_setup_args}"; then
+    oracdr_setup_args=''
+  fi
+  orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $* $oracdr_setup_args`
   if test $? != 0; then
     echo " "
     echo "   **** ERROR IN setup_oracdr_env.pl ****"
@@ -95,6 +98,7 @@ if test -e $starperl; then
   fi
   eval $orac_env_setup
   unset orac_env_setup
+  unset oracdr_setup_args
 
   # ORAC-DR
   # Might have an argument to oracdr passed in to this routine.
