@@ -33,6 +33,23 @@ use base qw/ ORAC::Calib::JCMT /;
 use vars qw/ $VERSION /;
 $VERSION = '1.0';
 
+
+# Define default parameters for sideband correction.
+my %SIDEBANDCORR = (RXA3M => [
+                        {
+                         START => 20160101,
+                         A => 0.782164242,
+                         B => 0.331811472,
+                         C => 54.63449674,
+                         D => 313.5952557,
+                         E => 4833.576982,
+                        }
+                    ],
+    );
+
+
+
+
 __PACKAGE__->CreateBasicAccessors( bad_receptors => { staticindex => 1 },
                                    flat => { staticindex => 1 },
                                    standard => { staticindex => 1 },
@@ -68,6 +85,7 @@ sub new {
   $obj->{Standard} = undef;
   $obj->{StandardIndex} = undef;
   $obj->{StandardNoUpdate} = 0;
+  $obj->{SidebandCorrIndex} = undef;
 
   return $obj;
 }
@@ -383,6 +401,93 @@ sub standard {
   } else {
     croak "Unable to obtain INTEGINT, PEAK, L_BOUND, and H_BOUND from index file entry $standardfile\n";
   }
+}
+
+=item B<sidebandcorr_factor>
+
+Calculate the sideband correction factor. Requires an instrument, a
+time and an lofrequency, which it gets from the headers by default
+
+  $factor = $Cal->sidebandcorr_factor();
+
+Optionally you can specify the instrument, ut and lo frequency (GHz)
+in the call.
+
+  $factor = $Cal->sidebandcorr_factor($instrument, $ut, $lo_freq);
+
+
+
+=cut
+
+sub sidebandcorr_factor {
+    my $self = shift;
+    my $instrument = shift;
+    if (!$instrument) {
+        $instrument = $self->thing->{'ORAC_INSTRUMENT'};
+        $instrument = uc($instrument);
+    } else {
+        $instrument = uc($instrument);
+    }
+    my $ut = shift;
+
+    if (!$ut) {
+        $ut = $self->thing->{'ORACTIME'};
+    }
+
+    # Get the time dependent list of factors for this instrument.
+    my $CORRFACTORS = $SIDEBANDCORR{$instrument};
+
+    unless ( $CORRFACTORS) {
+        orac_warn "No side band correction factors are defined for the specified instrument ($instrument).\n";
+        return;
+    }
+
+    # Do this afterwards, as we want to ensure a useful warning is produced.
+    my $lo_freq = shift;
+    if (!$lo_freq) {
+        # We are assuming lo_freq is given in GHz.
+        if (! $self->thing->{'LOFREQS'} ) {
+            orac_err "Cannot calculate sideband correction factor as LOFREQS is not available.\n";
+            return;
+        } else {
+            $lo_freq = 0.5 * ($self->thing->{'LOFREQS'} + $self->thing->{'LOFREQE'});
+            orac_debug "LO frequency is $lo_freq GHz.\n";
+        }
+    }
+
+    my $match;
+    my $gl_over_gu;
+
+    if ($CORRFACTORS) {
+        # Now find one that overlaps in time.
+        my $infstart = 19900101;
+        my $infend =   30000101;
+        for my $f (@$CORRFACTORS) {
+            my $start = (exists $f->{START} ? $f->{START} : $infstart);
+            my $end = (exists $f->{END} ? $f->{END} : $infend);
+
+            if ($start <= $ut && $end >=$ut) {
+                $match = $f;
+                last;
+            }
+        }
+
+        if ($match) {
+            my $A = $match->{'A'};
+            my $B = $match->{'B'};
+            my $C = $match->{'C'};
+            my $D = $match->{'D'};
+            my $E = $match->{'E'};
+            orac_debug "Correction polynomial fit factors from CAL SYSTEM are $A, $B, $C, $D, $E .\n";
+            my $x = ($lo_freq - 245)/245.0;
+
+            $gl_over_gu = $A + $B*$x + $C *$x**2 + $D*$x**3 + $E*$x**4;
+        } else {
+            orac_warn "No sideband correction factors defined for instrument=$instrument on UT=$ut.\n";
+        }
+    }
+    return $gl_over_gu;
+
 }
 
 =back

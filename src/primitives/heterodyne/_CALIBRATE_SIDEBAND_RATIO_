@@ -1,0 +1,287 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALIBRATE_SIDEBAND_RATIO_ - Multiply data by the sideband ratio correction factor
+
+=head1 SYNOPSIS
+
+ _CALIBRATE_SIDEBAND_RATIO_
+ _CALIBRATE_SIDEBAND_RATIO_ SIDEBAND=USB
+ _CALIBRATE_SIDEBAND_RATIO_ FACTOR=1.3
+
+=head1 DESCRIPTION
+
+Multiply heterodyne data by a sideband ratio correction factor (FCF). 
+
+By default, the system will apply a correction factor for the current
+sideband, and will calculate the correction factor (as a function of
+LO frequency) from the Calibration system. If there is no
+calibration system values set up for this instrument and time it will
+not do anything.
+
+Optionally, the user can override the sideband to apply the correction
+to either in the call to this primitive or by using a recipe_parameter
+'SIDEBAND_CORR_SIDEBAND'.
+
+The factor to apply can also be overriden either by an argument in the
+call to this primitive or by using the recipe paramter
+'SIDEBAND_CORR_FACTOR'. In that case, the sideband choice is
+irrelevant, and the user is responsible for ensuring the factor is
+appropriate for the LO frequency of the data.
+
+Whilst this primitive can be run on a group, care must be taken that
+it is not run multiple times on a group image.
+
+Note that data will not be calibrated if the C<NOCALIB> uhdr entry is
+set.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<SIDEBAND>
+
+The sideband to be used when applying the sideband correction
+factor. The factor is calculated a 'GL/GU', and the data are multipled
+by (1+GL/GU)/2 for USB and (1+GU/GL)/2 for LSB.
+
+If not set, the current system sideband is used.
+
+=item B<FACTOR>
+
+The GL/GU factor to be appled to the data. If this argument is used,
+then the calling code is responsible for ensuring the factor is for the
+correct local oscillator (LO) frequency of the supplied
+observations. For reference, the data are multipled by (1+GL/GU)/2 for USB and
+(1+GU/GL)/2 for LSB.
+
+
+=item B<GROUP>
+
+If true, the Group file will be calibrated.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+CMULT, NDFTRACE, SETUNITS
+
+=back
+
+=head1 NOTES
+
+This primitive does nothing if the current object already has a
+sideband corrected product, or if there are no available side band
+correction factors for the current object.
+
+=head1 OUTPUT DATA
+
+The object has the product set to C<sideband_corrected> and is tagged with the same.
+
+=head1 OUTPUT FILES
+
+Creates an output file with a C<_cal> extension. If this primitive is
+called from a PICARD recipe, the extension will be appended to the
+current file name, rather than replacing it.
+
+=head1 AUTHOR
+
+SF Graves E<lt>s.graves@eaobservatory.org<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 East Asian observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+
+
+# Read the arguments
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+my $calproduct = "sideband_corrected";
+
+
+
+# Only proceed if the NOCALIB header is NOT set.
+my $proceed = ($Obj->uhdr("NOCALIB")) ? 0 : 1;
+
+
+# Don't proceed if the primtiive was called with special 'NOSIDEBANDCORR' argument (used for testing.)
+my $do_not_proceed = get_prim_arg($_PRIM_ARGS_, "NOSIDEBANDCORR", 0);
+
+if ($do_not_proceed) {
+  $proceed = 0;
+}
+
+
+# Check if group file exists if wanted.
+$proceed = ($group && $Grp->file_exists) ? 1 : $proceed;
+
+
+
+
+
+# If we'd like to proceed, check that there is a sideband correction
+# factor either specified by the calling code, by the user or
+# available in the system.
+my $factor;
+if ($proceed) {
+  $factor = get_prim_arg($_PRIM_ARGS_, "FACTOR", undef);
+
+  if (defined $Frm->uhdr("RECPAR_SIDEBAND_CORR_FACTOR")) {
+    $factor = $Frm->uhdr("RECPAR_SIDEBAND_CORR_FACTOR");
+    orac_print "Setting Sideband correction factor to $factor based on recipe parameter SIDEBAND_CORR_FACTOR.\n";
+  }
+
+
+  # If its set to the default value, then get it from the calibration system.)
+  unless ($factor) {
+
+      # Ensure there is an ORACTIME header available for the date..
+      if (! ($Obj->hdr("ORACUT"))) {
+        orac_warn "Unable to determine a datetime: input file is probably a coadd or mosaic\n";
+        orac_warn "Data should be sideband ratio corrected before coadding/mosaicking.\nContinuing.\n";
+        _SET_ORACUT_FROM_DATEOBS_
+      }
+
+      $factor = $Cal->sidebandcorr_factor();
+
+
+    }
+  # If there isn't a factor, don't proceed.
+  unless ($factor) {
+    $proceed = 0;
+  }
+}
+
+
+# If still going, get the sideband. we have a factor..
+my $sideband;
+if ( $proceed ) {
+
+  $sideband = get_prim_arg($_PRIM_ARGS_, "SIDEBAND", undef);
+  if (defined $Frm->uhdr("RECPAR_SIDEBAND")) {
+    $sideband = $Frm->uhdr("RECPAR_SIDEBAND");
+    orac_print "Setting sideband to $sideband based on recipe paramter SIDEBAND.\n";
+  }
+  unless ($sideband) {
+
+    my $currfile = $Obj->file;
+
+    # Handle the sideband choice.
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$currfile mode=get name=SideBand");
+    my $ORAC_STATUS;
+    ($ORAC_STATUS, $sideband) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+    if ($ORAC_STATUS) {
+      orac_err "Could not determine current sideband in $currfile. Will not apply Sideband Ratio corrections.\n";
+      $proceed = 0;
+    }
+  }
+  if ($sideband) {
+    $sideband = uc($sideband);
+  }
+
+}
+
+
+
+# If we are applying the correction: calculate the multiple, multiple
+# the data, set the new fitsheader and ensure the logs shows what was
+# done.
+if ($proceed) {
+  my $mult;
+  orac_print "Applying corrections for sideband=$sideband.\n";
+  if ($sideband eq 'USB') {
+    $mult = (1. + $factor)/2.0;
+  } elsif ($sideband eq 'LSB') {
+    $mult = (1. + (1.0/$factor))/2.0;
+  } else {
+    orac_err " Sideband is not USB or LSB ($sideband).";
+    orac_err "Will not apply sideband ratio correction.";
+    $proceed = 0;
+  }
+
+}
+
+
+# check if there is a previous sdbncorrectiont o remove
+my $previous_correction;
+if (defined($Obj->hdr("SDBNCORR"))) {
+  $previous_correction = $Obj->hdr("SDBNCORR");
+  orac_print "Found a previous correction = $previous_correction.\n"
+}
+
+if ($proceed) {
+  # Undo any previous data in the file
+  for my $i (1.. $Obj->nfiles) {
+    my $file = $Obj->file($i);
+
+    my $inputfile = $file;
+    if ($previous_correction) {
+      my ($in, $out) = $Frm->uhdr('JSA_TILES')
+        ? $Obj->inout_jsatile('_sidebandremoved', $i)
+          : $Obj->inout("_sidebandremove", $i);
+
+      $Mon{kappa_mon}->obeyw("cdiv", "in=$in out=$out scalar=$previous_correction");
+      orac_print "Removed existing sideband ratio correction from $in.\n";
+
+      $inputfile = $out;
+    }
+    my ($in, $out) = $Frm->uhdr('JSA_TILES')
+      ? $Obj->inout_jsatile('cal', $i)
+        : $Obj->inout("_cal", $i);
+    $Mon{kappa_mon}->obeyw("cmult", "in=$in out=$out scalar=$factor");
+
+
+    orac_print "Multiplying $in by side band correction ($factor).\n";
+
+    my $fitshdr = new Astro::FITS::Header::NDF( File => $out);
+    my $index = $fitshdr->sizeof;
+    my $newitem = new Astro::FITS::Header::Item( Keyword=>"SDBNCORR",
+                                                 Value => $factor,
+                                                 Comment => "Side band correction factor" );
+    if (defined $fitshdr->value("SDBNCORR")) {
+      $fitshdr->append($newitem);
+    } else {
+      $fitshdr->insert($index, $newitem);
+    }
+
+    orac_print "Writing fitsheader to $out\n";
+    $fitshdr->writehdr( File => $out );
+
+
+    # Update file in current object.
+    $Obj->file($i, $out);
+
+  }
+
+  $Obj->product($calproduct);
+  $Obj->tagset($calproduct);
+
+}
