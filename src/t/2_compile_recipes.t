@@ -40,6 +40,7 @@ BEGIN {
             name => 'PICARD_SCUBA2_850',
             override => {
                 CREATE_MOMENTS_MAP => 'PICARD_ACSIS',
+                CALIBRATE_SIDEBAND_RATIO => 'PICARD_ACSIS',
             },
         },
         {
