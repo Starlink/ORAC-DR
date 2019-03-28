@@ -1,0 +1,199 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_INSERT_JCMT_WVM_DATA_ - Put WVM data into raw JCMT files
+
+=head1 DESCRIPTION
+
+This primitive takes JCMT raw files and inserts WVM data
+into them.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use Astro::PAL;
+use DateTime;
+use DateTime::Format::ISO8601;
+use File::Spec;
+use IO::File;
+use NDF;
+
+my $read_wvm_file = sub {
+    my $wvmfile = shift;
+    my $dtai = shift;
+
+    orac_say("Reading JCMT WVM data from file $wvmfile");
+
+    # We should perhaps read this using the JCMT::Tau::WVM module
+    # (which also handles old-style WVM files).  But read it directly
+    # for now as we want temperatures rather than recomputed opacities.
+    my $fh = new IO::File($wvmfile, 'r');
+    orac_throw("Could not open WVM file $wvmfile") unless defined $fh;
+
+    my @ans = ();
+
+    foreach (<$fh>) {
+        chomp;
+        my @col = split;
+        push @ans, [
+            DateTime::Format::ISO8601->parse_datetime(
+                $col[0])->add(seconds => $dtai)->mjd(),
+            0.0 + $col[3],
+            0.0 + $col[4],
+            0.0 + $col[5],
+        ];
+    }
+
+    $fh->close();
+
+    return \@ans;
+};
+
+my $match_wvm_data = sub {
+    my $wvmdata = shift;
+    my $rts_end = shift;
+
+    my $n = scalar @$wvmdata;
+    my $i = -1;
+    my $prev = undef;
+    my $row = undef;
+
+    # Go through the given RTS end time and find the WVM data preceeding each.
+    my @ans = ();
+    foreach my $mjd (@$rts_end) {
+        # Apply timing adjustment to approximate the offset in raw files.
+        $mjd -= 1.0 / (24.0 * 3600.0);
+        while ((not defined $row) or ($row->[0] < $mjd)) {
+            orac_throw('Time beyond end of WVM data file') unless $n > ++ $i;
+            $prev = $row;
+            $row = $wvmdata->[$i];
+        }
+
+        orac_throw('Time before start of WVM data file') unless defined $prev;
+
+        push @ans, $prev;
+    }
+
+    # Double check we extracted the correct number of readings.
+    orac_throw('Failed to match WVM data') unless (scalar @ans) == (scalar @$rts_end);
+
+    # Rearrange the row results into lists for each WVM component,
+    # and return them in the order in which they are desired.
+    return [
+        [WVM_T12 => [map {$_->[1]} @ans]],
+        [WVM_T42 => [map {$_->[2]} @ans]],
+        [WVM_T78 => [map {$_->[3]} @ans]],
+        [WVM_TIME => [map {$_->[0]} @ans]],
+    ];
+};
+
+my $insert_wvm_data = sub {
+    my $filename = shift;
+    my $wvmdata = shift;
+
+    # Open the raw file and find the JCMTSTATE component.
+    my $status = &NDF::SAI__OK();
+    err_begin($status);
+    hds_open($filename, "UPDATE", my $loc, $status);
+    dat_find($loc, "MORE", my $mloc, $status);
+    dat_find($mloc, "JCMTSTATE", my $jloc, $status);
+    dat_annul($mloc, $status);
+
+    # Find the RTS end times in the file.
+    dat_find($jloc, "RTS_END", my $rloc, $status);
+    dat_size($rloc, my $size, $status);
+    my @rts;
+    dat_getvd($rloc, $size, @rts, my $el, $status);
+    orac_throw('Unexpected number of RTS_END elements') unless $el == $size;
+    dat_annul($rloc, $status);
+
+    # Get the matching WVM data components.
+    my $components = $match_wvm_data->($wvmdata, \@rts);
+
+    # Replace each exising component with the new one.
+    foreach my $component (@$components) {
+        my ($comp, $data) = @$component;
+        dat_there($jloc, $comp, my $there, $status);
+        dat_erase($jloc, $comp, $status) if $there;
+        if ($comp eq 'WVM_TIME') {
+            dat_new1d($jloc, $comp, $size, $status);
+            cmp_put1d($jloc, $comp, $size, @$data, $status);
+        }
+        else {
+            dat_new1r($jloc, $comp, $size, $status);
+            cmp_put1r($jloc, $comp, $size, @$data, $status);
+        }
+    }
+
+    # Annul remaining locators and check the error status.
+    dat_annul($jloc, $status);
+    dat_annul($loc, $status);
+    my $errstr = undef;
+    if ($status != &NDF::SAI__OK()) {
+        $errstr = &NDF::err_flush_to_string($status);
+    }
+    err_end($status);
+    orac_throw("Could not insert WVM data: $errstr") if defined $errstr;
+};
+
+# Determine TAI-UTC, as we need to write TAI-based entries into the
+# raw files, but have UTC-based data in the WVM files.
+my $dtai = $Frm->uhdr('ORAC_TAI_UTC_CORRECTION');
+if (defined $dtai) {
+    orac_say("Determined TAI offset from header: $dtai seconds");
+}
+else {
+    my $utstart = $Frm->uhdr('ORAC_UTSTART');
+    orac_throw('Neither UT START date nor TAI-UTC correction is known')
+        unless defined $utstart;
+    $dtai = Astro::PAL::palDat($utstart->mjd());
+    orac_warn("Determined TAI offset from UT start date: $dtai seconds\n");
+}
+
+# Find the WVM data file to use.
+my $wvmfile = $RECPARS{'JCMT_WVM_FILE'};
+unless (defined $wvmfile) {
+    my $utdate = $Frm->uhdr('ORAC_UTDATE');
+    orac_throw('UT DATE not known and JCMT_WVM_FILE recpar not given')
+        unless defined $utdate;
+
+    my $wvmdir = $RECPARS{'JCMT_WVM_DIR'};
+    $wvmdir = File::Spec->catdir(File::Spec->rootdir(), qw/jcmtdata raw wvm/, $utdate)
+        unless defined $wvmdir;
+
+    $wvmfile = File::Spec->catfile($wvmdir, sprintf('%s.wvm', $utdate));
+}
+
+# Read WVM data.
+my $wvmdata = $read_wvm_file->($wvmfile, $dtai);
+
+# Apply WVM data to all files.
+my @output = ();
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my ($in, $out) = $Frm->inout('_wvm', $i + 1);
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+    orac_say("Inserting WVM data into file $out");
+    $insert_wvm_data->($out, $wvmdata);
+    push @output, $out;
+}
+
+# Store processed files in the frame.
+$Frm->files(@output);
