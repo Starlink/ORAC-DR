@@ -12,7 +12,7 @@ _CALIBRATE_SIDEBAND_RATIO_ - Multiply data by the sideband ratio correction fact
 
 =head1 DESCRIPTION
 
-Multiply heterodyne data by a sideband ratio correction factor (FCF). 
+Multiply heterodyne data by a sideband ratio correction factor (FCF).
 
 By default, the system will apply a correction factor for the current
 sideband, and will calculate the correction factor (as a function of
@@ -22,7 +22,7 @@ not do anything.
 
 Optionally, the user can override the sideband to apply the correction
 to either in the call to this primitive or by using a recipe_parameter
-'SIDEBAND_CORR_SIDEBAND'.
+'SIDEBAND'.
 
 The factor to apply can also be overriden either by an argument in the
 call to this primitive or by using the recipe paramter
@@ -151,11 +151,13 @@ $proceed = ($group && $Grp->file_exists) ? 1 : $proceed;
 # factor either specified by the calling code, by the user or
 # available in the system.
 my $factor;
+my $mult;
 if ($proceed) {
   $factor = get_prim_arg($_PRIM_ARGS_, "FACTOR", undef);
 
   if (defined $Frm->uhdr("RECPAR_SIDEBAND_CORR_FACTOR")) {
     $factor = $Frm->uhdr("RECPAR_SIDEBAND_CORR_FACTOR");
+    $mult = $factor;
     orac_print "Setting Sideband correction factor to $factor based on recipe parameter SIDEBAND_CORR_FACTOR.\n";
   }
 
@@ -213,18 +215,20 @@ if ( $proceed ) {
 
 # If we are applying the correction: calculate the multiple, multiple
 # the data, set the new fitsheader and ensure the logs shows what was
-# done.
-if ($proceed) {
-  my $mult;
-  orac_print "Applying corrections for sideband=$sideband.\n";
-  if ($sideband eq 'USB') {
-    $mult = (1. + $factor)/2.0;
-  } elsif ($sideband eq 'LSB') {
-    $mult = (1. + (1.0/$factor))/2.0;
-  } else {
-    orac_err " Sideband is not USB or LSB ($sideband).";
-    orac_err "Will not apply sideband ratio correction.";
-    $proceed = 0;
+# done. (DON'T DO IF WE HAVE A MANUAL $MULT ALREADY DEFINED)
+
+if ($proceed)  {
+  unless ($mult) {
+    orac_print "Applying corrections for sideband=$sideband.\n";
+    if ($sideband eq 'USB') {
+      $mult = (1. + $factor)/2.0;
+    } elsif ($sideband eq 'LSB') {
+      $mult = (1. + (1.0/$factor))/2.0;
+    } else {
+      orac_err " Sideband is not USB or LSB ($sideband).";
+      orac_err "Will not apply sideband ratio correction.";
+      $proceed = 0;
+    }
   }
 
 }
@@ -256,10 +260,10 @@ if ($proceed) {
     my ($in, $out) = $Frm->uhdr('JSA_TILES')
       ? $Obj->inout_jsatile('cal', $i)
         : $Obj->inout("_cal", $i);
-    $Mon{kappa_mon}->obeyw("cmult", "in=$in out=$out scalar=$factor");
+    $Mon{kappa_mon}->obeyw("cmult", "in=$in out=$out scalar=$mult");
 
 
-    orac_print "Multiplying $in by side band correction ($factor).\n";
+    orac_print "Multiplying $in by side band correction ($mult).\n";
 
     my $fitshdr = new Astro::FITS::Header::NDF( File => $out);
     my $index = $fitshdr->sizeof;
