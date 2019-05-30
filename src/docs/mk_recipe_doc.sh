@@ -48,7 +48,7 @@ the recipe
 }\n"
 	echo -e $result >> "$3".tex
     else
-	pod2sst $1 > tmp.sst
+	$STARLINK_DIR/bin/pod2sst $1 > tmp.sst
 	$STARLINK_DIR/bin/sst/prolat tmp.sst tmp.tex single=false page=false document=false
 	echo "$3".tex
 	cat tmp.tex >> "$3".tex
