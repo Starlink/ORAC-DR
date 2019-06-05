@@ -1,0 +1,282 @@
+=head1 NAME                                     -*-cperl-*-
+
+_CALCULATE_EFFICIENCIES_ - Calculate Eta MB and Eta AP for a single point jigChop
+i.e. a single sample BMSW.
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over
+
+=item 4
+
+=item ENCODING
+
+=back
+
+=head1 AUTHOR
+
+Jamie Leech E<lt>j.leech@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+use ORAC::Calib::SCUBA2;
+use Math::Trig;
+
+# Read Frame or Group header...
+my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm);
+
+
+my $overide=0;
+my $central_frequency;
+my $central_wavelength;
+my $sideband_factor;
+my $c=299792458;
+my $A_k=1.38064852e-23;
+my $h_planck = 6.626e-34;
+my $k_boltz = $A_k;
+my $object = $Frm->hdr('OBJECT');
+my $logfile = "log.efficiency";
+my $logtype = "efficiency";
+
+# Only carry this out on the following objects; otherwise don't.
+if( ($object eq "URANUS") || ($object eq "MARS") || ($object eq "JUPITER") || $overide)
+{
+
+
+ # Set up a SCUBA-2 calibration object (can't use heterodyne as we need to get continuum values).
+ $Cal=new ORAC::Calib::SCUBA2;
+
+ # Ensure that the ORACUT and ORACTIME will be set correctly; this
+ # matters as fluxes gets the values for planetary fluxes/brightness
+ # based on date.
+ $Cal->{Thing1}->{'ORACUT'} = $Obj->hdr('ORACUT');
+ $Cal->{Thing1}->{'ORACTIME'} = $Obj->hdr('ORACTIME');
+
+ #my $naxis1 = $Obj->hdr('NAXIS1');
+ #my $naxis2 = $Obj->hdr('NAXIS2');
+ #my $refrecp = $Obj->hdr('INSTAP');
+ #orac_print "Reference REceptor is $refrecp\n";
+
+ # We only want to do the reference pixel if the map is larger than
+ # 1x1; this won't work for e.g. rasters, but will for HARP
+ # jiggles. Its probably not necessary to make this work for
+ # everything.
+
+ my $ndfsection="(1,1,)";
+
+ # At this point the frame should consist of only 1 file
+ # Get this file
+
+ my $file=$Obj->file;
+ orac_print "File is $file\n";
+
+ # Use stats to find the mean of the spectrum in T_A* (K)
+ $Mon{kappa_mon}->obeyw("stats","ndf=$file" . $ndfsection);
+
+ # Get the mean and standard deviation of the value.
+ my $ORAC_STATUS;
+
+ ($ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
+ ($ORAC_STATUS, my $numpix) = $Mon{kappa_mon}->get("stats","numpix");
+ ($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+ ($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
+
+ my $percentgood = 100.0 * $numgood/$numpix;
+ orac_print "The mean T_A* is $mean, with a sigma of $sigma. There
+ were $numgood valid pixels ($percentgood\%).\n";
+
+
+ ################
+ # TO DO: Insert code here to ensure that the 3rd axis units are frequency and
+ # check the units.
+ ################
+
+ #######################
+ # Get central frequency of the spectrum and determine wavelength.
+
+ $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$file mode=get name=system(3)");
+ ($ORAC_STATUS, my $original_system) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
+ $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$file mode=set name=system(3) newval=FREQ");
+ $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
+
+
+ ($ORAC_STATUS, my @flbnd) = $Mon{ndfpack_mon}->get("ndftrace","flbnd");
+ ($ORAC_STATUS, my @fubnd) = $Mon{ndfpack_mon}->get("ndftrace","fubnd");
+
+ $central_frequency=0.5*($fubnd[2]-$flbnd[2]) + $flbnd[2];
+ $central_wavelength=$c/$central_frequency;
+
+ $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$file mode=set name=system(3) newval=$original_system");
+
+ orac_print "The central_frequency is $central_frequency\n";
+
+ #######################
+ # Determine sideband factor
+ # Avail. keywords  IS_SSB, N_MIX, OBS_SB
+ #
+ # N.B We should have the headers task or gridder populate some keywords with the
+ # eta_tel (eta_l =F_eff), sideband ratios etc from the JCMT_parameters AIPS++ table.
+ #
+ # Assume sideband ratio ~0.5 for the time being.
+ #
+ # For DSB receivers we are sensitive to both sidebands
+ # Thus T*A will be twice as a large (assuming equal sideband
+ # sensitivity ratio)
+ #
+ # if Rx =A then T*_A * 0.5?
+ #
+
+
+ # if its dual sideband, sideband_factor is 0.5, else its 1. May need
+ # more tweaking?
+ my $is_dsb = 0;
+ if ($Obj->hdr('SB_MODE') eq 'DSB') {
+   $is_dsb = 1;
+ }
+if ($is_dsb) { $sideband_factor =0.5;} else{ $sideband_factor =1.0;}
+orac_print "The sideband_factor is $sideband_factor.\n";
+
+ ######################
+ # Determine flux in beam for the object using fluxcal call
+ # TO DO - determine corresponding SCUBA filter from the wavelength
+ #
+ #
+ #  TO DO. Might want to make this more sophisticated , with some sort of interpolation scheme
+ # to pick more appropriate values for frequencies not near the SSUBA filter center
+ #
+ #
+ # N.B. Should store these currently hardwired values somewhere for reuse.
+ my $nearest_scuba_filter;
+
+ if ( ($central_frequency >= 211.0) &&  ($central_frequency < 242.0) ){ $nearest_scuba_filter="1300";} # CO 2-1
+ elsif ( ($central_frequency >=345.0) && ($central_frequency <= 346.6) ) {$nearest_scuba_filter="868";} # CO 3-2
+ elsif ( ($central_frequency >= 691.0) && ($central_frequency <= 692.0) ) {$nearest_scuba_filter="434";} # CO 4-3
+ elsif ( ($central_frequency >= 315.0) &&  ($central_frequency <= 373.0) ){ $nearest_scuba_filter="850";} # B-band
+ elsif ( ($central_frequency >= 430.0) &&  ($central_frequency <= 510.0) ){ $nearest_scuba_filter="600";} # C-band
+ elsif ( ($central_frequency >= 630.0) &&  ($central_frequency <= 710.0) ){ $nearest_scuba_filter="450";} # D-band
+ else {  orac_throw "Unable to determine nearest SCUBA filter frequency. Error: $!\n"; }
+
+ ( my $flux_in_beam, my $brightness_temp, my $semi_diameter, my $solid_angle, my $beamwidth) = $Cal->fluxcal($object,$nearest_scuba_filter, 0, 1);
+ orac_print "FLUXES reports $object flux in beam at $nearest_scuba_filter to be $flux_in_beam (Jy).\n";
+ my $radius = $semi_diameter;
+ orac_print "   The semi_diameter is $radius.\n";
+ orac_print "   The beamwidth is $beamwidth.\n";
+ orac_print "   Fluxes Brightness temp is $brightness_temp K\n";
+ orac_print "Mean temperature in the file is $mean K.\n";
+
+ # Convert the expected flux into the expected TA*
+ my $used_frequency = 3e8/($nearest_scuba_filter * 1e-6);
+ orac_debug "The frequency used is $used_frequency\n";
+ my $RJ_correction = ($h_planck * $used_frequency) / (2*$k_boltz);
+ orac_debug "The RJ_correction is $RJ_correction\n";
+ my $x2 = 0.6931 * (2.0 * $radius/$beamwidth)**2;
+ orac_debug "x2 is $x2\n";
+ my $TAstar_expected = ($brightness_temp - $RJ_correction) * (1.0 -exp(-$x2));
+ orac_print "The expected T_A* is $TAstar_expected\n";
+
+
+
+ ######################
+ # Calculate the efficiencies
+ my $eta_mb=($mean*$sideband_factor)/$TAstar_expected;
+ orac_print "Main-beam efficiency is $eta_mb\n";
+ my $aperture_efficiency = 15.625 * $mean *$sideband_factor / $flux_in_beam;
+ orac_print "Aperture efficiency is $aperture_efficiency\n";
+ #########################
+ # TO DO:
+ # Errors? Warnings if unexpected  size?
+
+ ##################################################
+
+
+
+
+ # Write the header if not already present.
+ my $utstart = $Obj->hdr( "DATE-OBS" );
+ my $utstring = "null" . " " x 14;
+ if ( defined $utstart ) {
+   my @ut = split( /:/, $utstart );
+   $utstring = sprintf '%s', $ut[0] . ":" . $ut[1] . ":" . $ut[2];
+ }
+
+my $obsnum =  defined( $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ) ) ?
+             sprintf "%4d", $Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ) :
+             "null";
+
+ my $instrument = defined( $Obj->uhdr( "ORAC_INSTRUMENT" ) ) ?
+             sprintf "%s", $Obj->uhdr( "ORAC_INSTRUMENT" ) :
+             "null";
+
+ my $obsid = defined( $Obj->hdr( "OBSID" ) ) ?
+             sprintf "%s", $Obj->hdr( "OBSID" ) :
+             "null";
+
+
+ my $airmass ;
+ if ( defined $Obj->uhdr( "ORAC_AIRMASS_START" ) &&
+      defined $Obj->uhdr( "ORAC_AIRMASS_END" ) ) {
+   $airmass = 0.5 * ( $Obj->uhdr( "ORAC_AIRMASS_START" ) +
+                      $Obj->uhdr( "ORAC_AIRMASS_END" ) );
+ } else {
+   $airmass = -1;
+ }
+
+
+ my $inttime = ( defined $Obj->hdr( "INT_TIME" ) ) ? $Obj->hdr( "INT_TIME") : -1;
+ my $tau =  ( defined $Obj->uhdr( "ORAC_TAU" ) ) ? $Obj->uhdr( "ORAC_TAU") : -1;
+
+
+
+ my $log = new ORAC::LogFile( $logfile );
+ $log->header( "UT OBSNUM OBSID INST INTTIME AIRMASS TAU FILE PLANET FILTER FLUXINBM T_B RADIUS BEAMWIDTH MEAN_T*A SIGMA_T*A ETA_MB ETA_AP" );
+
+
+ $log->addentry( sprintf( "%s %04d %s %s %.1f %.3f %.3f %s %s %s %.2f %.2f %.2f %.2f %.3f %.3f %.3f %.3f",
+                          $utstring,
+                          $obsnum,
+                          $obsid,
+                          $instrument,
+                          $inttime,
+                          $airmass,
+                          $tau,
+                          $file,
+                          $object,
+                          $nearest_scuba_filter,
+                          $flux_in_beam,
+                          $brightness_temp,
+                          $radius,
+                          $beamwidth,
+                          $mean,
+                          $sigma,
+                          $eta_mb,
+                          $aperture_efficiency,
+                          ));
+
+} else
+{ orac_print "Object $object is not a valid planetary calibrator - no eta_mb/eta_ap will be calculated\n";
+}
+
