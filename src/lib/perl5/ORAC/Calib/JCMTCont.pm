@@ -254,13 +254,17 @@ sub csofit {
 
 Return the flux of a calibrator source
 
-  $flux = $Cal->fluxcal("sourcename", "filter", $ismap);
+  $flux = $Cal->fluxcal("sourcename", "filter", $ismap, $getfull);
 
 The optional third argument is used to specify whether a map
 flux (ie total integrated flux) is required (true), or
 simply a flux in beam (used for photometry). Default is to
 return flux in beam. This should return the same answer if the
 calibrator is a point source.
+
+The optional fourth argument is used to specify if the brightness
+temperature, semi-diameter, solid angle and beamwidth should also be
+returned.
 
 Currently, all secondary calibrators are assumed to be point like.
 
@@ -274,6 +278,7 @@ sub fluxcal {
   my $source = uc(shift);
   my $filter = shift;
   my $ismap = shift;
+  my $getfull = shift;
 
   # Strip spaces
   $source =~ s/\s//g;
@@ -285,6 +290,10 @@ sub fluxcal {
 
   # Start off being pessimistic
   my $flux = undef;
+  my $brightness = undef;
+  my $semi_diameter = undef;
+  my $solid_angle = undef;
+  my $beamwidth = undef;
 
   # Check in the fluxes hash for a value
   my %PHOTFLUXES = $self->secondary_calibrator_fluxes($ismap);
@@ -308,7 +317,6 @@ sub fluxcal {
     # Use ORACTIME and ORACUT for these since there are sometimes
     # dodgy headers that the header translation code has to deal with
     my $scudate = $self->thing->{'ORACUT'}; # the thing method is the header
-
     if (defined $scudate) {
       # ORACUT is in YYYYMMDD format
       my $y = substr($scudate, 2, 2);
@@ -327,7 +335,6 @@ sub fluxcal {
     # change when I change the ut time
     # Use ORACTIME since we need to handle sometimes dodgy UT header
     my $scutime = $self->thing->{'ORACTIME'};
-
     if (defined $scutime) {
       # we will ignore leap seconds
       my $frac = $scutime - int($scutime);
@@ -344,6 +351,7 @@ sub fluxcal {
     }
 
     my $status = $self->fluxes_mon->obeyw("","$hidden planet=$source date='$scudate' time='$scutime' filter=$filter");
+    orac_debug "Called fluxes with $hidden planet=$source date='$scudate' time='$scutime' filter=$filter \n";
 
     if ($status != ORAC__OK) {
       orac_err "The FLUXES program did not run successfully\n";
@@ -353,11 +361,20 @@ sub fluxcal {
     # At this point we dont know whether we want the flux in the beam
     # or the total flux
 
+
     if (defined $ismap && $ismap) {
       ($status, $flux) = $self->fluxes_mon->get("","F_TOTAL");
     } else {
       ($status, $flux) = $self->fluxes_mon->get("","F_BEAM");
     }
+
+    if (defined $getfull && $getfull) {
+        ($status, $brightness) = $self->fluxes_mon->get("", "T_BRIGHT");
+        ($status, $semi_diameter) = $self->fluxes_mon->get("", "SEMI_DIAM");
+        ($status, $solid_angle) = $self->fluxes_mon->get("", "SOLID_ANG");
+        ($status, $beamwidth) = $self->fluxes_mon->get("", "HPBW");
+    }
+
     if ($status != ORAC__OK || $flux == -1) {
       orac_err "Error retrieving flux for filter $filter and planet $source\n";
       return;
@@ -365,8 +382,11 @@ sub fluxcal {
 
   }
 
-  return $flux;
-
+  if (defined $getfull && $getfull) {
+      return ($flux, $brightness, $semi_diameter, $solid_angle, $beamwidth);
+  } else {
+      return $flux;
+  }
 
 }
 
