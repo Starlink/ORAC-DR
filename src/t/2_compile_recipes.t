@@ -41,6 +41,8 @@ BEGIN {
             override => {
                 CREATE_MOMENTS_MAP => 'PICARD_ACSIS',
                 CALIBRATE_SIDEBAND_RATIO => 'PICARD_ACSIS',
+                CALCULATE_EFFICIENCIES => 'PICARD_ACSIS',
+                CALCULATE_STANDARD => 'PICARD_ACSIS',
             },
         },
         {
