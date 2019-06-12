@@ -132,32 +132,68 @@ file contains an override for the recipe name.
 
 Returns undef if no override is found.
 
+The syntax for overriding a recipe name involves using the
+ORAC_OBSERVATION_TYPE header, and optionally other filters in the section name.
+
+Then the object (optionally with regexp in it is used to match.)
+
+e.g., to set GRID observations of a specific transition to use
+REDUCE_SCIENCE_BROADLINE for all sources except for OMC1 (where you
+want to use REDUCE_SCIENCE_NARROWLINE), you would have a recipe
+parameter file with:
+
+[RECIPES_GRID:#SPECIES=CS#TRANSITION=7 - 6]
+.*=REDUCE_SCIENCE_BROADLINE
+OMC1=REDUCE_SCIENCE_NARROWLINE
+
+(A specific name will override a regexp, but if there are 2 regexps
+that match than the first one that mathces will be used.)
+
+If you wanted to match e.g. all sources beginnning with OMC, you would
+do:
+
+OMC.*=REDUCE_SCIENCE_NARROWLINE.
+
 =cut
 
 sub recipe_name_from_params {
   my $self = shift;
   my $hdr = shift;
-
   my $recname;
+
+
   if (exists $hdr->{ORAC_OBJECT} && defined $hdr->{ORAC_OBJECT}
       && exists $hdr->{ORAC_OBSERVATION_TYPE}
       && defined $hdr->{ORAC_OBSERVATION_TYPE} ) {
-    my %allpars = $self->_parameters();
-    my $key = "RECIPES_" . uc($hdr->{ORAC_OBSERVATION_TYPE});
 
-    if (exists $allpars{$key}) {
+
+    my %allpars = $self->_parameters();
+
+    my $key = "RECIPES_" . uc($hdr->{ORAC_OBSERVATION_TYPE});
+    my %RecParsMatch = $self->_match_filters($key, $hdr);
+
+
+    my %RecPars = ();
+    foreach my $spec (sort {$a <=> $b} keys %RecParsMatch) {
+        %RecPars = (%RecPars, %{$RecParsMatch{$spec}});
+
+    }
+
+    if (defined (keys %RecPars)) {
+
+
       my $object = uc($hdr->{ORAC_OBJECT});
       $object =~ s/\s//g;
 
-      if (exists $allpars{$key}->{$object}) {
+      if (exists $RecPars{$object}) {
         # Shortcut the exact match
-        $recname = $allpars{$key}->{$object};
+        $recname = $RecPars{$object};
       } else {
         # we have to go through item in the hash to
         # see if it matches the pattern of our object
-        for my $cfgobj (keys %{$allpars{$key}}) {
+        for my $cfgobj (keys %RecPars) {
           if ( $object =~ /^$cfgobj$/ ) {
-            $recname = $allpars{$key}->{$cfgobj};
+            $recname = $RecPars{$cfgobj};
             last;
           }
         }
@@ -185,55 +221,14 @@ Whitespace is removed from the object name.
 
 =cut
 
+
 sub for_recipe {
   my $self = shift;
   my $rec = shift;
   my $hdr = shift || {};
   return () unless defined $rec;
-  $rec = uc($rec);
-  my $object = $hdr->{'ORAC_OBJECT'};
-  $object = uc($object) if defined $object;
 
-  # Hash to store recipe parameters by specificness.
-  my %RecParsMatch = ();
-
-  # Check each "section" of the recipe parameters definition in turn.
-  my %allpars = $self->_parameters();
-  SECTION: while (my ($key, $pars) = each %allpars) {
-    my ($recipe_object, @filters) = split '#', $key;
-    my ($recipe, $object_match) = split ':', $recipe_object, 2;
-
-    next unless $recipe eq $rec;
-
-    # Counter for number of filters (including object name) matched.
-    my $spec = 0;
-
-    if (defined $object_match) {
-      next unless defined $object
-              and ($object eq $object_match)
-               || ($object =~ /^$object_match$/);
-      $spec ++;
-    }
-
-    foreach my $filter (@filters) {
-      # For now assume all filters are "=" operations (string-wise) but
-      # we could add more operations here.  E.g date < X might be useful.
-      # Note: we force the header value to upper case because _parse_file()
-      # will already have forced the whole "key" (including filters)
-      # to upper case.
-      my ($filter_key, $filter_val) = split '=', $filter, 2;
-      my $hdr_val = $hdr->{'ORAC_' . $filter_key};
-      next SECTION unless defined $hdr_val and uc($hdr_val) eq $filter_val;
-      $spec ++;
-    }
-
-    unless (exists $RecParsMatch{$spec}) {
-      $RecParsMatch{$spec} = $pars;
-    }
-    else {
-      $RecParsMatch{$spec} = {%{$RecParsMatch{$spec}}, %$pars};
-    }
-  }
+  my %RecParsMatch = $self->_match_filters($rec, $hdr);
 
   # Apply recipe parameters in order of specificness.
   my %RecPars = ();
@@ -390,6 +385,71 @@ sub _parse_file {
 
 }
 
+=item B<_match_filters>
+
+$rec should either be a recipe name, or a a RECIPES_<ORAC_OBSERVATION_TYPE> value.
+
+
+=cut
+
+sub _match_filters {
+    my $self = shift;
+    my $rec = shift;
+    my $hdr = shift || {};
+    return () unless defined $rec;
+
+    $rec = uc($rec);
+    my $object = $hdr->{'ORAC_OBJECT'};
+    $object = uc($object) if defined $object;
+
+    # Hash to store recipe parameters by specificness.
+    my %RecParsMatch = ();
+    my %allpars = $self->_parameters();
+
+
+
+    # Check each "section" of the recipe parameters definition in turn.
+    SECTION: while (my ($key, $pars) = each %allpars) {
+        my ($recipe_object, @filters) = split '#', $key;
+        my ($recipe, $object_match) = split ':', $recipe_object, 2;
+
+        next unless $recipe eq $rec;
+
+        # Counter for number of filters (including object name) matched.
+        my $spec = 0;
+
+        if (defined $object_match) {
+            next unless defined $object
+                and ($object eq $object_match)
+                || ($object =~ /^$object_match$/);
+            $spec ++;
+        }
+
+        foreach my $filter (@filters) {
+            # For now assume all filters are "=" operations (string-wise) but
+            # we could add more operations here.  E.g date < X might be useful.
+            # Note: we force the header value to upper case because _parse_file()
+            # will already have forced the whole "key" (including filters)
+            # to upper case.
+
+            my ($filter_key, $filter_val) = split '=', $filter, 2;
+            my $hdr_val = $hdr->{'ORAC_' . $filter_key};
+            next SECTION unless defined $hdr_val and uc($hdr_val) eq $filter_val;
+            $spec ++;
+        }
+
+        unless (exists $RecParsMatch{$spec}) {
+            $RecParsMatch{$spec} = $pars;
+        }
+        else {
+            $RecParsMatch{$spec} = {%{$RecParsMatch{$spec}}, %$pars};
+        }
+
+    }
+
+    return %RecParsMatch;
+}
+
 =item B<_clean_entry>
 
 Clean up an entry in the config hash. Will upper case keys and convert
@@ -479,6 +539,19 @@ recipe.
 
 Here all objects starting with the letter "O" for that recipe
 will use the override of param1.
+
+You can also set the recipe choice specifically for various header values, e.g.
+
+[RECIPES_GRID:#SPECIES=CS#TRANSITION=7 - 6]
+.*=REDUCE_SCIENCE_BROADLINE
+OMC1=REDUCE_SCIENCE_NARROWLINE
+
+Would use REDUCE_SCIENCE_BROADLINE for grid observations with molecule=CS
+and transition=7 - 6, unless the name of the object was OMC1.
+
+(A specific name will override a regexp, but if there are 2 regexps
+that match, then the first one that matches will be used.)
+
 
 Parameters for a given recipe can also be specified by other translated
 headers, for example:
