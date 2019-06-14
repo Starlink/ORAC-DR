@@ -21,6 +21,13 @@ default this information will be retrieved. [1]
 
 =back
 
+=item OBJ
+
+Allows the user to provide an explicit object. By default uses the
+current Frm object.
+
+=back
+
 =head1 NOTES
 
 =over 4
@@ -78,12 +85,18 @@ MA 02111-1307, USA.
 
 # Handle parameters.
 my $retrieve = get_prim_arg( $_PRIM_ARGS_, "RETRIEVE", 1 );
+my $Obj = get_prim_arg( $_PRIM_ARGS_, "OBJ", $Frm );
+
+
+my $file = $Obj->file;
+
+
 
 # Set up some variables that will be used for calibration information.
 my ( $low, $high, @flbnd, @fubnd, $cal_integ, $cal_peak );
-( my $molecule = $Frm->hdr( "MOLECULE" ) ) =~ s/[\s\-]//g;
-( my $transition = $Frm->hdr( "TRANSITI" ) ) =~ s/\s//g;
-( my $object = $Frm->hdr( "OBJECT" ) ) =~ s/\s//g;
+( my $molecule = $Obj->hdr( "MOLECULE" ) ) =~ s/[\s\-]//g;
+( my $transition = $Obj->hdr( "TRANSITI" ) ) =~ s/\s//g;
+( my $object = $Obj->hdr( "OBJECT" ) ) =~ s/\s//g;
 
 # Retrieve standard information from calibration system.
 if( ! $retrieve ) {
@@ -113,9 +126,7 @@ if( ! $retrieve ) {
   }
 }
 
-my $file = $Frm->file;
-
-
+orac_debug('Running standard calculationg on $file');
 # Check that the velocity range lies within the current spectral range.
 # This is to cater for errors in the tuning.
 my $know_range = defined( $low ) && defined( $high );
@@ -237,24 +248,32 @@ if ( $use_range ) {
     "\n");
 
   # Write this information to a separate logging file.
-  my $obsdate = $Frm->uhdr( "ORAC_UTSTART" )->datetime;
-  my $obsnum = $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" );
-  my $obsid = $Frm->uhdr( "ORAC_OBSERVATION_ID" );
-  my $inst = $Frm->uhdr( "ORAC_INSTRUMENT" );
-  my $lofreq = $Frm->hdr( "LOFREQS" );
-  my $mode = $Frm->uhdr( "ORAC_SWITCH_MODE" );
-  my $bandwidth = $Frm->uhdr( "ORAC_BANDWIDTH_MODE" );
-  my $sideband = $Frm->hdr( "OBS_SB" );
-  my $tau = ( defined( $Frm->hdr( "TAU225ST" ) ) ) ?  $Frm->hdr( "TAU225ST" ) : -1;
-  my $elevation = $Frm->uhdr( "ORAC_ELEVATION_START" );
+  my $obsdate = $Obj->uhdr( "ORAC_UTSTART" )->datetime;
+  my $obsnum = (defined($Obj->uhdr( "ORAC_OBSERVATION_NUMBER" ))) ? $Obj->uhdr("ORAC_OBSERVATION_NUMBER" ): 0;
+  my $subsysnr = (defined($Obj->hdr( "SUBSYSNR" ) )) ? $Obj->hdr( "SUBSYSNR" ): 0;
+  my $obsid = (defined($Obj->uhdr( "ORAC_OBSERVATION_ID" ) )) ?
+    sprintf "%27s", $Obj->uhdr( "ORAC_OBSERVATION_ID" ) : sprintf "%27s", "Unknown";
+
+  my $inst = $Obj->uhdr( "ORAC_INSTRUMENT" );
+  my $lofreq = $Obj->hdr( "LOFREQS" );
+  my $mode = $Obj->uhdr( "ORAC_SWITCH_MODE" );
+  my $bandwidth = $Obj->uhdr( "ORAC_BANDWIDTH_MODE" );
+  my $sideband = $Obj->hdr( "OBS_SB" );
+  my $tau = ( defined( $Obj->hdr( "TAU225ST" ) ) ) ?  $Obj->hdr( "TAU225ST" ) : -1;
+
+  my $elevation = $Obj->uhdr( "ORAC_ELEVATION_START" );
 
   my $logfile = "log.standard";
   my $log = new ORAC::LogFile( $logfile );
-  $log->header( "OBSDATE OBSNUM OBSID INST LOFREQ SOURCE MOLECULE LINE MODE BANDWIDTH SIDEBAND TAU ELEVATION INTEGINT PEAK L_BOUND H_BOUND" );
-  $log->addentry( sprintf( "%s %02d %s %s %.3f %s %s %s %s %s %s %.3f %.2f %.2f %.2f %.2f %.2f",
+  my $hdrformat = "%19s %s %27s %s %30s %7s %7s %15s %8s %5s %5s %13s %8s %5s %5s %8s %5s %6s %6s";
+  my $header = sprintf($hdrformat, "OBSDATE", "OBSNUM", "OBSID", "SUBSYS", "FILE", "INST", "LOFREQ", "SOURCE", "MOLECULE", "LINE", "MODE", "BANDWIDTH", "SIDEBAND", "TAU", "ELEV", "INTEGINT", "PEAK", "L_BOUND", "H_BOUND");
+  $log->header($header);
+  $log->addentry( sprintf( "%s     %02d %s    %03d %30s %7s %.3f %15s %8s %5s %5s %13s %8s %.3f %.2f   %.2f %.2f  %.2f   %.2f",
                            $obsdate,
                            $obsnum,
                            $obsid,
+                           $subsysnr,
+                           $file,
                            $inst,
                            $lofreq,
                            $object,
@@ -270,7 +289,7 @@ if ( $use_range ) {
                            defined( $low ) ? $low : 0,
                            defined( $high ) ? $high : 0 ) );
 
-  orac_say " Calibration information written to $logfile";
+  orac_print " Calibration information written to $logfile for $file";
 }
 orac_say "";
 
