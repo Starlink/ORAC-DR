@@ -741,11 +741,18 @@ sub check_membership {
   }
 
   # For each bad observation see if it was previously good so that we
-  # can report.
+  # can report. If it is new, add it to the removed obs log file.
   for my $member (@bad) {
     for my $weregood (@prevgood) {
       if ($member == $weregood) {
         orac_warn "Removing observation ". $member->number . " from group\n";
+
+        # Adding the removed observation to the log.
+        my $log = new ORAC::LogFile('log.removedobs');
+        $log->header('# Group UTdate Obsnum Obsidss');
+        my $obsidss_s = $member->uhdr('ORAC_OBSERVATION_ID_SUBSYSTEM');
+        my $str_obsidss = join ',', @$obsidss_s;
+        $log->addentry($self->name . " ". $member->hdr('ORACUT') .  " "  .$member->number  . " " .$str_obsidss );
         last;
       }
     }
