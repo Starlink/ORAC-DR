@@ -33,6 +33,7 @@ use ORAC::Display;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/;
 use ORAC::Inst::SetupEnv;
+use ORAC::Version;
 
 @ISA = qw(Exporter);
 
@@ -184,7 +185,7 @@ passed as options.
 sub orac_make_title_info {
   my %opt = @_;
 
-  my $title = (exists $opt{'picard_recipe'}) ? 'PICARD' : 'ORAC-DR';
+  my $title = ORAC::Version->getApp();
   $title .= ' monitor' if exists $opt{'monitor'} and $opt{'monitor'};
   $title .= ' ' . $opt{'picard_recipe'} if exists $opt{'picard_recipe'};
   $title .= ' ' . $opt{'orac_instrument'} if exists $opt{'orac_instrument'};

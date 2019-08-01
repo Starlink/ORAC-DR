@@ -43,6 +43,7 @@ use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
 use ORAC::General;                      # Max and min
 use ORAC::TempFile;
+use ORAC::Version;
 
 use ORAC::Msg::EngineLaunch;
 
@@ -102,7 +103,8 @@ sub new {
   # a new one. When you then try to contact anything you get a segmentation
   # fault because of the screwed message system.
   if ($status != ORAC__OK) {
-    die "Error launching Kapview. It is unlikely that this can be fixed by retrying from within ORAC-DR. Please rerun either with the display switched off or with a different display device selected.";
+    my $app = ORAC::Version->getApp;
+    die "Error launching Kapview. It is unlikely that this can be fixed by retrying from within $app. Please rerun either with the display switched off or with a different display device selected.";
   }
 
   return $disp;
@@ -374,11 +376,12 @@ sub create_dev {
   # and contact made.
   # Load the colour table.
 
+  my $app = ORAC::Version->getApp;
   my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/bgyrw_lut";
   my $status = $self->obj->obeyw("lutable","$args device=$device");
   if ($status != ORAC__OK) {
     orac_err("Error configuring default LUT\n");
-    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORAC-DR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ${app}. Aborting...";
 #    return $status;
   }
 
@@ -386,7 +389,7 @@ sub create_dev {
   $status = $self->obj->obeyw("paldef","device=$device");
   if ($status != ORAC__OK) {
     orac_err("Error setting default palette\n");
-    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORAC-DR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ${app}. Aborting...";
 #    return $status;
   }
 
@@ -394,7 +397,7 @@ sub create_dev {
   $status = $self->config_regions($window);
   if ($status != ORAC__OK) {
     orac_err "Error configuring regions\n";
-    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORAC-DR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ${app}. Aborting...";
   }
 
   return ORAC__OK;

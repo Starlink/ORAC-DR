@@ -86,6 +86,7 @@ use ORAC::Basic;                # orac_exit_normally
 use ORAC::Event;                # Tk hash table
 use ORAC::Print;
 use ORAC::Constants qw/:status/; # ORAC__ABORT ORAC__FATAL
+use ORAC::Version;
 
 #
 # General modules
@@ -447,6 +448,9 @@ sub xorac_log_window {
   my ( $win_str, $orac_prt ) = @_;
   my ($msg1, $lab1, $textw1, $textw2, $textw3, $lab2, $textw4, $lab4);
 
+  # Get the application name.
+  my $app = ORAC::Version->getApp();
+
   # Get the Window ID
   my $MW = ORAC::Event->query($win_str);
   throw ORAC::Error::FatalError("Unexpectedly could not retrieve Tk window with id '$win_str'")
@@ -475,7 +479,7 @@ sub xorac_log_window {
     my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
 
     # Create easy exit button
-    $frame->Button( -text=>'Exit ORAC-DR',
+    $frame->Button( -text=>"Exit $app",
                     -font=>$FONT,
                     -activeforeground => 'white',
                     -activebackground => 'blue',
@@ -497,7 +501,7 @@ sub xorac_log_window {
                     })->pack(-side => "left");
 
     # Create a pause button
-    $frame->Button( -text=>'Pause ORAC-DR',
+    $frame->Button( -text=>"Pause $app",
                     -font=>$FONT,
                     -activeforeground => 'white',
                     -activebackground => 'blue',
@@ -506,7 +510,7 @@ sub xorac_log_window {
                     } )->pack(-side => "left");
 
     # ORAC_PRINT messages
-    $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
+    $ORAC_MESSAGE = "$app reducing observation --";
     $msg1   = $frame->Label(-width=>60,
                             -textvariable=>\$ORAC_MESSAGE,
                             -font=>$FONT)->pack(-side => "left");
@@ -522,7 +526,7 @@ sub xorac_log_window {
                                   -fill => 'both' );
   $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
   $textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
-  $textw1->insert('end',"ORAC-DR status log\n");
+  $textw1->insert('end',"$app status log\n");
   tie *TEXT1,  "Tk::TextANSIColor", $textw1;
 
   $MW->Adjuster()->packAfter($textw1, -side => 'top');
@@ -542,7 +546,7 @@ sub xorac_log_window {
                           -font    => $text_font
                          )->grid( -row => 3, -column => 0,
                                   -sticky => 'nesw' );
-  $textw2->insert('end',"ORAC-DR warning messages\n");
+  $textw2->insert('end',"$app warning messages\n");
   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
   # ORAC Error messages
@@ -556,7 +560,7 @@ sub xorac_log_window {
                           -font    => $text_font
                          )->grid( -row => 1, -column => 0,
                                   -sticky => 'nesw' );
-  $textw3->insert('end',"ORAC-DR error messages\n");
+  $textw3->insert('end',"$app error messages\n");
   $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 
@@ -571,7 +575,7 @@ sub xorac_log_window {
                           -font    => $text_font
                          )->grid( -row => 5, -column => 0,
                                   -sticky => 'nesw' );
-  $textw4->insert('end',"ORAC-DR results\n");
+  $textw4->insert('end',"$app results\n");
   $textw4->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT4,  "Tk::TextANSIColor", $textw4;
 

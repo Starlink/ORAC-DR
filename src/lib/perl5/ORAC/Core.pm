@@ -684,12 +684,8 @@ sub orac_print_configuration {
   my %opt = @_;
 
   my $app = ORAC::Version->getApp;
-  my $debug_prefix = "ORACDR";
-  my $logfile_prefix = "oracdr";
-  if ($app eq 'PICARD') {
-    $debug_prefix = "PICARD";
-    $logfile_prefix = "picard";
-  }
+  my $logfile_prefix = lc($app =~ s/[^A-Za-z]//gr);
+  my $debug_prefix = uc($logfile_prefix);
 
   # First thing we need to do is create an ORAC::Print object
   # that we can fiddle with to adjust the output filehandles
@@ -798,7 +794,7 @@ sub orac_print_configuration {
       # this is the log file for $ORAC_DATA_OUT
       if ($log_options =~ /f/) {
         my $logfh = new IO::File(">.".$logfile_prefix."_$$.log") || do {
-          orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
+          orac_err "Error opening $app logfile in ORAC_DATA_OUT: $!\n";
           throw ORAC::Error::FatalError("Error opening logfile",
                                         ORAC__FATAL);
         };
@@ -1504,6 +1500,9 @@ sub orac_main_data_loop {
     $recsuffix = [];
   }
 
+  # Get the application name.
+  my $app = ORAC::Version->getApp();
+
   # Given the instrument name derive all the classes.
 
   # Initialise for this "instrument" and create a basic instrument object.
@@ -1558,7 +1557,7 @@ sub orac_main_data_loop {
         # This assumes the observation source prefix is only one
         # character.
         my $fdate = substr( $Frm->file, 1, 8 );
-        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fdate . ' #' . $fnumber;
+        $$ORAC_MESSAGE = $instrument . ': ' . $app . ' reducing observation ' . $fdate . ' #' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
         $orac_prt->respre("#${fnumber}: ");
@@ -1615,7 +1614,7 @@ sub orac_main_data_loop {
         $orac_prt->errpre('Error: ');
         $orac_prt->warpre('Warning: ');
         $orac_prt->respre('');
-        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
+        $$ORAC_MESSAGE = $instrument . ': ' . $app . ' reducing observation --';
 
       }
 
@@ -1703,7 +1702,7 @@ sub orac_main_data_loop {
         # This assumes the observation source prefix is only one
         # character.
         my $fdate = substr( $Frm->file, 1, 8 );
-        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fdate . ' #' . $fnumber;
+        $$ORAC_MESSAGE = $instrument . ': ' . $app .' reducing observation ' . $fdate . ' #' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
         $orac_prt->respre("#${fnumber}: ");
@@ -1755,12 +1754,12 @@ sub orac_main_data_loop {
         $orac_prt->errpre('Error: ');
         $orac_prt->warpre('Warning: ');
         $orac_prt->respre('');
-        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
+        $$ORAC_MESSAGE = $instrument . ': ' . $app . ' reducing observation --';
       }
     }
   }
 
-  orac_notify( ORAC::Print::NOT__COMPLETE, "ORAC-DR completed",
+  orac_notify( ORAC::Print::NOT__COMPLETE, "$app completed",
                "All pipeline processing has completed");
 
   return %Stats;

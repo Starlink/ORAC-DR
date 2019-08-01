@@ -30,6 +30,7 @@ use base qw/ ORAC::Display::Base /;  # Base class
 
 use ORAC::Print;
 use ORAC::Constants qw/:status/;
+use ORAC::Version;
 
 use File::Spec;
 use IO::Socket;  # For socket connection to Gaia
@@ -87,7 +88,8 @@ sub new {
   my $status = $disp->configure;
 
   if ($status != ORAC__OK) {
-    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within ORAC-DR. Try deleting the ~/.skycat/history file and restarting ORAC-DR. If that does not work, please rerun either with the display switched off or with a different display device selected.";
+    my $app = ORAC::Version->getApp;
+    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within $app. Try deleting the ~/.skycat/history file and restarting $app. If that does not work, please rerun either with the display switched off or with a different display device selected.";
   }
 
   # Return object
