@@ -1,0 +1,90 @@
+=head1 NAME
+
+_EXTRACT_JSA_TILES_ - Extract HEALPix tiles from the given images
+
+=head1 DESCRIPTION
+
+This primitive uses the SMURF C<jsadicer> task to extract HEALPix tiles
+from an image, in the same way as the old C<jsasplit> script.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The instrument string to pass to C<jsadicer>, which controls the tiling
+parameters, must be set in the uhdr value "JSA_DICER_INSTRUMENT".
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
+my $Obj = $group ? $Grp : $Frm;
+
+my $instrument = $Obj->uhdr('JSA_DICER_INSTRUMENT');
+orac_termerr('JSA "instrument" (for jsadicer) not specified')
+    unless defined $instrument;
+
+my @output = ();
+
+my $ref = new ORAC::TempFile(0);
+
+do {
+    my $in = $Obj->file(1);
+    my $ORAC_STATUS;
+
+    $Mon{'smurf_mon'}->obeyw('jsatilelist', "in=$in instrument=$instrument");
+    ($ORAC_STATUS, my @tiles) = $Mon{'smurf_mon'}->get('jsatilelist', 'tiles');
+    ($ORAC_STATUS, my $proj) = $Mon{'smurf_mon'}->get('jsatilelist', 'proj');
+
+    my $tile = $tiles[0];
+
+    my $header_obj = new ORAC::TempFile(0);
+    my $header = $header_obj->file();
+    unlink $header;
+    $Mon{'smurf_mon'}->obeyw('jsatileinfo', "itile=$tile instrument=$instrument proj=$proj header=$header");
+    ($ORAC_STATUS, my @lbnd) = $Mon{'smurf_mon'}->get('jsatileinfo', 'lbnd');
+
+    $Mon{'kappa_mon'}->obeyw('creframe', "out=$ref mode=bl lbound=[$lbnd[0], $lbnd[1]] ubound=[$lbnd[0], $lbnd[1]]");
+    $Mon{'ndfpack_mon'}->obeyw('fitstext', "ndf=$ref file=$header");
+};
+
+for (my $i = 0; $i < $Obj->nfiles(); $i ++) {
+    my $in = $Obj->file($i + 1);
+    my $aln = $in . '_aln';
+
+    $Mon{'kappa_mon'}->obeyw('wcsalign', "in=$in out=$aln ref=$ref lbnd=! ubnd=! method=nearest rebin=false");
+    $Frm->push_intermediates($aln);
+
+    my $base = $in . '_dice';
+
+    my $outfiles_obj = new ORAC::TempFile(0);
+    my $outfiles = $outfiles_obj->file();
+    unlink $outfiles;
+    $Mon{'smurf_mon'}->obeyw('jsadicer', "in=$aln out=$base instrument=$instrument trim=0 outfiles=$outfiles");
+
+    push @output, read_file_list($outfiles);
+}
+
+$Frm->files(@output);
+$Frm->readhdr();
