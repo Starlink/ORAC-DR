@@ -37,6 +37,9 @@ BEGIN {
             name => 'SCUBA2_850',
         },
         {
+            name => 'WESLEY_SCUBA2_850',
+        },
+        {
             name => 'PICARD_SCUBA2_850',
             override => {
                 CREATE_MOMENTS_MAP => 'PICARD_ACSIS',
@@ -88,10 +91,11 @@ BEGIN {
 
     sub find_recipes {
         my $name = shift;
+        my %opt = @_;
 
         my %recipes = ();
 
-        foreach my $dir_path (orac_determine_recipe_search_path($name)) {
+        foreach my $dir_path (orac_determine_recipe_search_path($name, %opt)) {
             $dir_path = File::Spec->abs2rel($dir_path);
 
             my $dir = new IO::Dir($dir_path);
@@ -125,8 +129,8 @@ BEGIN {
 
     foreach my $instrument (@instruments) {
         my $name = $instrument->{'name'};
-        my @path = orac_determine_recipe_search_path($name);
-        my $recipes = find_recipes($name);
+        my $preproc = ($name =~ s/^WESLEY_//);
+        my $recipes = find_recipes($name, preproc => $preproc);
         $instrument->{'recipes'} = $recipes;
         $n_recipe += scalar keys %$recipes;
     }
@@ -141,7 +145,9 @@ foreach my $instrument (@instruments) {
 
     print STDERR "Checking instrument: $name\n" if $VERBOSE;
 
-    $ENV{'ORAC_INSTRUMENT'} = $instrument unless $instrument =~ /^PICARD/;
+    my $inst_name = $name;
+    my $preproc = ($inst_name =~ s/^WESLEY_//);
+    $ENV{'ORAC_INSTRUMENT'} = $inst_name unless $instrument =~ /^PICARD/;
     my $override = $instrument->{'override'} // {};
     my $skip = $instrument->{'skip'} // [];
     my %skip = map {$_ => 1} @$skip;
@@ -157,8 +163,9 @@ foreach my $instrument (@instruments) {
 
             eval {
                 check_recipe(
-                    $override->{$recipe} // $name,
-                    $recipe, $observation_mode);
+                    $override->{$recipe} // $inst_name,
+                    $recipe, $observation_mode,
+                    {preproc => $preproc});
             };
 
             if ($@) {
@@ -179,6 +186,7 @@ sub check_recipe {
     my $instrument = shift;
     my $recipe = shift;
     my $observation_mode = shift;
+    my $recopts = shift;
 
     print STDERR "  Checking recipe: $recipe\n" if $VERBOSE;
 
@@ -191,7 +199,8 @@ sub check_recipe {
 
     my $r = new ORAC::Recipe(NAME       => $recipe,
                              INSTRUMENT => $instrument,
-                             FRAME      => $frame);
+                             FRAME      => $frame,
+                             OPTIONS    => $recopts);
 
     $r->recipe()->code();
     my @p = $r->primitives();

@@ -87,6 +87,7 @@ sub new {
                       Instrument => undef,
                       Debug => 0,
                       DisableCompile => 0,
+                      Options => {},
                      }, $class;
 
   my %args = @_;
@@ -197,6 +198,20 @@ sub nocompile {
   return $self->{DisableCompile};
 }
 
+=item B<options>
+
+Set or return recipe parsing options.
+
+=cut
+
+sub options {
+  my $self = shift;
+  if (@_) {
+    my $options = shift // {};
+    $self->{Options} = $options;
+  }
+  return $self->{Options};
+}
 =back
 
 =head2 General Methods
@@ -479,7 +494,7 @@ sub _read_primitive {
                                      ORAC__FATAL) unless defined $instrument;
 
       # Create the search path using instrument
-      my @path = orac_determine_primitive_search_path( $instrument );
+      my @path = orac_determine_primitive_search_path( $instrument, %{$self->options} );
       # If the path array is empty add cwd (should not happen in oracdr)
       @path = ( File::Spec->curdir ) unless @path;
 

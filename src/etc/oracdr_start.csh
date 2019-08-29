@@ -135,6 +135,7 @@ if ( -e $starperl ) then
   alias oracdisp    "$starperl  ${ORAC_DIR}/bin/oracdisp"
   alias oracdr_parse_recipe "$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
   alias oracdr_monitor "$starperl ${ORAC_DIR}/bin/oracdr_monitor $oracdr_monitor_args"
+  alias wesley      "$starperl  ${ORAC_DIR}/bin/oracdr --preprocess $oracdr_args"
 
   # These are shell scripts
 
@@ -201,6 +202,7 @@ else
   alias oracdr_nuke  echo 'Command not available - needs Starlink PERL'
   alias oracdisp     echo 'Command not available - needs Starlink PERL'
   alias oracdr_monitor echo 'Command not available - needs Starlink PERL'
+  alias wesley       echo 'Command not available - needs Starlink PERL'
 
 endif
 

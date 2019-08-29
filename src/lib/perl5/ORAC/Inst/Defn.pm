@@ -632,6 +632,7 @@ the PICARD search paths.
 
 sub orac_determine_recipe_search_path {
   my $inst = uc(shift);
+  my %opt = @_;
   my @path;
 
   my $root;
@@ -645,7 +646,10 @@ sub orac_determine_recipe_search_path {
   my $ifu_root     =  File::Spec->catdir( $root, "ifu" );
   my $het_root     =  File::Spec->catdir( $root, "heterodyne" );
 
-  if ($inst eq 'SCUBA') {
+  if ($opt{'preproc'}) {
+    push @path, File::Spec->catdir($root, 'WESLEY');
+
+  } elsif ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
 
   } elsif ($inst =~ /^SCUBA2/) {
@@ -845,6 +849,7 @@ variable.
 
 sub orac_determine_primitive_search_path {
   my $inst = (shift);
+  my %opt = @_;
   my @path;
 
   my $root;
@@ -867,6 +872,10 @@ sub orac_determine_primitive_search_path {
   if ( $inst =~ /^PICARD_/) {
     $inst =~ s/^PICARD_//;
     $prepend_picard = 1;
+  }
+
+  if ($opt{'preproc'}) {
+    push @path, File::Spec->catdir($root, 'WESLEY');
   }
 
   if ($inst eq 'SCUBA') {

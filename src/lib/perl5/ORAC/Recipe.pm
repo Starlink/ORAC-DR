@@ -80,6 +80,7 @@ sub new {
                    Recipe => undef,
                    RecSuffices => [],
                    RecParams => {},
+                   Options => {},
                   }, $class;
 
   # Check for arguments
@@ -319,6 +320,24 @@ Returns all the primitives that are referenced by this recipe.
 sub primitives {
   my $self = shift;
   return $self->_read_all_prims( 1 );
+}
+
+=item B<options>
+
+Set or return recipe parsing options.
+
+If set, the parser object is also updated.
+
+=cut
+
+sub options {
+  my $self = shift;
+  if (@_) {
+    my $options = shift // {};
+    $self->{Options} = $options;
+    $self->parser()->options($options);
+  }
+  return $self->{Options};
 }
 
 =back
@@ -734,7 +753,7 @@ sub _read_recipe {
     if exists $ENV{ORAC_RECIPE_DIR};
 
   # Instrument specific search path
-  push(@path, orac_determine_recipe_search_path( $inst ));
+  push(@path, orac_determine_recipe_search_path( $inst, %{$self->options} ));
 
   # If the path array is empty add cwd (should not happen in oracdr)
   @path = ( File::Spec->curdir ) unless @path;

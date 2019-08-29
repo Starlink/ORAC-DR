@@ -284,6 +284,7 @@ all the monoliths launched for this instrument.
                       Batch => 0,
                       RecSuffix => "A,B,C",
                       RecPars => $parameterfile,
+                      RecOpts => {},
                      );
 
 Additional parameters are provided to configure the recipe
@@ -365,7 +366,8 @@ sub orac_process_frame {
   my $recipe;
   try {
     $recipe = new ORAC::Recipe( NAME => $RecipeName,
-                                INSTRUMENT => $args{Instrument});
+                                INSTRUMENT => $args{Instrument},
+                                OPTIONS => $args{'RecOpts'});
   } catch ORAC::Error::FatalError with {
     my $Error = shift;
     $Error->throw;
@@ -1492,6 +1494,9 @@ sub orac_main_data_loop {
   my $recpars = $opts->{recpars};
   my $grptrans = $opts->{grptrans};
   my $skip_error = exists $opts->{'skip_error'} && defined $opts->{'skip_error'};
+  my %recopts = (
+      preproc => ($opts->{'preproc'} // 0),
+  );
 
   # If recsuffix has not been converted to a array ref yet do it here.
   if (defined $recsuffix && ! ref($recsuffix) ) {
@@ -1548,6 +1553,8 @@ sub orac_main_data_loop {
       last unless defined $Frms[0];
 
       foreach my $Frm ( @Frms ) {
+        # Disable header sync when preprocessing.
+        $Frm->allow_header_sync(0) if $recopts{'preproc'};
 
         orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
 
@@ -1587,6 +1594,7 @@ sub orac_main_data_loop {
                                           Batch => 0,
                                           RecSuffix => $recsuffix,
                                           RecPars => $recpars,
+                                          RecOpts => \%recopts,
                                          );
           my $errorfile = $status == ORAC__BADFRAME ? $Frm->raw :$Frm->file;
           orac_store_recipe_status( \%Stats, $status, $errorfile );
@@ -1643,6 +1651,8 @@ sub orac_main_data_loop {
       last unless defined $Frms[0];
 
       foreach my $Frm ( @Frms ) {
+        # Disable header sync when preprocessing.
+        $Frm->allow_header_sync(0) if $recopts{'preproc'};
 
         orac_print ("Storing: ".$Frm->raw."\n","yellow");
 
@@ -1727,6 +1737,7 @@ sub orac_main_data_loop {
                                           Batch => 1,
                                           RecSuffix => $recsuffix,
                                           RecPars => $recpars,
+                                          RecOpts => \%recopts,
                                          );
           my $errorfile = $status == ORAC__BADFRAME ? $Frm->raw :$Frm->file;
           orac_store_recipe_status( \%Stats, $status, $errorfile );
