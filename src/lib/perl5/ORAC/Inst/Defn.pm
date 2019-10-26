@@ -245,6 +245,11 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => ( defined( $ENV{'ATOOLS_DIR'} ) ? "$ENV{ATOOLS_DIR}/atools_mon" : "" ),
           },
+         shmullus_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => ( defined( $ENV{'SHMULLUS_DIR'} ) ? File::Spec->catfile( $ENV{'SHMULLUS_DIR'}, "shmullus_mon" ) : "" ),
+          },
          smurf_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
@@ -403,6 +408,12 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::OCGS4";
     $calclass   = "ORAC::Calib::CGS4";
     $instclass  = "ORAC::Inst::CGS4";
+
+  } elsif ($inst eq 'RXH3') {
+    $groupclass = "ORAC::Group::RxH3";
+    $frameclass = "ORAC::Frame::RxH3";
+    $calclass   = "ORAC::Calib::RxH3";
+    $instclass  = "ORAC::Inst::RxH3";
 
   } elsif ($inst eq 'SCUBA') {
     $groupclass = "ORAC::Group::SCUBA";
@@ -729,6 +740,9 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'RXH3') {
+    push( @path, File::Spec->catdir( $root, 'RxH3' ) );
+
   } elsif ($inst eq 'SOFI') {
     push( @path, File::Spec->catdir( $root, "SOFI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "SOFI" ) );
@@ -908,6 +922,10 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "IRCAM" ) );
     push( @path, $imaging_root );
     push( @path, $jsa_root, $general_root );
+
+  } elsif( $inst eq 'RXH3' ) {
+    push( @path, File::Spec->catdir( $root, 'RxH3' ) );
+    push( @path, $general_root );
 
   } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
     push( @path, File::Spec->catdir( $root, "UFTI" ) );
@@ -1301,6 +1319,10 @@ sub orac_determine_initial_algorithm_engines {
   } elsif ($inst =~ /^SCUBA2/) {
 
     @AlgEng = (); # none at the moment
+
+  } elsif ($inst eq 'RXH3') {
+
+    @AlgEng = qw/shmullus_mon ndfpack_mon kappa_mon/;
 
   } elsif ($inst eq 'JCMT_DAS') {
 

@@ -241,6 +241,7 @@ sub orac_calc_instrument_settings {
                            'IRIS2'  => "irisdata",
                            'MICHELLE' => "ukirtdata",
                            'OCGS4'    => "ukirtdata",
+                           'RXH3'     => 'jcmtdata',
                            "SCUBA"    => "jcmtdata",
                            'SCUBA2'   => "jcmtdata",
                            "UFTI"     => "ukirtdata",
@@ -430,6 +431,12 @@ sub orac_calc_instrument_settings {
     return %defaults;
   };
 
+  my $rxh3_con = sub {
+    my %defaults = $jcmt_con->('rxh3');
+    $defaults{'ORAC_DATA_IN'} = File::Spec->catdir( $dataroot, 'raw', 'surface', 'rxh3', $options{ut} );
+    return %defaults;
+  };
+
   # SCUBA-2 reads from a ok directory
   my $scuba2_con = sub {
     # The summit reduced directory depends on the orac_instrument variable.
@@ -611,6 +618,8 @@ sub orac_calc_instrument_settings {
                        'OCGS4'    => { code => sub { $ukirt_con->( "cgs4", "scicom\@eao.hawaii.edu", "236" ) },
                                        ORAC_LOOP => "flag -skip",
                                        args => { $ukirt_args->() }, },
+                       RXH3       => { code => sub { $rxh3_con->() },
+                                       args => { $oracdr_args->() }, },
                        "SCUBA"     => { code => sub { $scuba_con->() },
                                         ORAC_PERSON => "scicom\@eao.hawaii.edu",
                                         ORAC_SUN => "231",
