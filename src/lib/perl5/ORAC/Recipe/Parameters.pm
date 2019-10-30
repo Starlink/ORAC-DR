@@ -434,7 +434,9 @@ sub _match_filters {
 
             my ($filter_key, $filter_val) = split '=', $filter, 2;
             my $hdr_val = $hdr->{'ORAC_' . $filter_key};
-            next SECTION unless defined $hdr_val and uc($hdr_val) eq $filter_val;
+            next SECTION unless defined $hdr_val;
+            $hdr_val = $hdr_val->datetime() if UNIVERSAL::can($hdr_val, 'datetime');
+            next SECTION unless uc($hdr_val) eq $filter_val;
             $spec ++;
         }
 
