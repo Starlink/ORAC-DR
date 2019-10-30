@@ -87,7 +87,7 @@ sub readhdr {
   # Just read the fits header
   my $hdr;
   try {
-    $hdr = new Astro::FITS::Header::CFITSIO( File => $file );
+    $hdr = new Astro::FITS::Header::CFITSIO( File => $file, ReadOnly => 1 );
 
     # Mark it suitable for tie with array return of multi-values
     $hdr->tiereturnsref(1);
