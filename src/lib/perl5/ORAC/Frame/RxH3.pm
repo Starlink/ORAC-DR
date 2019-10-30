@@ -33,6 +33,11 @@ sub new {
     return $self;
 }
 
+# Avoid grouping because we don't always have the necessary headers.
+sub framegroupkeys {
+  return ('DATE');
+}
+
 sub erase {
     ORAC::Frame::NDF::erase(@_);
 }
