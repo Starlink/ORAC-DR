@@ -1,0 +1,365 @@
+=head1 NAME
+
+_SUBTRACT_REFERENCE_FROM_SPECTRAL_CUBE_
+
+=head1 DESCRIPTION
+
+This primitive creates and subtracts a reference spectrum in order to
+remove any absorption lines originating from emission in a poorly
+chosen reference position.
+
+This primitive may be used either after automated reference-spectrum
+removal has not been entirely successful, leaving whole or partially
+removed absorption features in the reduced spectral cube; or ab initio
+instead of the automated method.  However, it should be noted that it
+is somewhat of a fudge, albeit one that achieves most of the goals. It
+would be better to mask lines for each reference point location and
+applied to the Frame time-series cubes before they are combined to
+form the group spectral cube.  The more-rigorous approach achieves
+better baseline subtraction and flat-fielding.
+
+It must be supplied a text file specifying the extents of the
+reference absorption spectrum in the form that is expected by CHPIX in
+its File mode.  See Argument FILE.
+
+The primitive obtains the median spectrum of a reduced cube after 
+first excluding the spectra with the brightest sigmnal, masks the
+specified reference lines, and interpolates across them to allow for
+reference lines located where there is varying emission.  The
+interpolated spectrum is subtracted from the original median spectrum
+to form a estimate of the reference spectrum.  This is then grown to
+the bounds of the current group cube, so that may be subtracted from
+every spectrum in the spectral cube.
+
+This primitive is only implemented if the recipe parameters
+SUBTRACT_REF_SPECTRUM is set true, and REF_EMISSION_LINE_FILE or 
+Argument FILE is defined.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILE = STRING (Given)
+
+The name of the text file that specifies the extents in km/s of the
+reference-spectrum lines present in the spectral cube. If it contains
+no path, FILE is assumed to be located in F<$ORAC_DATA_OUT>.
+
+The file has the following format.
+
+# Optional comment lines followed by one or more lines giving the
+# velocity extents of the reference-spectrum lines in the following form.
+<lower velocity>:<upper velocity> bad
+
+This argument can be overridden by the RECPAR_REF_EMISSION_LINE_FILE
+uhdr via the recipe parameter system.  If neither FILE nor
+RECPAR_REF_EMISSION_LINE_FILE is defined, this primitive will issue a
+warning and exit without removal of the reference spectrum.
+["reference_lines.chpix"]
+
+=item MAXWIDTH = REAL (Given)
+
+The maximum half-width of the reference lines, in km/s.  This argument
+can be overridden by the RECPAR_REF_EMISSION_MAXWIDTH uhdr via the
+recipe parameter system.  [2.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for reduced ACSIS data.
+
+=item *
+
+The output files are logged as group intermediates.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The group spectral cube with reference emission subtracted having the
+_rssub suffix applied to the current Group.
+
+=item *
+
+The generated reference spectrum, so that it can be checked that it
+looks reasonable.  This a group product with suffix _refspec.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CHPIX, COLLAPSE, COPYBAD, FILLBAD, GAUSMOOTH, MANIC, MATHS, NDFCOPY,
+NDFTRACE, STATS, SUB.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Retrieve and validate parameters.
+# =================================
+
+# Only proceed if the appropriate recipe parameter is set true.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_SPECTRUM" ) ) ?
+              $Frm->uhdr( "RECPAR_SUBTRACT_REF_SPECTRUM" )            :
+              0 );
+if ( ! $apply ) { goto RETURN }
+
+my $chpixfile = get_prim_arg( $_PRIM_ARGS_, "FILE",  "reference_lines.chpix" );
+$chpixfile = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_LINE_FILE" ) ) ?
+             $Frm->uhdr( "RECPAR_REF_EMISSION_LINE_FILE" )              :
+             $chpixfile );
+
+if ( ! -e $chpixfile ) {
+   orac_warn "Chosen reference-spectrum mask specification file $chpixfile\n";
+   orac_warn "does not exist.  Thus reference lines will not be removed.\n";
+   goto RETURN
+}
+
+# Obtain the maximum half-width of reference-sepctrum lines in km/s.
+my $maxwidth = get_prim_arg( $_PRIM_ARGS_, "MAXWIDTH", 2.0 );
+$maxwidth = ( defined( $Frm->uhdr( "RECPAR_REF_EMISSION_MAXWIDTH" ) ) ?
+            $Frm->uhdr( "RECPAR_REF_EMISSION_MAXWIDTH" )              :
+            $maxwidth );
+
+# Convert these to pixels for FILLBAD.
+my $ndf =$Grp->file;
+my ( $ORAC_STATUS, @fpixelscale ) = $Mon{'ndfpack_mon'}->get("ndftrace", "fpixscale" );
+my $maxwidth_p = sprintf( "%.2f", $maxwidth / $fpixelscale[2] );
+
+# Form estimate of global spectrum.
+# =================================
+
+# Write a heading to structure the commentary.
+orac_say "\n\nSubtract reference spectrum from group spectral cube(s)";
+my $underline = "-" x 55;
+orac_say "$underline\n";
+
+orac_say "The extents of the emission lines are from $chpixfile";
+orac_say "These are masked and filled using a relaxation method with an initial " .
+         "scale length of $maxwidth km/s ($maxwidth_p pixels).";
+orac_say "\n  Determine the median spectrum in the spectral cube(s),
+excluding spectra";
+orac_say "  whose summed flux exceeds one standard deviation above the mean.";
+
+my ( $params, @weight, $sigma, $mean );
+my ( $in, $out, $ers, $masked,$total_weight, $junk );
+
+# Create a new Frame to hold the median spectra of the group tiles.
+my $msFrm = new $Frm;
+
+# Obtain some work file names.
+my $temp0file = new ORAC::TempFile( 0 );
+my $temp1file = new ORAC::TempFile( 0 );
+my $temp2file = new ORAC::TempFile( 0 );
+my $temp3file = new ORAC::TempFile( 0 );
+my $temp4file = new ORAC::TempFile( 0 );
+my $temp5file = new ORAC::TempFile( 0 );
+my $temp6file = new ORAC::TempFile( 0 );
+
+# Loop over the current group's files.
+# ------------------------------------
+foreach my $Obj ( $Grp ) {
+   foreach my $i ( 1 .. $Obj->nfiles ) {
+      ( $in, $out ) = $Obj->inout( "_mrspec", $i );
+      ( $junk, $masked ) = $Obj->inout( "_mrmask", $i );
+
+      orac_say "    Processing spectral cube: $in.";
+
+# Form median spectrum for each spectral cube.
+# --------------------------------------------
+
+# First exclude regions with the highest emission to give a clearer
+# demarcation between emission and reference signal.
+
+# Form the mean image, excluding any noisy ends.
+      $params = "in=$in(,,~80%) out=$temp1file estimator=mean wlim=0.0 axis=vrad";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Set to bad, pixels whose values are at least one standard deviation
+# above the mean level, which ought to be very close to zero,
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file clip=[2.5,3]" );
+      ( $ORAC_STATUS, $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+      ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      my $cuthigh = $mean + $sigma;
+
+# Mask the spatial pixels where there is strongest signal.
+      $params = "in=$temp1file out=$temp2file thrlo=-100 newlo=-100 thrhi=$cuthigh newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# We need the dimensions of the input file for growing the mask and
+# for weighting, purely by the number of composite spectra.  The latter
+# is not ideal as the outer tiles will be noisier at their exterior edges.
+      _GET_DIMENSIONS_ FILE=$in
+      my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+# Grow the reference spectrum to match the original spectral cube.
+      $params = "in=$temp2file out=$temp3file axes=[1,2,0] ";
+      $params .= "lbound=" . $lbnd->[2] . " ";
+      $params .= "ubound=" . $ubnd->[2];
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Mask the input spectral cube.
+      $Mon{'kappa_mon'}->obeyw( "copybad", "in=$in ref=$temp3file out=$masked" );
+
+# Form the median spectrum by collapsing along each spatial axis.
+# We would like to form the median in both directions simultaeously, if
+# it were possible, but this ought to be good enough and faster.  We use
+# Median rather than FastMed, as the latter loses the variance.
+      my $estimator = "Median";
+      $params = "in=$masked out=$temp4file estimator=$estimator wlim=0.0 axis=skylon";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+      $params = "in=$temp4file out=$out estimator=$estimator wlim=0.0 axis=1";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+      orac_say "    Collapse spatial axes using the median to form $out.";
+
+# Save the median spectrum as a subfile in the Frame.
+      $msFrm->file( $i, $out );
+   }
+}
+
+# Find the weighted average of the group tiles' median spectra.
+( $junk, $ers ) = $Grp->inout( "_ers" );
+my $msp;
+if ( $msFrm->nfiles > 1 ) {
+   my $maths_list = '';
+   my $maths_eq = 'exp=\'(';
+   my $maths_index = "a";
+   $total_weight = 0;
+   foreach my $i ( 1 .. $msFrm->nfiles ) {
+      $msp = $msFrm->file( $i );
+      $maths_list .= "i" . $maths_index . "=$msp ";
+      $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
+      $maths_index = chr( ord( $maths_index ) + 1 );
+      $total_weight += $weight[$i-1];
+      $maths_eq =~ s/\+$/)/;
+   }
+
+   $maths_eq .= "/" . $total_weight . "'";
+   $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$ers" );
+   orac_say "  Formed weighted-average median spectrum in $ers.";
+
+# There's only one tile, so merely copy the spectrum to appropriate name. 
+} else {
+   $msp = $msFrm->file( 1 );
+   $params = "in=$msp out=$ers";
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   orac_say "  Write the median spectrum in $ers.";
+}
+
+# Request that the median spectrum and mask used to create it are removed
+# upon completion of the group processing.
+$Grp->push_intermediates( $ers );
+$Grp->push_intermediates( $masked );
+
+# Estimate the reference spectrum from the median spectrum.
+# =========================================================
+
+# Mask the spectrum where the reference-spectrum lines are located.
+if ( starversion_gt( 'KAPPA', 'V2.5-8' ) ) {
+   $params = "in=$ers mode=file file=$chpixfile out=$temp0file";
+   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+# Try to work out where the reference lines are.
+# ----------------------------------------------
+} else {
+
+# Get some work file names.
+   my $temp7file = new ORAC::TempFile( 0 );
+   my $temp8file = new ORAC::TempFile( 0 );
+
+# Try to remove most of emission signal.
+   $Mon{'kappa_mon'}->obeyw( "gausmooth", "in=$ers out=$temp7file fwhm=9" );
+   $Mon{'kappa_mon'}->obeyw( "sub", "in1=$ers in2=$temp7file out=$temp8file" );
+
+# Set to bad, pixels whose values are at least three standard deviaitons
+# below the mean level, which ought to be very close to zero,
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp8file clip=[3,3]" );
+   ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+   ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+   my $cutlow = $mean - 3.0 * $sigma;
+
+   $params = "in=$temp8file out=$temp0file thrlo=$cutlow newlo=bad thrhi=2 newhi=2";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+}
+
+# Interpolate between the bad values.
+$params = "in=$temp0file out=$temp5file size=$maxwidth_p niter=4";
+$Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Subtract the interpolated spectrum from the median spectrum to create
+# the estimated reference spectrum.  In this idealised reference spectrum
+# there is no noise and no positive values.
+($junk, my $bsrs ) = $Grp->inout( "_refspec" );
+$params = "ia=$ers ib=$temp5file out=$bsrs exp='qif(ib.gt.ia,ia-ib,0)'";
+$Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Application phase
+# =================
+
+foreach my $i ( 1 .. $Grp->nfiles ) {
+   ( $in, $out ) = $Grp->inout( "_rssub", $i );
+
+   _GET_DIMENSIONS_ FILE=$in
+   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+# Grow the reference spectrum to match the original spectral cube.
+   $params = "in=$bsrs out=$temp6file axes=[0,0,1] ";
+   $params .= "lbound=[" . $lbnd->[0] . "," . $lbnd->[1] . "] ";
+   $params .= "ubound=[" . $ubnd->[0] . "," . $ubnd->[1] . "]";
+   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Subtract the reference spectrum from the input file.
+   $params = "in1=$in in2=$temp6file out=$out";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Report to the user.
+   orac_say "  Subtracted estimated reference spectrum from $in to form $out\n";
+
+# Update the Grp.
+  $Grp->file( $i, $out );
+
+}
+
+orac_print "\n";
+
+RETURN:
