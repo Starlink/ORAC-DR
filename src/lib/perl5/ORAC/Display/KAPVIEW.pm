@@ -1226,6 +1226,8 @@ Display keywords:
   ERRBAR     - Plot error bars or not (if variance information is
                present)
   YLOG       - Plot Y-axis on a logarithmic scale
+  MULTILINE  - Plot multiple lines (using mlinplot)
+  ABSAXIS    - Axis selection (when using MULTILINE)
 
 Default is to autoscale. Note that the X/Y cuts are converted
 to a 1-D slice before displaying by averaging over the section.
@@ -1276,7 +1278,8 @@ sub graph {
   $file =~ s/\.sdf$//;  # Strip .sdf
 
   # Calculate the NDF section.
-  $file = $self->select_section($file,\%options,1);
+  my $multiline = $options{'MULTILINE'} // 0;
+  $file = $self->select_section($file,\%options,1) unless $multiline;
 
   # A resetpars also seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
@@ -1348,12 +1351,20 @@ sub graph {
     $args .= " ymap=log" if ($options{YLOG});
   }
 
-  # Run LINPLOT.
-  orac_print "LINPLOT ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
-  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args reset");
+  if ($multiline) {
+    $args .= " space=none key=false lnindx=all linlab=false";
+    if (exists $options{'ABSAXIS'}) {
+      $args .= " absax=$options{ABSAXIS}";
+    }
+  }
+
+  # Run LINPLOT or MLINPLOT.
+  my $action = $multiline ? 'mlinplot' : 'linplot';
+  orac_print "$action ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
+  $status = $self->obj->obeyw("$action","ndf=$file device=$device $args reset");
   if ($status != ORAC__OK) {
     orac_err("Error displaying graph\n");
-    orac_err("Trying to execute: linplot ndf=$file device=$device $args\n");
+    orac_err("Trying to execute: $action ndf=$file device=$device $args\n");
     return $status;
   }
 
