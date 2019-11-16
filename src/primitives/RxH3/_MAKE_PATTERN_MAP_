@@ -1,10 +1,53 @@
 my ($in, $out) = $Frm->inout('pattern');
 
 my $pointing = $RECPARS{'POINTING_OFFSET'} // '0 0';
+my $extract_cal = $RECPARS{'EXTRACT_CALIBRATION'} // 1;
+my $merge_hi = $RECPARS{'MERGE_CHANNELS'} // 1;
+my $hi_ratio = 19.909;
+my $hi_phase = 1.042;
+my $hi_thresh_low = 2.5;
+my $hi_thresh_high = 3.5;
 
 orac_say("Creating raw pattern map using pointing offsets: $pointing");
 
-$Mon{'shmullus_mon'}->obeyw('makeholomap', "in=$in outlo=$out outhi=! pointing=[$pointing]");
+my $args = "in=$in pointing=[$pointing] channelcal=yes scancal=yes";
+
+my $outcallo;
+if ($extract_cal) {
+    $outcallo = $Frm->inout('cal-lo');
+    my $outcalhi = $Frm->inout('cal-hi');
+    $args .= " debugcallo=${outcallo}.txt debugcalhi=${outcalhi}.txt";
+}
+
+if ($merge_hi) {
+    orac_say('Merging "hi" and "lo" gain channels.');
+    my $outlo = $Frm->inout('pattern-lo');
+    my $outhi = $Frm->inout('pattern-hi');
+    $Mon{'shmullus_mon'}->obeyw('makeholomap', "$args outlo=$outlo outhi=$outhi");
+    $Mon{'shmullus_mon'}->obeyw('cmplxmerge', "in1=$outlo in2=$outhi out=$out ratio=$hi_ratio phase=$hi_phase modlow=$hi_thresh_low modhigh=$hi_thresh_high");
+    $Frm->push_intermediates($outlo, $outhi);
+}
+else {
+    orac_say('Using "lo" gain channel only.');
+    $Mon{'shmullus_mon'}->obeyw('makeholomap', "$args outlo=$out outhi=!");
+}
+
+if ($extract_cal) {
+    $Mon{'kappa_mon'}->obeyw('trandat', "freename=${outcallo}.txt ndf=$outcallo valcol=3 title='Amplitude'");
+    $Mon{'ndfpack_mon'}->obeyw('axlabel', "ndf=$outcallo label='Frequency number' dim=1");
+    $Mon{'ndfpack_mon'}->obeyw('axlabel', "ndf=$outcallo label='Calibration scan number' dim=2");
+    $Mon{'ndfpack_mon'}->obeyw('setlabel', "ndf=$outcallo label='Amplitude (arbitrary units)'");
+    $Frm->files($outcallo);
+    $Display->display_data($Frm);
+
+    my $outcalloarg = $Frm->inout('cal-lo-arg');
+    $Mon{'kappa_mon'}->obeyw('trandat', "freename=${outcallo}.txt ndf=$outcalloarg valcol=5 title='Phase'");
+    $Mon{'ndfpack_mon'}->obeyw('axlabel', "ndf=$outcalloarg label='Frequency number' dim=1");
+    $Mon{'ndfpack_mon'}->obeyw('axlabel', "ndf=$outcalloarg label='Calibration scan number' dim=2");
+    $Mon{'ndfpack_mon'}->obeyw('setlabel', "ndf=$outcalloarg label='Phase / radians'");
+    $Frm->files($outcalloarg);
+    $Display->display_data($Frm);
+}
 
 $Frm->files($out);
 $Frm->readhdr();
