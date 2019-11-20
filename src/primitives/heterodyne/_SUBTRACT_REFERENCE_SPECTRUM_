@@ -1,0 +1,515 @@
+=head1 NAME
+
+_SUBTRACT_REFERENCE_SPECTRUM_
+
+=head1 DESCRIPTION
+
+This primitive creates and subtracts a reference spectrum in order to
+remove any absorption lines originating from emission in a poorly
+chosen reference position.  It may be used either after automated
+reference-spectrum removal has not been entirely successful, leaving
+whole or partially removed absorption features in the reduced spectral
+cube; or ab initio instead of the automated method.
+
+The extents of the reference lines must be set via the
+_REF_SPECTRUM_REGIONS recipe parameter.  These regions are masked and
+filled in, the background determined and subtracted from the unmasked
+representative spectrum to form an approximation to the reference
+spectrum.
+
+The primitive obtains the median spectrum of the time-series cubes in
+the current Group, masks the specified reference lines, and
+interpolates across them to allow for reference lines loated where
+there is varying emission.  The interpolated spectrum is subtracted
+from the original median spectrum to form a estimate of the reference
+spectrum.  The estimated spectrum is expanded to the size and bounds
+of each input time-series cube and subtracted from every spectrum
+within thsat cube (so as to fill in the absorption lines).
+
+This primitive is only implemented if the recipe parameters
+SUBTRACT_REF_SPECTRUM is set true, and REF_SPECTRUM_REGIONS defines a
+valid set of extents.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMBINE_DETECTORS = BOOLEAN (Given)
+
+Whether or to combine all detectors to form the reference spectrum.
+The receptors are strictly viewing slightly different locations and
+hence each receptor's reference spectrum will be different.  However,
+if the source of the reference emission is not particularly compact
+this may not be significant in comparison with the much better
+signal-to-noise ratio in the composite reference spectrum, leading to
+better line detection.  This argument can be overridden by the
+RECPAR_REF_SPECTRUM_COMBINE_DETECTORS uhdr via the recipe parameter
+system.  [0]
+
+=item COMBINE_BY_REFPOS = BOOLEAN (Given)
+
+Whether to combine observations by their reference position. Combining
+should improve the signal-to-noise ratio in the derived reference
+spectrum.  This argument can be overridden by the
+RECPAR_REF_SPECTRUM_COMBINE_REFPOS uhdr via the recipe parameter
+system.  [1]
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data.
+
+=item *
+
+The output files, except the derived reference spectrum, are logged as
+Group intermediates for tidying, but would readily be available for
+diagnostic purpose with ORAC_KEEP enables.  They are Group intermediates,
+because the products combine data from different Frames.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The estimated reference spectra when COMBINE_DETECTORS is false, or
+composite spectrum, having the suffix _udrs (user-defined reference
+spectrum) for each reference position of the Frames in the current Group.
+The root name will be that of the final Frame in each reference-position
+subgroup.
+
+=item *
+
+Time-series data with the reference emission subtracted having the
+_sudrs (subtract user-defined reference spectrum) suffix applied to
+each Frame of the current Group.
+
+=item *
+
+The input time-series data with the strongest spectra masked, having
+the _mrsmask suffix applied to each Frame of the Group.
+
+=item *
+
+The modal spectrum for each Frame having the _mrs suffix.  It may
+contain spectra for each receptor.
+
+=item *
+
+The weighted average of the subfile modal spectra, having the _wamrs
+suffix for each reference position of the Frames in the current Group.
+
+=item *
+
+The weighted average spectrum for each reference position and
+receptor, having the _amrs suffix.  The root name will be that of the
+final Frame in each reference-position subgroup
+
+=back
+
+=head1 TASKS
+
+KAPPA: ARDMASK, COLLAPSE, COPYBAD, FILLBAD, GAUSMOOTH, MANIC,
+       MATHS, NDFCOPY, NDFTRACE, SETUNITS, STATS, SUB, THRESH.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Retrieve and validate parameters.
+# =================================
+
+# Only proceed if the apprropriate recipe parameter is set true.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_SUBTRACT_REF_SPECTRUM" ) ) ?
+              $Frm->uhdr( "RECPAR_SUBTRACT_REF_SPECTRUM" )            :
+              0 );
+if ( ! $apply ) { goto RETURN }
+
+my $combine_detectors = get_prim_arg( $_PRIM_ARGS_, "COMBINE_DETECTORS", 0 );
+my $combine_refpos = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_REFPOS", 1 );
+
+$combine_detectors = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_DETECTORS" ) ) ?
+                       $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_DETECTORS"  )            :
+                       $combine_detectors );
+$combine_refpos = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_REFPOS" ) ) ?
+                    $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_REFPOS"  )            :
+                    $combine_refpos );
+
+if ( ! $combine_detectors ) {
+   my $isok = eval { require JCMT::ACSIS::Array; 1; };
+   if ( ! $isok ) {
+      orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
+      orac_warn "Will average all receptors to correct for reference spectrum.\n";
+      $combine_detectors = 1;
+   }
+}
+
+my $user_region = 0;
+
+# Retrieve the regions containing strong reference-spectrum emission
+# from the Frame's user header.
+my $rem_regions = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_REGIONS" ) ) ?
+                  $Frm->uhdr( "RECPAR_REF_SPECTRUM_REGIONS" )              :
+                  undef );
+my ( @rem_bounds, @regions );
+if ( ref( $rem_regions ) eq 'ARRAY' ) {
+   @regions = @{ $rem_regions }
+} else {
+   push @regions, $rem_regions;
+}
+
+if ( defined( $rem_regions ) ) {
+
+# Validate the syntax of the reference-emission region.
+   foreach ( @regions ) {
+      if ( /:/ ) {
+         my ( $lowvel, $uppvel ) = split( ":", $_ );
+         $user_region = 1;
+         push @rem_bounds, $lowvel;
+         push @rem_bounds, $uppvel;
+      } else {
+         $user_region = 0;
+         last;
+      }
+   }
+   if ( ! $user_region ) { 
+      orac_warn "_SUBTRACT_REFERENCE_SPECTRUM_: Syntax error defining " .
+               "extents of reference lines.\n";
+      orac_warn "Unable to remove reference lines\n";
+      goto RETURN;
+   }
+
+} else {
+   orac_err "_SUBTRACT_REFERENCE_SPECTRUM_: Reference-spectrum line " .
+            "extents not defined.  Unable to remove reference lines.\n";
+   goto RETURN;
+}
+
+# Form initial estimate of reference spectrum.
+# ============================================
+
+# Write a heading to structure the commentary.
+orac_say "\n\nSubtract median reference spectrum from unmasked time-series";
+my $underline = "-" x 60;
+orac_say "$underline\n";
+
+orac_say "Averaging spectra in masked time-series data.";
+
+my @refposgrps = $combine_refpos ? $Grp->subgrps( "ORAC_REFERENCE_LOCATION" ) : $Grp->members;
+my ( @mean_spectra, @mean_weights );
+my ( $params, @weight );
+my ( $in, $out, $masked, $mrs, $wamrs, $amrs );
+my ( $sigma, $mean );
+my $ORAC_STATUS;
+
+# Loop over the common reference positions or current group.
+# ----------------------------------------------------------
+GROUP: foreach my $rpGrp ( @refposgrps ) {
+   my @Objs = $rpGrp->members;
+   my $number_at_location = scalar( @Objs );
+   my $grpFrm = $rpGrp->allmembers->[0];
+
+   @mean_spectra = ();
+   @mean_weights = ();
+
+# Each object (group or observation) may comprise more than one file.
+   OBJECT: foreach my $rpFrm ( @Objs ) {
+      $in = $rpFrm->file;
+
+# Form average modal spectrum for each observation and possibly each receptor.
+# ============================================================================
+      my ( $key, @msp );
+      foreach my $i ( 1 .. $rpFrm->nfiles ) {
+         ( $in, $mrs ) = $rpFrm->inout( "_mrs", $i );
+         orac_say "Processing observation: $in.";
+
+         my $masked = $rpFrm->inout( "_mrsmask", $i );
+         push @msp, $mrs;
+
+# We need the dimensions of the input file for growing the mask and
+# for weighting, purely by the number of composite spectra.  The latter
+# is not ideal as the outer tiles will be noisier at their exterior edges.
+         _GET_DIMENSIONS_ FILE=$in
+         my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+         my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+         push @weight, $ubnd->[2] - $lbnd->[2] + 1;
+
+# Obtain some temporary filenames.
+         my $temp1file = new ORAC::TempFile( 0 );
+         my $temp2file = new ORAC::TempFile( 0 );
+         my $temp3file = new ORAC::TempFile( 0 );
+         my $temp4file = new ORAC::TempFile( 0 );
+
+# First exclude regions with the highest emission. 
+# ------------------------------------------------
+
+# This is to give a clearer demarcation between emission and the reference
+# signal.
+
+# Form the timed-average observation, excluding any noisy ends.
+         $params = "in=$in(~80%,,) out=$temp1file estimator=mean wlim=0.0 axis=vrad";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Set to bad, pixels whose values are at least one standard deviation
+# above the mean level, which ought to be very close to zero,
+         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file clip=[2.5,3]" );
+         ( $ORAC_STATUS, $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+         ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+         my $cuthigh = $mean + $sigma;
+
+# Mask the spatial pixels where there is strongest signal.
+         $params = "in=$temp1file out=$temp2file thrlo=-100 newlo=-100 thrhi=$cuthigh newhi=bad";
+         $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Grow the spectrum to match the original time-series cube.
+         $params = "in=$temp2file out=$temp3file axes=[0,1,2] ";
+         $params .= "lbound=" . $lbnd->[0] . " ";
+         $params .= "ubound=" . $ubnd->[0];
+         $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Mask the input time-series cube.
+         $Mon{'kappa_mon'}->obeyw( "copybad", "in=$in ref=$temp3file out=$masked" );
+
+# Form the modal spectrum by first collapsing along the time axis.
+# ----------------------------------------------------------------
+
+# Use the mode to remove at least some of the residual source emission.
+         $params = "in=$masked out=$temp4file estimator=mode wlim=0.0 axis=3";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+         if ( $combine_detectors ) {
+            $params = "in=$temp4file out=$mrs estimator=mean wlim=0.0 axis=2";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            orac_say "  Collapse using the mode on the time axis and the mean by receptor.";
+
+         } else {
+            orac_say "  Collapse using the mode on the time axis.";
+
+            $params = "in=$temp4file out=$mrs";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         }
+
+# Request that the spectrum and he masked input time-series cube 
+# are removed upon completion of the Group processing.
+         $Grp->push_intermediates( $mrs );
+         $Grp->push_intermediates( $masked );
+      }
+
+# Find the weighted average of each subfile's modal spectrum.  The fiddly
+# bit is forming the MATHS command line to form ia, ib, ic... for the
+# input file names.
+      $wamrs = $rpFrm->inout( "_wamrs" );
+      my $total_weight;
+      if ( $rpFrm->nfiles > 1 ) {
+         my $maths_list = '';
+         my $maths_eq = 'exp=\'(';
+         my $maths_index = "a";
+         $total_weight = 0;
+         foreach my $i ( 1 .. $rpFrm->nfiles ) {
+            $maths_list .= "i" . $maths_index . "=$msp[$i-1] ";
+            $maths_eq .= "i" . $maths_index . "*" . $weight[$i-1] . "+";
+            $maths_index = chr( ord( $maths_index ) + 1 );
+            $total_weight += $weight[$i-1];
+         }
+         $maths_eq =~ s/\+$/)/;
+         $maths_eq .= "/" . $total_weight . "'";
+
+         $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$wamrs" );
+      } else {
+         $params = "in=$msp[0] out=$wamrs";
+         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+         $total_weight = $weight[0];
+      }
+      push @mean_spectra, $wamrs;
+      push @mean_weights, $total_weight;
+
+# Request that the mean spectrum is removed upon completion of the
+# Group processing.
+      $Grp->push_intermediates( $wamrs );
+   }
+
+# Form average spectrum for the current reference position and receptor.
+# ======================================================================
+
+# Find the weighted average of the current reference-spectrum location's
+# mean spectrum.
+   $amrs = $grpFrm->inout( "_amrs" );
+   if ( $number_at_location > 1 ) {
+      my $maths_list = '';
+      my $maths_eq = 'exp=\'(';
+      my $maths_index = "a";
+      my $total_weight = 0;
+      foreach my $i ( 1 .. $number_at_location ) {
+         $maths_list .= "i" . $maths_index . "=$mean_spectra[$i-1] ";
+         $maths_eq .= "i" . $maths_index . "*" . $mean_weights[$i-1] . "+";
+         $maths_index = chr( ord( $maths_index ) + 1 );
+         $total_weight += $mean_weights[$i-1];
+      }
+      $maths_eq =~ s/\+$/)/;
+      $maths_eq .= "/" . $total_weight . "'";
+
+      $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$amrs" );
+   } else {
+      $params = "in=$mean_spectra[0] out=$amrs";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   }
+
+# Request that the weighted-mean spectrum across observations is removed upon
+# completion of the Group processing.
+   $Grp->push_intermediates( $amrs );
+
+   $Mon{ndfpack_mon}->obeyw( "ndftrace", "ndf=$amrs" );
+   ( $ORAC_STATUS, my $ndim ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ndim" );
+
+# Reduce the noise with minimal broadening of the lines.
+   my $temp5file = new ORAC::TempFile( 0 );
+   my $fwhm = $ndim > 1 ? "[1.5,0.1]" : 1.5;
+   $params = "in=$amrs out=$temp5file fwhm=$fwhm orient=0.0";
+   $Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+
+# Correction phase
+# ================
+
+   my $units;
+   my ( $ardmask, $boxsize, $maxwidth );
+   my ( $lbnd, $ubnd );
+   my $refspec = $grpFrm->inout( "_uders" );
+
+   foreach my $rpFrm ( @Objs ) {
+      foreach my $i ( 1 .. $rpFrm->nfiles ) {
+
+# Do the preliminary steps for each file.
+# ---------------------------------------
+         ( $in, $out ) = $rpFrm->inout( "_sudrs", $i );
+
+# We need the dimensions of the input file for later.
+         _GET_DIMENSIONS_ FILE=$in
+         $lbnd = $_GET_DIMENSIONS_{LBOUND};
+         $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+# Retrieve the units of the input cube.
+         $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+         ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+         ( $ORAC_STATUS, my $pixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+
+# Need extra work NDFs.
+         my $temp6file = new ORAC::TempFile( 0 );
+         my $temp8file = new ORAC::TempFile( 0 );
+         my $temp9file = new ORAC::TempFile( 0 );
+
+# Determine reference emission in user-specified regions.
+# -------------------------------------------------------
+         my $userlines = scalar( @rem_bounds );
+         if ( $userlines ) {
+            orac_say "Subtracting the user-defined region from unmasked time-series data.";
+         } else {
+            orac_say "Subtracting the $userlines user-defined regions from unmasked time-series data.";
+         }
+
+# Create a temporary file to hold an ARD mask.
+         $ardmask = new ORAC::TempFile;
+
+# Need to tell ARD the data are one-dimensional and the co-ordinates
+# are spectral (not pixels).
+         print {$ardmask->handle} "COFRAME( SPECTRUM )\n";
+         print {$ardmask->handle} "DIMENSION( 1 )\n";
+
+# For each pair of baseline regions, write a RECT ARD region.  Also
+# find the halfwidth in pixels of the widest line.
+         my $hw = 0.0;
+         for ( my $j = 0; $j <= $#rem_bounds ; $j += 2 ) {
+            print {$ardmask->handle} "LINE( $rem_bounds[$j], $rem_bounds[$j+1] )\n";
+            $hw = max( $hw, 0.5 / $pixscale * ( $rem_bounds[$j+1] - $rem_bounds[$j] ) );
+         }
+         $boxsize = max( 3.0, $hw );
+
+# Run ARDMASK to mask the line(s).
+         $params = "in=$temp5file out=$temp6file inside ardfile=" . $ardmask->file;
+         $Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
+
+# Lightly smooth the remaining spectrum and fill in the gap where the line is
+# masked.
+         $params = "in=$temp6file out=$temp8file niter=10 size=$boxsize";
+         $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Subtract the interpolated spectrum from the median spectrum to create
+# the estimated reference spectrum.  In this idealised reference
+# spectrum there is no noise and no positive values.
+         my $udrs = $Frm->inout( "_udrs" );
+         $params = "ia=$temp5file ib=$temp8file out=$udrs exp='qif(ib.gt.ia,ia-ib,0)'";
+         $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+# Application phase
+# =================
+
+# Grow the background mean reference spectrum to match the original time
+# series.
+         if ( $combine_detectors ) {
+            $params = "in=$udrs out=$temp9file axes=[1,0,0] ";
+            $params .= "lbound=[" . $lbnd->[1] . "," . $lbnd->[2] . "] ";
+            $params .= "ubound=[" . $ubnd->[1] . "," . $ubnd->[2] . "]";
+            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+         } else {
+            $params = "in=$udrs out=$temp9file axes=[1,2,0] ";
+            $params .= "lbound=" . $lbnd->[2] . " ";
+            $params .= "ubound=" . $ubnd->[2];
+            $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+         }
+
+# Subtract the mean reference spectrum from the input file.
+         $params = "in1=$in in2=$temp9file out=$out";
+         $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Set the units back to what they were.
+         $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
+
+# Report to the user.
+         orac_say "$in to $out:";
+         orac_say "Subtracted estimated reference spectrum after application of line mask.\n";
+
+# Update the Frm.
+         $rpFrm->file( $i, $out );
+
+# Request that the output file is removed upon completion of the
+# Group processing.
+         $Grp->push_intermediates( $out );
+      }
+   }
+}
+
+orac_print "\n";
+
+RETURN:
