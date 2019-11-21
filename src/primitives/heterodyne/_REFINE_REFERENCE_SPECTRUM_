@@ -106,6 +106,17 @@ A background-subtracted reference spectrum with the suffix "_backsub".
 The additional suffix "_E<lt>receptorE<gt>" is appended where
 E<lt>receptorE<gt> is the value Argument RECEPTOR, if defined.
 
+=item *
+
+The inverted reference-emission masked spectrum with the suffix
+"_invlinemap".  It's really temporary file, only kept for diagnostic
+investigations and to prevent ORAC::TempFile files being passed to
+another primitive (L<_FIND_EMISSION_LINES_IN_SPECTRUM_|_FIND_EMISSION_LINES_IN_SPECTRUM_>)
+in which an inout() method is applied, and causing the temporary file
+from being removed at the end of pipeline processing.
+
+=back
+
 =head1 TASKS
 
 KAPPA: BLOCK, CADD, CMULT, COPYBAD, FILLBAD, GAUSMOOTH, MATHS, NOMAGIC,
@@ -220,7 +231,6 @@ my ( $cleaned, $linemap, $linemap_r, $linemap_s, $maxwidth );
 my ( $nlines_r, $nlines_s, $nlines, $text );
 
 my $temp1file = new ORAC::TempFile( 0 );
-my $temp2file = new ORAC::TempFile( 0 );
 my $bgdmask_r = new ORAC::TempFile( 0 );
 
 # Want to contour minimum to be a little higher for the spectrum with
@@ -281,12 +291,13 @@ if ( $usemask ) {
 # threshold to avoid picking up noise as a line.
 {
    my $Frm = new $Frm;
-   $Frm->file( $loc );
-   $Frm->file( $basesub ) if $usemask;
+   my $emfile = $usemask ? $basesub : $loc;
+   $Frm->file( $emfile );
    my $subbgd = !$usemask;
    _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$subbgd THRESH=$first_thresh MINPIX=3
    $linemap_r = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
    $nlines_r = $_FIND_EMISSION_LINES_IN_SPECTRUM_{NLINES};
+   $Frm->push_intermediates( $emfile );
 }
 
 # There is no more to do if there are no reference lines to correct,
@@ -306,6 +317,7 @@ if ( defined( $linemap_r ) && $nlines_r > 0 ) {
    } else {
       _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_r LINEMASK=$linemask_r
    }
+   $Grp->push_intermediates( $linemap_r );
 
 # Extend into the wings by a couple of pixels to reduce artefacts there.
    my $temp30file = new ORAC::TempFile( 0 );
@@ -361,7 +373,8 @@ if ( defined( $linemap_r ) && $nlines_r > 0 ) {
 # ==========================================================
 
 # Flip the reference-emission masked spectrum.
-$params = "in=$temp1file scalar=-1 out=$temp2file";
+my $flout = $Frm->inout( "_invlinemap" );
+$params = "in=$temp1file scalar=-1 out=$flout";
 $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
 
 my $temp3file = new ORAC::TempFile( 0 );
@@ -370,10 +383,11 @@ my $temp4file = new ORAC::TempFile( 0 );
 # Search for the source-spectrum lines without background subtraction.
 {
    my $Frm = new $Frm;
-   $Frm->file( $temp2file );
+   $Frm->file( $flout );
    _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$subback THRESH=$thresh MINPIX=4
    $linemap_s = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
    $nlines_s = $_FIND_EMISSION_LINES_IN_SPECTRUM_{NLINES};
+   $Grp->push_intermediates( $flout );
 }
 
 # Check that the search completed successfully.
@@ -384,8 +398,10 @@ if ( defined( $linemap_s ) && $nlines_s > 0 ) {
    my $linemask_s = new ORAC::TempFile( 0 );
    _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap_s LINEMASK=$linemask_s
 
+   $Grp->push_intermediates( $linemap_r );
+
 # Apply the emission mask to the average reference spectrum.
-   $params = "in1=$temp2file in2=$linemask_s out=$temp3file";
+   $params = "in1=$flout in2=$linemask_s out=$temp3file";
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
    orac_say "  Apply mask of source emission lines.";
 
@@ -401,7 +417,7 @@ if ( defined( $linemap_s ) && $nlines_s > 0 ) {
 # As there may be more extensive weak signal, set the threshold
 # higher.
    my $thrlo = 5 * $rms;
-   $params = "in=$temp2file out=$temp3file ";
+   $params = "in=$flout out=$temp3file ";
    $params .= "thrlo=$rms newlo=0 thrhi=1E30 newhi=bad";
    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
    $text = "mean background emission";
@@ -476,6 +492,7 @@ orac_say "Locating reference emission lines.";
    _FIND_EMISSION_LINES_IN_SPECTRUM_ SUBTRACT_BACKGROUND=$subback THRESH=$thresh MINPIX=4
    $linemap = $_FIND_EMISSION_LINES_IN_SPECTRUM_{LINEMAP};
    $nlines = $_FIND_EMISSION_LINES_IN_SPECTRUM_{NLINES};
+   $Grp->push_intermediates( $backsub );
 }
 
 # Check that the search completed successfully.
@@ -496,6 +513,8 @@ if ( defined( $linemap ) && $nlines > 0 ) {
    my $linemask = new ORAC::TempFile( 0 );
    my $bgdmask = new ORAC::TempFile( 0 );
    _CONVERT_1D_CLUMPMAP_TO_MASKS_ LINEMAP=$linemap LINEMASK=$linemask BGDMASK=$bgdmask
+
+   $Grp->push_intermediates( $linemap );
 
 # Apply the emission mask to the inverted average reference spectrum.
 #   $params = "in1=$in in2=$linemask out=$temp5file";
@@ -593,5 +612,11 @@ if ( defined( $linemap ) && $nlines > 0 ) {
 
    $text = "mean of reference-emission line regions";
 }
+
+# Remove created files at the end of the Group processing.
+# Such files help with diagnostics with ORAC_KEEP is set.
+$Grp->push_intermediates( $backsub );
+$Grp->push_intermediates( $basesub );
+$Grp->push_intermediates( $flout );
 
 $_REFINE_REFERENCE_SPECTRUM_{OUT} = $out;
