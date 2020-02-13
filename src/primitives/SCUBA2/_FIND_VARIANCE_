@@ -46,15 +46,22 @@ current Frame. Default is 0 (false: use current Frame).
 Flag to specify whether or not to use KAPPA HISTAT or STATS. Default
 is 0 (use STATS).
 
-=item B<IMAGE>
-
-Name of NDF image to obtain the variance from. If left blank then the
-current Group file is assumed.
-
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
 user. Default is 0 (false).
+
+=item B<REGION>
+
+Region to calculate the area over, in pixels: Get a square region
+using ndf sections as 0~region. (i.e. each side length $region pixels,
+centered on 0)
+
+=item B<RADIUS>
+
+Radius of the circular region to be examined when calculating the
+noise. In arcseconds, if not set then the whole map is used. This
+parameter is ignored if region has been set.
 
 =back
 
@@ -118,6 +125,7 @@ USA.
 # Choose VARiance or ERRor
 my $comp = lc(get_prim_arg($_PRIM_ARGS_, "COMP", "err"));
 
+
 # Estimator - default is MEDIAN
 my $estimator = uc(get_prim_arg( $_PRIM_ARGS_, "ESTIMATOR", "MEDIAN" ));
 # Check we were given something sensible
@@ -129,26 +137,43 @@ unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" 
 # Calculate the noise within a region or from the whole image (0)?
 my $region = get_prim_arg($_PRIM_ARGS_, "REGION", 0);
 
+
 # Should I be verbose (default to no)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
 
 # Use the current Group or Frame?
 my $Obj = (get_prim_arg($_PRIM_ARGS_, "GROUP", 0)) ? $Grp : $Frm;
 
-# Get name of file to query
-my $ndf =  get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file);
+# Get the radius if set
+my $radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 0);
 
 # Just want the first 3 characters of the component
 $comp = substr($comp,0,3);
+
+# We are working on the current group file.
+my $ndf = $Obj->file;
+
 
 # Does the Variance or Error component exist in the file?
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$ndf quiet=true");
 my ($ORAC_STATUS, $varexists) = $Mon{ndfpack_mon}->get("ndftrace","variance");
 
+
+
+
 # Retrieve dimensions and only define a region if the region is
 # smaller than the smallest dimension
-($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
-$ndf .= "(0~$region,0~$region)" if ($region > 0 && $region < $dims[0] && $region < $dims[1]);
+if ($region > 0) {
+  ($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+  $ndf .= "(0~$region,0~$region)" if ($region > 0 && $region < $dims[0] && $region < $dims[1]);
+
+# Else, if the radius has been set and the file is the default one
+} elsif (($radius > 0){
+  # Create a map by masking out the correct part.
+  _TRIM_MAP_EDGES_ METHOD=circle RADIUS=$radius
+  $ndf = $Obj->file;
+}
+
 
 if ($varexists eq "TRUE") {
   # Inform user of returned value
