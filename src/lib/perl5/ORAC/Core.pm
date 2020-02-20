@@ -68,6 +68,9 @@ use ORAC::LogHTML;
 # message systems on the basis of command-line switches.
 use ORAC::Msg::MessysLaunch;
 
+# Starlink modules
+use Starlink::Versions qw/ starversion_global /;
+
 #general modules
 use Config;
 use Sys::Hostname;              # For logfile
@@ -855,11 +858,14 @@ sub orac_print_configuration {
         print $logfh "\tAdditional Primitive Dir : $pdir\n";
         print $logfh "\tRecipe suffix : " . ($opt{'recsuffix'} // '<undefined>') . "\n";
 
+        my $vstring = starversion_global();
 
         print $logfh "\nSystem environment:\n\n";
         print $logfh "\tHostname        : ". hostname . "\n";
         print $logfh "\tUser name       : $ENV{USER}\n";
         print $logfh "\tPerl version    : $]\n";
+        print $logfh "\tSTARLINK_DIR    : $ENV{STARLINK_DIR}\n";
+        print $logfh "\tStarlink version: $vstring\n";
         print $logfh "\tOperating System: $^O\n";
         my $uname = "<unknown>";
         {
