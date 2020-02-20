@@ -858,14 +858,15 @@ sub orac_print_configuration {
         print $logfh "\tAdditional Primitive Dir : $pdir\n";
         print $logfh "\tRecipe suffix : " . ($opt{'recsuffix'} // '<undefined>') . "\n";
 
-        my $vstring = starversion_global();
 
         print $logfh "\nSystem environment:\n\n";
         print $logfh "\tHostname        : ". hostname . "\n";
         print $logfh "\tUser name       : $ENV{USER}\n";
         print $logfh "\tPerl version    : $]\n";
-        print $logfh "\tSTARLINK_DIR    : $ENV{STARLINK_DIR}\n";
-        print $logfh "\tStarlink version: $vstring\n";
+        my $starver = starversion_global();
+        my $stardir = ($ENV{STARLINK_DIR} || '<undefined>');
+        print $logfh "\tStarlink Dir    : $stardir\n";
+        print $logfh "\tStarlink version: $starver\n";
         print $logfh "\tOperating System: $^O\n";
         my $uname = "<unknown>";
         {
