@@ -178,6 +178,30 @@ if( ! $isok ) {
   } else {
     $qa = new JSA::QA( file => $qaparamfile );
   }
+  # Create a log file for each receptor.  We will just record the
+  # first obsidss, as the files have already been merged at this
+  # point if hybrid..
+
+  my $logfile = "log.receptor";
+
+  my @obsidss_s = $Frm->uhdr('ORAC_OBSERVATION_ID_SUBSYSTEM');
+  my $first_obsidss = sprintf "%33s", $obsidss_s[0][0];
+
+  my $ishybrid = sprintf "%6i", (defined $Frm->uhdr('ISHYBRID')) ? $Frm->uhdr('ISHYBRID') : '?';
+
+  my $transition = sprintf "%15s", (defined $Frm->uhdr( "ORAC_TRANSITION")) ? $Frm->uhdr( "ORAC_TRANSITION") : 'UNKNOWN';
+
+  my $molecule = sprintf "%12s", (defined $Frm->uhdr( "ORAC_SPECIES") ) ? $Frm->uhdr( "ORAC_SPECIES"): 'UNKNOWN';
+
+  my $bwmode = (defined $Frm->uhdr( "ORAC_BANDWIDTH_MODE" )) ?
+    sprintf "%12s", $Frm->uhdr( "ORAC_BANDWIDTH_MODE") : "UNKNOWN" ;
+
+  my $restfreq = (defined $Frm->rest_frequency())? sprintf "%8.2f", $Frm->rest_frequency() : sprintf "%8s", "NULL";
+
+  my $header = sprintf("%33s %6s %15s %15s %12s %8s %8s %10s %8s",
+                       "OBSIDSS", "HYBRID", "TRANSITION", "MOLECULE", "BANDWIDTH", "RESTFREQ",
+                       "RECEPTOR", "TSYS", "RMS");
+
 
   foreach my $file ( sort keys %$tsys_values_href ) {
 
@@ -193,6 +217,32 @@ if( ! $isok ) {
       orac_warn "Must run RMS QA calculations before running RMS QA checks for file $file.\n";
       orac_warn "Possible programming error.\n";
       next;
+    }
+    my $log = new ORAC::LogFile( $logfile);
+    $log->header($header);
+
+    my $tsys_info = $Frm->uhdr( "QA_TSYS_VALUES" );
+    my $rms_info = $Frm->uhdr( "QA_RMS_VALUES" );
+
+    my @tsysreceptors = keys %$tsys_values;
+    my @rmsreceptors = keys %$rms_values;
+    my %receptornames;
+
+    # Get set of all receptor names in tsys and rms, in case for some
+    # reason a receptor only appears in one.
+    @receptornames{@tsysreceptors} = ();
+    @receptornames{@rmsreceptors} = ();
+    my $tsys, my $rms, my $entry;
+    # Go through each one.
+    foreach my $receptor (sort keys %receptornames) {
+      $tsys = $tsys_values->{$receptor};
+      $tsys = sprintf "%10.3f",$tsys;
+      $rms = $rms_values->{$receptor};
+      $rms = sprintf "%8.3f", $rms;
+      $entry = sprintf("%33s %6s %15s %15s %12s %8s %8s %10s %8s",
+                           "$first_obsidss", "$ishybrid", "$transition", "$molecule", "$bwmode", "$restfreq",
+                           "$receptor", "$tsys", "$rms");
+      $log->addentry($entry);
     }
 
     my ( $tsys_result, %result, %opts );
