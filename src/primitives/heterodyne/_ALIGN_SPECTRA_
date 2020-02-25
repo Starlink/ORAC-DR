@@ -10,11 +10,17 @@ This primitive aligns spectra for all members of the current Group to
 the first member, where each output NDF just encompasses the corresponding
 input NDF.  Otherwise it uses the current parameter values for WCSALIGN.
 
+=head1 ARGUMENTS
+
+=item SUFFIX = STRING (Given)
+
+Generate spectrally aligned NDFs with this file suffix.  ["_align"]
+
 =head1 OUTPUT DATA
 
 =over 4
 
-=item The aligned NDFs.  These have the suffix C<_align>.
+=item The aligned NDFs.  These have the suffix set by Argument SUFFIX.
 
 =back
 
@@ -30,7 +36,7 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2003 Particle Physics and Astronomy Research Council.
-Copyright (C) 2018 Science and Technology Facilities Council.
+Copyright (C) 2018, 2020 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -52,47 +58,34 @@ MA 02111-1307, USA.
 
 =cut
 
+my $suffix = get_prim_arg( $_PRIM_ARGS_, "SUFFIX", "_align" );
+
 # Get a list of all the files in the Group.
 my @members = $Grp->members;
 
-if ( scalar( @members ) > 1 ) {
+my ( @infiles, @outfiles );
 
-  # Create a list of the input and output images in two new text files.
-  my $inputlist = "inlist.list$$";
-  my $outputlist = "outlist.list$$";
-  unlink( $inputlist, $outputlist );
+if ( scalar( @members ) > 1 } {
 
-  open( my $fh_inlist, ">$inputlist" ) ||
-    orac_throw "Unable to open $inputlist to create a list of spectra to align. Error: $!\n";
-  open( my $fh_outlist, ">$outputlist" ) ||
-    orac_throw "Unable to open $outputlist to create a list of spectra to align. Error: $!\n";
-
-  # Write filenames to the two lists.
-  foreach my $member (@members) {
-
-    my $infile = $member->file;
-    my $outfile;
-    ( $outfile = $infile ) =~ s/_([a-zA-Z]+)$/_align/;
-
-    print $fh_inlist $infile, "\n";
-    print $fh_outlist $outfile, "\n";
+# Write input and output filenames to arrays.
+  foreach my $member ( @members ) {
+    my ( $infile, $outfile );
+    ( $infile, $outfile ) = $member->inout( $suffix );
+    push @infiles, $infile;
+    push @outfiles, $outfile;
 
     orac_print "$infile to $outfile: Aligning spectrum.\n";
-
   }
 
-  # Close the filehandles.
-  close( $fh_inlist );
-  close( $fh_outlist );
+  # Write the filenames to text files.
+  my $inlist = write_file_list( @infiles );
+  my $outlist = write_file_list( @outfiles );
 
   # Set up the parameters for WCSALIGN.
-  my $param1 = "in='^$inputlist' out='^$outputlist' lbnd=! accept";
+  my $param = "in='^$inlist' out='^$outlist' lbnd=! accept";
 
-  # Do the align.
-  $Mon{'kappa_mon'}->obeyw( "wcsalign", "$param1" );
-
-  # Remove the filelists.
-  unlink( $inputlist, $outputlist );
+  # Do the alignment.
+  $Mon{'kappa_mon'}->obeyw( "wcsalign", "$param" );
 
   # Tidy up output.
   orac_print "\n";
