@@ -231,16 +231,22 @@ orac_say "Averaging spectra in masked time-series data.";
 my @refposgrps = $combine_refpos ? $Grp->subgrps( "ORAC_REFERENCE_LOCATION" ) : $Grp->subgrps( "ORAC_UTDATE" );
 my ( @mean_spectra, @mean_weights );
 my ( $params, @weight );
-my ( $in, $out, $masked, $mrs, $wamrs, $amrs );
+my ( $in, $out, $masked, $mrs, $wamrs, $amrs, $suffix );
 my ( $sigma, $mean );
 my $ORAC_STATUS;
 
 # Loop over the common reference positions or current group.
 # ----------------------------------------------------------
+my $refposnum = 0;
 GROUP: foreach my $rpGrp ( @refposgrps ) {
+   $refposnum++;
    my @Objs = $rpGrp->members;
    my $number_at_location = scalar( @Objs );
-   my $grpFrm = $rpGrp->allmembers->[0];
+   my $masterFrm = $Frm->new;
+   my $master_refspec = "master_refspec" . $refposnum;
+   $masterFrm->file( $master_refspec );
+
+   my $numfiles;
 
    @mean_spectra = ();
    @mean_weights = ();
@@ -252,7 +258,8 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Form average modal spectrum for each observation and possibly each receptor.
 # ============================================================================
       my ( $key, @msp );
-      foreach my $i ( 1 .. $rpFrm->nfiles ) {
+      $numfiles = $rpFrm->nfiles;
+      foreach my $i ( 1 .. $numfiles ) {
          ( $in, $mrs ) = $rpFrm->inout( "_mrs", $i );
          orac_say "Processing observation: $in.";
 
@@ -366,13 +373,29 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
 # Find the weighted average of the current reference-spectrum location's
 # mean spectrum.
-   $amrs = $grpFrm->inout( "_amrs" );
+   $amrs = $masterFrm->inout( "_amrs" );
    if ( $number_at_location > 1 ) {
+
+# For data taken at different epochs the mapping from pixel to
+# velocity is likely to be different.  So before we can do averaging
+# over pixels, the different observations need to be aligned.
+      {
+         my $Grp = $Grp->new;
+         foreach my $i ( 1 .. $number_at_location ) {
+            my $temp_Frm = $Frm->new;
+            $temp_Frm->file( $mean_spectra[$i-1] );
+            $Grp->push( $temp_Frm );
+         }
+         $suffix = "_wamrsal";
+         _ALIGN_SPECTRA_ SUFFIX=$suffix
+      }
+
       my $maths_list = '';
       my $maths_eq = 'exp=\'(';
       my $maths_index = "a";
       my $total_weight = 0;
       foreach my $i ( 1 .. $number_at_location ) {
+         $mean_spectra[$i-1] =~ s/_wamrs/$suffix/;
          $maths_list .= "i" . $maths_index . "=$mean_spectra[$i-1] ";
          $maths_eq .= "i" . $maths_index . "*" . $mean_weights[$i-1] . "+";
          $maths_index = chr( ord( $maths_index ) + 1 );
@@ -406,7 +429,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my $units;
    my ( $ardmask, $boxsize, $maxwidth );
    my ( $lbnd, $ubnd );
-   my $refspec = $grpFrm->inout( "_uders" );
+   my $master_refspec_aligned;
 
    foreach my $rpFrm ( @Objs ) {
       foreach my $i ( 1 .. $rpFrm->nfiles ) {
@@ -426,7 +449,6 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Need extra work NDFs.
          my $temp6file = new ORAC::TempFile( 0 );
          my $temp8file = new ORAC::TempFile( 0 );
-         my $temp9file = new ORAC::TempFile( 0 );
 
 # Determine reference emission in user-specified regions.
 # -------------------------------------------------------
@@ -466,7 +488,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Subtract the interpolated spectrum from the median spectrum to create
 # the estimated reference spectrum.  In this idealised reference
 # spectrum there is no noise and no positive values.
-         my $udrs = $Frm->inout( "_udrs" );
+         my $udrs = $masterFrm->inout( "_udrs" );
          $params = "ia=$temp5file ib=$temp8file out=$udrs exp='qif(ib.gt.ia,ia-ib,0)'";
          $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
@@ -487,8 +509,22 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          }
 
+# For data taken at different epochs the mapping from pixel to
+# velocity is likely to be different.  A combined _udrs file
+# has been aligned the first epoch's data, but when we come to subtract,
+# we need to realign with the original data before subtracting the
+# reference spectra, so that they can be subtracted pixel by pixel.
+         if ( $i == 1 ) {
+            my $Grp = $Grp->new;
+            $Grp->push( $masterFrm );
+
+            $suffix = "_udrsal";
+            _ALIGN_SPECTRA_ SUFFIX=$suffix REF=$in
+            $master_refspec_aligned = $master_refspec . $suffix;
+         }
+
 # Subtract the mean reference spectrum from the input file.
-         $params = "in1=$in in2=$temp9file out=$out";
+         $params = "in1=$in in2=$master_refspec_aligned out=$out";
          $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
 # Set the units back to what they were.
