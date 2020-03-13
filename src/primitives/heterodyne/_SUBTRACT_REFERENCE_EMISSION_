@@ -282,10 +282,6 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my ( $refspec_masked, $refspec_unmasked );
    my $grpFrm = $rpGrp->allmembers->[0];
 
-   my $masterFrm = $Frm->new;
-   my $master_refemis = "master_refemis" . $refposnum;
-   $masterFrm->file( $master_refemis );
-
    foreach my $maskspec ( @combine ) {
       @mean_spectra = ();
       @mean_weights = ();
@@ -505,7 +501,6 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my $suffix = $iteration == 1 ? "_refspec" : "_refspec$iteration";
    my $refspec = $grpFrm->inout( $suffix );
    my $refmask = $grpFrm->inout( "_refmask" ) if ! $user_region;
-   my $refemis_aligned;
 
    my $first = 1;
    foreach my $rpFrm ( @Objs ) {
@@ -715,19 +710,18 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 
 # Grow the background mean reference spectrum to match the original time
 # series.
-         my $refemis_tsc = $masterFrm->inout( "_tsc" );
+         my $tsc = $rpFrm->inout( "_tsc", $i );
          if ( $combine_detectors ) {
-            $params = "in=$refspec out=$refemis_tsc axes=[1,0,0] ";
+            $params = "in=$refspec out=$tsc axes=[1,0,0] ";
             $params .= "lbound=[" . $lbnd[1] . "," . $lbnd[2] . "] ";
             $params .= "ubound=[" . $ubnd[1] . "," . $ubnd[2] . "]";
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          } else {
-            $params = "in=$refspec out=$refemis_tsc axes=[1,2,0] ";
+            $params = "in=$refspec out=$tsc axes=[1,2,0] ";
             $params .= "lbound=" . $lbnd[2] . " ";
             $params .= "ubound=" . $ubnd[2];
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          }
-         $masterFrm->file( $refemis_tsc );
 
 # Save the spectrum mask for future iterations.  Later iterations
 # should just be adjusting for missing signal in the previously detected
@@ -743,17 +737,18 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # has been aligned the first epoch's data, but when we come to subtract,
 # we need to realign with the original data before subtracting the
 # reference spectra, so that they can be subtracted pixel by pixel.
-         if ( $i == 1 ) {
+         my $tscal = $rpFrm->inout( "_tscal", $i );
+         ( my $rootname, $suffix ) = split /_([^_]+)$/, $tscal;
+         {
             my $Grp = $Grp->new;
-            $Grp->push( $masterFrm );
-
-            $suffix = "_tscal";
+            my $Frm = $Frm->new;
+            $Frm->file( $tsc );
+            $Grp->push( $Frm );
             _ALIGN_SPECTRA_ SUFFIX=$suffix REF=$in
-            $refemis_aligned = $master_refemis . $suffix;
          }
 
 # Subtract the mean reference spectrum from the input file.
-         $params = "in1=$in in2=$refemis_aligned out=$out";
+         $params = "in1=$in in2=$tscal out=$out";
          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
 # Set the units back to what they were.
@@ -769,11 +764,12 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Request that the output file, and the raw and aligned master
 # reference emission files are removed upon completion of the Group
 # processing.
-         $Grp->push_intermediates( $refemis_tsc );
-         $Grp->push_intermediates( $refemis_aligned );
+         $Grp->push_intermediates( $tsc );
+         $Grp->push_intermediates( $tscal );
          $Grp->push_intermediates( $out );
          $first = 0;
       }
+      $first_group = 0;
    }
 
 # Request that the intermediate files are removed upon completion of the
