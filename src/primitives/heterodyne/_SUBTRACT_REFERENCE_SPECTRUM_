@@ -466,8 +466,8 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my $units;
    my ( $ardmask, $boxsize, $maxwidth );
    my ( $lbnd, $ubnd );
-   my $refspec_aligned;
 
+   my $first_group = 1;
    foreach my $rpFrm ( @Objs ) {
       foreach my $i ( 1 .. $rpFrm->nfiles ) {
 
@@ -532,42 +532,60 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Request that the estimated master reference spectrum is removed
 # upon completion of the Group processing.
          $Grp->push_intermediates( $udrs );
+         $masterFrm->file( $udrs );
 
 # Application phase
 # =================
+
+# For data taken at different epochs the mapping from pixel to
+# velocity is likely to be different.  A combined _udrs file
+# has been aligned the first epoch's data, but when we come to subtract,
+# we need to realign with the original data ($in)before subtracting the
+# reference spectra, so that they can be subtracted pixel by pixel.
+
+# For the first (master) group there is no need to align to itself.
+         my ( $crsp, $crspal );
+         if ( ! $first_group ) {
+
+# Extract a spectrum for its WCS, trimming higher dimenstions and
+# their associated WCS.
+            $crsp = $rpFrm->inout( "_crsp", $i );
+            $params = "in=$in(,1,1) out=$crsp trim trimwcs";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Append the "al" modifier to the suffix to indicate an aligned file.
+            my $suffix = "udrsal";
+            $crspal = $udrs;
+            $crspal =~ s/udrs/$suffix/;
+            if ( $i == 1 ) {
+               my $Grp = $Grp->new;
+               $Grp->push( $masterFrm );
+
+               _ALIGN_SPECTRA_ SUFFIX=$suffix REF=$crsp
+            }
+
+         } else {
+            $crspal = $udrs;
+         }
 
 # Grow the background mean reference spectrum to match the original time
 # series cube.
          my $refspec_tsc = $masterFrm->inout( "_tsc" );
          if ( $combine_detectors ) {
-            $params = "in=$udrs out=$refspec_tsc axes=[1,0,0] ";
+            $params = "in=$crspal out=$refspec_tsc axes=[1,0,0] ";
             $params .= "lbound=[" . $lbnd[1] . "," . $lbnd[2] . "] ";
             $params .= "ubound=[" . $ubnd[1] . "," . $ubnd[2] . "]";
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          } else {
-            $params = "in=$udrs out=$refspec_tsc axes=[1,2,0] ";
+            $params = "in=$crspal out=$refspec_tsc axes=[1,2,0] ";
             $params .= "lbound=" . $lbnd[2] . " ";
             $params .= "ubound=" . $ubnd[2];
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          }
          $masterFrm->file( $refspec_tsc );
 
-# For data taken at different epochs the mapping from pixel to
-# velocity is likely to be different.  A combined _udrs file
-# has been aligned the first epoch's data, but when we come to subtract,
-# we need to realign with the original data before subtracting the
-# reference spectra, so that they can be subtracted pixel by pixel.
-         if ( $i == 1 ) {
-            my $Grp = $Grp->new;
-            $Grp->push( $masterFrm );
-
-            $suffix = "_tscal";
-            _ALIGN_SPECTRA_ SUFFIX=$suffix REF=$in
-            $refspec_aligned = $master_refspec . $suffix;
-         }
-
 # Subtract the mean reference spectrum from the input file.
-         $params = "in1=$in in2=$refspec_aligned out=$out";
+         $params = "in1=$in in2=$refspec_tsc out=$out";
          $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
 # Set the units back to what they were.
@@ -583,10 +601,12 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Request that the output file and the aligned master reference
 # spectrum are removed upon completion of the Group processing.
          $Grp->push_intermediates( $refspec_tsc );
-         $Grp->push_intermediates( $refspec_aligned );
+         $Grp->push_intermediates( $crsp ) if defined $crsp;
+         $Grp->push_intermediates( $crspal );
          $Grp->push_intermediates( $out );
 
       }
+      $first_group = 0;
    }
 }
 

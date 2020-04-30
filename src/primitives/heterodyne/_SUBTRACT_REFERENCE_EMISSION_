@@ -710,23 +710,60 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Application phase
 # =================
 
+# For data taken at different epochs the mapping from pixel to
+# velocity is likely to be different.  A combined reference-spectra
+# file (with suffix _refspec) has been aligned the first epoch's data.
+# When we come to subtract it from the current file ($in), we need to
+# realign  the _refspec with the current file, so that they can be
+# subtracted pixel by pixel.
+
+# For the first (master) group there is no need to align to itself.
+         my ( $crep, $crepal );
+         if ( ! $first_group ) {
+
+# Extract a spectrum for its WCS, trimming higher dimenstions and
+# their associated WCS.
+            $crep = $rpFrm->inout( "_crep", $i );
+            $params = "in=$in(,1,1) out=$crep trim trimwcs";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Append the "al" modifier to the suffix to indicate an aligned file.
+            my $suffix = "refspecal";
+            $crepal = $refspec;
+            $crepal =~ s/refspec/$suffix/;
+
+# The reference file is the current spectrum and the reference
+# spectrum is aligned to that.  The reference spectrum is passed
+# as the only bespoke Group member.
+            {
+               my $Grp = $Grp->new;
+               my $Frm = $Frm->new;
+               $Frm->file( $refspec );
+               $Grp->push( $Frm );
+               _ALIGN_SPECTRA_ SUFFIX=$suffix REF=$crep
+            }
+
+         } else {
+            $crepal = $refspec;
+         }
+
 # Grow the background mean reference spectrum to match the original time
 # series.
          my $tsc = $rpFrm->inout( "_tsc", $i );
          if ( $combine_detectors ) {
-            $params = "in=$refspec out=$tsc axes=[1,0,0] ";
+            $params = "in=$crepal out=$tsc axes=[1,0,0] ";
             $params .= "lbound=[" . $lbnd[1] . "," . $lbnd[2] . "] ";
             $params .= "ubound=[" . $ubnd[1] . "," . $ubnd[2] . "]";
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          } else {
-            $params = "in=$refspec out=$tsc axes=[1,2,0] ";
+            $params = "in=$crepal out=$tsc axes=[1,2,0] ";
             $params .= "lbound=" . $lbnd[2] . " ";
             $params .= "ubound=" . $ubnd[2];
             $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
          }
 
 # Restore the cube's WCS Frame to the reference spectra/um now in cube
-# form.  This is needed before alignment is made.
+# form.
          $params = "ndf=$tsc like=$in confirm=f";
          $Mon{'ndfpack_mon'}->obeyw( "wcscopy", "$params" );
 
@@ -739,23 +776,8 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
             $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
          }
 
-# For data taken at different epochs the mapping from pixel to
-# velocity is likely to be different.  A combined _udrs file
-# has been aligned the first epoch's data, but when we come to subtract,
-# we need to realign with the original data before subtracting the
-# reference spectra, so that they can be subtracted pixel by pixel.
-         my $tscal = $rpFrm->inout( "_tscal", $i );
-         ( my $rootname, $suffix ) = split /_([^_]+)$/, $tscal;
-         {
-            my $Grp = $Grp->new;
-            my $Frm = $Frm->new;
-            $Frm->file( $tsc );
-            $Grp->push( $Frm );
-            _ALIGN_SPECTRA_ SUFFIX=$suffix REF=$in
-         }
-
 # Subtract the mean reference spectrum from the input file.
-         $params = "in1=$in in2=$tscal out=$out";
+         $params = "in1=$in in2=$tsc out=$out";
          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
 # Set the units back to what they were.
@@ -772,7 +794,8 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # reference emission files are removed upon completion of the Group
 # processing.
          $Grp->push_intermediates( $tsc );
-         $Grp->push_intermediates( $tscal );
+         $Grp->push_intermediates( $crep ) if defined $crep;
+         $Grp->push_intermediates( $crepal );
          $Grp->push_intermediates( $out );
          $first = 0;
       }
