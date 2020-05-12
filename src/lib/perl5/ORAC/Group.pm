@@ -745,7 +745,7 @@ sub check_membership {
   for my $member (@bad) {
     for my $weregood (@prevgood) {
       if ($member == $weregood) {
-        orac_warn "Removing observation ". $member->number . " from group\n";
+        orac_warn "Removing observation ". $member->hdr('ORACUT') . " #"  . $member->number . " from group\n";
 
         # Adding the removed observation to the log.
         my $log = new ORAC::LogFile('log.removedobs');
