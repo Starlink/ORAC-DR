@@ -54,6 +54,17 @@ reference spectrum.  This argument can be overridden by the
 RECPAR_REF_SPECTRUM_COMBINE_REFPOS uhdr via the recipe parameter
 system.  If false, observations are grouped by observation date.  [1]
 
+=item SPECTRUM_FILE = STRING (Given)
+
+The name of an NDF that contains an estimated reference spectrum in
+absorption.  This will usually be for selected lines that the
+automated algorithm and the manual extents have failed to remove.  It
+should have data values of zero except where the reference spectrum is
+located. An undefined value means that no file is to be added to the
+manually determined reference spectrum.  This argument can be
+overridden by the RECPAR_REF_SPECTRUM_FILE uhdr via the recipe
+parameter system.  [undef]
+
 =back
 
 =head1 NOTES
@@ -185,6 +196,7 @@ if ( ! $apply ) { goto RETURN }
 
 my $combine_detectors = get_prim_arg( $_PRIM_ARGS_, "COMBINE_DETECTORS", 0 );
 my $combine_refpos = get_prim_arg( $_PRIM_ARGS_, "COMBINE_BY_REFPOS", 1 );
+my $sp_file = get_prim_arg( $_PRIM_ARGS_, "SPECTRUM_FILE", undef );
 
 $combine_detectors = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_DETECTORS" ) ) ?
                        $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_DETECTORS"  )            :
@@ -192,6 +204,9 @@ $combine_detectors = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_DETECTO
 $combine_refpos = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_REFPOS" ) ) ?
                     $Frm->uhdr( "RECPAR_REF_SPECTRUM_COMBINE_REFPOS"  )            :
                     $combine_refpos );
+$sp_file = ( defined( $Frm->uhdr( "RECPAR_REF_SPECTRUM_FILE" ) ) ?
+             $Frm->uhdr( "RECPAR_REF_SPECTRUM_FILE"  )           :
+             $sp_file );
 
 if ( ! $combine_detectors ) {
    my $isok = eval { require JCMT::ACSIS::Array; 1; };
@@ -527,11 +542,64 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
          $params = "in=$temp6file out=$temp8file niter=10 size=$boxsize";
          $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
 
+# Prepare the supplied spectrum
+# -----------------------------
+
+#  This involves expanding to the bounds of the reference spectrum created
+#  above, replacing all the padded bad values with zeroes.
+         my $ext_file_al;
+         if ( defined( $sp_file ) ) {
+            my $sp_file_2d = $sp_file . "_2d";
+            my $ext_file = $combine_detectors ? $sp_file : $sp_file_2d;
+            $ext_file_al = $sp_file . "_al";
+
+# Need extra work NDFs.
+            my $temp7file = new ORAC::TempFile( 0 );
+            my $temp9file = new ORAC::TempFile( 0 );
+
+            if ( ! $combine_detectors ) {
+
+# Make the external spectrum two-dimensional if there is a derived
+# reference spectrum for each receptor.
+               $params = "in=$sp_file out=$temp7file axes=[1,0] ";
+               $params .= "lbound=" . $lbnd[1] . " ";
+               $params .= "ubound=" . $ubnd[1];
+               $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+            }
+            $Mon{'kappa_mon'}->obeyw( "nomagic", "in=$temp7file out=$ext_file repval=0.0" );
+
+# The mapping from pixel to velocity is likely to be different.  So
+# before we can add the external reference spectrum, this spectrum must
+# be aligned with the computed one.
+# Append the "al" modifier to the suffix to indicate an aligned file.
+            {
+               my $Grp = $Grp->new;
+               my $temp_Frm = $Frm->new;
+               $temp_Frm->file( $ext_file );
+               $Grp->push( $temp_Frm );
+
+               $suffix = "_al";
+               _ALIGN_SPECTRA_ REF=$temp5file SUFFIX=$suffix
+            }
+
+# Request that the align and two-dimensional external spectrum are removed
+# upon completion of the Group processing.
+            $Grp->push_intermediates( $ext_file );
+            $Grp->push_intermediates( $ext_file_al );
+         }
+
 # Subtract the interpolated spectrum from the median spectrum to create
 # the estimated reference spectrum.  In this idealised reference
-# spectrum there is no noise and no positive values.
+# spectrum there is no noise and no positive values.  Add in the
+# additional reference spectrum, if one is supplied, ensuring that the
+# origins match.
          my $udrs = $masterFrm->inout( "_udrs" );
-         $params = "ia=$temp5file ib=$temp8file out=$udrs exp='qif(ib.gt.ia,ia-ib,0)'";
+         $params = "ia=$temp5file ib=$temp8file out=$udrs ";
+         if ( defined( $sp_file ) ) {
+            $params .= "ic=$ext_file_al exp='qif(ib.gt.ia,ia-ib,0)+ic'";
+         } else {
+            $params .= "exp='qif(ib.gt.ia,ia-ib,0)'";
+         }
          $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
 
 # Request that the estimated master reference spectrum is removed
