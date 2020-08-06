@@ -340,6 +340,7 @@ sub orac_calc_instrument_settings {
     my %ql_display = (
         acsis10 => 'palila',
         ou => 'awa',
+        po => 'hoku',
     );
     my $pulse_server = undef;
     if ((exists $ENV{'REMOTEHOST'}) and (exists $ql_display{$ENV{'REMOTEHOST'}})) {
