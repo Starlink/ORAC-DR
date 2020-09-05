@@ -30,13 +30,18 @@ spectrum.
 
 A supplementary spectrum may be supplied to be used to determine the
 locations and extents of the lines.  This should be derived from the
-time-series cube with source emision masked.  Then the main spectrum
+time-series cube with source emission masked.  Then the main spectrum
 will then normally be the modal compression of the unmasked time
 series, as this gives better determination of the line intensity.
 
 =head1 PARAMETERS
 
 =over 4
+
+=item BACKGROUND = BOOLEAN (Given)
+
+Whether or not to subtract the background when identifying emission
+lines. [0]
 
 =item IN = STRING (Given)
 
@@ -208,11 +213,14 @@ if ( ! defined( $rms ) ) {
    $rms = sqrt( $sum / $numgood ) if $numgood > 0;
 }
 
+# Overview
+# ========
+
 # The calculated reference spectrum supplied may also have target emission
 # (now in absorption), even if target emission has been allegedly detected
 # and masked.  Broad and weak signal may be present.  Such absorption
 # features would be fitted as background by FINDBACK, and when subtracted
-# introduce spurious additional flux to the source emission.
+# introduce spurious additional flux to the off-position emission.
 #
 # To attempt to determine the background level, try to locate the
 # reference lines without background substitution, mask them, and invert
@@ -236,10 +244,13 @@ my $bgdmask_r = new ORAC::TempFile( 0 );
 # Want to contour minimum to be a little higher for the spectrum with
 # source emission masked to avoid picking up noise lines and minimum
 # between residual weak source emission.  To compensate widen the
-# detected lines by four pixels to reach roughly the zero level.
+# detected lines by three or two pixels to reach roughly the zero level.
 my $thresh = 1.5;
 my $first_thresh = $usemask ? 2.0 : $thresh;
 my $wings = $usemask ? 7 : 5;
+
+# Attempt to remove residual source emission.
+# -------------------------------------------
 
 # Reference limes can be in a hollow from residual source signal not
 # masked.  Try to smooth and subtract to lift up the reference line
@@ -283,6 +294,9 @@ if ( $usemask ) {
    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 }
 
+# Find and mask off-position lines.
+# ---------------------------------
+
 # Search for the reference-spectrum lines without background subtraction
 # when analysing the source-emission-masked spectrum.  This choice may
 # lose weaker reference emission embedded in extended source signal, but
@@ -319,7 +333,7 @@ if ( defined( $linemap_r ) && $nlines_r > 0 ) {
    }
    $Grp->push_intermediates( $linemap_r );
 
-# Extend into the wings by a couple of pixels to reduce artefacts there.
+# Extend into the wings by a two or three pixels to reduce artefacts there.
    my $temp30file = new ORAC::TempFile( 0 );
    my $temp31file = new ORAC::TempFile( 0 );
    my $temp32file = new ORAC::TempFile( 0 );
@@ -345,7 +359,7 @@ if ( defined( $linemap_r ) && $nlines_r > 0 ) {
    orac_say "  Apply mask of reference emission lines.";
 
 # The last resort is to subtract the emission above the noise.
-# ============================================================
+# ------------------------------------------------------------
 } else {
 
 # Restrict lines to an earlier line mask.
@@ -427,7 +441,8 @@ if ( defined( $linemap_s ) && $nlines_s > 0 ) {
 # ====================
 
 # Both the reference and source emission lines are at least partially masked
-# making the estimation of the background, which may include weak source emission.
+# making the estimation of the background, which may include weak source
+# emission, more accurate.
 orac_say "Fitting and subtracting the background.";
 
 # Flip the spectrum with both source and reference emission masked.
