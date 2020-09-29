@@ -459,7 +459,7 @@ sub receptor_names {
       @receptors = ( "CA", "CB", "DA", "DB" );
 
     } elsif ( $instrument eq /UU/ ) {
-      @receptors = ( "HUOL", "HU1L", "HU0U", "HU1L" );
+      @receptors = ( "NU0L", "NU1L", "NU0U", "NU1U" );
 
     } elsif ( $instrument eq "AWEOWEO" ) {
       @receptors = ( "NW0L", "NW0U", "NW1L", "NW1U" );
