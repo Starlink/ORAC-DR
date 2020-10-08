@@ -190,7 +190,18 @@ sub bad_receptors_list {
   my $usefile = index( $sys, 'FILE' ) != -1 ;
   my $useindex = index( $sys, 'INDEX' ) != -1;
   my $usemaster = index( $sys, 'MASTER' ) != -1;
-  my $uselist = ( $sys =~ /H\d\d/ ) ? 1 : 0;
+  my @valid_receptors = $self->receptor_names;
+
+  # Validate the receptor name for old instruments and U'u.
+  my $uselist = 1;
+  foreach my $receptor ( split /:/, $sys ) {
+    if ( ! grep( /^$receptor$/, @valid_receptors ) ) {
+      $uselist = 0;
+      my $instrument = $self->thing->{'ORAC_INSTRUMENT'};
+      orac_warn "List mode for bad_receptors is disabled because " .
+                "$receptor is not permitted for $instrument.\n";
+    }
+  }
 
   # Go through each system.
   if ( $useindex || $usemaster ) {
@@ -212,6 +223,7 @@ sub bad_receptors_list {
       my $brposition = $self->bad_receptorsindex->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
 
       if( defined( $brposition ) ) {
+
         # Retrieve the specific entry, and thus the receptors.
         my $brref = $self->bad_receptorsindex->indexentry( $brposition );
         if( exists( $brref->{'DETECTORS'} ) ) {
@@ -403,6 +415,63 @@ sub standard {
   }
 }
 
+=item B<receptor_names>
+
+This returns the permitted receptors names for the current instrument.
+It first looks for the header, and failing that supplies the default
+set.
+
+  @receptors = $Cal->receptor_names();
+  @receptors = $Cal->receptor_names($instrument);
+
+=cut
+
+sub receptor_names {
+  my $self = shift;
+  my $instrument = shift;
+  if ( !$instrument ) {
+    $instrument = $self->thing->{'ORAC_INSTRUMENT'};
+  }
+  $instrument = uc( $instrument );
+
+  # Form an array of valid receptor names for the respective instruments.
+  # The available ones should be recorded in the FITS header, but
+  # include default sets of receptor names by instrument, just in case
+  # the header is absent or null.
+  my @receptors;
+  if ( defined( $self->thing->{'RECPTORS'} ) ) {
+    @receptors = split / /, $self->thing->{'RECPTORS'};
+
+  } else {
+    if ( $instrument eq "HARP" ) {
+      foreach my $i ( 0..15 ) {
+        my $receptor_name = "H" . printf("%02d", $i );
+        push @receptors, $receptor_name;
+      }
+
+    } elsif ( $instrument =~ /^RXA/ ) {
+      @receptors = ( "A" );
+
+    } elsif ( $instrument =~ /^RXB/ ) {
+      @receptors = ( "A", "B" );
+
+    } elsif ( $instrument =~ /^RXW/ ) {
+      @receptors = ( "CA", "CB", "DA", "DB" );
+
+    } elsif ( $instrument eq /UU/ ) {
+      @receptors = ( "NU0L", "NU1L", "NU0U", "NU1U" );
+
+    } elsif ( $instrument eq "AWEOWEO" ) {
+      @receptors = ( "NW0L", "NW0U", "NW1L", "NW1U" );
+
+    } elsif ( $instrument eq "ALAIHI" ) {
+      @receptors = ( "NA0", "NA1" );
+    }
+  }
+
+  return @receptors;
+}
+
 =item B<sidebandcorr_factor>
 
 Calculate the sideband correction factor. Requires an instrument, a
@@ -511,7 +580,7 @@ Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2009, 2014, 2016 Science and Technology Facilities Council.
+Copyright (C) 2007-2009, 2014, 2016, 2020 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
