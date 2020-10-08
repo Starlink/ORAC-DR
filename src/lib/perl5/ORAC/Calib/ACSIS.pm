@@ -580,7 +580,7 @@ Malcolm J. Currie <mjc@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2009, 2014, 2016 Science and Technology Facilities Council.
+Copyright (C) 2007-2009, 2014, 2016, 2020 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
