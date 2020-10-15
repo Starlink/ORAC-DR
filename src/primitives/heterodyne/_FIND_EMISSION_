@@ -1,0 +1,260 @@
+=head1 NAME
+
+_FIND_CLUMPS_ - Detect emission regions using various methods.
+
+=head1 DESCRIPTION
+
+This primitive is used to locate clumps of emission.  A supplied RMS
+is used to set a threshold for the various emission-selection methods.
+Selected regions are then turned into an emission mask (masking out
+non-emission). 
+
+Three emission selection methods are available, selected by Argument
+METHOD.
+  CUPID::ClumpFind: selects emission by walking down peaks to lower
+        intensities.
+  CUPID::FelWalker: selects emission by walking up along line of
+        steepest accent until a peak or a previous found clump is
+        found.
+  KAPPA:THRESH: selects emission by simply accepting all data
+        above a specified RMS threshold.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COUNT = INTEGER (Returned}
+
+The number of emission clumps found.
+
+=item FILE = STRING (Given)
+
+The name of the spectral cube to be analysed for spectral emission.
+This will normally be a smoothed version of the original cube.
+
+=item MASK = STRING (Given)
+
+The name of the NDF, which will have the non-emission data masked. Values
+are those of the current Frm->file, except in areas of background,
+which are set to zero.
+
+=item METHOD = STRING (Given)
+
+Method to use to find emission in the data: 'clumpfind', 'fellwalker',
+or 'thresh'.  This argument can be overridden by the
+RECPAR_CLUMP_METHOD uhdr via the recipe parameter system.  ['clumpfind']
+
+=item RMS = REAL (Given)
+
+The median rms of the background.
+
+=item RMS_THRESHOLD = REAL (Given)
+
+The RMS threshold above which emission will be considered to be a
+clump.  [3.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS cubes.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The masked cube with the name given by Argument MASK.
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDCLUMPS
+KAPPA: DIV, MULT, NDFCOPY, NOMAGIC, STATS, THRESH
+
+=head1 REQUIRED PERL MODULES
+
+None
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>,
+Remo Tilanus E<lt>r.tilanus@jach.hawaii.eduE<gt>.
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008-2009, 2014-2016, 2020 Science and Technology 
+Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Handle parameters.
+my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef, 1 );
+my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", undef, 1 );
+my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
+my $rms_thresh = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", 3.0 );
+my $medianrms = get_prim_arg( $_PRIM_ARGS_, "RMS", undef, 1 );
+
+# Handle recipe parameters.
+$method = ( defined( $Frm->uhdr( "RECPAR_CLUMP_METHOD" ) ) ?
+            $Frm->uhdr( "RECPAR_CLUMP_METHOD" )            :
+            $method );
+
+# Permit shorthands for the method.
+if ( $method =~ /^t/i ) {
+  $method = "thresh";
+} elsif( $method =~ /^f/i ) {
+  $method = "fellwalker";
+} else {
+  $method = "clumpfind";
+}
+
+# Initialize output file for masks.
+my $temp1 = new ORAC::TempFile(0);
+my $temp1file = $temp1->file;
+my $nclumps = 0;
+my $ORAC_STATUS;
+my $in = $Frm->file;
+
+# Find emission/clumps
+# ====================
+
+# Method is Thresholding
+# ----------------------
+
+# Run KAPPA::THRESH.
+if ( $method eq 'thresh' ) {
+   orac_say " Finding emission higher than $rms_thresh sigma using $method.";
+   my $clip = $medianrms * $rms_thresh;
+   my $params = "in=$file out=$temp1file thrlo=$clip thrhi=-1.0e30 newlo=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file" );
+   ( $ORAC_STATUS, $nclumps ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+# Method is to find clumps
+# ------------------------
+} else {
+
+    # Create a parameter file for FINDCLUMPS, containing parameters for
+    # both ClumpFind and FellWalker.
+    my $fc_param = "findclumps$$.param";
+    open my $fc_fh, ">", $fc_param;
+
+    print $fc_fh "ClumpFind.Minpix=50\n";
+    print $fc_fh "ClumpFind.AllowEdge=1\n";
+    print $fc_fh "ClumpFind.FwhmBeam=1\n";
+    print $fc_fh "ClumpFind.MaxBad=9999\n";
+    print $fc_fh "ClumpFind.VeloRes=0\n";
+    print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
+    print $fc_fh "FellWalker.Minpix=50\n";
+    print $fc_fh "FellWalker.AllowEdge=1\n";
+    print $fc_fh "FellWalker.FwhmBeam=0\n";
+    print $fc_fh "FellWalker.MaxBad=9999\n";
+    print $fc_fh "FellWalker.VeloRes=0\n";
+    print $fc_fh "FellWalker.Noise=$rms_thresh*RMS\n";
+    print $fc_fh "FellWalker.FlatSlope=1.0*RMS\n";
+    print $fc_fh "FellWalker.MinHeight=$rms_thresh*RMS\n";
+    close $fc_fh;
+
+    # Calculate statistics of the array to decide if we want to run ClumpFind.
+    $Mon{'kappa_mon'}->obeyw( "stats","ndf=$file" );
+    ( $ORAC_STATUS, my $min_fault) = $Mon{'kappa_mon'}->get("stats","minimum");
+    ( $ORAC_STATUS, my $max_fault) = $Mon{'kappa_mon'}->get("stats","maximum");
+    ( $ORAC_STATUS, my $sigma_fault) = $Mon{'kappa_mon'}->get("stats","sigma");
+
+    # Run FINDCLUMPS only if the statistics are good.
+    if ( $max_fault - ( $rms_thresh * $medianrms ) < ( 2 * $medianrms ) ||
+          abs( $max_fault - $min_fault ) < 1E-6 ) {
+       orac_say( "Image does not seem to contain features, will not run ClumpFind." );
+
+       # Setting nclumps to zero prevents the rest of the primitive from using
+       # ClumpFind results.
+       $nclumps = 0;
+
+    } else {
+
+       # Unreliable or noisy data can have extreme values out of MFITTREND.
+       # The highest signals are in thirties, so 80 is not discarding true
+       # signal.  Use a copy of the input file name so as not to change a
+       # supplied value.
+       my $params;
+       my $temp2file = new ORAC::TempFile( 0 );
+       my $max_true_value = 80;
+       my $file2 = $file;
+       if ( $max_fault > $max_true_value ) {
+          $params = "in=$file out=$temp2file ";
+          $params .= "thrhi=$max_true_value thrlo=-$max_true_value newhi=bad newlo=bad";
+          $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+          $file2 = $temp2file;
+       }
+
+       # Run FINDCLUMPS with ClumpFind or FellWalker.
+       orac_say " Finding clumps higher than $rms_thresh sigma using $method.";
+       $params = "in=$file2 rms=$medianrms config='^$fc_param' method=$method ";
+       $params .= "out=$temp1file outcat=\! deconv=no";
+
+       $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+
+       # Check the number of clumps using NCLUMPS parameter.
+       ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+    }
+    unlink( $fc_param );
+}
+
+# Create a clump mask.
+# ====================
+
+# If we have no clumps, we can't make a clump mask, so skip the masking.
+if ( $nclumps ) {
+
+   # Set clumps to be 1 everywhere (i.e. "clump mask").
+   my $temp3 = new ORAC::TempFile(0);
+   my $params = "in1=$temp1file in2=$temp1file out=$temp3";
+   $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+   # Set bad data to zero.
+   my $temp4 = new ORAC::TempFile(0);
+   $params = "in=$temp3 out=$temp4 repval=0";
+   $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+   # Multiply clump mask by the input cube.
+   orac_say " Masking non-clump data.";
+   $params = "in1=$in in2=$temp4 out=$mask";
+   $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
+
+} else {
+   orac_say " No clumps found, using full cube for map creation.";
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$mask" );
+
+}
+
+$_FIND_EMISSION_{COUNT} = $nclumps;
+
