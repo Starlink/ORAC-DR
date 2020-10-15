@@ -180,7 +180,7 @@ sub bad_receptors_list {
   # Array to hold the bad receptors.
   my @bad_receptors = ();
 
-  # Protect agaianst the case where the user provides a list and one of the
+  # Protect against the case where the user provides a list and one of the
   # other options separated by a comma rather than a colon.
   if ( $sys =~ /ARRAY/ ) {
      orac_throw( "Syntax error in bad_receptors calibration specification.  " .
@@ -190,9 +190,12 @@ sub bad_receptors_list {
   my $usefile = index( $sys, 'FILE' ) != -1 ;
   my $useindex = index( $sys, 'INDEX' ) != -1;
   my $usemaster = index( $sys, 'MASTER' ) != -1;
-  my @valid_receptors = $self->receptor_names;
 
-  # Validate the receptor name for old instruments and U'u.
+  # Validate the receptor name for old instruments and U'u, ignoring
+  # other bad_receptor modes.
+  my @valid_receptors = $self->receptor_names;
+  push @valid_receptors, ( "INDEX", "FILE", "MASTER", "MASTERORINDEX" );
+
   my $uselist = 1;
   foreach my $receptor ( split /:/, $sys ) {
     if ( ! grep( /^$receptor$/, @valid_receptors ) ) {
