@@ -27,9 +27,41 @@ image. The allowed options correspond to the list of estimators in
 KAPPA:COLLAPSE.  This argument can be overridden by the
 RECPAR_LV_ESTIMATOR uhdr via the recipe parameter system.  ["mean"]
 
+=item FREQUENCY_SMOOTH = INTEGER (Given)
+
+The number of channels to smooth in the frequency axis when smoothing
+to determine baselines. This number should be small (~10) for
+narrow-line observations and large (~25) for broad-line
+observations.  This is ignored if no masking of baseline regions
+is required (see Argument MASK).  This argument can be overridden by the
+RECPAR_FREQUENCY_SMOOTH uhdr via the recipe parameter system.  [10]
+
 =item IMAGE = BOOLEAN (Given)
 
-Whether or not to create the LV image.  [0]
+Whether or not to create the LV image.  This argument can be
+overridden by the RECPAR_LV_IMAGE uhdr via the recipe parameter
+system.  [0]
+
+=item MASK = BOOLEAN (Given)
+
+Whether or not to apply a mask of baseline regions, thus only include
+clumps.  If set true, a previously derived mask is applied, otherwise
+a mask is calculated.  This argument can be overridden by the
+RECPAR_LV_MASK uhdr via the recipe parameter system.  [0]
+
+=item ORDER = INTEGER (Given)
+
+The polynomial order that will be used when estimating baselines. 
+This is ignored if no masking of baseline regions is required (see
+Argument MASK).  This argument can be overridden by the
+RECPAR_BASELINE_ORDER uhdr via the recipe parameter system.  [1]
+
+=item SPATIAL_SMOOTH = INTEGER (Given)
+
+The number of pixels to smooth in both spatial axes when smoothing to
+determine baselines.  This is ignored if no masking of baseline regions
+is required (see Argument MASK).  This argument can be overridden by the
+RECPAR_SPATIAL_SMOOTH uhdr via the recipe parameter system.   [3]
 
 =back
 
@@ -58,9 +90,13 @@ The LV image with suffix _lv.
 
 =back
 
+=head1 SEE ALSO
+
+_CREATE_BASELINE_MASK_
+
 =head1 TASKS
 
-KAPPA: COLLAPSE, NDFTRACE.
+KAPPA: ADD, COLLAPSE, MATHS, NDFTRACE.
 
 =head1 REQUIRED PERL MODULES
 
@@ -72,7 +108,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2012, 2014 Science and Technology Facilities Council.  All
+Copyright (C) 2012, 2014, 2020 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =head1 LICENCE
@@ -97,6 +133,11 @@ MA 02111-1307, USA.
 # Handle arguments.
 my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", "skylat" );
 my $estim = get_prim_arg( $_PRIM_ARGS_, "ESTIMATOR", "mean" );
+my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 10 );
+my $make_lv = get_prim_arg( $_PRIM_ARGS_, "IMAGE",0 );
+my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 0 );
+my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 
 # Handle recipe parameters.
 $axis = ( defined( $Frm->uhdr( "RECPAR_LV_AXIS" ) ) ?
@@ -105,9 +146,21 @@ $axis = ( defined( $Frm->uhdr( "RECPAR_LV_AXIS" ) ) ?
 $estim = ( defined( $Frm->uhdr( "RECPAR_LV_ESTIMATOR" ) ) ?
            $Frm->uhdr( "RECPAR_LV_ESTIMATOR" )            :
            $estim );
-my $make_lv = ( defined( $Frm->uhdr( "RECPAR_LV_IMAGE" ) ) ?
-              $Frm->uhdr( "RECPAR_LV_IMAGE" )            :
-              0 );
+$freqsmooth = ( defined( $Frm->uhdr( "RECPAR_FREQUENCY_SMOOTH" ) ) ?
+                $Frm->uhdr( "RECPAR_FREQUENCY_SMOOTH" )            :
+                $freqsmooth );
+$make_lv = ( defined( $Frm->uhdr( "RECPAR_LV_IMAGE" ) ) ?
+             $Frm->uhdr( "RECPAR_LV_IMAGE" )            :
+             0 );
+$mask = ( defined( $Frm->uhdr( "RECPAR_LV_MASK" ) ) ?
+          $Frm->uhdr( "RECPAR_LV_MASK" )            :
+          0 );
+$order = ( defined( $Frm->uhdr( "RECPAR_BASELINE_ORDER" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_ORDER" )            :
+           $order );
+$spatsmooth = ( defined( $Frm->uhdr( "RECPAR_SPATIAL_SMOOTH" ) ) ?
+                $Frm->uhdr( "RECPAR_SPATIAL_SMOOTH" )            :
+                $spatsmooth );
 
 # Return if an LV has not been explictly requested.
 if ( ! defined( $make_lv ) || ! $make_lv ) {
@@ -119,15 +172,46 @@ orac_say "\nForm LV image";
 my $underline = "-" x 21;
 orac_say "$underline\n";
 
+my $clump_masks;
 foreach my $Obj ( $Grp ) {
+
+# Use existing mask, where available, otherwise create new mask.
+  if ( $mask ) {
+    if ( ! defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
+      _CREATE_BASELINE_MASK_ GROUP=0 FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
+    }
+    $clump_masks = $Obj->uhdr( "BASELINE_MASKS" );
+  }
+
   foreach my $i ( 1 .. $Obj->nfiles ) {
 
     my ( $in, $out ) = defined( $Obj->uhdr( "JSA_TILES" ) ) && $Obj->uhdr( "JSA_TILES" ) ?
                        $Obj->inout_jsatile( "_lv", $i ) :
                        $Obj->inout( "_lv", $i );
 
+    # Mask baseline regions, where requested.
+    my $temp = new ORAC::TempFile(0);
+    ( undef, my $bgdmask ) = $Obj->inout("_bgdmask" );
+    my $to_collapse = $temp->file;
+    my $params;
+    if ( $mask ) {
+
+      # Invert the mask so that it masks the background, not the enission.
+      my $linemask = $clump_masks->[$i];
+      $params = "exp='qif(ia.eq.<bad>,0,<bad>)' ia=$linemask out=$bgdmask";
+      $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+      orac_say " Masking baseline regions using $bgdmask.";
+      $params = "in1=$in in2=$bgdmask out=$to_collapse";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+      $Obj->push_intermediates( $bgdmask );
+    } else {
+      $to_collapse = $in;
+    }
+
     # Create the LV image.
-    my $params = "in=$in out=$out axis=$axis ";
+    $params = "in=$to_collapse out=$out axis=$axis ";
     $params .= "trim variance=false estimator=$estim accept";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
