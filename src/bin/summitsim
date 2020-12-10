@@ -76,6 +76,10 @@ of individual entries or first-last ranges.  E.g.:
 
     --skip 1,10-20,31
 
+=item B<--skipmissingok>
+
+Skip over meta files which mention OK files which are not present.
+
 =back
 
 =cut
@@ -95,6 +99,7 @@ my $out_dir = undef;
 my $clobber = undef;
 my $offset_spec = undef;
 my $skip_spec = undef;
+my $skip_missing_ok = undef;
 
 GetOptions(
     help => \$help,
@@ -103,6 +108,7 @@ GetOptions(
     'out=s' => \$out_dir,
     'offset=s' => \$offset_spec,
     'skip=s' => \$skip_spec,
+    'skipmissingok!' => \$skip_missing_ok,
 ) or exit(1);
 
 pod2usage(1) if $help;
@@ -146,7 +152,7 @@ if (defined $skip_spec) {
     }
 }
 
-foreach my $pathname (@ARGV) {
+METAFILE: foreach my $pathname (@ARGV) {
     die 'Given file "' . $pathname . '" does not exist' unless -e $pathname;
     my ($file, $path, $suffix) = fileparse($pathname, qw/.ok .meta/);
 
@@ -165,8 +171,12 @@ foreach my $pathname (@ARGV) {
         foreach my $okfile (@{read_file($pathname)}) {
             $okfile = File::Spec->catfile($path, $okfile)
                 unless File::Spec->file_name_is_absolute($okfile);
-            die 'OK file "' . $okfile . '" from "' . $pathname . '" does not exist'
-                unless -e $okfile;
+            unless (-e $okfile) {
+                die 'OK file "' . $okfile . '" from "' . $pathname . '" does not exist'
+                    unless $skip_missing_ok;
+                print STDERR 'OK file "'. $okfile . '" does not exist, skipping ...';
+                next METAFILE;
+            }
             push @okfiles, [fileparse($okfile)];
         }
     }
