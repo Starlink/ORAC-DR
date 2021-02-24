@@ -239,7 +239,7 @@ sub create_dev {
     last if ($status == ORAC__OK && $exists);
   }
 
-  return ORAC__OK;
+  return $self->_set_ident($clone);
 }
 
 
@@ -490,11 +490,18 @@ sub configure {
   # Everything okay so store the name of the GAIA window
   $self->dev('default', $default);
 
+  return $self->_set_ident($default);
+}
+
+sub _set_ident {
+  my $self = shift;
+  my $device = shift;
+
   # Tweak the identity if we have an ORAC_INSTRUMENT
   if (exists $ENV{ORAC_INSTRUMENT}) {
     my $title = $self->{'TitleInfo'} // $ENV{'ORAC_INSTRUMENT'};
-    my $string = "$default configure -ident {$title - }";
-    ($status, $result) = $self->send_to_gaia($string);
+    my $string = "$device configure -ident {$title - }";
+    my ($status, $result) = $self->send_to_gaia($string);
     if ($status != ORAC__OK) {
       orac_err "ORAC::Display::GAIA - unable to set instrument label in GAIA window\n";
       orac_err "Error: $result\n";
