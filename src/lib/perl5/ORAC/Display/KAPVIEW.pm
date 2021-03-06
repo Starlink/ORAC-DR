@@ -1503,6 +1503,7 @@ Recognised options:
   ZAUTOSCALE - Autoscale Z?
   NCONT      - Number of contours
   COMP       - Component to display (Data (default), Variance or Error)
+  KEY        - Display key to contour levels?
 
 Default is to autoscale.
 
@@ -1587,6 +1588,11 @@ sub contour {
   # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
     $optstring .= " COMP=$options{COMP}";
+  }
+
+  # Display contour key?
+  if (exists $options{'KEY'} && defined $options{'KEY'}) {
+    $optstring .= " KEY=" . ($options{'KEY'} ? 'TRUE' : 'FALSE');
   }
 
   my $status;
