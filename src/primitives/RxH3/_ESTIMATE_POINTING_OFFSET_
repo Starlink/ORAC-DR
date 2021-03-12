@@ -19,11 +19,24 @@ $Frm->push_intermediates($spl, $col);
 $Frm->files($colcrop);
 $Display->display_data($Frm);
 
+my $ORAC_STATUS;
 $Mon{'kappa_mon'}->obeyw('stats', "ndf=$colcrop");
+($ORAC_STATUS, my $min) = $Mon{'kappa_mon'}->get('stats', 'minimum');
 
-my ($ORAC_STATUS, @coord) = $Mon{kappa_mon}->get('stats', 'maxcoord');
+my $colsub = $Frm->inout($suffix . '-spl-col-sub');
+$Mon{'kappa_mon'}->obeyw('csub', "in=$colcrop scalar=$min out=$colsub");
+$Frm->push_intermediates($colsub);
+
+$Mon{'kappa_mon'}->obeyw('beamfit', "ndf=$colsub mode=interface pos=\"0, 0\" beams=1");
+($ORAC_STATUS, my @coord) = $Mon{'kappa_mon'}->get('beamfit', 'centre');
 
 my $freq = $Frm->hdr('FREQBAND');
 my $scale = $freq * 1.0e9 / 2.99792458e8;
 
-$_PRIM_ARGS_->{'OFFSET'} = [map {sprintf('%.1f', $_)} ($coord[0] * $scale, - $coord[1] * $scale)];
+# Apply empirical "fudge factor": pointing appeared to have been over-corrected.
+$scale /= 1.4;
+
+@coord = map {$scale * $_} split ' ', $coord[0];
+$coord[1] = - $coord[1];
+
+$_PRIM_ARGS_->{'OFFSET'} = [map {sprintf('%.1f', $_)} @coord];
