@@ -1,7 +1,29 @@
+my $n_order = $RECPARS{'FIT_N_ORDER'} // 2;
+my $defocus = $RECPARS{'FIT_DEFOCUS'} // 1;
+my $defocus_str = $defocus ? 'true' : 'false';
+
 orac_say("Fitting and subtracting model deformation.");
 
 my ($in, $surface) = $Frm->inout('offset-fit');
-$Mon{'shmullus_mon'}->obeyw('fitzernsurf', "in=$in norder=4 radius=7.5 out=$surface");
+$Mon{'shmullus_mon'}->obeyw('fitzernsurf', "in=$in norder=$n_order radius=7.5 out=$surface defocus=$defocus_str");
+
+my ($ORAC_STATUS, @coeff) = $Mon{'shmullus_mon'}->get('fitzernsurf', 'coeff');
+
+do {
+    my @titles = ();
+    for (my $n = 0; $n < $n_order; $n ++) {
+        for (my $m = -$n; $m <= $n; $m += 2) {
+            push @titles, sprintf 'Z(%d,%d)', $n, $m;
+        }
+    }
+    push @titles, 'DEFOCUS' if $defocus;
+
+    my $params = join ' ', map {sprintf '%-7s', $_} @titles;
+    my $entry = join ' ', map {sprintf '%-7.1f', $_} @coeff;
+
+    _ADD_LOG_ENTRY_ LOGFILE=distortion PARAMS=$params ENTRIES=$entry
+};
+
 $Mon{'ndfpack_mon'}->obeyw('setvar', "ndf=$surface variance=0");
 $Frm->push_intermediates($surface);
 
