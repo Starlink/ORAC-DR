@@ -789,6 +789,7 @@ sub orac_print_configuration {
     # Request for SCREEN
     if ($log_options =~ /s/) {
       push (@out_hdl, \*STDOUT);
+      push (@res_hdl, \*STDOUT);
       push (@war_hdl, \*STDOUT);
     }
     # Request for file - must have already chdir'ed to ORAC_DATA_OUT
