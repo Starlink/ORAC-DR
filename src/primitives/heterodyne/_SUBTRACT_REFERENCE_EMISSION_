@@ -251,6 +251,15 @@ $usemasked = $only_masked ? 1 : $usemasked;
 my @combine = ( $usemasked );
 @combine = ( 1, 0 ) if $both;
 
+# Have suffix to discriminate combined products.
+my @morum;
+if ( $both ) {
+  @morum = ( "m", "um" );
+} elsif ( $usemasked ) {
+  @morum = ( "m" );
+} else {
+  @morum = ( "um" );
+}
 
 # Form initial estimate of reference spectrum.
 # ============================================
@@ -270,7 +279,9 @@ my ( $mrsp, $resm );
 my ( $array, @receptors, $nreceptor );
 my $ORAC_STATUS;
 
-# Initialise the index of the arrayof masks.
+my $ressp_suffix = "_ressp";
+
+# Initialise the index of the array of masks.
    my $mask_i = 0;
 
 # Loop over the common reference positions or current date.
@@ -284,6 +295,11 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
    my $grpFrm = $rpGrp->allmembers->[0];
 
    foreach my $maskspec ( @combine ) {
+
+# Find suffix if masked or unmaasked.
+      my $ms = $morum[ 0 ];
+      shift @morum;
+      my $ms_suffix = $ressp_suffix . $ms;
       @mean_spectra = ();
       @mean_weights = ();
 
@@ -356,7 +372,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # Find the weighted average of each subfile's mean spectrum (the one
 # after source emission being masked).  The fiddly bit is forming the
 # MATHS command line to form ia, ib, ic... for the input file names.
-         $ressp = $rpFrm->inout( "_ressp" );
+         ( my $junk, $ressp ) = $rpFrm->inout( $ms_suffix );
          my $total_weight;
          if ( $rpFrm->nfiles > 1 ) {
             my $maths_list = '';
@@ -395,7 +411,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
 # velocity is likely to be different.  So before we can do averaging
 # over pixels, the different observations need to be aligned.
 # The mean spectra are passed to _ALIGN_SPECTRA in a bespoke Group.
-      $mrsp = $grpFrm->inout( "_mrsp" );
+      ( my $junk, $mrsp ) = $grpFrm->inout( "_mrsp" . $ms );
       if ( $number_at_location > 1 ) {
          orac_say "";
          orac_say "Align the mean spectra in order to form a weighted average.";
@@ -406,7 +422,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
                $temp_Frm->file( $mean_spectra[$m-1] );
                $Grp->push( $temp_Frm );
             }
-            $suffix = "_resspal";
+            $suffix = $ms_suffix . "al";
             _ALIGN_SPECTRA_ SUFFIX=$suffix
          }
 
@@ -418,7 +434,7 @@ GROUP: foreach my $rpGrp ( @refposgrps ) {
          my $maths_index = "a";
          my $total_weight = 0;
          foreach my $i ( 1 .. $number_at_location ) {
-            $mean_spectra[$i-1] =~ s/_ressp/$suffix/;
+            $mean_spectra[$i-1] =~ s/$ms_suffix/$suffix/;
             $maths_list .= "i" . $maths_index . "=$mean_spectra[$i-1] ";
             $maths_eq .= "i" . $maths_index . "*" . $mean_weights[$i-1] . "+";
             $maths_index = chr( ord( $maths_index ) + 1 );
