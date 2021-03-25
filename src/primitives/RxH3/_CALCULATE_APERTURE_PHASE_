@@ -1,23 +1,80 @@
+my $secdiff = $RECPARS{'SUBTRACT_SEC_DIFF'} // 1;
+
+my $secdiff_str = $secdiff ? 'true' : 'false';
+
 my ($in, $aperture) = $Frm->inout('aperture');
 
 orac_say("Performing FFT to create aperture map.");
 $Mon{'shmullus_mon'}->obeyw('cmplxfft', "in=$in out=$aperture");
 $Frm->push_intermediates($aperture);
 
-orac_say("Applying phase corrections.");
-my $corrected = $Frm->inout('aperture-phasecorr');
-$Mon{'shmullus_mon'}->obeyw('holophasecorr', "in=$aperture out=$corrected");
-$Frm->push_intermediates($corrected);
-
-orac_say("Extracting amplitude and phase information from complex data cube.");
-my $phase = $Frm->inout('phase');
+orac_say("Extracting amplitude information from complex data cube.");
 my $ampl = $Frm->inout('amplitude');
-$Mon{'kappa_mon'}->obeyw('complex', "in1=$corrected in2=! out1=$ampl out2=$phase intype=complex outtype=mod_arg");
+$Mon{'kappa_mon'}->obeyw('complex', "in1=$aperture in2=! out1=$ampl out2=! intype=complex outtype=mod_arg");
 $Frm->push_intermediates($ampl);
 
 my $mean = $Frm->inout('amplitude-mean');
 $Mon{'kappa_mon'}->obeyw('collapse', "in=$ampl out=$mean axis=FREQ estimator=mean");
 $Frm->files($mean);
 $Display->display_data($Frm);
+
+# Note: this could be optional unless applying secondary or displaying radial profile.
+my $mask = $Frm->inout('amplitude-mask');
+my $shadow = $ENV{'SHMULLUS_DIR'} . '/jcmt_shadow_thick.ard';
+$Mon{'kappa_mon'}->obeyw('ardmask', "in=$mean ardfile=$shadow out=$mask");
+$Frm->push_intermediates($mask);
+
+my $radius = 6.85113;
+$Mon{'shmullus_mon'}->obeyw('fitring', "in=$mask radius=$radius maximum=false");
+my $ORAC_STATUS;
+($ORAC_STATUS, my $radius_fitted) = $Mon{'shmullus_mon'}->get('fitring', 'fitrad');
+($ORAC_STATUS, my @center) = $Mon{'shmullus_mon'}->get('fitring', 'center');
+
+my $scale = sprintf '%.6f', $radius_fitted / $radius;
+orac_say(sprintf 'Fitted dark ring at (%.3f, %.3f) radius %.3fm (scale factor %s).', @center, $radius_fitted, $scale);
+
+my $mapping = new ORAC::TempFile(OPEN => 0, SUFFIX => '.ast');
+$Mon{'atools_mon'}->obeyw('astgetmapping', "this=$mask iframe1=fft iframe2=pixel result=$mapping");
+$Mon{'atools_mon'}->obeyw('asttran2', "this=$mapping xin=$center[0] yin=$center[1] forward=true");
+($ORAC_STATUS, my $cenpix_x) = $Mon{'atools_mon'}->get('asttran2', 'xval');
+($ORAC_STATUS, my $cenpix_y) = $Mon{'atools_mon'}->get('asttran2', 'yval');
+$cenpix_x = sprintf '%.3f', $cenpix_x;
+$cenpix_y = sprintf '%.3f', $cenpix_y;
+$Frm->uhdr('SECONDARY_CENTER_PIX', [$cenpix_x, $cenpix_y]);
+
+do {
+    my $params = sprintf '%-6s %-6s %-6s', qw/X Y R/;
+    my $units = sprintf '%-6s %-6s %-6s', qw/(m) (m) (m)/;
+    my $entry = sprintf '%-6.3f %-6.3f %-6.3f', @center, $radius_fitted;
+
+    _ADD_LOG_ENTRY_ LOGFILE=ring PARAMS=$params UNITS=$units ENTRIES=$entry
+};
+
+do {
+    $Mon{'atools_mon'}->obeyw('asttran2', "this=$mapping xin=0.5 yin=0.0 forward=true");
+    ($ORAC_STATUS, my $rmin) = $Mon{'atools_mon'}->get('asttran2', 'xval');
+    $Mon{'atools_mon'}->obeyw('asttran2', "this=$mapping xin=7.5 yin=0.0 forward=true");
+    ($ORAC_STATUS, my $rmax) = $Mon{'atools_mon'}->get('asttran2', 'xval');
+    $rmin = int($rmin);
+    $rmax = int($rmax);
+    my $nbin = 1 + $rmax - $rmin;
+    $Frm->uhdr('RAD_PROFILE_PIX', [$rmin, $rmax, $nbin]);
+
+    my $prof = $Frm->inout('amplitude-prof');
+    $Mon{'kapview_mon'}->obeyw('elprof', "in=$mask out=$prof nbin=$nbin xc=$cenpix_x yc=$cenpix_y rmin=$rmin rmax=$rmax");
+    $Mon{'ndfpack_mon'}->obeyw('settitle', "ndf=$prof title='Amplitude profile'");
+    $Frm->files($prof);
+    $Display->display_data($Frm);
+};
+
+orac_say("Applying phase corrections.");
+my $corrected = $Frm->inout('aperture-phasecorr');
+my $center = sprintf '[%.3f %.3f]', @center;
+$Mon{'shmullus_mon'}->obeyw('holophasecorr', "in=$aperture out=$corrected secondary=$secdiff_str scenter=$center sscale=$scale ssmooth=0.05");
+$Frm->push_intermediates($corrected);
+
+orac_say("Extracting phase information from complex data cube.");
+my $phase = $Frm->inout('phase');
+$Mon{'kappa_mon'}->obeyw('complex', "in1=$corrected in2=! out1=! out2=$phase intype=complex outtype=mod_arg");
 
 $Frm->files($phase);

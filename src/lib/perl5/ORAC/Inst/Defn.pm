@@ -1322,7 +1322,7 @@ sub orac_determine_initial_algorithm_engines {
 
   } elsif ($inst eq 'RXH3') {
 
-    @AlgEng = qw/shmullus_mon ndfpack_mon kappa_mon/;
+    @AlgEng = qw/shmullus_mon ndfpack_mon kappa_mon kapview_mon atools_mon/;
 
   } elsif ($inst eq 'JCMT_DAS') {
 
