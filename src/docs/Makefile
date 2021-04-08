@@ -20,6 +20,7 @@ SUN233_CLASSES = sun233/sun233_classes.tex sun233/sun233_coreclasses.tex
 SUN260_RECIPES = sun260/mainrecipes.tex
 SUN264_RECIPES = sun264/mainrecipes.tex
 SUN265_RECIPES = sun265/mainrecipes.tex
+SUN271_RECIPES = sun271/mainrecipes.tex
 
 GENERATED_TEX = sun230/sun230.tex
 
@@ -54,6 +55,7 @@ sun233/sun233.pdf sun233/sun233.htx.build: $(SUN233_CLASSES)
 sun260/sun260.pdf sun260/sun260.htx.build: $(SUN260_RECIPES)
 sun264/sun264.pdf sun264/sun264.htx.build: $(SUN264_RECIPES)
 sun265/sun265.pdf sun265/sun265.htx.build: $(SUN265_RECIPES)
+sun271/sun271.pdf sun271/sun271.htx.build: $(SUN271_RECIPES)
 
 
 $(SUN233_CLASSES): sun233/mkinclude.csh
@@ -68,6 +70,8 @@ $(SUN264_RECIPES):
 $(SUN265_RECIPES):
 	cd sun265; ORAC_RECIPEDIR=$(ORAC_DIR)/recipes ../mk_recipe_doc.sh PICARD sun265
 
+$(SUN271_RECIPES):
+	cd sun271; ORAC_RECIPEDIR=$(ORAC_DIR)/recipes ../mk_recipe_doc.sh WESLEY sun271
 
 %.pdf: %.tex
 	cd $(@D); $(PDFLATEX) $(<F)
