@@ -1569,10 +1569,9 @@ sub orac_main_data_loop {
         # Set the ORAC::Print prefix
         my $fnumber = $Frm->number;
 
-        # This assumes the observation source prefix is only one
-        # character.
-        my $fdate = substr( $Frm->file, 1, 8 );
-        $$ORAC_MESSAGE = $instrument . ': ' . $app . ' reducing observation ' . $fdate . ' #' . $fnumber;
+        # This assumes the date is an isolated run of 8 digits.
+        my ($fdate) = $Frm->file =~ /(?<!\d)(\d{8})(?!\d)/;
+        $$ORAC_MESSAGE = $instrument . ': ' . $app . ' reducing observation ' . ($fdate // '') . ' #' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
         $orac_prt->respre("#${fnumber}: ");
@@ -1717,10 +1716,9 @@ sub orac_main_data_loop {
         # Set the ORAC::Print prefix
         my $fnumber = $Frm->number;
 
-        # This assumes the observation source prefix is only one
-        # character.
-        my $fdate = substr( $Frm->file, 1, 8 );
-        $$ORAC_MESSAGE = $instrument . ': ' . $app .' reducing observation ' . $fdate . ' #' . $fnumber;
+        # This assumes the date is an isolated run of 8 digits.
+        my ($fdate) = $Frm->file =~ /(?<!\d)(\d{8})(?!\d)/;
+        $$ORAC_MESSAGE = $instrument . ': ' . $app . ' reducing observation ' . ($fdate // '') . ' #' . $fnumber;
         $orac_prt->errpre("#$fnumber Err: ");
         $orac_prt->warpre("#$fnumber Warning: ");
         $orac_prt->respre("#${fnumber}: ");
