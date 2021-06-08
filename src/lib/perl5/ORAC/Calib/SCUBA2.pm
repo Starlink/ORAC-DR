@@ -65,33 +65,33 @@ $DEBUG = 0;                     # Turn off debugging mode
 my %FCFS = ('850' => [             # Assumed to be in date order
                       {
                        START  => 20060101, # Beginning of SCUBA-2 history
-                       END    => 20161031,
-                       ARCSEC => 2.27, # +/- 0.06
-                       BEAM   => 539, # +/- 25
+                       END    => 20161118,
+                       ARCSEC => 2.25, # +/- 0.13
+                       BEAM   => 525, # +/- 37
                       },
                       {
-                       START  => 20161101,
+                       START  => 20161119,
                        END    => 20180630,
-                       ARCSEC => 2.14, # +/- 0.06
-                       BEAM   => 522, # +/- 21
+                       ARCSEC => 2.13, # +/- 0.12
+                       BEAM   => 516, # +/- 42
                       },
                       {
                        START  => 20180701,
-                       ARCSEC => 2.09, # +/- 0.05
-                       BEAM   => 504, # +/- 23
+                       ARCSEC => 2.07, # +/- 0.12
+                       BEAM   => 495, # +/- 32
                       },
                      ],
             '450' => [
                       {
                        START  => 20060101, # Beginning of SCUBA-2 history
                        END    => 20180630,
-                       ARCSEC => 3.84, # +/- 0.34
-                       BEAM   => 470, # +/- 66
+                       ARCSEC => 4.61, # +/- 0.60
+                       BEAM   => 531, # +/- 93
                       },
                       {
                        START  => 20180701,
-                       ARCSEC => 3.23, # +/- 0.37
-                       BEAM   => 408, # +/- 71
+                       ARCSEC => 3.87, # +/- 0.53
+                       BEAM   => 472, # +/- 76
                       },
                      ],
            );
@@ -109,16 +109,16 @@ my %NEP = ( '850' => 7.0e-17, '450' => 2.1e-16 );
 # the same thing as they are unresolved.
 my %ASECFLUXES = (
                   'HLTAU' => {
-                              '850' => 2.42,
-                              '450' => 10.3,
+                              '850' => 2.30, # +/- 0.17 (STM 21)
+                              '450' => 8.03, # +/- 1.84 (STM 21)
                              },
                   'CRL618' => {
-                               '850' => 5.0,
-                               '450' => 12.1,
+                               '850' => 5.07, # +/- 0.31 (STM 21)
+                               '450' => 13.28, # +/- 2.72 (STM 21)
                               },
                   'CRL2688' => {
-                                '850' => 6.13,
-                                '450' => 29.2,
+                                '850' => 5.45, # +/- 0.31 (STM 21)
+                                '450' => 24.36, # +/- 4.49 (STM 21)
                                },
                   '16293-2422' => {
                                    '850' => 22.9,
@@ -137,8 +137,8 @@ my %ASECFLUXES = (
                               '450' => 3.9,
                              },
                   'ARP220' => {
-                               '850' => 0.81,
-                               '450' => 5.4,
+                               '850' => 0.85, # +/- 0.06 (STM 21)
+                               '450' => 5.64, # +/- 1.23 (STM 21)
                               },
                   'KKOPH' => {
                               '850' => 0.091,
@@ -174,16 +174,16 @@ my %ASECFLUXES = (
               );
 my %BEAMFLUXES = (
                   'HLTAU' => {
-                              '850' => 2.32,
-                              '450' => 8.3,
+                              '850' => 2.41, # +/- 0.14 (STM 21)
+                              '450' => 11.18, # +/- 1.59 (STM 21)
                              },
                   'CRL618' => {
-                               '850' => 4.89,
-                               '450' => 11.50,
+                               '850' => 5.14, # +/- 0.27 (STM 21)
+                               '450' => 14.21, # +/- 2.71 (STM 21)
                               },
                   'CRL2688' => {
-                                '850' => 5.64,
-                                '450' => 24.9,
+                                '850' => 6.07, # +/- 0.26 (STM 21)
+                                '450' => 29.78, # +/- 4.59 (STM 21)
                                },
                   '16293-2422' => {
                                    '850' => 15.1,
@@ -202,8 +202,8 @@ my %BEAMFLUXES = (
                               '450' => 3.9,
                              },
                   'ARP220' => {
-                               '850' => 0.79,
-                               '450' => 5.2,
+                               '850' => 0.85, # +/- 0.09 (STM 21)
+                               '450' => 6.59, # +/- 1.43 (STM 21)
                               },
                   'KKOPH' => {
                               '850' => 0.091,
@@ -245,30 +245,32 @@ $ASECFLUXES{HLTAUB} = $ASECFLUXES{HLTAU};
 $BEAMFLUXES{MWC349A} = $BEAMFLUXES{MWC349};
 $ASECFLUXES{MWC349A} = $ASECFLUXES{MWC349};
 
-# JCMT beam parameters from SCUBA-2 calibration paper. FRAC1 and FRAC2
-# are the proportion of the flux contained within the primary and
-# error beams respectively.
+# JCMT beam parameters from SCUBA-2 calibration paper (STM 21).
+# FRAC1 and FRAC2 are the proportion of the flux contained within
+# the primary and error beams respectively.
 my %BEAMPAR = ( '850' => {
-                          FWHM1 => 13.0,
-                          FWHM2 => 48.0,
-                          AMP1 => 0.98,
-                          AMP2 => 0.02,
-                          FRAC1 => 0.43,
-                          FRAC2 => 0.57
+                          FWHM1 => 11.0, # +/- 1.6
+                          FWHM2 => 49.1, # +/- 8.4
+                          AMP1 => 0.98, # +/- 0.01
+                          AMP2 => 0.02, # +/- 0.01
+                          FRAC1 => 0.74, # +/- 0.04
+                          FRAC2 => 0.26, # +/- 0.04
                          },
                 '450' => {
-                          FWHM1 => 7.9,
-                          FWHM2 => 25.0,
-                          AMP1 => 0.94,
-                          AMP2 => 0.06,
-                          FRAC1 => 0.33,
-                          FRAC2 => 0.67
+                          FWHM1 => 6.2, # +/- 1.0
+                          FWHM2 => 18.8, # +/- 5.7
+                          AMP1 => 0.89, # +/- 0.08
+                          AMP2 => 0.11, # +/- 0.08
+                          FRAC1 => 0.47, # +/- 0.12
+                          FRAC2 => 0.53, # +/- 0.12
                          }
               );
 
 # Default beam area
-my %BEAMAREA = ( '850' => 229.75,
-                 '450' => 100.0
+# (Values set to reproduce fhwm_eff of 14.4 and 10.0" at 850 and 450um
+# from STM 2021 calibration paper).
+my %BEAMAREA = ( '850' => 234.94,
+                 '450' => 113.30,
                );
 
 # SCUBA-2 secondary calibrators commonly observed at the wrong position.
@@ -651,6 +653,7 @@ empirical telescope beam (see the B<beamarea> method below).
 
 sub fwhm_eff {
   my $self = shift;
+  # pi / (4 ln 2) = 1.133090
   return sqrt($self->beamarea/1.133);
 }
 
