@@ -249,12 +249,12 @@ $ASECFLUXES{MWC349A} = $ASECFLUXES{MWC349};
 # FRAC1 and FRAC2 are the proportion of the flux contained within
 # the primary and error beams respectively.
 my %BEAMPAR = ( '850' => {
-                          FWHM1 => 11.0, # +/- 1.6
-                          FWHM2 => 49.1, # +/- 8.4
-                          AMP1 => 0.98, # +/- 0.01
-                          AMP2 => 0.02, # +/- 0.01
-                          FRAC1 => 0.74, # +/- 0.04
-                          FRAC2 => 0.26, # +/- 0.04
+                          FWHM1 => 10.996, # +/- 1.588
+                          FWHM2 => 49.148, # +/- 8.367
+                          AMP1 => 0.9825, # +/- 0.0078
+                          AMP2 => 0.0175, # (1.0 - AMP1)
+                          FRAC1 => 0.737, # +/- 0.040
+                          FRAC2 => 0.263, # (1.0 - FRAC1)
                          },
                 '450' => {
                           FWHM1 => 6.2, # +/- 1.0
@@ -267,10 +267,8 @@ my %BEAMPAR = ( '850' => {
               );
 
 # Default beam area
-# (Values set to reproduce fhwm_eff of 14.4 and 10.0" at 850 and 450um
-# from STM 2021 calibration paper).
-my %BEAMAREA = ( '850' => 234.94,
-                 '450' => 113.30,
+my %BEAMAREA = ( '850' => 234.122, # +/- 8.478
+                 '450' => 114.027, # +/- 12.774
                );
 
 # SCUBA-2 secondary calibrators commonly observed at the wrong position.
