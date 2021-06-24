@@ -9,7 +9,7 @@ ORAC::Calib::JCMTCont - JCMT Continuum Calibration
 
   use ORAC::Calib::JCMTCont;
 
-  $Cal = new ORAC::Calib::JCMTCont;
+ 1;95;0c $Cal = new ORAC::Calib::JCMTCont;
 
 =head1 DESCRIPTION
 
@@ -266,6 +266,14 @@ The optional fourth argument is used to specify if the brightness
 temperature, semi-diameter, solid angle and beamwidth should also be
 returned.
 
+The optional fifth argument is used to indicate if you are in custom
+mode, where the filter will be a specific central frequency, and tthe extra info will be:
+
+NB (number of  gaussian components)
+HPBW1 (FWHM of first Gaussian component in arcsec)
+BTEMP (brightness of planet -- only used for uranus??? unclear what it does for other planets
+
+
 Currently, all secondary calibrators are assumed to be point like.
 
 Returns undef if the flux could not be determined.
@@ -279,13 +287,32 @@ sub fluxcal {
   my $filter = shift;
   my $ismap = shift;
   my $getfull = shift;
+  my $extrainfo = shift;
+
+  # If we're in custom mode, get the extra values from the final entry.
+  my $nb = undef;
+  my $hpbw1 = undef;
+  my $freq = undef;
+  my $custom = undef;
+  if (lc $filter =~ "custom")  {
+      ($freq, $nb, $hpbw1) = @$extrainfo;
+      $custom = 1;
+  }
 
   # Strip spaces
   $source =~ s/\s//g;
 
-  # Fluxes requires that the filter name does not include any non
-  # numbers
-  $filter =~ s/\D+//g;
+  if (!defined($custom)) {
+      # Fluxes requires that the filter name does not include any non
+      # numbers if not using custom mode.
+      $filter =~ s/\D+//g;
+      }
+  else {
+      $filter = "custom";
+      # Ensure its less than 10 places -- round to 4 decimal places should be fine.
+      $freq = sprintf "%.4f", $freq;
+      $hpbw1 = sprintf "%.5f", $hpbw1;
+      }
 
 
   # Start off being pessimistic
@@ -299,16 +326,32 @@ sub fluxcal {
   my %PHOTFLUXES = $self->secondary_calibrator_fluxes($ismap);
   if (exists $PHOTFLUXES{$source}) {
     # Source exists in calibrator list
-    if (exists $PHOTFLUXES{$source}{$filter}) {
-      $flux = $PHOTFLUXES{$source}{$filter};
-    }
+      if (exists $PHOTFLUXES{$source}{$filter}) {
+          $flux = $PHOTFLUXES{$source}{$filter};
+      }
 
-  } elsif ( $self->isplanet( $source ) ) {
+
+      } elsif ( $self->isplanet( $source ) ) {
     # Else if we have a planet name
 
-    # Construct argument string for fluxes
-    my $hidden = "pos=n flu=y screen=n ofl=n msg_filter=quiet outfile=fluxes.dat apass=n now=n";
 
+    # If custom mode, check for planet name. If Uranus, use brightness temp as ^$FLUXES_DIR/esa4_uranus.sdf . If Mars, brightness temp is not needed. Otherwise, warn that custom mode cannot be used for any other planets.
+      my $args = "";
+      if (defined $custom) {
+          my $fluxes_dir = %ENV{FLUXES_DIR};
+          $args .= "FREQ=$freq NB=$nb HPBW1=$hpbw1 AMP1=1";
+          if (uc $source =~ 'URANUS') {
+              $args .= " BTEMP=$fluxes_dir/esa4_uranus.sdf";
+          } elsif (uc $source ne 'MARS') {
+              orac_err("Cannot use FLUXES custom mode for sources other than URANUS and MARS. This is an error in the code calling this function.\n");
+              $args = "";
+          }
+      }
+
+      # Construct argument string for fluxes
+    my $hidden = "pos=n flu=y screen=n ofl=n msg_filter=quiet outfile=fluxes.dat apass=n now=n ";
+
+    $hidden .= $args;
     # Now we need to know the date for fluxes (the time is pretty
     # immaterial for the flux)
     # FLUXES needs the date in DD MM YY format
@@ -351,7 +394,7 @@ sub fluxcal {
     }
 
     my $status = $self->fluxes_mon->obeyw("","$hidden planet=$source date='$scudate' time='$scutime' filter=$filter");
-    orac_debug "Called fluxes with $hidden planet=$source date='$scudate' time='$scutime' filter=$filter \n";
+    orac_debug "Called fluxes with $hidden planet=$source date='$scudate' time='$scutime' filter=$filter. \n";
 
     if ($status != ORAC__OK) {
       orac_err "The FLUXES program did not run successfully\n";

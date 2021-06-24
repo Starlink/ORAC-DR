@@ -184,34 +184,56 @@ if ( ($object eq "URANUS" ) || ( $object eq "MARS" ) || ( $object eq "JUPITER" )
   # reuse. Should possibly be more sophisticated about interpolating
   # over the actual frequency.
 
-  my $nearest_scuba_filter;
+  # For instruments other than UU and planets other than URANUS or MARS, we have to fall back to using the nearest scuba filter.
+  my $source = $object;
+  $source =~ s/\s//g;
+  my $nearest_scuba_filter = undef;
+  my $beamwidth = undef;
+  my $nb = undef;
+  my $flux_in_beam = undef;
+  my $brightness_temp = undef;
+  my $semi_diameter = undef;
+  my $solid_angle = undef;
 
-  if (    ( $central_frequency >= 211.0 ) && ( $central_frequency <  271.0 ) ){ $nearest_scuba_filter="1300"; }# CO 2-1
-  elsif ( ( $central_frequency >= 345.0 ) && ( $central_frequency <= 346.6 ) ){ $nearest_scuba_filter="868"; } # CO 3-2
-  elsif ( ( $central_frequency >= 691.0 ) && ( $central_frequency <= 692.0 ) ){ $nearest_scuba_filter="434"; } # CO 4-3
-  elsif ( ( $central_frequency >= 315.0 ) && ( $central_frequency <= 373.0 ) ){ $nearest_scuba_filter="850"; } # B-band
-  elsif ( ( $central_frequency >= 430.0 ) && ( $central_frequency <= 510.0 ) ){ $nearest_scuba_filter="600"; } # C-band
-  elsif ( ( $central_frequency >= 630.0 ) && ( $central_frequency <= 710.0 ) ){ $nearest_scuba_filter="450"; } # D-band
-  else { orac_throw "Unable to determine nearest SCUBA2 filter frequency. Error: $!\n"; }
 
-  ( my $flux_in_beam, my $brightness_temp, my $semi_diameter, my $solid_angle, my $beamwidth) = $Cal->fluxcal( $object,$nearest_scuba_filter, 0, 1 );
+  if (($Obj->hdr( 'INSTRUME' ) eq 'UU') && ((uc $source eq 'MARS') || (uc $source eq 'URANUS'))) {
+    orac_print "Using custom mode with FLUXES.\n";
+    # For UU on MARS or URANUS, we use the real central frequency and provide the HPBW1, the number of gaussian components as 1 and use the custom mode of fluxes.
+    $beamwidth = 5.73 + 14.68*( 230.0/$central_frequency );
+    $nb = 1;
+    my @extrainfo = ($central_frequency, $nb, $beamwidth);
+    ($flux_in_beam, $brightness_temp, $semi_diameter, $solid_angle, $beamwidth) = $Cal->fluxcal($object, "custom", 0, 1, \@extrainfo );
+  orac_debug "FLUXES custom mode reports $object flux in beam at $central_frequency to be $flux_in_beam (Jy).\n";
+  } else {
 
-  #  Uu has a separate exression for beam width that is not coded in fluxes, so code it here. Note, the 
-  #  total frequency range of Uu falls within the above "1300" filter, so fluxes will always be called with
-  #  the "1300" filter to get the other required values (radius and brightness of the planet, etc).
-  if ( $Obj->hdr( 'INSTRUME' ) eq 'UU' ) {
-     $beamwidth = 5.73 + 14.68*( 230.0/$central_frequency );
+    if (    ( $central_frequency >= 211.0 ) && ( $central_frequency <  271.0 ) ){ $nearest_scuba_filter="1300"; }# CO 2-1
+    elsif ( ( $central_frequency >= 345.0 ) && ( $central_frequency <= 346.6 ) ){ $nearest_scuba_filter="868"; } # CO 3-2
+    elsif ( ( $central_frequency >= 691.0 ) && ( $central_frequency <= 692.0 ) ){ $nearest_scuba_filter="434"; } # CO 4-3
+    elsif ( ( $central_frequency >= 315.0 ) && ( $central_frequency <= 373.0 ) ){ $nearest_scuba_filter="850"; } # B-band
+    elsif ( ( $central_frequency >= 430.0 ) && ( $central_frequency <= 510.0 ) ){ $nearest_scuba_filter="600"; } # C-band
+    elsif ( ( $central_frequency >= 630.0 ) && ( $central_frequency <= 710.0 ) ){ $nearest_scuba_filter="450"; } # D-band
+    else { orac_throw "Unable to determine nearest SCUBA2 filter frequency. Error: $!\n"; }
+
+  ( $flux_in_beam, $brightness_temp, $semi_diameter, $solid_angle, $beamwidth) = $Cal->fluxcal( $object,$nearest_scuba_filter, 0, 1 );
+  orac_debug "FLUXES  reports $object flux in beam at $nearest_scuba_filter to be $flux_in_beam (Jy).\n";
   }
 
-  orac_print "FLUXES reports $object flux in beam at $nearest_scuba_filter to be $flux_in_beam (Jy).\n";
+
+
   my $radius = $semi_diameter;
-  orac_print "   The semi_diameter is $radius.\n";
-  orac_print "   The beamwidth is $beamwidth.\n";
-  orac_print "   FLUXES brightness temp is $brightness_temp K\n";
-  orac_print "   Mean temperature in the file is $mean K.\n";
+  orac_debug "   The semi_diameter is $radius.\n";
+  orac_debug "   The beamwidth is $beamwidth.\n";
+  orac_debug "   FLUXES brightness temp is $brightness_temp K\n";
+  orac_debug "   Mean temperature in the file is $mean K.\n";
 
   # Convert the expected flux into the expected T_A*.
-  my $used_frequency = $c / ( $nearest_scuba_filter * 1e-6 );
+  my $used_frequency;
+  if (defined $nearest_scuba_filter) {
+    $used_frequency = $c / ( $nearest_scuba_filter * 1e-6 );
+  } else {
+    $used_frequency = $central_frequency;
+  }
+
   orac_debug "The frequency used is $used_frequency\n";
 
   my $RJ_correction = ( $h_planck * $used_frequency ) / ( 2 * $k_boltz );
@@ -221,7 +243,7 @@ if ( ($object eq "URANUS" ) || ( $object eq "MARS" ) || ( $object eq "JUPITER" )
   orac_debug "x2 is $x2\n";
 
   my $TAstar_expected = ( $brightness_temp - $RJ_correction ) * (1.0 -exp( -$x2 ) );
-  orac_print "The expected T_A* is $TAstar_expected\n";
+  orac_debug "The expected T_A* is $TAstar_expected\n";
 
   # Calculate the efficiencies.
   my $eta_mb=( $mean * $sideband_factor ) / $TAstar_expected;
@@ -253,6 +275,10 @@ if ( ($object eq "URANUS" ) || ( $object eq "MARS" ) || ( $object eq "JUPITER" )
               sprintf "%s", $Obj->hdr( "OBSID" ) :
               "null";
 
+  my $obsid_ss = defined( $Obj->hdr( "OBSIDSS") ) ?
+                 sprintf "%s", $Obj->hdr( "OBSIDSS") :
+                 "null";
+
 
   my $airmass;
   if ( defined $Obj->uhdr( "ORAC_AIRMASS_START" ) &&
@@ -268,14 +294,14 @@ if ( ($object eq "URANUS" ) || ( $object eq "MARS" ) || ( $object eq "JUPITER" )
 
 
   my $log = new ORAC::LogFile( $logfile );
-  my $header_format_str = "%19s %7s %27s %7s %7s %7s %5s %30s %10s %6s %8s %7s %7s %9s %8s %9s %6s %6s";
-  my $data_format_str ="%19s %7s %27s %7s %7.1f %7.3f %5.3f %30s %10s %6s %8.2f %7.2f %7.2f %9.2f %8.3f %9.3f %6.3f %6.3f";
-  my $header = sprintf($header_format_str, "UT", "OBSNUM", "OBSID", "INST", "INTTIME", "AIRMASS", "TAU", "FILE", "PLANET", "FILTER", "FLUXINBM", "T_B", "SEMID", "BEAMWIDTH", "MEAN_T*A", "SIGMA_T*A", "ETA_MB", "ETA_AP");
+  my $header_format_str = "%19s %7s %30s %7s %7s %7s %5s %30s %10s %6s %7s %8s %7s %7s %9s %8s %9s %6s %6s";
+  my $data_format_str ="%19s %7s %30s %7s %7.1f %7.3f %5.3f %30s %10s %6s %7.3f %8.2f %7.2f %7.2f %9.2f %8.3f %9.3f %6.3f %6.3f";
+  my $header = sprintf($header_format_str, "UT", "OBSNUM", "OBSIDSS", "INST", "INTTIME", "AIRMASS", "TAU", "FILE", "PLANET", "FILTER", "FREQ", "FLUXINBM", "T_B", "SEMID", "BEAMWIDTH", "MEAN_T*A", "SIGMA_T*A", "ETA_MB", "ETA_AP");
   $log->header($header);
   $log->addentry( sprintf($data_format_str,
                            defined( $utstring ) ? $utstring : 'null',
                            defined( $obsnum ) ? $obsnum: 0,
-                           defined( $obsid ) ? $obsid: 'null',
+                           defined( $obsid_ss ) ? $obsid_ss: 'null',
                            defined( $instrument ) ? $instrument: 'null',
                            defined( $inttime ) ? $inttime: 0,
                            defined( $airmass ) ? $airmass: 0,
@@ -283,6 +309,7 @@ if ( ($object eq "URANUS" ) || ( $object eq "MARS" ) || ( $object eq "JUPITER" )
                            defined( $file ) ? $file: 0,
                            defined( $object ) ? $object: 0,
                            defined( $nearest_scuba_filter) ? $nearest_scuba_filter: 'null',
+                           defined( $central_frequency) ? $central_frequency: 0,
                            defined( $flux_in_beam ) ? $flux_in_beam: 0,
                            defined( $brightness_temp ) ? $brightness_temp: 0,
                            defined( $radius) ? $radius: 0,
