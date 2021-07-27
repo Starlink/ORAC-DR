@@ -1,6 +1,6 @@
 #+
 #  Name:
-#     oracdr_acsis
+#     oracdr_acsis_ql
 
 #  Purpose:
 #     Initialise ORAC-DR environment for use with ACSIS
@@ -9,7 +9,7 @@
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_acsis.csh
+#     source ${ORAC_DIR}/etc/oracdr_acsis_ql.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -39,9 +39,9 @@
 #        defined it defaults to "/jcmt_sw/oracdr_cal".
 
 #  Examples:
-#     oracdr_acsis
+#     oracdr_acsis_ql
 #        Will set the variables assuming the current UT date.
-#     oracdr_acsis 20040919
+#     oracdr_acsis_ql 20040919
 #        Use UT data 20040919
 
 #  Notes:
