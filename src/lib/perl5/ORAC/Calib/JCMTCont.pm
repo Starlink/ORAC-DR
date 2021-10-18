@@ -338,7 +338,7 @@ sub fluxcal {
     # If custom mode, check for planet name. If Uranus, use brightness temp as ^$FLUXES_DIR/esa4_uranus.sdf . If Mars, brightness temp is not needed. Otherwise, warn that custom mode cannot be used for any other planets.
       my $args = "";
       if (defined $custom) {
-          my $fluxes_dir = %ENV{FLUXES_DIR};
+          my $fluxes_dir = $ENV{"FLUXES_DIR"};
           $args .= "FREQ=$freq NB=$nb HPBW1=$hpbw1 AMP1=1";
           if (uc $source =~ 'URANUS') {
               $args .= " BTEMP=$fluxes_dir/esa4_uranus.sdf";
