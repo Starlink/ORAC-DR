@@ -6,8 +6,9 @@ _COADD_SINGLE_JSA_TILE_ - co-add JSA tiled images
 
 =head1 DESCRIPTION
 
-This primitive co-adds all the files in the frame using
-MAKEMOS with the "mean" method.
+This primitive co-adds all the files in the frame using MAKEMOS with
+the "mean" method. It will first of all apply the default FCFs to
+convert to mJy/arcs**2.
 
 =head1 ARGUMENTS
 
@@ -53,24 +54,39 @@ orac_termerr('TITLE or OUT missing')
 
 my @files = $Frm->files();
 
-unless (1 < scalar @files) {
+unless ($Frm->uhdr('DATA_UNITS') =~ /mjy/i) {
 
-  # If there is only one file for this tile, just copy it
-  # and set its title.  Place Parameter TITLE before Parameter NDF to 
-  # prevent object names containing parentheses from confusing the
-  # command-line parser, which attributes the parentheses to the NDF.
-  my $in = $files[0];
-  orac_say("   single file: $in");
-  orac_say("   copy to: $out");
+  unless (1 < scalar @files) {
 
-  $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
-  $Mon{'ndfpack_mon'}->obeyw('settitle', "title='$title' ndf=$out");
-}
-else {
+    # If there is only one file for this tile, just copy it
+    # and set its title.  Place Parameter TITLE before Parameter NDF to
+    # prevent object names containing parentheses from confusing the
+    # command-line parser, which attributes the parentheses to the NDF.
 
-  # If there are multiple files, use makemos to
-  # combine them.
+    _CALIBRATE_DATA_ UNITS=ARCSEC
+    @files = $Frm->files();
+    my $in = $files[0];
+    orac_say("   single file: $in");
+    orac_say("   copy to: $out");
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+    $Mon{'ndfpack_mon'}->obeyw('settitle', "title='$title' ndf=$out");
+    $Grp->push_intermediates($Frm->file(1));
+  }
+  else {
 
+    # If there are multiple files, use makemos to
+    # combine them.
+    # First apply calibrations.
+    foreach my $currfile (@files) {
+      orac_say(" Calibrating $currfile ");
+      _CALIBRATE_DATA_ UNITS=ARCSEC
+      # Mark the "cal" file as an intermediate.
+      orac_debug(" Marking " . $Frm->file() . " as intermediate. ");
+      $Grp->push_intermediates($Frm->file());
+    }
+
+  }
+  @files = $Frm->files();
   orac_say("    file: $_") foreach @files;
   orac_say("    output: $out");
 
@@ -89,18 +105,11 @@ else {
   # it uses.
   my $complist = 'exp_time,weights';
   _ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist INLIST=$inlistref
+
+  $Frm->files($out);
 }
 
-$Frm->files($out);
-
-# Calibrate the data using default FCFs for now.
-unless ($Frm->uhdr('DATA_UNITS') =~ /mjy/i) {
-  _CALIBRATE_DATA_ UNITS=ARCSEC
-
-  # Mark the "cal" file as an intermediate.
-  $Grp->push_intermediates($Frm->file(1));
-}
 else {
   orac_warn("Tiles appear already to have flux units.\n");
-  orac_warn("Skipping FCF application.\n");
+  orac_warn("Cannot coadd tiles unless they are in pW FCF application.\n");
 }
