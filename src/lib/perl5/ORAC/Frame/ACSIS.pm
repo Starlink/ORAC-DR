@@ -427,8 +427,9 @@ sub number {
   my $raw = $self->raw;
 
   if( defined( $raw ) ) {
-    if( ( $raw =~ /(\d+)_(\d\d)_(\d{4})(\.\w+)?$/ ) ||
-        ( $raw =~ /(\d+)\.ok$/ ) ) {
+    if( ( $raw =~ /^a\d{8}_(\d{5})_(\d\d)_(\d{4})/ ) ||
+        ( $raw =~ /(\d+)\.ok$/ ) ||
+        ( $raw =~ /(\d+)_(\d\d)_(\d{4})(\.\w+)?$/ ) ) {
       # Drop leading zeroes.
       $number = $1 * 1;
     } else {
