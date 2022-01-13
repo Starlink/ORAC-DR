@@ -1,0 +1,80 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_READ_OCS_CONFIG_ - Read the OCS Configuration XML from a file
+
+=head1 DESCRIPTION
+
+Uses SMURF C<dumpocscfg> to get the OCS Configuration XML from a
+data file and reads it into an object with C<JAC::OCS::Config>.
+
+The input file is given by the C<FILE> argument.
+
+The configuration object is returned via the primitive hash:
+
+    my $config = $_READ_OCS_CONFIG_{'CONFIG'};
+
+This value may be C<undef> if the file did not contain a configuration.
+
+B<Note:> the C<JAC::OCS::Config> object may attempt to use the
+OMP configuration system to find the wiring file.  This can
+happen when attempting to stringify the object or access the
+tasks or map directly with $config->acsis()->tasks()
+or $config->acsis()->acsis_map()->hw_map().  The problem can
+be avoided by configuring the OMP:
+
+    use JAC::Setup qw/omp/;
+
+or deleting the ACSIS map before stringifying:
+
+    delete $config->acsis()->{'ACSIS_MAP'};
+
+=head1 COPYRIGHT
+
+Copyright (C) 2021-2022 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use Error::Simple;
+use IPC::Run3;
+use JAC::OCS::Config;
+
+my $file = get_prim_arg($_PRIM_ARGS_, 'FILE', undef);
+
+my $xml;
+run3(
+    [$ENV{'SMURF_DIR'} . '/dumpocscfg', $file],
+    undef,
+    \$xml,
+    undef,
+);
+
+my $config = undef;
+
+# Unfortunately dumpocscfg doesn't set a suitable exit status on
+# failure.  Therefore check whether output was blank.
+unless ($xml =~ /^\W*$/) {
+    $config = new JAC::OCS::Config(XML => $xml, validation => 0);
+
+    # Flush errors from JAC::OCS::Config, e.g. from ACSIS not finding
+    # a "simulation" entry.
+    Error::Simple->flush();
+}
+
+$_READ_OCS_CONFIG_{'CONFIG'} = $config;

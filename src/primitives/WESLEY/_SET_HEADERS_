@@ -1,0 +1,70 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_SET_HEADERS_ - Write new headers to a copy of each file
+
+=head1 DESCRIPTION
+
+Each file is copied with a suffix "_hdr".  Then any new header
+values for the file in the C<uhdr> WESLEY_SET_HEADERS are
+set using C<fitsmod>.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2021 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+# Get new headers.
+my $headers = $Frm->uhdr('WESLEY_SET_HEADERS') // {};
+
+# Set new headers in all files.
+my @output = ();
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    # Do not use inout to avoid a number being added to the suffix.
+    my $in = $Frm->file($i + 1);
+    my $out = $in . '_hdr';
+
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+
+    if (exists $headers->{$in}) {
+        orac_say("Setting headers in file $out");
+
+        my $table = new ORAC::TempFile();
+        my $table_fh = $table->handle();
+
+        foreach my $key (keys %{$headers->{$in}}) {
+            my $value = $headers->{$in}->{$key};
+            orac_say("    $key = $value");
+            print $table_fh "Update $key $value \$C\n";
+        }
+
+        $table_fh->close();
+
+        $Mon{'ndfpack_mon'}->obeyw('fitsmod', "ndf=$out mode=file table=$table");
+    }
+    else {
+        orac_say("No header updates for file $out");
+    }
+
+    push @output, $out;
+}
+
+# Store processed files in the frame.
+$Frm->files(@output);

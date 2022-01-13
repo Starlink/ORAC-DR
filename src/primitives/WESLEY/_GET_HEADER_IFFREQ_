@@ -1,0 +1,66 @@
+# vim: syn=perl
+
+=head1 NAME
+
+_GET_HEADER_IFFREQ_ - Check for new value of IFFREQ header
+
+=head1 DESCRIPTION
+
+This primitive checks each file in the frame to determine whether
+its IFFREQ header should be replaced with a value from its
+OCS configuration XML.  New values are stored in the C<uhdr>
+WESLEY_SET_HEADERS (for subsequent writing by C<_SET_HEADERS_>)
+if they vary by more than 1e-6 GHz from the current header.
+They are formatted to 12 d.p. to match typical values from ACSIS.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2021-2022 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my $in = $Frm->file($i + 1);
+    my $subsys = $Frm->hdrval('SUBSYSNR', $i);
+    my $iffreq_hdr = $Frm->hdrval('IFFREQ', $i);
+
+    _READ_OCS_CONFIG_ FILE=$in
+
+    my $config = $_READ_OCS_CONFIG_{'CONFIG'};
+
+    unless (defined $config) {
+        orac_warn('No OCS configuration found for file: ' . $in . "\n");
+        next;
+    }
+
+    my %spws = $config->acsis()->spw_list()->spectral_windows();
+    my @keys = sort keys %spws;
+    my $key = $keys[$subsys - 1];
+
+    unless ($key eq "SPW$subsys") {
+        orac_warn('Spectral window does not have expected ID for file: ' . $in . "\n");
+        next;
+    }
+
+    my $spw = $spws{$key};
+    my $iffreq_cfg = $spw->if_coordinate()->if_freq() / 1.0E9;
+
+    $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$in}->{'IFFREQ'}
+            = sprintf('%.12f', $iffreq_cfg)
+        if abs($iffreq_cfg - $iffreq_hdr) > 1.0E-6;
+}
