@@ -54,16 +54,14 @@ orac_termerr('TITLE or OUT missing')
 
 my @files = $Frm->files();
 
-unless ($Frm->uhdr('DATA_UNITS') =~ /mjy/i) {
 
-  unless (1 < scalar @files) {
+unless (1 < scalar @files) {
 
     # If there is only one file for this tile, just copy it
     # and set its title.  Place Parameter TITLE before Parameter NDF to
     # prevent object names containing parentheses from confusing the
     # command-line parser, which attributes the parentheses to the NDF.
 
-    _CALIBRATE_DATA_ UNITS=ARCSEC
     @files = $Frm->files();
     my $in = $files[0];
     orac_say("   single file: $in");
@@ -71,78 +69,59 @@ unless ($Frm->uhdr('DATA_UNITS') =~ /mjy/i) {
     $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
     $Mon{'ndfpack_mon'}->obeyw('settitle', "title='$title' ndf=$out");
     $Grp->push_intermediates($Frm->file(1));
-  }
-  else {
-
-    # If there are multiple files, use makemos to
-    # combine them.
-    # First apply calibrations.
-    foreach my $currfile (@files) {
-      orac_say(" Calibrating $currfile ");
-      _CALIBRATE_DATA_ UNITS=ARCSEC
-      # Mark the "cal" file as an intermediate.
-      orac_debug(" Marking " . $Frm->file() . " as intermediate. ");
-      $Grp->push_intermediates($Frm->file());
-    }
-
-  }
-  @files = $Frm->files();
-  orac_say("    file: $_") foreach @files;
-  orac_say("    output: $out");
-  my $filelength = scalar @files;
-  orac_say(" There are $filelength files to be coadded");
-  my $inlistref = \@files;
-  if ($filelength < 1000) {
-    orac_debug(" We have less than 1000 files: coadding in one go. ");
-    my $in = write_file_list(@files);
-    my $args = "in=^$in out=$out title='$title' " . 'method=mean noscale usevar nozero';
-    $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
-
-
-
   } else {
+    @files = $Frm->files();
+    orac_say("    file: $_") foreach @files;
+    orac_say("    output: $out");
+    my $filelength = scalar @files;
+    orac_say(" There are $filelength files to be coadded");
+    my $inlistref = \@files;
 
-    # We have more than 1000 files, so we have to coadd. Do this in batches of 500 at a time.
-    my $i = 0;
-    my $batchsize=500;
-    my @tempfiles;
-    my $finalindex;
-    orac_say("More than 1000 files; coadding in batches of $batchsize\n");
-    while ($i <= $filelength/$batchsize) {
-      $finalindex = $batchsize*$i+$batchsize > ($filelength-1) ? $filelength : $i*$batchsize+$batchsize;
-      orac_say("Indexing from ". $batchsize*$i . " to $finalindex");
-      my @shortfiles = @files[($batchsize*$i)..$finalindex-1];
-      orac_say("    file: $_") foreach @shortfiles;
-      my $in = write_file_list(@shortfiles);
-      my $tempout = ORAC::TempFile->new();
-      my $args = "in=^$in out=$tempout title='$title'  method=mean noscale usevar nozero";
+    if ($filelength < 1000) {
+      orac_debug(" We have less than 1000 files: coadding in one go. ");
+      my $in = write_file_list(@files);
+      my $args = "in=^$in out=$out title='$title' " . 'method=mean noscale usevar nozero';
       $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
-      push(@tempfiles, $tempout);
-      $i++;
+    } else {
+
+      # We have more than 1000 files, so we have to coadd. Do this in batches of 500 at a time.
+      my $i = 0;
+      my $batchsize=500;
+      my @tempfiles;
+      my $finalindex;
+      orac_say("More than 1000 files; coadding in batches of $batchsize\n");
+      while ($i <= $filelength/$batchsize) {
+        $finalindex = $batchsize*$i+$batchsize > ($filelength) ? $filelength : $i*$batchsize+$batchsize;
+        orac_say("Indexing from ". $batchsize*$i . " to $finalindex");
+        my @shortfiles = @files[($batchsize*$i)..$finalindex-1];
+        orac_say("    file: $_") foreach @shortfiles;
+        my $in = write_file_list(@shortfiles);
+        my $tempout = ORAC::TempFile->new();
+        my $args = "in=^$in out=$tempout title='$title'  method=mean noscale usevar nozero";
+        $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
+        push(@tempfiles, $tempout);
+        $i++;
+      }
+
+      my $in=write_file_list(@tempfiles);
+      # Now combine the final files. This will stop working at some number of files.
+      orac_say("Performing final coadd of the batches.");
+      my $args = "in=^$in out=$out title='$' "
+        . 'method=mean noscale usevar nozero';
+      $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
+      my $inlistref=\@files;
+
     }
+    # Merge the FITS headers into the co-added file.
+    _MERGE_FITS_HEADERS_ OUT=$out INLIST=$inlistref
 
-    my $in=write_file_list(@tempfiles);
-    # Now combine the final files. This will stop working at some number of files.
-    orac_say("Performing final coadd of the batches.");
-    my $args = "in=^$in out=$out title='$' "
-     . 'method=mean noscale usevar nozero';
-    $Mon{'ccdpack_reg'}->obeyw('makemos', "$args");
-    my $inlistref=\@files;
-
-  }
-  # Merge the FITS headers into the co-added file.
-  _MERGE_FITS_HEADERS_ OUT=$out INLIST=$inlistref
-
-  # Now add up exposure times, etc.  This should be done in the same
-  # way as _MOSAIC_JCMT_IMAGES_ does.  We call the same primitive as
-  # it uses.
-  my $complist = 'exp_time,weights';
-  _ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist INLIST=$inlistref
+      # Now add up exposure times, etc.  This should be done in the same
+      # way as _MOSAIC_JCMT_IMAGES_ does.  We call the same primitive as
+      # it uses.
+      my $complist = 'exp_time,weights';
+    _ADD_IMAGE_COMPS_ OUT=$out EXTEN=smurf COMPS=$complist INLIST=$inlistref
 
   $Frm->files($out);
 }
 
-else {
-  orac_warn("Tiles appear already to have flux units.\n");
-  orac_warn("Cannot coadd tiles unless they are in pW FCF application.\n");
-}
+

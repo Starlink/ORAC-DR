@@ -193,10 +193,36 @@ if ( @infiles > 1 ) {
       orac_print "Calculating total $comp... " if ($verbose);
 
       # Use MSTATS with estimator=sum
+
+
       $fullcomp .= $boundstr if ($boundstr ne "");
-      my $inlist = write_file_list(map { join(".",$_,$fullcomp) } @addfiles);
+      # Will have to deal with large number of files here.
+      my $filecount = scalar @addfiles;
+      if ($filecount >= 1000)  {
+        # If we have to many files, do it batches.
+        my $i=0;
+        my $batchsize=500;
+        my @tempoutlist;
+        my $finalindex;
+        orac_say("More than 1000 files; combining $comp in batches of $batchsize .");
+        while ($i <= $filecount/$batchsize) {
+          $finalindex = $batchsize*$i+$batchsize > ($filecount) ?$filecount : $i*$batchsize+$batchsize;
+          orac_debug("Indexing from " . $batchsize *$i . " to $finalindex");
+          my @shortfiles = @addfiles[($batchsize*$i)..$finalindex -1];
+          my $inlist = write_file_list(map { join(".", $_,$fullcomp) } @shortfiles);
+          my $tempout = ORAC::TempFile->new();
+          my $args = "in=^$inlist wlim=0 variance=f trim=false estimator=sum single=false out=$tempout";
+          $Mon{kappa_mon}->obeyw("mstats","$args");
+          push (@tempoutlist, $tempout);
+          $i++;
+        }
+        # overwrite initial addfiles with the new
+        @addfiles = @tempoutlist;
+      }
+      my $inlist = write_file_list(@addfiles);
       my $args = "in=^$inlist wlim=0 variance=f trim=false estimator=sum single=false out=$out";
       $Mon{kappa_mon}->obeyw("mstats","$args");
+
     }
   }
   orac_print "done\n" if ($verbose);
