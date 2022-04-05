@@ -40,6 +40,14 @@ Defines how group handling is done. 0 means the current Frame object
 is used, 1 means the current Group object is used, and 2 means every
 Frame member in the current Group is used.  [0]
 
+=item KNOTS = INTEGER (Given)
+
+The number of knots to use if spline fitting is being applied.  An
+interpolating spline is limited to a 11 knots with a default of 4.
+The default is 12 knots for a smoothing spline and up to 60 may be
+used.  This argument can be overridden by the RECPAR_BASELINE_KNOTS
+recipe parameter.  [!]
+
 =item ORDER = INTEGER (Given)
 
 The order of fit used for the baseline.  A special value of "spline"
@@ -58,6 +66,17 @@ greater than the widest spectral line.  [undef]
 
 The number of pixels in both spatial dimensions over which the cube is
 smoothed.  [3]
+
+=item SPLINE_TYPE = STRING (Given)
+
+The spline type, which is either 'interpolating' for a least-squares fit
+that passes through the knots, or 'smooth' for a smooth spline.  These
+may be abbrieviated to 'int' and 'smo', respectively.  See
+KAPPA:MFITTREND documentation for details.  It will be ignored unless
+the chosen order is set to 'spline'. This argument can be overridden
+by the RECPAR_BASELINE_SPLINE_TYPE recipe parameter.  If the resultant
+value is neither of the allowed alternatives, it is defaulted to
+'interpolating'.  ['interpolating']
 
 =item TAG = LOGICAL (Given)
 
@@ -101,8 +120,8 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2012, 2014, 2016, 2018 Science and Technology Facilities
-Council.  All Rights Reserved.
+Copyright (C) 2008, 2012, 2014, 2016, 2018, 2022 Science and Technology
+Facilities Council.  All Rights Reserved.
 
 =head1 LICENCE
 
@@ -124,20 +143,30 @@ MA 02111-1307, USA.
 =cut
 
 # Handle parameters.
-my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $knots = get_prim_arg( $_PRIM_ARGS_, "KNOTS", undef );
+my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $smosub = get_prim_arg( $_PRIM_ARGS_, "SMOOTH_SUBTRACT", undef );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
-my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $spline_type = get_prim_arg( $_PRIM_ARGS_, "SPLINE_TYPE", "interpolating" );
+$knots = $spline_type =~ /smo/ ? 12 : 4 if ! defined( $knots );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 1 );
 
-# Override various parameters if we've been given them as recipe
+# Override various arguments been given them as recipe
 # parameters.
 $order = ( defined( $Frm->uhdr( "RECPAR_BASELINE_ORDER" ) ) ?
            $Frm->uhdr( "RECPAR_BASELINE_ORDER" )            :
            $order );
+$knots = ( defined( $Frm->uhdr( "RECPAR_BASELINE_KNOTS" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_KNOTS" )            :
+           $knots );
+$spline_type = ( defined( $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE" )                  :
+           $spline_type );
+$spline_type = 'interpolating' if ( $spline_type !~ /int/ && $spline_type !~ /smo/ );
 
-my $spline = 1 if $order =~ /^spl/;
+my $spline = 1 if $order =~ /spl/;
 
 # Write a heading to structure the commentary.
 orac_say "\n\nBaseline removal";
@@ -200,7 +229,8 @@ if( $group != 1 ||
 
     orac_print "Removing baseline through smoothing and masking.\n";
     if ( $spline ) {
-      orac_print "Baselines are fitted to a spline with 12 knots.\n";
+      my $spltype = $spline_type =~ /int/ ? "interpolating" : "smoothed";
+      orac_print "Baselines are fitted to a $spltype spline with $knots knots.\n";
     } else {
       orac_print "Baselines are fitted to a polynomial of order $order.\n";
     }
@@ -227,10 +257,16 @@ if( $group != 1 ||
         my $temp2 = new ORAC::TempFile( 0 );
         my $temp2file = $temp2->file;
 
+        # Perform the baseline fit of the desired type.
         $params = "in=$temp1file out=$temp2file axis=3 auto=false ranges=\! ";
         $params .= "variance subtract=false method=single ";
+
         if ( $spline ) {
-           $params .= "fittype=spline interpol=false knots=12";
+          if ( $spline_type =~ /int/ ) {
+            $params .= " fittype=spline interpol knots=$knots";
+          } else {
+            $params .= " fittype=spline interpol=false knots=$knots";
+          }
         } else {
            $params .= "order=$order";
         }

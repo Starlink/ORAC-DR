@@ -17,6 +17,14 @@ using spectral windows that are assumed to be free of spectral lines.
 
 Whether or not to operate on the current Group object. [0]
 
+=item KNOTS = INTEGER (Given)
+
+The number of knots to use if spline fitting is being applied.  An
+interpolating spline is limited to a 11 knots with a default of 4.
+The default is 12 knots for a smoothing spline and up to 60 may be
+used.  This argument can be overridden by the RECPAR_BASELINE_KNOTS
+recipe parameter.  [!]
+
 =item ORDER = INTEGER (Given)
 
 The order of the fit to use for the baseline. Zero is a constant, one
@@ -30,6 +38,17 @@ A comma-separated list of ranges that denote the baseline regions in
 units of the current world co-ordinate system that corresponds to the
 trend axis, typically km/s. If not given, then the entire range will
 be used. []
+
+=item SPLINE_TYPE = STRING (Given)
+
+The spline type, which is either 'interpolating' for a least-squares fit
+that passes through the knots, or 'smooth' for a smooth spline.  These
+may be abbrieviated to 'int' and 'smo', respectively.  See
+KAPPA:MFITTREND documentation for details.  It will be ignored unless
+the chosen order is set to 'spline'. This argument can be overridden
+by the RECPAR_BASELINE_SPLINE_TYPE recipe parameter.  If the resultant
+value is neither of the allowed alternatives, it is defaulted to
+'interpolating'.  ['interpolating']
 
 =item TAG = LOGICAL (Given)
 
@@ -70,10 +89,12 @@ None.
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
+Malcolm J. Currie  E<lt>mjc.star.rl.ac.ukE<gt>
+
 =head1 COPYRIGHT
 
 Copyright (C) 2007 Particle Physics and Astronomy Research Council.
-Copyright (C) 2008, 2016 Science and Technology Facilities Council.
+Copyright (C) 2008, 2016, 2022 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -98,8 +119,11 @@ MA 02111-1307, USA.
 # Deal with arguments.
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $keepbl = get_prim_arg( $_PRIM_ARGS_, "KEEPBL", 0 );
+my $knots = get_prim_arg( $_PRIM_ARGS_, "KNOTS", undef );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $ranges = get_prim_arg( $_PRIM_ARGS_, "RANGES", "!" );
+my $spline_type = lc( get_prim_arg( $_PRIM_ARGS_, "SPLINE_TYPE", 'interpolating' ) );
+$knots = $spline_type =~ /smo/ ? 12 : 4 if ! defined( $knots );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 
 if( $ranges ne '!' ) {
@@ -111,7 +135,14 @@ if( $ranges ne '!' ) {
 $order = ( defined( $Frm->uhdr( "RECPAR_BASELINE_ORDER" ) ) ?
            $Frm->uhdr( "RECPAR_BASELINE_ORDER" )            :
            $order );
-my $spline = 1 if $order =~ /^spl/;
+$knots = ( defined( $Frm->uhdr( "RECPAR_BASELINE_KNOTS" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_KNOTS" )            :
+           $knots );
+$spline_type = ( defined( $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE" )                  :
+           $spline_type );
+$spline_type = 'interpolating' if ( $spline_type !~ /int/ && $spline_type !~ /smo/ );
+my $spline = 1 if $order =~ /spl/;
 
 # Handle group/file.
 my $Obj;
@@ -165,7 +196,11 @@ if( ! $group ||
       # Set up parameters for MFITTREND.
       my $params = "in=$in out=$out modifyin=false subtract auto=false axis=3 ";
       if  ( $spline ) {
-         $params .= "fittype=spline interpol=false knots=12 ranges=$ranges";
+        if ( $spline_type =~ /int/ ) {
+           $params .= " fittype=spline interpol knots=$knots ranges=$ranges";
+        } else {
+           $params .= " fittype=spline interpol=false knots=$knots ranges=$ranges";
+        }
       } else {
          $params .= "order=$order ranges=$ranges";
       }

@@ -20,7 +20,7 @@ default region method is chosen and the baseline regions have been
 determined by MFITTREND or preset through Arguments
 L<LOWER|/ARGUMENTS> and L<UPPER|/ARGUMENTS>---as opposed to setting
 predefined limits via Argument L<EDGES|/ARGUMENTS>---the primitive
-stores the preset baseline regions. or those returned by MFITTREND
+stores the preset baseline regions, or those returned by MFITTREND
 ARANGES, by reference in the object's internal header
 BASELINE_REGIONS.  For the single method, the individual masks for
 each file is stored by reference in the object's internal header
@@ -47,6 +47,14 @@ Percentage of the full range to fit on either edge of the spectrum. [0]
 
 Whether or not to operate on the current Group object. [0]
 
+=item KNOTS = INTEGER (Given)
+
+The number of knots to use if spline fitting is being applied.  An
+interpolating spline is limited to a 11 knots with a default of 4.
+The default is 12 knots for a smoothing spline and up to 60 may be
+used.  This argument can be overridden by the RECPAR_BASELINE_KNOTS
+recipe parameter.  [!]
+
 =item LOWER = REAL (Given)
 
 Array of up to ten lower limits of baseline regions in km/s.  It should
@@ -67,6 +75,17 @@ The order of fit used for the baseline.  Zero is a constant, one is
 linear, etc.  A special value of "spline" uses a spline fit, which is
 only suitable for narrow-line spectra.  This argument can be overridden
 by the RECPAR_BASELINE_ORDER recipe parameter. [1]
+
+=item SPLINE_TYPE = STRING (Given)
+
+The spline type, which is either 'interpolating' for a least-squares fit
+that passes through the knots, or 'smooth' for a smooth spline.  These
+may be abbrieviated to 'int' and 'smo', respectively.  See
+KAPPA:MFITTREND documentation for details.  It will be ignored unless
+the chosen order is set to 'spline'. This argument can be overridden
+by the RECPAR_BASELINE_SPLINE_TYPE recipe parameter.  If the resultant
+value is neither of the allowed alternatives, it is defaulted to
+'interpolating'.  ['interpolating']
 
 =item TAG = LOGICAL (Given)
 
@@ -141,7 +160,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2007 Particle Physics and Astronomy Research Council.
-Copyright (C) 2008, 2014, 2018 Science and Technology Facilities Council.
+Copyright (C) 2008, 2014, 2018, 2022 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -168,9 +187,12 @@ my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", 3 );
 my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", undef );
 my $edges = get_prim_arg( $_PRIM_ARGS_, "EDGES", 0 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $knots = get_prim_arg( $_PRIM_ARGS_, "KNOTS", undef );
 my $ref_lower = get_prim_arg( $_PRIM_ARGS_, "LOWER", undef );
 my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "REGION" ) );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $spline_type = lc( get_prim_arg( $_PRIM_ARGS_, "SPLINE_TYPE", 'interpolating' ) );
+$knots = $spline_type =~ /smo/ ? 12 : 4 if ! defined( $knots );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 my $ref_upper = get_prim_arg( $_PRIM_ARGS_, "UPPER", undef );
 
@@ -179,7 +201,14 @@ my $ref_upper = get_prim_arg( $_PRIM_ARGS_, "UPPER", undef );
 $order = ( defined( $Frm->uhdr( "RECPAR_BASELINE_ORDER" ) ) ?
            $Frm->uhdr( "RECPAR_BASELINE_ORDER" )            :
            $order );
-my $spline = 1 if $order =~ /^spl/;
+$knots = ( defined( $Frm->uhdr( "RECPAR_BASELINE_KNOTS" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_KNOTS" )            :
+           $knots );
+$spline_type = ( defined( $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE" )                  :
+           $spline_type );
+$spline_type = 'interpolating' if ( $spline_type !~ /int/ && $spline_type !~ /smo/ );
+my $spline = 1 if $order =~ /spl/;
 
 # Write a heading to structure the commentary.
 orac_say "\n\nBaseline removal";
@@ -269,7 +298,11 @@ if( ! $group ||
       $params   .= " axis=$axis section=$section method=$method";
 
       if ( $spline ) {
-        $params .= " fittype=spline interpol=false knots=12 ";
+        if ( $spline_type =~ /int/ ) {
+          $params .= " fittype=spline interpol knots=$knots ";
+        } else {
+          $params .= " fittype=spline interpol=false knots=$knots ";
+        }
       } else {
         $params .= " order=$order ";
       }
@@ -326,7 +359,8 @@ if( ! $group ||
       # in automatic mode.
       orac_print "$in to $out:\n";
       if ( $spline ) {
-        orac_print " Removed baseline using a spline with 12 knots.\n";
+        my $spltype = $spline_type =~ /int/ ? "interpolating" : "smoothed";
+        orac_print " Removed baseline using a $spltype spline with $knots knots.\n";
       } else {
         orac_print " Removed baseline using a polynomial of order $order.\n";
       }
@@ -339,7 +373,6 @@ if( ! $group ||
         orac_print " Baseline regions: [";
         orac_print join ",", ( grep { defined } map { $_ % 2 ? undef : join ":", $regions[$_], $regions[$_+1] } 0..$#regions );
         orac_print "]\n";
-
       }
 
       # Update the product.
