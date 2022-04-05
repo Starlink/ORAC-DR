@@ -20,10 +20,11 @@ to avoid duplicated code.
 =item
 
 The recipe parameters accessed by this primitive are: BASELINE_EDGES,
-BASELINE_EMISSION_CLIP, BASELINE_METHOD, BASELINE_NUMBIN, BASELINE_REGIONS,
-and BASELINE_ORDER.  These should be added to the list of parameters to
-verify  with ORAC::Recipe::Parameters::verify_parameters in the calling
-steering primitive.
+BASELINE_EMISSION_CLIP, BASELINE_KNOTS, BASELINE_METHOD, BASELINE_NUMBIN,
+BASELINE_ORDER, BASELINE_REGIONS, and BASELINE_SPLINE_TYPE.
+These should be added to the list of parameters to verify with
+ORAC::Recipe::Parameters::verify_parameters in the calling steering
+primitive.
 
 =item
 
@@ -43,7 +44,7 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2018 Science and Technology Facilities Council.
+Copyright (C) 2018, 2022 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -101,7 +102,36 @@ if ( defined( $RECPARS{'BASELINE_METHOD'} &&
 
 if ( defined( $RECPARS{'BASELINE_ORDER'} ) ) {
   $Frm->uhdr( "RECPAR_BASELINE_ORDER", $RECPARS{'BASELINE_ORDER'} );
-  orac_say( "    Setting baseline order to $RECPARS{'BASELINE_ORDER'}.", "yellow" );
+  my $order = lc( $RECPARS{'BASELINE_ORDER'} );
+
+# Set the spline recipe parameters.  Include defaults should the
+# number of knots not be supplied.  Set allowed ranges
+  my ( $spline_type, $knots, $maxknots );
+  if ( $order =~ /spl/ ) {
+    my $minknots = 4;
+    if ( defined( $RECPARS{'BASELINE_SPLINE_TYPE'} ) ) {
+      $Frm->uhdr( "RECPAR_BASELINE_SPLINE_TYPE", $RECPARS{'BASELINE_SPLINE_TYPE'} );
+      $spline_type = $RECPARS{'BASELINE_SPLINE_TYPE'};
+      if ( $spline_type =~ /int/ ) {
+        $spline_type = "interpolating";
+        $knots = 4;
+        $maxknots = 11;
+      } else {
+        $spline_type = "smoothing";
+        $knots = 12;
+        $maxknots = 60;
+      }
+    }
+
+    if ( defined( $RECPARS{'BASELINE_KNOTS'} ) ) {
+      $knots = max( $minknots, min( $RECPARS{'BASELINE_KNOTS'}, $maxknots ) );
+    }
+    $Frm->uhdr( "RECPAR_BASELINE_KNOTS", $knots );
+    orac_say( "    Fit baselines using a ${spline_type} spline with $knots knots.", "yellow" );
+
+  } else {
+    orac_say( "    Setting baseline polynomial order to ${order}.", "yellow" );
+  }
 }
 
 if ( defined( $RECPARS{'BASELINE_NUMBIN'} ) ) {
