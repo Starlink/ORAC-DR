@@ -94,7 +94,8 @@ BEGIN {
     if( ! defined $ENV{'ORAC_TEST_EXTRA'} ){
        foreach my $instrument (@instruments) {
            if( $instrument->{'name'} eq 'WESLEY_SCUBA2_850' ){
-              $instrument->{'skip'} = ['FIX_HEADER_IFFREQ',];
+              $instrument->{'skip'} = ['FIX_HEADER_IFFREQ',
+                                       'INSERT_JCMT_WVM_DATA',];
            }
        }
     }
