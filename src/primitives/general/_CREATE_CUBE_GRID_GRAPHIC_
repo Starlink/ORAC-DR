@@ -1,0 +1,97 @@
+=head1 NAME
+
+_CREATE_CUBE_GRID_GRAPHIC_ - paste cube planes together to make preview image
+
+=head1 DESCRIPTION
+
+This primitive pastes all of the planes of a cube together into one
+intermediate file and then makes a preview image.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2022 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use POSIX qw/ceil/;
+
+my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
+my $Obj = $group ? $Grp : $Frm;
+
+_GET_DIMENSIONS_ GROUP=$group
+
+my $ndim = $_GET_DIMENSIONS_{'NDIM'};
+my $dims = $_GET_DIMENSIONS_{'DIMS'};
+my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
+my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
+
+if ($ndim != 3) {
+    orac_warn("Can not create cube grid - file is not a cube\n");
+}
+elsif ($dims->[2] > 36) {
+    orac_warn("Can not create cube grid - cube is too large\n");
+}
+else {
+    my $in = $Obj->file;
+
+    my $out;
+    my @pasted_rows;
+    if (2 > $dims->[2]) {
+        $out = $in;
+    }
+    else {
+        # Assemble cube planes into a grid.
+        my $x = $dims->[0];
+        my $y = $dims->[1];
+        my $n = ceil(sqrt($dims->[2]));
+
+        my $n_row = 0;
+        my @rows = (my $row = []);
+
+        foreach my $i ($lbound->[2] .. $ubound->[2]) {
+            if ($n < ++ $n_row) {
+                push @rows, $row = [];
+                $n_row = 1;
+            }
+            push @$row, "$in(,,$i)";
+        }
+
+        foreach $row (@rows) {
+            if (2 > scalar @$row) {
+                push @pasted_rows, $row->[0];
+            }
+            else {
+                my $infile = write_file_list(@$row);
+                my $pasted_row = ORAC::TempFile->new(0);
+                push @pasted_rows, $pasted_row;
+                $Mon{'kappa_mon'}->obeyw('paste', "in=^$infile out=$pasted_row shift=[$x,0,-1]");
+            }
+        }
+
+        if (2 > scalar @pasted_rows) {
+            $out = $pasted_rows[0];
+        }
+        else {
+            $out = ORAC::TempFile->new(0);
+            my $infile = write_file_list(@pasted_rows);
+            $Mon{'kappa_mon'}->obeyw('paste', "in=^$infile out=$out shift=[0,-$y,-$n]");
+        }
+    }
+
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$out OUTROOT=$in WCSMETADATA=0 ADDRES=1 XRES=64,256,1024 TYPE=PNG
+}
