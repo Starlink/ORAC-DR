@@ -53,7 +53,7 @@ pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Default for ORAC_PERL5LIB
 
-if [[ -z "$ORAC_PERL5LIB" ]]; then
+if [ -z "$ORAC_PERL5LIB" ]; then
   export ORAC_PERL5LIB="${ORAC_DIR}/lib/perl5"
   echo " "
   echo " Warning: ORAC_PERL5LIB = ${ORAC_PERL5LIB}"
@@ -61,7 +61,7 @@ fi
 
 # These are perl programs
 
-if [[ -e "$STARPERL" ]]; then
+if [ -e "$STARPERL" ]; then
   echo " "
   echo " FITS Header Editor -- (Version ${pkgvers})"
   echo " "

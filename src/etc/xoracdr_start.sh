@@ -85,7 +85,7 @@ pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
 # These are perl programs
 
-if [[ -e "$STARPERL" ]]; then
+if [ -e "$STARPERL" ]; then
   echo " "
   echo " ORAC Data Reduction Pipeline -- (ORAC-DR Version ${pkgvers})"
   echo " "
