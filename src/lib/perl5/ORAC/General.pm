@@ -715,11 +715,11 @@ sub filter_quoted_string {
     # primitive.
     if ($single) {
         $string =~ s/"/""/g;
-        $string =~ s/'/\'\'/g;
+        $string =~ s/'/\\'\\'/g;
     }
     else {
         $string =~ s/'/''/g;
-        $string =~ s/"/\"\"/g;
+        $string =~ s/"/\\"\\"/g;
     }
 
     return $string;
