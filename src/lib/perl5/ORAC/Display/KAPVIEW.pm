@@ -84,6 +84,7 @@ sub new {
                                 Obj => undef, # kapview object
                                 EngineLaunch => new ORAC::Msg::EngineLaunch,
                                 Regions => {},
+                                LookupTables => {},
                                 @_,
                                );
 
@@ -221,6 +222,16 @@ sub regions {
   }
 }
 
+=item B<lookup_tables>
+
+A hash containing the current lookup table for each device.
+
+=cut
+
+sub lookup_tables {
+  my $self = shift;
+  return $self->{'LookupTables'};
+}
 
 =item B<obj>
 
@@ -1095,6 +1106,7 @@ Recognised options:
   ZAUTOSCALE - Autoscale Z?
   KEY        - Display key to colour table?
   COMP       - Component to display (Data (default), Variance or Error)
+  LUT        - Color lookup table name [default: 'bgyrw']
 
 Default is to autoscale.
 
@@ -1137,6 +1149,18 @@ sub image {
 
   # Calculate NDF section.
   $file = $self->select_section($file,\%options,2);
+
+  # Set LUT if different from current value.
+  do {
+    my $lut_default = 'bgyrw';
+    my $lut_requested = (exists $options{'LUT'}) ? (lc $options{'LUT'}) : $lut_default;
+    my $lut_current = $self->lookup_tables->{$device} // $lut_default;
+    unless ($lut_requested eq $lut_current) {
+      my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/${lut_requested}_lut";
+      my $status = $self->obj->obeyw("lutable","$args device=$device");
+      $self->lookup_tables->{$device} = $lut_requested;
+    }
+  };
 
   # Construct the parameter string for DISPLAY.
   my $optstring = " ";
