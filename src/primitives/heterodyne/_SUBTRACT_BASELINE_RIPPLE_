@@ -1,0 +1,240 @@
+=head1 NAME
+
+_SUBTRACT_BASELINE_RIPPLE_
+
+=head1 DESCRIPTION
+
+This primitive creates and subtracts a baseline-ripple spectrum.
+
+The primitive obtains the modal spectrum of the time-series cubes in
+the current Group, masks the specified reference lines, and
+interpolates across them to allow for reference lines located where
+there is varying emission.  The interpolated spectrum is subtracted
+from the original modal spectrum to form a estimate of the reference
+spectrum.  The estimated spectrum is expanded to the size and bounds
+of each input time-series cube and subtracted from every spectrum
+within thsat cube (so as to fill in the absorption lines).
+
+This primitive is only implemented if the recipe parameters
+SUBTRACT_REF_SPECTRUM is set true, and REF_SPECTRUM_REGIONS defines a
+valid set of extents.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EMISSION_CUT = FLOAT (Given)
+
+system.  [0.01]
+
+=item FWHM = INTEGER (Given)
+
+The name of an NDF that contains a previoussly determined ripple
+spectrum in.  An undefined value means that no file is to be subtracteed
+to remove the baseline ripple.  Instead it is estimated from the
+non-emission regions. [11]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UU data.
+
+=item *
+
+The output files, except the derived ripple spectrum, are logged as
+Group intermediates for tidying, but would readily be available for
+diagnostic purpose with ORAC_KEEP enables.  They are Group intermediates,
+because the products combine data from different Frames.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+For each reference position or UT date (depending on the value of
+Argument COMBINE_BY_REFPOS) there is a series of files generated.  They
+all have the root name F<master_refspec>I<N> for the I<N>th sub-group.
+The various files are as follows.
+
+=over 4
+
+=item *
+
+The weighted mean of the aligned mean spectra within the sub-group
+has suffix F<_amrs>.
+
+=item *
+
+The estimated reference spectrum when COMBINE_DETECTORS is false, or
+the composite spectrum has the suffix F<_udrs> (user-defined reference
+spectrum).
+
+=item *
+
+The reference spectrum expanded to the dimensions of the input data
+cube has the suffix F<_tsc> (time-series cube).
+
+=item *
+
+The _tsc file aligned pixel for pixel with the imput time-series cube
+has suffix F<_tscal>.
+
+=back
+
+=item *
+
+Spectral cube data with the ripple spectrum subtracted having the
+F<_sris> (subtract  ripple spectrum) suffix applied to each Frame of the current Group.
+
+=item *
+
+The input time-series data with the strongest spectra masked, having
+the F<_mrsmask> suffix applied to each Frame of the Group.
+
+=item *
+
+The modal spectrum for each Frame having the F<_mrs> suffix.  It may
+contain spectra for each receptor.
+
+=item *
+
+The weighted average of the subfile modal spectra, having the F<_wamrs>
+suffix, for each observation.
+
+=item *
+
+The WCS-aligned weighted average of the subfile modal spectra, having
+the F<_wamrsal> suffix, for each observation.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, GAUSMOOTH, MANIC, SUB, THRESH.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2022  Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Retrieve and validate parameters.
+# =================================
+
+# Only proceed if the apprropriate recipe parameter is set true.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_REMOVE_BASELINE_WAVE" ) ) ?
+              $Frm->uhdr( "RECPAR_REMOVE_BASELINE_WAVE" )            :
+              1 );
+if ( ! $apply ) { goto RETURN }
+
+my $emission_cut = get_prim_arg( $_PRIM_ARGS_, "EMISSION_CUT", 0.01 );
+my $fwhm = get_prim_arg( $_PRIM_ARGS_, "FWHM", 11 );
+my $iter = get_prim_arg( $_PRIM_ARGS_, "ITERATION", 1 );
+
+$emission_cut = ( defined( $Frm->uhdr( "RECPAR_BASELINE_WAVE_THRESHOLD" ) ) ?
+                           $Frm->uhdr( "RECPAR_BASELINE_WAVE_THRESHOLD"  )  :
+                           $emission_cut );
+$fwhm = ( defined( $Frm->uhdr( "RECPAR_BASELINE_WAVE_FWHM" ) ) ?
+                   $Frm->uhdr( "RECPAR_BASELINE_WAVE_FWHM"  )  :
+                   $fwhm );
+
+# Write a heading to structure the commentary.
+orac_say "\n\nSubtract median background spectrum from spectral cube";
+my $underline = "-" x 68;
+orac_say "$underline\n";
+
+# Obtain the spectral bounds of the Group spectral cube.
+_GET_DIMENSIONS_ GROUP=1
+
+my $lbound = $_GET_DIMENSIONS_{LBOUND};
+my $ubound = $_GET_DIMENSIONS_{UBOUND};
+my $sp_lbnd = $lbound->[2];
+my $sp_ubnd = $ubound->[2];
+
+my ( $cube, $integ_file ) = $Grp->inout( "_integ" );
+
+# Get the input and output file names.
+my $suffix =   "_srm" . $iter;
+my ( $in, $out ) = $Grp->inout( $suffix );
+
+# Obtain some temporary filenames.
+my $temp1file = new ORAC::TempFile( 0 );
+my $temp2file = new ORAC::TempFile( 0 );
+my $temp3file = new ORAC::TempFile( 0 );
+my $temp4file = new ORAC::TempFile( 0 );
+my $temp5file = new ORAC::TempFile( 0 );
+my $temp6file = new ORAC::TempFile( 0 );
+
+# Mask the spatial pixels where there is signal.
+my $params = "in=$integ_file out=$temp1file thrlo=0 newlo=0.0 thrhi=$emission_cut newhi=bad";
+$Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Duplicate the image to a third dimension matching the group file.
+$params = "in=$temp1file out=$temp2file axes=[1,2,0] lbound=$sp_lbnd ubound=$sp_ubnd";
+$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Apply the mask to the group spectral cube.
+$params = "in1=$in in2=$temp2file out=$temp3file";
+$Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Collapse first-two axes to form the median spectrum.
+$params = "in=$temp3file out=$temp4file axes=3 estimator=median";
+$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Smooth the spectrum.
+$params = "in=$temp4file out=$temp5file fwhm=$fwhm";
+$Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+
+# Grow the spectrum to match the dimensions of the spectral cube
+$params = "in=$temp5file out=$temp6file axes=[0,0,1]  lbound=[";
+$params .= join( ',', $lbound->[0], $lbound->[1] );
+$params .= "] ubound=[";
+$params .= join( ',', $ubound->[0], $ubound->[1] );
+$params .= "]";
+$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+$params = "in1=$in in2=$temp6file out=$out";
+$Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+orac_say "Subtract median smoothed spectrum from $in to form $out";
+
+$Grp->file( $out );
+
+orac_print "\n";
+
+RETURN:
+
