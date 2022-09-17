@@ -1295,6 +1295,8 @@ sub orac_process_argument_list {
   # Read the argument list
   my ($frameclass, $obs, %opt) = @_;
 
+  $ORAC::Loop::read_flag_sync = 1 if $opt{'flagsync'};
+
   my $loop;
 
   # This is triggered if we have -from and is the most complex option
