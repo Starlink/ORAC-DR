@@ -541,6 +541,10 @@ sub orac_calc_instrument_settings {
       } elsif ($options{mode} eq 'SUMMIT') {
         push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef);
         $nobatch = 1;
+        # For SCUBA2 try reading flag files in sync.
+        if ($inst eq 'SCUBA2') {
+          push @rec, '-flagsync', undef;
+        }
       }
     } else {
       # If mode is not given then the pipeline is running offline so
