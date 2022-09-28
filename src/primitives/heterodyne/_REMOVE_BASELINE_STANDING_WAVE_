@@ -1,0 +1,300 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_REMOVE_BASELINE_STANDING_WAVE_
+
+=head1 DESCRIPTION
+
+This primitive performs baseline subtraction of spectra.  It has
+different functionality depending on the value of Argument
+L<GROUP|/ARGUMENTS>.
+
+If group processing is selected, the primitive only operates when the
+recipe is processing the last group member.  In this case and provided
+the COPY_FRAME_CUBE Group internal header is true, the primitive
+copies the Frame files to the Group files, and synhronises headers.
+
+When processing Frame objects, for each input cube the primitive first
+creates a mask of emission, in which smoothing (see Arguments
+L<FREQUENCY_SMOOTH|/ARGUMENTS> and L<SPATIAL_SMOOTH|/ARGUMENTS>) helps
+delineate the baseline from the emission, and refines the baseline.
+The second baseline fit uses the full spectral range, and the baseline
+is subtracted from each input Frame's cube.  For hybrid data, which is
+most likely to have multiple lines, an offset correction is applied
+using the mode of the data histogram to define the baseline level.
+
+The baseline-subtracted data may be tagged (see Argument L<TAG|/ARGUMENTS>).
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+Defines how group handling is done. 0 means the current Frame object
+is used, 1 means the current Group object is used, and 2 means every
+Frame member in the current Group is used.  [0]
+
+=item SMOOTH_SUBTRACT (Given)
+
+If defined this removes the baseline from each spectrum,
+by block smoothing with a median.  It assumes that any lines are narrow.
+The value specifies the width of the block in knm/s, and it should
+greater than the widest spectral line.  [undef]
+
+=item TAG = LOGICAL (Given)
+
+Whether or not to tag the resulting group masked cube as 'reduced'.  [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The output files are logged as group intermediates.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item
+
+The output baseline-corrected cubes, each with suffix _bl.
+For JSA processing, its tile-naming convention is adhered
+to for these cubes.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, MFITTREND, NDFCOPY, NDFTRACE, SETVAR, SUB.
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008, 2012, 2014, 2016, 2018 Science and Technology Facilities
+Council.  All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Handle parameters.
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $smosub = get_prim_arg( $_PRIM_ARGS_, "SMOOTH_SUBTRACT", undef );
+my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 1 );
+
+# Override various parameters if we've been given them as recipe
+# parameters.
+
+# Write a heading to structure the commentary.
+orac_say "\n\nStanding-wave baseline removal";
+my $underline = "-" x 33;
+orac_say "$underline\n";
+
+# Estimate the smoothed baseline along scan rows using PPV cubes.
+# ===============================================================
+
+# The same OFF signal is used for all spectra along the scan row.
+# Leverage this to obtain a representative (median) smoothed baseline,
+# that includes the standing wave for each scan row.  Then grow back
+# to the original spectral cube's shape, duplicating for each scan row.
+
+
+# Retrieve the tagged spectral cube frames and copy them into the Group object.
+_RETRIEVE_TAG_ TAG=STANDING_WAVE
+
+# 
+
+
+my @reduced;
+foreach my $Frm ( $Grp->members ) {
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Obtain some temporary filenames.
+       my $temp1file = new ORAC::TempFile( 0 );
+       my $temp2file = new ORAC::TempFile( 0 );
+       my $temp3file = new ORAC::TempFile( 0 );
+
+# Use the integ file to mask the spectra.  It would be better to work
+# in timeseries cube space, but I've yet to work out te order the
+# spectra are stored, needing all the spectra in a scan row.
+# The integ may be a pixel smaller along each dimension, so provide
+# that padding.
+      my ( $cube, $integ_file ) = $Frm->inout( "_integ" );
+      ( $cube, my $match_integ_file ) = $Fr->inout( "_fsinteg" );
+      my $params = "in1=$cube scalar=0.0 out=$match_integ_file";
+      $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
+
+# Mask the spatial pixels where there is signal.
+      $params = "in=$integ_file out=$temp1file thrlo=0 newlo=0.0 ";
+      $params .= "thrhi=$emission_cut newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+      my ( $in, $out ) = Frm->inout( "_swsp", $i );
+
+# Obtain the spectral bounds of the Group spectral cube.
+       _GET_DIMENSIONS_ GROUP=0
+
+       my $lbound = $_GET_DIMENSIONS_{LBOUND};
+       my $ubound = $_GET_DIMENSIONS_{UBOUND};
+       my $sp_lbnd = $lbound->[2];
+       my $sp_ubnd = $ubound->[2];
+
+# Determine which is the scan row and set some parameters accordingly.
+       my $pa = defined( $Frm->hdr( "SCAN_PA" ) ) ? $Frm->hdr( "SCAN_PA" ) : 90.0;
+       my $scan_dim = abs( $pa ) < 45.0 ? 0 : 1;
+       my $col_axis = abs( $pa ) < 45.0 ? 1 : 2;
+       my $grow_axis = abs( $pa ) < 45.0 ? "[0,1,2]" : "[1,0,2]";
+
+       my $lbnd = $lbound->[$scan_dim];
+       my $ubnd = $ubound->[$scan_dim];
+
+# Collapse the other (not in scan direction) spatial axis to form the
+# median spectra.
+       $params = "in=$in out=$temp1file axi=$col_axis estimator=median";
+       $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Smooth the spectra.
+       $params = "in=$temp1file out=$temp2file box=[1,$fwhm] estimator=mean";
+       $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+# Duplicate the median spectra along the previously collapsed axis
+# to form a cube whose dimensions match occf the input spectral cube.
+       $params = "in=$temp2file out=$out axes=$grow_axis ";
+       $params .= "lbound=$lbnd ubound=$ubnd";
+       $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Remove the one-dimensional Sky axis (because MANIC does not adjust 
+# a SkyFrame after the configuration change), and copy the original
+# spectral cube's WCS component.
+       $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$out.WCS OK" );
+       my $ORAC_STATUS = ( copy_hdsobj( "$in.WCS", "$out.WCS" ) ? ORAC__OK : ORAC__ERROR );
+
+# Save these for the next stage.
+       push @reduced, $out;
+   }
+}
+
+
+# Get masks for the emission.
+# Find and subtract baselines for all the chosen objects.
+orac_print "Baselines are averaged and smoothed in scan rows.\n";
+_CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order REPORT=0
+
+# Set constant parameters for UNMAKECUBE.
+my $interp = 'NEAREST';
+my $param1 = 0;
+my $param2 = undef;
+
+# Collect objects to process.
+my @objs = $Grp->members;
+
+foreach my $Obj ( @objs ) {
+
+   foreach my $i ( 1 .. $Obj->nfiles ) {
+
+      my ( $in, $out ) = defined( $Obj->uhdr( "JSA_TILES" ) ) && $Obj->uhdr( "JSA_TILES" ) ?
+                         $Obj->inout_jsatile( "_bl", $i ) :
+                         $Obj->inout( "_bl", $i );
+      my $mask = $Obj->uhdr( "BASELINE_MASKS" )->[$i];
+
+      # Mask out the non-baseline regions in the original cube.
+      my $temp1 = new ORAC::TempFile( 0 );
+      my $temp1file = $temp1->file;
+      my $params = "in1=$in in2=$mask out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Convert the spectral cube containing the baseline spectrato a time-series cube 
+# for subtracttion of the standing wave,
+      ( $ORAC_STATUS, my @fpixsize ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+      my $pixsize = sqrt( $fpixsize[0] * $fpixsize[0] + $fpixsize[1] * $fpixsize[1] );
+
+      _GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$interp PIXSIZE=$pixsize
+      my $interp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
+
+# Set up parameters to UNMAKECUBE.
+      $params = "in=$temp2file ref=$in out=$temp7file interp=$interp usedetpos=f params=$interp_params";
+      $Mon{'smurf_mon'}->obeyw( "unmakecube", "$params" );   
+
+
+
+      # Fit better baselines to the masked cube. We can use the
+      # whole range but don't use auto.
+      my $temp2 = new ORAC::TempFile( 0 );
+      my $temp2file = $temp2->file;
+
+      $params = "in=$temp1file out=$temp2file axis=3 auto=false ranges=\! ";
+      $params .= "variance subtract=false method=single ";
+      $params .= "order=$order";
+      $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+      # Subtract these baselines from the input cube.
+      $params = "in1=$in in2=$temp2file out=$out";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+      if ( defined( $smosub ) && $smosub ) {
+         my $Frm = new $Frm( $out );
+         _SUBTRACT_SMOOTHED_BASELINE_ GROUP=$group VELOCITY_WIDTH=$smosub
+         my $outsms = $Frm->file;
+         {'ndfpack_mon'}->obeyw( "ndfcopy", "in=$outsms out=$out" );
+      }
+
+      # Copy the variance across over from the input cube, but only
+      # if the input cube has a variance.
+      $params = "ndf=$in";
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "$params" );
+      my( $ORAC_STATUS, $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
+      if( uc( $var ) eq 'TRUE' ) {
+         $params = "ndf=$out from=$in comp=VARIANCE";
+         {'ndfpack_mon'}->obeyw( "setvar", "$params" );
+      }
+
+      orac_print "$in to $out:\n";
+      orac_print " Removed baseline.\n";
+
+      $Obj->product( "bl" );
+      $Obj->file( $i, $out );
+
+      # Remove the output file after group processing.
+      $Grp->push_intermediates( $out );
+
+   }
+
+   if ( $tag ) {
+      $Frm = $Obj;
+      _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 FLAG_QUAL_BAD=1
+   }
+
+}
+
+# Tidy-up output.
+  orac_print "\n";
