@@ -273,7 +273,7 @@ sub bad_receptors_list {
     $self->thingtwo( $thing2 );
 
     # Merge the master and QA bad receptors.
-    my %seen = map { $_, 1 } @master_bad, @index_bad;
+    my %seen = map {($_ eq ' ') ? () : ($_, 1)} @master_bad, @index_bad;
     @bad_receptors = keys %seen;
 
   } elsif ( $usefile ) {
