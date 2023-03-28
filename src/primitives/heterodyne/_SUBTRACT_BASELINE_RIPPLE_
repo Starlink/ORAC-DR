@@ -13,7 +13,7 @@ there is varying emission.  The interpolated spectrum is subtracted
 from the original modal spectrum to form a estimate of the reference
 spectrum.  The estimated spectrum is expanded to the size and bounds
 of each input time-series cube and subtracted from every spectrum
-within thsat cube (so as to fill in the absorption lines).
+within that cube (so as to fill in the absorption lines).
 
 This primitive is only implemented if the recipe parameters
 SUBTRACT_REF_SPECTRUM is set true, and REF_SPECTRUM_REGIONS defines a
@@ -122,7 +122,7 @@ KAPPA: ADD, GAUSMOOTH, MANIC, SUB, THRESH.
 
 =head1 REQUIRED PERL MODULES
 
-None.
+Starlink::HDSPACK.
 
 =head1 AUTHORS
 
@@ -152,6 +152,8 @@ MA 02111-1307, USA.
 
 =cut
 
+use Starlink::HDSPACK qw/ copy_hdsobj /;
+
 # Retrieve and validate parameters.
 # =================================
 
@@ -176,63 +178,124 @@ $fwhm = ( defined( $Frm->uhdr( "RECPAR_BASELINE_WAVE_FWHM" ) ) ?
 orac_say "\n\nSubtract median background spectrum from spectral cube";
 my $underline = "-" x 68;
 orac_say "$underline\n";
-
-# Obtain the spectral bounds of the Group spectral cube.
-_GET_DIMENSIONS_ GROUP=1
-
-my $lbound = $_GET_DIMENSIONS_{LBOUND};
-my $ubound = $_GET_DIMENSIONS_{UBOUND};
-my $sp_lbnd = $lbound->[2];
-my $sp_ubnd = $ubound->[2];
-
 my ( $cube, $integ_file ) = $Grp->inout( "_integ" );
 
+my @Objs = $Grp->members;
+foreach my $Frm ( @Objs ) {
+
 # Get the input and output file names.
-my $suffix =   "_srm" . $iter;
-my ( $in, $out ) = $Grp->inout( $suffix );
+    my $suffix =   "_swrm" . $iter;
+    my ( $in, $out ) = $Frm->inout( $suffix );
 
 # Obtain some temporary filenames.
-my $temp1file = new ORAC::TempFile( 0 );
-my $temp2file = new ORAC::TempFile( 0 );
-my $temp3file = new ORAC::TempFile( 0 );
-my $temp4file = new ORAC::TempFile( 0 );
-my $temp5file = new ORAC::TempFile( 0 );
-my $temp6file = new ORAC::TempFile( 0 );
+   my $temp1file = new ORAC::TempFile( 0 );
+   my $temp2file = new ORAC::TempFile( 0 );
+   my $temp3file = new ORAC::TempFile( 0 );
+   my $temp4file = new ORAC::TempFile( 0 );
+   my $temp5file = new ORAC::TempFile( 0 );
+   my $temp6file = new ORAC::TempFile( 0 );
+   my $temp7file = new ORAC::TempFile( 0 );
+   my $temp8file = new ORAC::TempFile( 0 );
+   my $temp9file = new ORAC::TempFile( 0 );
 
 # Mask the spatial pixels where there is signal.
-my $params = "in=$integ_file out=$temp1file thrlo=0 newlo=0.0 thrhi=$emission_cut newhi=bad";
-$Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+   my $params = "in=$integ_file out=$temp1file thrlo=0 newlo=0.0 thrhi=$emission_cut newhi=bad";
+   $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
 # Duplicate the image to a third dimension matching the group file.
-$params = "in=$temp1file out=$temp2file axes=[1,2,0] lbound=$sp_lbnd ubound=$sp_ubnd";
-$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+   $params = "in=$temp1file out=$temp2file axes=[1,2,0] lbound=$sp_lbnd ubound=$sp_ubnd";
+   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Apply the mask to the group spectral cube.
-$params = "in1=$in in2=$temp2file out=$temp3file";
-$Mon{'kappa_mon'}->obeyw( "add", "$params" );
+   $params = "in1=$in in2=$temp2file out=$temp3file";
+   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
-# Collapse first-two axes to form the median spectrum.
-$params = "in=$temp3file out=$temp4file axes=3 estimator=median";
-$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+# The scan may not be aligned with the Cartesian pixel axes.
+   my $scan_pa = defined( $Frm->hdr( "SCAN_PA" ) ) ? $Frm->hdr( "SCAN_PA" ) : 90.0;
+#   my $map_pa = defined( $Frm->hdr( "MAP_PA" ) ) ? $Frm->hdr( "MAP_PA" ) : 0.0;
+   my $map_pa = 0.0;
 
-# Smooth the spectrum.
-$params = "in=$temp4file out=$temp5file fwhm=$fwhm";
-$Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+   my $totangle = $scan_pa + $map_pa;
+   if ( $totangle > 45.0 ) {
+      $rotangle = $totangle - 90.0;
+   } else {
+      $rotangle = - $totangle;
+   }
+   my $modangle = abs( $rotangle );
 
-# Grow the spectrum to match the dimensions of the spectral cube
-$params = "in=$temp5file out=$temp6file axes=[0,0,1]  lbound=[";
-$params .= join( ',', $lbound->[0], $lbound->[1] );
-$params .= "] ubound=[";
-$params .= join( ',', $ubound->[0], $ubound->[1] );
-$params .= "]";
-$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+# Need to rotate the spatial grid so that the scan axes align with
+# the pixel axes.
+  my $rotate = $modangle > 0.01;
+   if ( $rotate ) {
+       $params = "in=$temp3file out=$temp4file angle=$rotangle useaxiis='1,2'";
+       $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+       orac_print "Rotate spatial axes $rotangle clockwise\n";
+   } else {
+      $temp8file = $temp3file;
+   }
 
-$params = "in1=$in in2=$temp6file out=$out";
-$Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+   my $scan_dim = $modangle < 45.0 ? 0 : 1;
+   my $col_axis = $modangle < 45.0 ? 1 : 2;
+   my $grow_axis =$modangle < 45.0 ? "[0,1,2]" : "[1,0,2]";
 
-orac_say "Subtract median smoothed spectrum from $in to form $out";
+   my $lbnd = $lbound->[$scan_dim];
+   my $ubnd = $ubound->[$scan_dim];
 
-$Grp->file( $out );
+# Collapse the other spatial axis to form the median spectra.
+   $params = "in=$temp8file out=$temp4file axis=$col_axis estimator=median";
+   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Smooth the spectra.
+   #$params = "in=$temp4file out=$temp5file fwhm=[0.1,$fwhm]";
+   #$Mon{'kappa_mon'}->obeyw( "gausmooth", "$params" );
+   $params = "in=$temp4file out=$temp5file box=[1,$fwhm] estimator=mean";
+   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+# Grow the spectrum to match the dimensions of the spectral cube.
+   $params = "in=$temp5file out=$temp6file axes=$grow_axis ";
+   $params .= "lbound=$lbnd ubound=$ubnd";
+   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Remove the one-dimensional Sky axis (because MANIC does not adjust
+# a SkyFrame after the configuration change), and copy the original
+# spectral cube's WCS component.
+   $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$temp6file.WCS OK" );
+   my $ORAC_STATUS = ( copy_hdsobj( "$cube.WCS", "$temp6file.WCS" ) ? ORAC__OK : ORAC__ERROR );
+
+# Convert the spectral cube to a time-series cube for subtraction of
+# the standing wave.
+   my $interp = 'NEAREST';
+   my $param1 = 0;
+   my $param2 = undef;
+   ( $ORAC_STATUS, my @fpixsize ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+   my $pixsize = sqrt( $fpixsize[0] * $fpixsize[0] + $fpixsize[1] * $fpixsize[1] );
+
+   _GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$interp PIXSIZE=$pixsize
+   my $interp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
+
+# Set up parameters to UNMAKECUBE.
+   $params = "in=$temp6file ref=$in out=$temp7file interp=$interp usedetpos=f params=$interp_params";
+   $Mon{'smurf_mon'}->obeyw( "unmakecube", "$params" );
+
+# Rotate the PPV to its original orientation.
+   my $irotangle = $rotangle;
+   if ( $rotate ) {
+       $params = "in=$temp7file out=$temp9file angle=$irotangle useaxis='1,2'";
+       $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+   } else {
+      $temp9file = $temp7file;
+   }
+
+# Remove the OFF signatures.
+   $params = "in1=$in in2=$temp9file out=$out";
+   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+
+   orac_say "Subtract median smoothed spectra from $in to form $out";
+
+# Update the Frame object;
+   $Frm->file( $out );
+}
 
 orac_print "\n";
 
