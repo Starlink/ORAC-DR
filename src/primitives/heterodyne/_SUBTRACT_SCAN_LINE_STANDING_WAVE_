@@ -1,0 +1,386 @@
+=head1 NAME
+
+_SUBTRACT_SCAN_LINE_STANDING_WAVE_
+
+=head1 DESCRIPTION
+
+This primitive takes the current spectral cube and forms the median
+standing-wave pattern for each scan row, since the pattern comes from
+the motion to the off position, once per scan row.  It then expand
+these into the shape of the original spectral cube and subtracts from
+the current spectral cube.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EMISSION_MASK = STRING (Given)
+
+The name of the file that has known emission masked.  It should either
+contain zeroes for regions lacking emission and bad values in the
+emission regions.  It is normally derived from the group integ map.
+If this is undefind, no mask is used to select the spectra. [undef]
+
+=item SMOOTH_WIDTH = INTEGER (Given)
+
+The size of the kernel in chanels to block smooth the median spectra
+in each row.  It should be aat least 3, and and odd.  If this is
+undefined or 0, no smoothing occurs.  If a negative value or 1 or 2
+is supplied, a default of 11 is used.  If an even-sized kernel is
+supplied, 1 is added.  This argument can be overridden by the
+RECPAR_STANDING_WAVE_SMOOTH uhdr via the recipe parameter system.
+[undef]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data.
+
+=item *
+
+This primitive will not run if the STANDING_WAVE uhdr in the
+currentFrame object is defined and false.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item  *
+
+The spectral cube after the smoothed standing wave has been subtracted.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, BLOCK, MANIC, NDFTRACE (via _GET_DIMENSIONS_), SUB
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2023 Science and Technology Facilities Council. 
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Tas standing wave correction been selected.
+my $apply = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE" ) ) ?
+            $Frm->uhdr( "RECPAR_STANDING_WAVE" )              :
+            1 );
+if ( ! $apply ) { goto RETURN }
+
+orac_say "Standing-wave removal\n";
+my $underline = "-" x 26;
+orac_say "$underline\n";
+
+# Obtain arguements and recipe parameter overrides.
+# =================================================
+
+my $image_mask = get_prim_arg( $_PRIM_ARGS_, "EMISSION_MASK", undef );
+my $em_regions = get_prim_arg( $_PRIM_ARGS_, "EMISSION_REGIONS", undef );
+my $kernel = get_prim_arg( $_PRIM_ARGS_, "SMOOTH_WIDTH", undef );
+
+# Handle recipe parameter overrides.
+$image_mask = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK_FILE" ) ) ?
+               $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK_FILE" )              :
+               $image_mask );
+$em_regions = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS" ) ) ?
+              $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS" )              :
+              $em_regions );
+
+$kernel = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" ) ) ?
+          $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" )              :
+          $kernel );
+
+# Set some processing directives.  Masking emission across velocity
+# ranges needs some smoothing to assist the interpolation.
+my $mask_spatial = defined( $image_mask );
+my $mask_emission = defined( $em_regions );
+my $smooth = 1 if defined ( $kernel );
+if ( $mask_emission ) {
+   $smooth = 1;
+   $kernel = 11 if ! defined( $kernel );
+}
+
+# Make sure the smoothing kernel is a positive odd integer.
+if ( $smooth ) {
+   $kernel = 11 if $kernel < 3;
+   $kernel = $kernel++ if $kernel % 2 == 0;
+}
+
+# Store the emission regions in a text file for CHPIX.
+# ====================================================
+#  First store the emission regions in an array.
+my ( $maskfile, @regions );
+if ( $mask_emission ) {
+   if ( ref( $em_regions ) eq 'ARRAY' ) { 
+      @regions = @{ $em_regions };
+   } else {
+      $regions[0] = $em_regions;
+   }
+
+# Validate emission-region syntax.
+   foreach ( @regions ) {
+      if ( /:/ ) {
+         my ( $lowvel, $uppvel ) = split( ":", $_ );
+         $mask_emission = 1;
+      } else {
+         $mask_emission = 0;
+         last;
+      }
+   }
+
+   if ( ! $mask_emission ) {
+      orac_err "Supplied emission extents have invalid format/\n" .
+                "Syntax is <lower1>:<upper1>,<lower2>:<upper2>,...\n";
+   }
+
+# Create a text file listing the emission regions for CHPIX.
+   $maskfile = new ORAC::TempFile;
+
+# Process each region range.
+   for ( my $j = 0; $j <= $#regions; $j++ ) {
+
+# Append the region and its new bad value to the text file.
+      print {$maskfile->handle} ",,$regions[$j]  bad";
+   }
+}
+
+
+# Generate the observation's spectral cube of standing-wave baselines.
+# ====================================================================
+
+# Find the bounds of the  spectral cube.
+my $ppvcube = $Frm->file;
+_GET_DIMENSIONS_ FILE=$ppvcube
+my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+# Obtain some work filenames.
+my $temp = new ORAC::TempFile( 0 );
+my $cube_mask = $temp->file;
+my $temp2 = new ORAC::TempFile( 0 );
+my $masked_cube = $temp2->file;
+my $temp3 = new ORAC::TempFile( 0 );
+my $baselines = $temp3->file;
+my $temp4 = new ORAC::TempFile( 0 );
+my $smoothed_baselines = $temp4->file;
+my $temp5 = new ORAC::TempFile( 0 );
+my $baseline_cube = $temp5->file;
+my $temp6 = new ORAC::TempFile( 0 );
+my $rotated_cube = $temp6->file;
+my $temp7 = new ORAC::TempFile( 0 );
+my $derot_baseline_cube = $temp7->file;
+my $temp8 = new ORAC::TempFile( 0 );
+my $filled_baselines = $temp8->file;
+my $temp9 = new ORAC::TempFile( 0 );
+my $original_baselines = $temp9->file;
+
+# There are two main routes to correction of the standing waves:
+
+# a) there are sufficient emission-free zones, use the integ map to
+# identify those and form median spectra along the scan direction 
+# for those regions; or
+
+# b) form the median spectra for all spatial pixels along the scan axis,
+# but mask the velocity ranges where there is evident emission, then 
+# interpolate across the gaps using a smooth function derived from
+# improving approximations to a solutions of Laplace's Equation.
+# The baselines should be smoothed for this option.
+
+# If both an emission image mask and emission velioity ranges are 
+# supplied, the former takes priority.
+
+# Option a)
+# ---------
+
+# Grow the image mask to match the input spectral cube.
+my $params;
+if ( $mask_spatial ) {
+   $params = "axes=[1,2,0] in=$image_mask out=$cube_mask lbound=" . $lbnd->[2] . " ubound=" . $ubnd->[2];
+   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Mask the input spectral cube.
+   $params = "in1=$ppvcube in2=$cube_mask out=$masked_cube";
+   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+   orac_print "Used $image_mask to exclude emission regions.\n";
+
+# Option b)
+# ---------
+
+# Mask the input spectral cube using approximate solutions to
+# Lapalace's Equation.
+} else {
+   $params = "in=$ppvcube out=$masked_cube mode=file file=" . $maskfile->file;
+   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+}
+
+# Align the scan axis with the closer Cartesian axis.
+# ---------------------------------------------------
+ 
+# The scan may not be aligned with the Cartesian pixel axes.  This
+# appears to comprise the PPV's WCS rotation and the scan orientation.
+# These two headers are not currently (20230330) translated.
+my $scan_pa = defined( $Frm->hdr( "SCAN_PA" ) ) ? $Frm->hdr( "SCAN_PA" ) : 90.0;
+my $map_pa = defined( $Frm->hdr( "MAP_PA" ) ) ? $Frm->hdr( "MAP_PA" ) : 0.0;
+#my $map_pa = 0.0;
+
+my $totangle = $scan_pa + $map_pa;
+my $rotangle;
+if ( $totangle > 45.0 ) {
+   $rotangle = $totangle - 90.0;
+} else {
+   $rotangle = - $totangle;
+}
+my $modangle = abs( $rotangle );
+
+# Perform the rotation so that the scan axes align with the pixel axes.
+my $rotate = $modangle > 0.01;
+if ( $rotate ) { 
+   $params = "in=$masked_cube out=$rotated_cube angle=$rotangle useaxis='1,2'";
+   $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+   orac_print "Rotate spatial axes $rotangle clockwise\n";
+
+# Find bounds of rotated cube.
+   _GET_DIMENSIONS_ FILE=$ppvcube
+    $lbnd = $_GET_DIMENSIONS_{LBOUND};
+    $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+} else {
+   $rotated_cube = $masked_cube;
+}
+
+# Form the baselines from each unmasked spectrum along the scan direction.
+# ------------------------------------------------------------------------
+#
+# This needs the development version of MANIC with the ESTIMATOR parameter.
+# The SCAN_PA header (not currently translated) specifies the scan axis.
+# It is normally 0 or 90 degrees. Also define other indexing variables.  
+my $keepaxis = $totangle > 45.0 ? 2 : 1;
+my $cubegrow = $keepaxis == 1 ? "[1,0,2]" : "[0,1,2]";
+my $scanaxis = $keepaxis == 1 ? 2 : 1;
+my $growindex = $scanaxis - 1;
+
+$params = "axes=[" . $keepaxis . ",3] estimator=median in=$rotated_cube out=$baselines";
+$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Are there scan-direction columns or rows that are devoid of
+# background?
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$baselines" );
+my ( $ORAC_STATUS, $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+
+# Repeat for the original PPV cube in case there are scan rows or
+# columns that have emission across them, giving rise to bad columns
+# or rows.
+#   $params = "axes=[" . $keepaxis . ",3] estimator=median in=$ppvcube out=$original_baselines";
+#   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+
+# Where the entire scan direction has emission for all pixels along
+# the other spatial axis, it will leave blank data in the final PPV.
+# To overcome this, paste the spectral cube with the bad rows or columns
+# on to the original PPV cube, but bad data are transparent, so the
+# blank spectra are replaced by the original counterparts.
+#$params = "in=$original_baselines p1=baselines out=filled_baselines transp";
+#$Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+
+# Smooth the spectra with a user-defined kernel.
+# ----------------------------------------------
+if ( $smooth ) {
+   $params = "box=[1,$kernel] estimator=mean in=$baselines out=$smoothed_baselines";
+   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+} else {
+   $smoothed_baselines = $baselines;
+}
+
+# Fill bad pixels (Option b)
+# --------------------------
+
+# The number of iterations and size might become parameters.
+# Interpolate across bad pixels, i.e where there is known emission
+# (Option b).
+if ( $mask_emission ) {
+   $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
+   $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+# Option a) mayrequire bad pixels to be filled.
+} else {
+
+# Interpolate across the case where there are a few scan contiguous
+# scan lines devoid of background.  The waves patterns adjust smoothly
+# between adjacent scan lines, so interpolation ought to provide a
+# reasonable approximation.
+   if ( $numbad > 0 ) {
+      $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
+      $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+   } else {
+      $filled_baselines = $smoothed_baselines;
+   }
+}
+
+# Grow the baselines to the bounds of the input spectral cube.
+$params = "in=$filled_baselines out=$baseline_cube axes=" . $cubegrow;
+$params .= " lbound=" . $lbnd->[$growindex] . " ubound=" . $ubnd->[$growindex];
+$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+
+# Rotate the PPV to its original orientation.
+# -------------------------------------------
+my $irotangle = - $rotangle;
+if ( $rotate ) { 
+   $params = "in=$baseline_cube out=$derot_baseline_cube angle=$irotangle useaxis='1,2'";
+   $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+} else {
+   $derot_baseline_cube = $baseline_cube;;
+}
+
+# Subract the baselines.
+# ----------------------
+
+my ( $junk, $ppvcube_ssw ) = $Frm->inout( "_ssw" );
+$params = "in1=$ppvcube in2=$derot_baseline_cube out=$ppvcube_ssw";
+$Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+orac_print "Subtracted standing wave along scan axis ($scanaxis) in $ppvcube to make $ppvcube_ssw.\n";
+
+$Frm->file( $ppvcube_ssw );
+
+# Display, if necessary.
+$Display->display_data( $Frm ) if defined $Display;
+
+# Tidy-up output.
+orac_print "\n";
+
+RETURN:

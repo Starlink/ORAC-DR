@@ -323,11 +323,11 @@ my $per_line = get_prim_arg( $_PRIM_ARGS_, "PER_LINE", 0 );
 my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
 my $qa = get_prim_arg( $_PRIM_ARGS_, "QA", 1 );
 my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", undef );
-my $ripple = get_prim_arg( $_PRIM_ARGS_, "RIPPLE", undef );
 my $sp_param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
 my $sp_param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $spread = get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' );
+my $standing = get_prim_arg( $_PRIM_ARGS_, "STANDING_WAVE", 0 );
 my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
 my $tile = get_prim_arg( $_PRIM_ARGS_, "TILE", 1 );
 my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
@@ -370,6 +370,13 @@ $pixsize = ( defined( $Frm->uhdr( "RECPAR_PIXSIZE" ) ) ?
 $rebin = ( defined( $Frm->uhdr( "RECPAR_REBIN" ) ) ?
          $Frm->uhdr( "RECPAR_REBIN" )              :
          $rebin );
+$standing = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE" ) ) ?
+            $Frm->uhdr( "RECPAR_STANDING_WAVE" )              :
+            $standing );
+my $standing_mask = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_MASK" ) ) ?
+                     $Frm->uhdr( "RECPAR_STANDING_WAVE_MASK" )              :
+#                     0 );
+                     0 );
 
 # The PARAM1 and PARAM2 recipe parameters are historical internal names
 # and match the argument names used by this primitive and others that
@@ -556,24 +563,25 @@ if ( $Grp->lastallmembers( $Frm ) ) {
          _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
       } elsif ( $user_region ) {
          _REMOVE_BASELINE_ LOWER=\@b_lower UPPER=\@b_upper ORDER=$order GROUP=1 TAG=1
-      } elsif ( lc( $order ) eq "wave" ) {
-
-         # Generate and tag the observation spectral cubes.
-         foreach my $Frm ( $Grp->members ) {
-           _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_swcube PRODUCT=frame_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile  CHUNK=1
-           _SET_TAG_ TAG=STANDING_WAVE
-           _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=integ METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=1 TAG=integ PER_LINE=$per_line
-         }
-
-         # For the spectral cube define the median standing-wave
-         # pattern for each scan row, and then expand these into the
-         # shape of the original spectral cube. Convert this into
-         # a time-series cube and then subtract that from the
-         # corresponding current Frame file.
-         _REMOVE_BASELINE_STANDING_WAVE_ GROUP=1 TAG=1
-
       } else {
          _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1 TAG=1
+      }
+
+      my $integ_mask;
+      if ( $standing && $standing_mask ) {
+         my $params;
+
+         # Form the integ moment map and make it the current frame.
+         _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=integ METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=1 PER_LINE=$per_line
+
+         # Mask the emission found in the goup integ map.
+         {
+            my $integ_map = $Grp->inout( "_integ"  );
+            orac_print "Using " . $integ_map . " to mask emission regions.";
+            ( undef, $integ_mask ) = $Frm->inout( "integmask" );
+            $params = "in=$integ_map out=$integ_mask newhi=bad newlo=0.0 thrlo=0 thrhi=0.001";
+            $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+         }
       }
 
       # The Group moment and noise maps, and restricted-velocity cubes need
@@ -638,13 +646,32 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       my $underline = "-" x 41;
       orac_say "Iterations completed.\n\nCreating final Frame products.\n$underline\n" if $do_tiling;
 
+      my @swc;
+      my @tsref;
       foreach my $Frm ( $Grp->members ) {
 
          # Some code looks to see if JSA_TILES is defined rather than being true.
          $Frm->uhdr( "JSA_TILES", 1 ) if $do_tiling;
 
+         if ( $standing ) {
+            push @tsref, $Frm->file;
+         }
+
          # Generate the observation cube.
          _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling CHUNK=1
+
+         if ( $standing ) {
+
+            # Find the median, smoothed spectrum for each scan line.
+            # Grow it to the original spectral cube shape and subtract it.
+            if ( $standing_mask ) {
+               _SUBTRACT_SCAN_LINE_STANDING_WAVE_ EMISSION_MASK=$integ_mask
+            } else {
+               _SUBTRACT_SCAN_LINE_STANDING_WAVE_
+            }
+            my $swcfile = $Frm->file;
+            push @swc, $swcfile;
+         }
 
          # Want trimmed velocity range for final product?
          if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
@@ -690,8 +717,20 @@ if ( $Grp->lastallmembers( $Frm ) ) {
          }
       }
 
-      # Restore the masked and baselined timeseries cubes to the group.
-      _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+      if ( $standing ) {
+         orac_print "swc files: " . join( ",", @swc,) . "\n";
+         $Grp->uhdr( "STANDING_WAVE_CORRECTED", \@swc );
+         $Grp->uhdr( "REFERENCE_TIMESERIES", \@tsref );
+
+         # Convert the PPVs with standing waves subtracted back
+         # into time series to be used to make the final group
+         # products in the next iteration.
+         _CREATE_TIMESERIES_ PARAM1=$sp_param1 PARAM2=$sp_param2 PIXSIZE=$pixsize
+      } else {
+
+         # Restore the masked and baselined timeseries cubes to the group.
+         _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+      }
 
       $iter++;
    }
