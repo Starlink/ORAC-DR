@@ -51,10 +51,16 @@ sun230/sun230.tex: sun230/sun230.pl sun230/sun230_master.tex
 		ORAC_INSTRUMENT=UFTI2 \
 		$(STARPERL) $(<F)
 
+sun265/sun265_options.tex: ../bin/picard
+	cd $(@D); \
+	cp ../$< sun265_options.pod; \
+	pod2latex --out temp.tex --sections OPTIONS sun265_options.pod; \
+	sed -e 1d temp.tex > $(@F)
+
 sun233/sun233.pdf sun233/sun233.htx.build: $(SUN233_CLASSES)
 sun260/sun260.pdf sun260/sun260.htx.build: $(SUN260_RECIPES)
 sun264/sun264.pdf sun264/sun264.htx.build: $(SUN264_RECIPES)
-sun265/sun265.pdf sun265/sun265.htx.build: $(SUN265_RECIPES)
+sun265/sun265.pdf sun265/sun265.htx.build: $(SUN265_RECIPES) sun265/sun265_options.tex
 sun271/sun271.pdf sun271/sun271.htx.build: $(SUN271_RECIPES)
 
 
