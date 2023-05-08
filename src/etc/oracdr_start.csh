@@ -139,7 +139,7 @@ if ( -e $starperl ) then
 
   # These are shell scripts
 
-  alias oracman     'csh ${ORAC_DIR}/bin/oracman'
+  alias oracman     '${ORAC_DIR}/bin/oracman'
 
   # Define default documentation instruction.
   set doc_command = "'showme sun${ORAC_SUN}'"
