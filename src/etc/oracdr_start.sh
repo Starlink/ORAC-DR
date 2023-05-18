@@ -132,7 +132,7 @@ if test -e $starperl; then
 
   # These are shell scripts
 
-  oracman () {     'csh ${ORAC_DIR}/bin/oracman' ${1+"$@"}; }
+  oracman () {     ${ORAC_DIR}/bin/oracman ${1+"$@"}; }
 
   # Define default documentation instruction.
   doc_command="'showme sun${ORAC_SUN}'"
