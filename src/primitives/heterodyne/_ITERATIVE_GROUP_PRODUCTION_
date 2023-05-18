@@ -277,11 +277,11 @@ None.
 =head1 AUTHORS
 
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>,
-Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2011-2016, 2018-2019 Science and Technology
+Copyright (C) 2008, 2011-2016, 2018-2023 Science and Technology
 Facilities Council.  All Rights Reserved.
 
 =head1 LICENCE
@@ -612,6 +612,8 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       # Subtract the baselines from the emission-masked timeseries.
       _REMOVE_BASELINE_MASKED_TIMESERIES_
 
+      # Attempt removal of reference signal.
+      # ------------------------------------
       # Attempt to remove reference-spectrum absorption lines automatically at
       # each reference position and optionally for each receptor.
       my $mask_only = $iter > 1;
@@ -625,6 +627,9 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       # the time-series cubes.  There is an option to do this removal
       # by receptor.
       _SUBTRACT_REFERENCE_SPECTRUM_
+
+      # Flatfielding
+      # ------------
 
       if ( $flatfield ) {
          if ( lc( $flatmethod ) eq 'ratio' ) {
@@ -640,14 +645,18 @@ if ( $Grp->lastallmembers( $Frm ) ) {
 
       _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
 
-      # Create the observation products for the next iteration.  This will only produce legacy tiles
-      # on the final iteration irrespective of the value of $jsatile.
+      # Create the observation products for the next iteration.
+      # -------------------------------------------------------
+      #
+      # This will only produce legacy tiles on the final iteration irrespective of
+      # the value of $jsatile.
       my $do_tiling = ( $iter == $iterations ) & $jsatile;
       my $underline = "-" x 41;
       orac_say "Iterations completed.\n\nCreating final Frame products.\n$underline\n" if $do_tiling;
 
       my @swc;
       my @tsref;
+
       foreach my $Frm ( $Grp->members ) {
 
          # Some code looks to see if JSA_TILES is defined rather than being true.
@@ -659,19 +668,18 @@ if ( $Grp->lastallmembers( $Frm ) ) {
 
          # Generate the observation cube.
          _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_gcube PRODUCT=group_derived_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling CHUNK=1
+     }
 
-         if ( $standing ) {
 
-            # Find the median, smoothed spectrum for each scan line.
-            # Grow it to the original spectral cube shape and subtract it.
-            if ( $standing_mask ) {
-               _SUBTRACT_SCAN_LINE_STANDING_WAVE_ EMISSION_MASK=$integ_mask
-            } else {
-               _SUBTRACT_SCAN_LINE_STANDING_WAVE_
-            }
-            my $swcfile = $Frm->file;
-            push @swc, $swcfile;
-         }
+      if ( $standing ) {
+         $Grp->uhdr( "REFERENCE_TIMESERIES", \@tsref );
+        _REMOVE_STANDING_WAVE_ INTEG_MASK=$integ_mask SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling
+      }
+
+      foreach my $Frm ( $Grp->members ) {
+
+         # Miscellanoeous
+         # --------------
 
          # Want trimmed velocity range for final product?
          if ( defined( $lower_vel ) || defined( $upper_vel ) ) {
@@ -687,10 +695,12 @@ if ( $Grp->lastallmembers( $Frm ) ) {
          orac_print "\n";
       }
 
+      # Create the moments for each Frame in the group.
       if ( lc( $moments ) ne "none" ) {
          _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ PER_LINE=$per_line
       }
 
+      # Generate the noise maps, again for each group member.
       my $writeqa = $final_iteration;
       if ( $legacy ) {
          _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa SURVEY=LEGACY
