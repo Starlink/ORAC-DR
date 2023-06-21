@@ -55,6 +55,8 @@ $VERSION = '1.0';
 
 $DEBUG = 0;
 
+our $LUT_DEFAULT = 'bgyrw';
+
 =head1 PUBLIC METHODS
 
 =head2 Constructor
@@ -84,7 +86,7 @@ sub new {
                                 Obj => undef, # kapview object
                                 EngineLaunch => new ORAC::Msg::EngineLaunch,
                                 Regions => {},
-                                LookupTables => {},
+                                LookupTable => undef,
                                 @_,
                                );
 
@@ -222,15 +224,20 @@ sub regions {
   }
 }
 
-=item B<lookup_tables>
+=item B<lookup_table>
 
-A hash containing the current lookup table for each device.
+Set or retrieve the previous lookup table.
 
 =cut
 
-sub lookup_tables {
+sub lookup_table {
   my $self = shift;
-  return $self->{'LookupTables'};
+  if (@_) {
+    $self->{'LookupTable'} = shift;
+  }
+  else {
+    return $self->{'LookupTable'};
+  }
 }
 
 =item B<obj>
@@ -388,8 +395,7 @@ sub create_dev {
   # Load the colour table.
 
   my $app = ORAC::Version->getApp;
-  my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/bgyrw_lut";
-  my $status = $self->obj->obeyw("lutable","$args device=$device");
+  my $status = $self->set_lut($device, $self->lookup_table() // $LUT_DEFAULT);
   if ($status != ORAC__OK) {
     orac_err("Error configuring default LUT\n");
     die "Error launching display device. It is unlikely that this can be fixed by retrying from within ${app}. Aborting...";
@@ -1079,6 +1085,30 @@ sub select_section {
 
 }
 
+=item B<set_lut>
+
+Set the given LUT.
+
+  $status = $Display->set_lut($device, $lut);
+
+This method also calls L<lookup_table> to store the name of the
+specified LUT.
+
+=cut
+
+sub set_lut {
+  my $self = shift;
+  my $device = shift;
+  my $lut = shift;
+
+  $self->lookup_table($lut);
+
+  my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/${lut}_lut";
+  my $status = $self->obj->obeyw("lutable","$args device=$device");
+
+  return $status;
+}
+
 =back
 
 =head1 DISPLAY METHODS
@@ -1152,13 +1182,9 @@ sub image {
 
   # Set LUT if different from current value.
   do {
-    my $lut_default = 'bgyrw';
-    my $lut_requested = (exists $options{'LUT'}) ? (lc $options{'LUT'}) : $lut_default;
-    my $lut_current = $self->lookup_tables->{$device} // $lut_default;
-    unless ($lut_requested eq $lut_current) {
-      my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/${lut_requested}_lut";
-      my $status = $self->obj->obeyw("lutable","$args device=$device");
-      $self->lookup_tables->{$device} = $lut_requested;
+    my $lut_requested = (exists $options{'LUT'}) ? (lc $options{'LUT'}) : $LUT_DEFAULT;
+    unless ($lut_requested eq $self->lookup_table()) {
+      my $status = $self->set_lut($device, $lut_requested);
     }
   };
 
