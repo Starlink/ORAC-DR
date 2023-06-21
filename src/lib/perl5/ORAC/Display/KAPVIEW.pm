@@ -1137,6 +1137,7 @@ Recognised options:
   KEY        - Display key to colour table?
   COMP       - Component to display (Data (default), Variance or Error)
   LUT        - Color lookup table name [default: 'bgyrw']
+  BADCOL     - Bad color name [default: 'grey50']
 
 Default is to autoscale.
 
@@ -1224,6 +1225,14 @@ sub image {
     $optstring .= " KEY=FALSE";
   }
 
+  # Set the bad pixel color.
+  if (exists $options{'BADCOL'} && defined $options{'BADCOL'}) {
+    $optstring .= " BADCOL=$options{BADCOL}";
+  }
+  else {
+    $optstring .= " BADCOL=grey50";
+  }
+
   my $status;
 
   # Get weird errors without the resetpars:
@@ -1240,7 +1249,7 @@ sub image {
   return $status if $status != ORAC__OK;
 
   # Do the obeyw
-  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 margin=0.15 accept");
+  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring margin=0.15 accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
