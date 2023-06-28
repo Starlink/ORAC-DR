@@ -1,0 +1,137 @@
+=head1 NAME
+
+_CREATE_FOCUS_CUBE_ - Produce a focus "cube" by SMU position.
+
+=head1 DESCRIPTION
+
+This primitive identifies sections of the observation by position of the
+SMU in the axis identified by the C<FOCAXIS> header.  Each is reduced
+using C<_CREATE_CUBE_FRAME_> and then the cubes are pasted into
+a 4D file where the 4th axis is SMU position.  Finally the central
+pixel is extracted.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+4D file with axes Az, El, frequency and SMU position and suffix C<_foc>.
+
+=item *
+
+2D file extracted from the central pixel with suffix C<_foccube>.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2023 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use JSA::Headers qw/read_jcmtstate/;
+
+my $in = $Frm->file();
+my $axis = $Frm->hdr('FOCAXIS');
+my $state_param = 'SMU_' . $axis;
+my %state = read_jcmtstate($in, undef, $state_param);
+my $positions = $state{$state_param};
+my $prev_position = undef;
+my @focposns = ();
+my @sections = ();
+for (my $i = 0; $i <= $#$positions; $i ++) {
+    my $position = $positions->[$i];
+    if ((not defined $prev_position) or ($prev_position - $position)) {
+        $prev_position = $position;
+        push @focposns, $position;
+        push @sections, [];
+    }
+    push @{$sections[-1]}, $i + 1;
+}
+
+_SET_TAG_ TAG=BEFORE_MAKING_CUBE
+
+my @files = ();
+for (my $i = 0; $i <= $#sections; $i ++) {
+    if ($i) {
+        _RETRIEVE_TAG_ TAG=BEFORE_MAKING_CUBE
+    }
+
+    my $section = $sections[$i];
+    my $suffix = 'fpn' . ($i + 1);
+    my $spec;
+    if (2 > scalar @$section) {
+        $spec = $section->[0];
+    }
+    else {
+        $spec = $section->[0] . ':' . $section->[-1];
+    }
+    $spec = '(,,' . $spec . ')';
+
+    _CREATE_CUBE_FRAME_ SYSTEM=AZEL SUFFIX=$suffix SECTION=$spec
+
+    my $file = $Frm->file();
+    push @files, $file;
+    $Frm->push_intermediates($file);
+}
+
+my $list = write_file_list(@files);
+my (undef, $cube) = $Frm->inout('foc');
+$Mon{'kappa_mon'}->obeyw('paste', "in=^$list p1=! out=$cube title='Focus cube' shift=[0,0,0,1]");
+
+# Add 4th axis to the cube's frameset, based on SCUBA-2 _CREATE_FOCUS_CUBE_ routine.
+
+my $skymap = new ORAC::TempFile(SUFFIX => '.ast');
+my $skyframe = new ORAC::TempFile(SUFFIX => '.ast');
+$Mon{'atools_mon'}->obeyw('astgetmapping', "this=$files[0] iframe1=ast__base iframe2=ast__current result=$skymap");
+$Mon{'atools_mon'}->obeyw('astgetframe', "this=$files[0] iframe=ast__current result=$skyframe");
+
+my $focframe = new ORAC::TempFile(SUFFIX => '.ast');
+my $cmpframe = new ORAC::TempFile(SUFFIX => '.ast');
+$Mon{'atools_mon'}->obeyw('astframe', "naxes=1 result=$focframe options='Title=SMU offset on $axis axis,Label=SMU offset $axis,Unit=mm,Domain=SMU'");
+$Mon{'atools_mon'}->obeyw('astcmpframe', "frame1=$skyframe frame2=$focframe options=! result=$cmpframe");
+
+# Define a winmap to describe the 4th axis.
+my $focmap = new ORAC::TempFile(SUFFIX => '.ast');
+my $cmpmap = new ORAC::TempFile(SUFFIX => '.ast');
+my $nfoc = scalar @focposns;
+my $focmin = $focposns[0];
+my $focmax = $focposns[-1];
+$Mon{'atools_mon'}->obeyw('astwinmap', "ncoord=1 ina=1 inb=$nfoc outa=$focmin outb=$focmax options=! result=$focmap");
+$Mon{'atools_mon'}->obeyw('astcmpmap', "map1=$skymap map2=$focmap series=f options=! result=$cmpmap");
+
+# Create an empty 4D GRID frame and add to a frameset.
+my $grid = new ORAC::TempFile(SUFFIX => '.ast');
+my $fs = new ORAC::TempFile(SUFFIX => '.ast');
+$Mon{'atools_mon'}->obeyw('astframe',"naxes=4 options='Domain=GRID' result=$grid");
+$Mon{'atools_mon'}->obeyw('astframeset', "frame=$grid options=! result=$fs");
+
+# Add the cmpframe to the frameset using the cmpmap to tie it
+# to the GRID frame.  Store as WCS in the output cube.
+$Mon{'atools_mon'}->obeyw('astaddframe', "this=$fs iframe=ast__base map=$cmpmap frame=$cmpframe result=$cube");
+
+$Frm->file($cube);
+
+# Extract focus data from central pixel.
+# (Note: should usually only be one pixel since we will
+# have specified DETECTORS to makecube based on INSTAP.)
+my (undef, $cubepx) = $Frm->inout('_foccube');
+$Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=${cube}(1,1,,) out=$cubepx trim trimwcs");
+$Frm->files($cubepx);
+$Display->display_data($Frm) if defined $Display;
