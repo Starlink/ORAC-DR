@@ -1287,6 +1287,7 @@ Display keywords:
   YLOG       - Plot Y-axis on a logarithmic scale
   MULTILINE  - Plot multiple lines (using mlinplot)
   ABSAXIS    - Axis selection (when using MULTILINE)
+  HLRANGE    - Range (NDF section axis specifier) to highlight
 
 Default is to autoscale. Note that the X/Y cuts are converted
 to a 1-D slice before displaying by averaging over the section.
@@ -1347,6 +1348,7 @@ sub graph {
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
+  my @style = ();
 
   # Should probably set the options.
   # If we are autoscaling then we dont need any axis setting
@@ -1381,7 +1383,8 @@ sub graph {
   my $errbar = "errbar=false";
   if (exists $options{ERRBAR}) {
     if ($options{ERRBAR}) {
-       $errbar = "errbar=true shape=bars freq=1 style='Colour(ErrBars)=red'";
+       $errbar = "errbar=true shape=bars freq=1";
+       push @style, 'Colour(ErrBars)=red';
     }
   }
 
@@ -1398,7 +1401,7 @@ sub graph {
   }
 
   # Construct string for LINPLOT options.
-  my $args = "clear mode=$mode $range $errbar $lmode";
+  my $args = "mode=$mode $range $errbar $lmode";
 
   # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
@@ -1410,21 +1413,50 @@ sub graph {
     $args .= " ymap=log" if ($options{YLOG});
   }
 
+  my $absaxis = undef;
   if ($multiline) {
     $args .= " space=none key=false lnindx=all linlab=false";
-    if (exists $options{'ABSAXIS'}) {
-      $args .= " absax=$options{ABSAXIS}";
+    $absaxis = $options{'ABSAXIS'} // 1;
+    $args .= " absax=$absaxis";
+  }
+
+  my $hlsection = undef;
+  if (exists $options{'HLRANGE'} and defined $options{'HLRANGE'}) {
+    my $hlrange = $options{'HLRANGE'};
+    unless (defined $absaxis) {
+      $hlsection = $hlrange;
     }
+    else {
+      $hlsection = join ',', map {$_ == $absaxis ? $hlrange : ''} 1 .. 2;
+    }
+  }
+
+  # When highlighting a section, add this style last so that it can
+  # be modified to do the highlighting.
+  if (defined $hlsection) {
+    push @style, 'Colour(Curves)=grey50';
+  }
+
+  my $style = '';
+  if (scalar @style) {
+    $style = "style='" . (join ',', @style) . "'";
   }
 
   # Run LINPLOT or MLINPLOT.
   my $action = $multiline ? 'mlinplot' : 'linplot';
-  orac_print "$action ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
-  $status = $self->obj->obeyw("$action","ndf=$file device=$device $args reset");
+  orac_print "$action ndf=$file device=$device clear $args $style reset\n","cyan" if $DEBUG;
+  $status = $self->obj->obeyw("$action","ndf=$file device=$device clear $args $style reset");
   if ($status != ORAC__OK) {
     orac_err("Error displaying graph\n");
     orac_err("Trying to execute: $action ndf=$file device=$device $args\n");
     return $status;
+  }
+
+  # Re-do plot for highlighted section.
+  if (defined $hlsection) {
+    $style[-1] = 'Colour(Curves)=yellow';
+    $style = "style='" . (join ',', @style) . "'";
+    $self->obj->obeyw("$action","ndf=$file($hlsection) device=$device noclear $args $style reset");
   }
 
   return $status;
