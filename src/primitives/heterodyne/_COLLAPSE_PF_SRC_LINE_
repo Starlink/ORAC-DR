@@ -55,10 +55,29 @@ my $axis = get_prim_arg($_PRIM_ARGS_, 'AXIS', 3);
 my $suffix = get_prim_arg($_PRIM_ARGS_, 'SUFFIX', 'linteg');
 
 my $object = $Frm->uhdr('ORAC_OBJECT');
+my $molecule = $Frm->hdr('MOLECULE');
+
+# If we recognize this molecule, look for corresponding entries
+# in the pointing catalog.  Otherwise look for the generic 'l'
+# type for spectral line entries (usually CO).
+my %types = (
+    SiO => 'w',  # SiO 2 1 - 1 1 used for W-band receivers (Alaihi).
+);
+my $type = (exists $types{$molecule}) ? $types{$molecule} : 'l';
+
 my $poicat = $Cal->find_file('poi.dat');
 my $jcmtcat = new Astro::Catalog(
     Format => 'JCMT', File => $poicat);
-my ($result) = $jcmtcat->popstarbyid($object);
+my $result = undef;
+foreach my $item ($jcmtcat->popstarbyid($object)) {
+    my $comment = $item->coords()->comment();
+    if ($comment =~ /^\[(\w+)\]/) {
+        if (-1 != index $1, $type) {
+            $result = $item;
+            last;
+        }
+    }
+}
 
 if (defined($result) &&
         defined($result->misc) &&
