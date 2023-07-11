@@ -1,0 +1,105 @@
+=head1 NAME
+
+_CALCULATE_FOCUS_ - Fit focus offset
+
+=head1 DESCRIPTION
+
+This primitive fits a parabola to focus data using the
+figaro fitpoly task.  If the fit is successful then the
+polynomial coefficients are used to determine the peak
+position, giving the focus offset.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item TYPE = STRING (Given)
+
+Name of focus data processing type ("LINE" or "CONTINUUM").
+
+=back
+
+=head1 OUTPUT DATA
+
+Results are written to a log file C<log.focus> and
+placed in the C<FOCUS_INFO> uhdr for subsequent display
+by C<_PRETTYPRINT_FOCUS_INFO_>.
+
+=head1 SEE ALSO
+
+The polynomial fitting procedure is the same as in the
+SCUBA2 primitive C<_FIND_FOCUS_OFFSETS_>.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2023 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $type = uc get_prim_arg($_PRIM_ARGS_, 'TYPE', 'LINE');
+
+my $in = $Frm->file;
+
+# fitpoly by default assumes it is fitting a spectrum along the first dimension
+# of the file, so trim the degenerate first axis of the collapsed focus data.
+my $tmp = ORAC::TempFile->new(0);
+$Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$tmp trim trimwcs");
+$Mon{'ndfpack_mon'}->obeyw('setaxis', "ndf=$tmp dim=1 mode=wcs");
+
+_GET_DIMENSIONS_ FILE=$tmp
+my $flbound = $_GET_DIMENSIONS_{'FLBOUND'};
+my $fubound = $_GET_DIMENSIONS_{'FUBOUND'};
+
+my $FitStatus = $Mon{'figaro4'}->obeyw('fitpoly', "in=$tmp device=! mask1=$flbound->[0] mask2=$fubound->[0] order=2 comp=0 logfil=! dialog=f varuse=f");
+
+unless ($FitStatus == ORAC__OK) {
+    orac_err("Error fitting parabola to focus data.\n");
+}
+else {
+    (my $ORAC_STATUS, my @coeffs) = $Mon{'figaro4'}->get('fitpoly', 'fitcoeffs');
+
+    if ($coeffs[2] >= 0.0) {
+        orac_say('No maximum found in parabola fitted to focus results.');
+    }
+    else {
+        my $off = - $coeffs[1] / (2.0 * $coeffs[2]);
+        my $axis = $Frm->hdr('FOCAXIS');
+
+        my $cache = $Frm->uhdr('FOCUS_INFO');
+        $Frm->uhdr('FOCUS_INFO', $cache = []) unless defined $cache;
+        push @$cache, {
+            AXIS => $axis,
+            TYPE => $type,
+            OFFSET => $off,
+        };
+
+        my $log = ORAC::LogFile->new('log.focus');
+        $log->header(
+            'Pointing log file - created on ' . gmtime,
+            '',
+            '#    Time        Axis Offset Type',
+            '-------------------------------------',
+        );
+        $log->addentry(sprintf "%-4d %11.2f %4s %6.2f %s",
+            $Frm->number,
+            $Frm->hdr('ORACTIME'),
+            $axis,
+            $off,
+            (lc $type));
+    }
+}
