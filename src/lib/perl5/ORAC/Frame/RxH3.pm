@@ -4,16 +4,26 @@ package ORAC::Frame::RxH3;
 
 ORAC::Frame::RxH3 - Frame class for RxH3
 
+=head1 METHODS
+
+=over 4
+
 =cut
 
 use strict;
 use warnings;
 
+use Astro::FITS::Header::CFITSIO;
 use Carp;
+use File::Spec;
+use IO::Dir;
+use IO::File;
 
 use ORAC::Frame::NDF;
 
 use base qw/ORAC::BaseFITSorNDF ORAC::Frame/;
+
+our %_flag_files = ();
 
 sub new {
     my $proto = shift;
@@ -68,9 +78,95 @@ sub inout {
     return $outfile;
 }
 
+=item B<flag_from_bits>
+
+Determine the name of the flag file given the prefix (UT date)
+and observation number.
+
+    $flag = $Frm->flag_from_bits($prefix, $obsnum);
+
+For RxH3 the flag file is of the form .rxh3-YYYYMMDD-HHMMSS.ok
+where YYYYMMDD is the date and HHMMSS the time.  Therefore we
+need to check the OBSNUM headers to find the relevant flag file.
+If no file is found, a dummy flag file name is returned.
+
+=cut
+
+sub flag_from_bits {
+    my $self = shift;
+    my $prefix = shift;
+    my $obsnum = shift;
+
+    $self->_scan_flag_obsnum();
+
+    foreach my $flag (keys %_flag_files) {
+        my $info = $_flag_files{$flag};
+        return $flag
+            if $info->{'prefix'} eq $prefix
+            and $info->{'obsnum'} == $obsnum;
+    }
+
+    return sprintf '.rxh3-dummy-%s-%05d.ok', $prefix, $obsnum;
+}
+
+=item B<pattern_from_bits>
+
+Determine the pattern for the flag file given the prefix (UT date)
+and observation number.
+
+    $pattern = $Frm->pattern_from_bits($prefix, $obsnum);
+
+Returns a regular expression based on the output of C<flag_from_bits>.
+
+=cut
+
+sub pattern_from_bits {
+    my $self = shift;
+    my $prefix = shift;
+    my $obsnum = shift;
+
+    my $pattern = $self->flag_from_bits($prefix, $obsnum);
+
+    return qr/$pattern$/;
+}
+
+# Check $ORAC_DATA_IN for new flag files and update the
+# %_flag_files hash to record their prefix and obsnum.
+
+sub _scan_flag_obsnum {
+    my $self = shift;
+
+    my $dir_path = $ENV{'ORAC_DATA_IN'};
+    my $dir = IO::Dir->new($dir_path);
+    return unless defined $dir;
+
+    while (defined (my $file = $dir->read())) {
+        next if exists $_flag_files{$file};
+        next unless $file =~ '^\.rxh3-(\d*)-\d*\.ok$';
+        my $prefix = $1;
+        my $file_path = File::Spec->catfile($dir_path, $file);
+        my $fh = IO::File->new($file_path, 'r');
+        next unless defined $fh;
+        my $raw = <$fh>;
+        $fh->close();
+        chomp $raw;
+        next unless $raw;
+        my $raw_path = File::Spec->catfile($dir_path, $raw);
+        my $hdr = Astro::FITS::Header::CFITSIO->new(File => $raw_path, ReadOnly => 1);
+        next unless defined $hdr;
+        my $obsnum = $hdr->value('OBSNUM');
+        next unless defined $obsnum;
+        $_flag_files{$file} = {prefix => $prefix, obsnum => $obsnum};
+    }
+
+    $dir->close();
+}
+
 1;
 
 __END__
+
+=back
 
 =head1 COPYRIGHT
 
