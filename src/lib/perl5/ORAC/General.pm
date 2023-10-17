@@ -487,6 +487,7 @@ sub read_file_list {
   my $intmp = shift;
 
   my $fh;
+  my $opened = 0;
   if (blessed($intmp) && $intmp->can( "handle" )) {
     $fh = $intmp->handle;
     seek( $fh, 0, 0); # seek to start of file
@@ -494,6 +495,7 @@ sub read_file_list {
     if ( ! open $fh, "<", $intmp ) {
       return undef;
     }
+    $opened = 1;
   }
 
   # Strip comments and only store non-blank lines
@@ -505,6 +507,8 @@ sub read_file_list {
     s/\s*$//;   # Trailing whitespace
     $_
   } <$fh>;
+
+  close $fh if $opened;
 
   return (wantarray ? @contents : \@contents);
 }
