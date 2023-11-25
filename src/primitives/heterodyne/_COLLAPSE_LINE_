@@ -32,6 +32,10 @@ The method to use for estimating the output pixel values. This can be any of tho
 The range over which to collapse. This value should be in the same
 units as the units of the axis that will be collapsed. [50.0]
 
+=item SUFFIX = STRING (Given)
+
+File suffix to use. ['linteg']
+
 =back
 
 =head1 NOTES
@@ -45,7 +49,7 @@ units as the units of the axis that will be collapsed. [50.0]
 =over 4
 
 The collapsed image in a file of the form
-aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_linteg1.
+aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_linteg001.
 
 =back
 
@@ -102,6 +106,8 @@ my $range = ( defined( $_COLLAPSE_LINE_{RANGE} ) ?
               $_COLLAPSE_LINE_{RANGE}            :
               50 );
 
+my $suffix = get_prim_arg( $_PRIM_ARGS_, 'SUFFIX', 'linteg' );
+
 # Make sure the CENTRE and RANGE parameters have decimal points.
 if( $centre !~ /\./ ) {
   $centre = sprintf( "%.1f", $centre );
@@ -110,16 +116,28 @@ if( $range !~ /\./ ) {
   $range = sprintf( "%.1f", $range );
 }
 
+_GET_DIMENSIONS_
+my $ndim = $_GET_DIMENSIONS_{'NDIM'};
+my $sectionrange = "$centre~$range";
+my $section = join ',', map {$_ == $axis ? $sectionrange : ''} 1 .. $ndim;
+
 # Set up filenames.
-my ( $in, $out ) = $Frm->inout( "_linteg1" );
+my ( $in, $out ) = $Frm->inout( '_' . $suffix, 1 );
 
 # Collapse.
-my $params = "in=$in(,,$centre~$range) out=$out axis=$axis estimator=$estimator title='Integrated line intensity' trim=false";
+my $params = "in=$in($section) out=$out axis=$axis estimator=$estimator title='Integrated line intensity' trim=false";
 $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Report to the user.
 orac_print "$in to $out:\n";
 orac_print " Collapsed $range km/s around line centered at $centre km/s.\n";
+
+# For multiline plot of file with trimmed WCS (and presumed NDF section
+# bug handling it), convert section to pixel range.
+$Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$in($section)");
+(my $ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
+($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
+$Frm->uhdr('COLLAPSED_RANGE', $lbound[$axis - 1] . ':' . $ubound[$axis - 1]);
 
 # Update the Frame object.
 $Frm->file( $out );

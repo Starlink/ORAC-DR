@@ -55,6 +55,8 @@ $VERSION = '1.0';
 
 $DEBUG = 0;
 
+our $LUT_DEFAULT = 'bgyrw';
+
 =head1 PUBLIC METHODS
 
 =head2 Constructor
@@ -84,7 +86,7 @@ sub new {
                                 Obj => undef, # kapview object
                                 EngineLaunch => new ORAC::Msg::EngineLaunch,
                                 Regions => {},
-                                LookupTables => {},
+                                LookupTable => undef,
                                 @_,
                                );
 
@@ -222,15 +224,20 @@ sub regions {
   }
 }
 
-=item B<lookup_tables>
+=item B<lookup_table>
 
-A hash containing the current lookup table for each device.
+Set or retrieve the previous lookup table.
 
 =cut
 
-sub lookup_tables {
+sub lookup_table {
   my $self = shift;
-  return $self->{'LookupTables'};
+  if (@_) {
+    $self->{'LookupTable'} = shift;
+  }
+  else {
+    return $self->{'LookupTable'};
+  }
 }
 
 =item B<obj>
@@ -388,8 +395,7 @@ sub create_dev {
   # Load the colour table.
 
   my $app = ORAC::Version->getApp;
-  my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/bgyrw_lut";
-  my $status = $self->obj->obeyw("lutable","$args device=$device");
+  my $status = $self->set_lut($device, $self->lookup_table() // $LUT_DEFAULT);
   if ($status != ORAC__OK) {
     orac_err("Error configuring default LUT\n");
     die "Error launching display device. It is unlikely that this can be fixed by retrying from within ${app}. Aborting...";
@@ -1079,6 +1085,30 @@ sub select_section {
 
 }
 
+=item B<set_lut>
+
+Set the given LUT.
+
+  $status = $Display->set_lut($device, $lut);
+
+This method also calls L<lookup_table> to store the name of the
+specified LUT.
+
+=cut
+
+sub set_lut {
+  my $self = shift;
+  my $device = shift;
+  my $lut = shift;
+
+  $self->lookup_table($lut);
+
+  my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/${lut}_lut";
+  my $status = $self->obj->obeyw("lutable","$args device=$device");
+
+  return $status;
+}
+
 =back
 
 =head1 DISPLAY METHODS
@@ -1107,6 +1137,7 @@ Recognised options:
   KEY        - Display key to colour table?
   COMP       - Component to display (Data (default), Variance or Error)
   LUT        - Color lookup table name [default: 'bgyrw']
+  BADCOL     - Bad color name [default: 'grey50']
 
 Default is to autoscale.
 
@@ -1152,13 +1183,9 @@ sub image {
 
   # Set LUT if different from current value.
   do {
-    my $lut_default = 'bgyrw';
-    my $lut_requested = (exists $options{'LUT'}) ? (lc $options{'LUT'}) : $lut_default;
-    my $lut_current = $self->lookup_tables->{$device} // $lut_default;
-    unless ($lut_requested eq $lut_current) {
-      my $args = "mapping=linear coltab=external lut=$ENV{KAPPA_DIR}/${lut_requested}_lut";
-      my $status = $self->obj->obeyw("lutable","$args device=$device");
-      $self->lookup_tables->{$device} = $lut_requested;
+    my $lut_requested = (exists $options{'LUT'}) ? (lc $options{'LUT'}) : $LUT_DEFAULT;
+    unless ($lut_requested eq $self->lookup_table()) {
+      my $status = $self->set_lut($device, $lut_requested);
     }
   };
 
@@ -1198,6 +1225,14 @@ sub image {
     $optstring .= " KEY=FALSE";
   }
 
+  # Set the bad pixel color.
+  if (exists $options{'BADCOL'} && defined $options{'BADCOL'}) {
+    $optstring .= " BADCOL=$options{BADCOL}";
+  }
+  else {
+    $optstring .= " BADCOL=grey50";
+  }
+
   my $status;
 
   # Get weird errors without the resetpars:
@@ -1214,7 +1249,7 @@ sub image {
   return $status if $status != ORAC__OK;
 
   # Do the obeyw
-  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 margin=0.15 accept");
+  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring margin=0.15 accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
@@ -1252,6 +1287,7 @@ Display keywords:
   YLOG       - Plot Y-axis on a logarithmic scale
   MULTILINE  - Plot multiple lines (using mlinplot)
   ABSAXIS    - Axis selection (when using MULTILINE)
+  HLRANGE    - Range (NDF section axis specifier) to highlight
 
 Default is to autoscale. Note that the X/Y cuts are converted
 to a 1-D slice before displaying by averaging over the section.
@@ -1312,6 +1348,7 @@ sub graph {
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
+  my @style = ();
 
   # Should probably set the options.
   # If we are autoscaling then we dont need any axis setting
@@ -1346,7 +1383,8 @@ sub graph {
   my $errbar = "errbar=false";
   if (exists $options{ERRBAR}) {
     if ($options{ERRBAR}) {
-       $errbar = "errbar=true shape=bars freq=1 style='Colour(ErrBars)=red'";
+       $errbar = "errbar=true shape=bars freq=1";
+       push @style, 'Colour(ErrBars)=red';
     }
   }
 
@@ -1363,7 +1401,7 @@ sub graph {
   }
 
   # Construct string for LINPLOT options.
-  my $args = "clear mode=$mode $range $errbar $lmode";
+  my $args = "mode=$mode $range $errbar $lmode";
 
   # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
@@ -1375,21 +1413,50 @@ sub graph {
     $args .= " ymap=log" if ($options{YLOG});
   }
 
+  my $absaxis = undef;
   if ($multiline) {
     $args .= " space=none key=false lnindx=all linlab=false";
-    if (exists $options{'ABSAXIS'}) {
-      $args .= " absax=$options{ABSAXIS}";
+    $absaxis = $options{'ABSAXIS'} // 1;
+    $args .= " absax=$absaxis";
+  }
+
+  my $hlsection = undef;
+  if (exists $options{'HLRANGE'} and defined $options{'HLRANGE'}) {
+    my $hlrange = $options{'HLRANGE'};
+    unless (defined $absaxis) {
+      $hlsection = $hlrange;
     }
+    else {
+      $hlsection = join ',', map {$_ == $absaxis ? $hlrange : ''} 1 .. 2;
+    }
+  }
+
+  # When highlighting a section, add this style last so that it can
+  # be modified to do the highlighting.
+  if (defined $hlsection) {
+    push @style, 'Colour(Curves)=grey50';
+  }
+
+  my $style = '';
+  if (scalar @style) {
+    $style = "style='" . (join ',', @style) . "'";
   }
 
   # Run LINPLOT or MLINPLOT.
   my $action = $multiline ? 'mlinplot' : 'linplot';
-  orac_print "$action ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
-  $status = $self->obj->obeyw("$action","ndf=$file device=$device $args reset");
+  orac_print "$action ndf=$file device=$device clear $args $style reset\n","cyan" if $DEBUG;
+  $status = $self->obj->obeyw("$action","ndf=$file device=$device clear $args $style reset");
   if ($status != ORAC__OK) {
     orac_err("Error displaying graph\n");
     orac_err("Trying to execute: $action ndf=$file device=$device $args\n");
     return $status;
+  }
+
+  # Re-do plot for highlighted section.
+  if (defined $hlsection) {
+    $style[-1] = 'Colour(Curves)=yellow';
+    $style = "style='" . (join ',', @style) . "'";
+    $self->obj->obeyw("$action","ndf=$file($hlsection) device=$device noclear $args $style reset");
   }
 
   return $status;

@@ -9,12 +9,8 @@ observation.
 
 This primitive reduces and calculates pointing information for a line
 source. It removes a zero-order baseline, creates a variance for the
-cube, then collapses around the line. The collapsed image is used to
-calculate the pointing information.
-
-The region over which the line is collapsed is determined by first
-looking in the JCMT pointing catalogue. If that does not give a line
-width, then the central non-baseline region is used.
+cube, then collapses around the line using C<_COLLAPSE_PF_SRC_LINE_>.
+The collapsed image is used to calculate the pointing information.
 
 =head1 ARGUMENTS
 
@@ -62,13 +58,14 @@ aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_var.
 =item *
 
 The integrated intensity image in a file of the form
-aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_linteg1.
+aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_linteg001.
 
 =back
 
 =head1 TASKS
 
-See the _REMOVE_BASELINE_, _CREATE_CUBE_VARIANCE_, _COLLAPSE_LINE_,
+See the _REMOVE_BASELINE_, _CREATE_CUBE_VARIANCE_,
+_COLLAPSE_PF_SRC_LINE_, _COLLAPSE_LINE_,
 _COLLAPSE_CENTRAL_LINE_, and _CALCULATE_POINTING_ primitives.
 
 =head1 REQUIRED PERL MODULES
@@ -120,33 +117,55 @@ if( $Frm->uhdr( "SPARSE_CUBE" ) ) {
   # Remove the baseline.
   _REMOVE_BASELINE_
 
+  $Frm->tagset( "REDUCE_LINE_POINTING_BASELINE" );
+
   # Create a variance.
   _CREATE_CUBE_VARIANCE_
 
-  # Retrieve the JCMT pointing catalogue and look up the object. If it
-  # is defined, then we use the line velocity width to collapse over
-  # the line. If it isn't, we'll just use the baseline regions to
-  # figure out where the line is.
-
-  use Astro::Catalog;
-
-  my $object = $Frm->uhdr( "ORAC_OBJECT" );
-  my $poicat = $Cal->find_file( "poi.dat" );
-  my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
-                                    File => $poicat );
-  my ($result) = $jcmtcat->popstarbyid( $object );
-  if( defined( $result ) &&
-      defined( $result->misc ) &&
-      defined( $result->misc->{'velocity_range'} ) ) {
-
-    my $range = $result->misc->{'velocity_range'};
-    _COLLAPSE_LINE_ CENTRE=0 RANGE=$range
-
-  } else {
-    _COLLAPSE_CENTRAL_LINE_
-  }
+  _COLLAPSE_PF_SRC_LINE_
 
   _CALCULATE_POINTING_ TYPE=LINE REPORT=$report CACHE=$cache
+
+  # Try to create "rimg" preview image from collapsed map.
+  if (1 == $Frm->nfiles) {
+    my ($in, $out) = $Frm->inout('_rimg');
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+    $Frm->push_intermediates($out);
+    _TAG_AS_REPRESENTATIVE_ GROUP=0 FILE=$out PRODUCT=rimg PREVIEW_ONLY=1 DISPLAY=0
+  }
+
+  $Frm->tagretrieve( "REDUCE_LINE_POINTING_BASELINE" );
+
+  # Try to create "rsp" preview image from central pixel.
+  if (1 == $Frm->nfiles) {
+    my ($in, $out) = $Frm->inout('_rsp');
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=${in}(1,1,) out=$out trim trimwcs");
+    $Frm->push_intermediates($out);
+    _TAG_AS_REPRESENTATIVE_ GROUP=0 FILE=$out PRODUCT=rsp PREVIEW_ONLY=1 DISPLAY=0
+  }
+
+  # Reshape cube to 2D for multiline display.
+  if (1 == $Frm->nfiles) {
+    my ($in, $out) = $Frm->inout('_pntcubeut');
+    my (undef, $outt) = $Frm->inout('_pntcube');
+    _GET_DIMENSIONS_
+    my $dims = $_GET_DIMENSIONS_{'DIMS'};
+    my $nx = $dims->[0] * $dims->[1];
+    my $ny = $dims->[2];
+    my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
+    my $lboundz = $lbound->[2];
+    # First reshape to matching dimensionality so we can use wcscopy,
+    # then trim to 2D.  (Probably is an easier way to do this?)
+    $Mon{'ndfpack_mon'}->obeyw('reshape', "in=$in out=$out shape=[$nx,1,$ny]");
+    $Mon{'ndfpack_mon'}->obeyw('setorigin', "ndf=$out origin=[1,1,$lboundz]");
+    $Mon{'ndfpack_mon'}->obeyw('wcscopy', "ndf=$out like=$in");
+    $Frm->push_intermediates($out);
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$out out=$outt trim trimwcs");
+    $Frm->files($outt);
+
+    my $range = $Frm->uhdr('COLLAPSED_RANGE');
+    $Display->display_data($Frm, {HLRANGE => $range}, -1) if defined $Display;
+  }
 
   # Reset the Frame object.
   $Frm->tagretrieve( "REDUCE_LINE_POINTING_BEGIN" );
