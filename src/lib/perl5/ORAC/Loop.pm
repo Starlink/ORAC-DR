@@ -497,7 +497,7 @@ sub orac_loop_flag {
 
       # simply compare number of entries. Not very robust but good enough
       if (@all > @$prev) {
-        orac_print "Found additional data associated with current observation...";
+        orac_print "\nFound additional data associated with current observation...";
 
         last;
       }
