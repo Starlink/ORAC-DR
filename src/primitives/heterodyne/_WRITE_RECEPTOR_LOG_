@@ -1,0 +1,117 @@
+=head1 NAME
+
+_WRITE_RECEPTOR_LOG_ - Write log.receptor file
+
+=head1 DESCRIPTION
+
+This primitive writes a log file containing the individual receptor
+system temperatures and the RMS values taken from the frame uhdr
+entries C<QA_TSYS_VALUES> and C<QA_RMS_VALUES> respectively.
+
+While RMS values are optional, this primitive skips files for
+which system temperatures are missing -- these should first
+have been prepared by the C<_QA_SYSTEM_TEMPERATURE_> primitive.
+
+=head1 NOTES
+
+This primitive contains the log-writing routine extracted from the
+C<_QA_TIMESERIES_CHECK_> primitive to allow this log to be written
+by recipes which do not perform full quality-assurance.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008-2016 Science and Technology Facilities Council.
+Copyright (C) 2024 East Asian Observatory.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+use Scalar::Util qw/looks_like_number/;
+
+my $tsys_values_href = $Frm->uhdr('QA_TSYS_VALUES');
+my $rms_values_href = $Frm->uhdr('QA_RMS_VALUES');
+
+# Create a log file for each receptor.  We will just record the
+# first obsidss, as the files have already been merged at this
+# point if hybrid..
+
+my @obsidss_s = $Frm->uhdr('ORAC_OBSERVATION_ID_SUBSYSTEM');
+my $first_obsidss = $obsidss_s[0][0] // 'UNKNOWN';
+
+my $ishybrid = (defined $Frm->uhdr('ISHYBRID'))
+    ? (sprintf '%6d', $Frm->uhdr('ISHYBRID'))
+    : '?';
+
+# Remove spaces from transition.
+my $transition = $Frm->uhdr('ORAC_TRANSITION') // 'UNKNOWN';
+$transition =~ s/\s//g;
+
+# probably not an issue, but remove it from molecule as well.
+my $molecule = $Frm->uhdr('ORAC_SPECIES') // 'UNKNOWN';
+$molecule =~ s/\s//g;
+
+my $bwmode = $Frm->uhdr('ORAC_BANDWIDTH_MODE') // 'UNKNOWN';
+
+my $restfreq = (defined $Frm->rest_frequency())
+    ? (sprintf '%8.2f', $Frm->rest_frequency())
+    : 'NULL';
+
+my $logfile = 'log.receptor';
+
+my $header = sprintf
+    '%33s %6s %15s %15s %12s %8s %8s %10s %8s',
+    'OBSIDSS', 'HYBRID', 'TRANSITION',
+    'MOLECULE', 'BANDWIDTH', 'RESTFREQ',
+    'RECEPTOR', 'TSYS', 'RMS';
+
+foreach my $file (sort keys %$tsys_values_href) {
+    my $tsys_values = $tsys_values_href->{$file};
+    my $rms_values = $rms_values_href->{$file} // {};
+
+    next unless defined $tsys_values;
+
+    my $log = ORAC::LogFile->new($logfile);
+    $log->header($header);
+
+    my @tsysreceptors = keys %$tsys_values;
+    my @rmsreceptors = keys %$rms_values;
+    my %receptornames;
+
+    # Get set of all receptor names in tsys and rms, in case for some
+    # reason a receptor only appears in one.
+    @receptornames{@tsysreceptors} = ();
+    @receptornames{@rmsreceptors} = ();
+
+    # Go through each one. Note that the rms can have value "bad", hence
+    # the sprintf floating point is only used if it's numeric
+    foreach my $receptor (sort keys %receptornames) {
+        my $tsys = $tsys_values->{$receptor} // '*****';
+        $tsys = sprintf '%10.3f', $tsys if looks_like_number($tsys);
+
+        my $rms = $rms_values->{$receptor} // '*****';
+        $rms = sprintf '%8.3f', $rms if looks_like_number($rms);
+
+        $log->addentry(sprintf
+            '%33s %6s %15s %15s %12s %8s %8s %10s %8s',
+            $first_obsidss, $ishybrid, $transition,
+            $molecule, $bwmode, $restfreq,
+            $receptor, $tsys, $rms);
+    }
+}
