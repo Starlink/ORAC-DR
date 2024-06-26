@@ -269,8 +269,8 @@ _REMOVE_BASELINE_MASKED_TIMESERIES_, _REMOVE_BASELINE_THROUGH_SMOOTHING_,
 _REMOVE_FLAT_FIELD_, _REMOVE_FLAT_FIELD_INDEX_, _REMOVE_FLAT_FIELD_ITERATE_,
 _RECREATE_MASKED_TIMESERIES_, _REMOVE_STANDING_WAVE_, _RESTRICT_VELOCITY_RANGE_,
 _SUBTRACT_REFERENCE_EMISSION_, _SUBTRACT_REFERENCE_SPECTRUM_,
-_TAG_AS_REDUCED_PRODUCT_, _WARN_IF_INVALID_LINEFOREST_SELECTION_, and
-primitives therein.
+_TAG_AS_REDUCED_PRODUCT_, _VALIDATE_INTEG_MASK_,
+_WARN_IF_INVALID_LINEFOREST_SELECTION_, and primitives therein.
 
 =head1 REQUIRED PERL MODULES
 
@@ -283,7 +283,7 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008, 2011-2016, 2018-2023 Science and Technology
+Copyright (C) 2008, 2011-2016, 2018-2024 Science and Technology
 Facilities Council.  All Rights Reserved.
 
 =head1 LICENCE
@@ -548,7 +548,8 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       my $integ_mask;
       if ( $standing_spatial_mask ) {
          _MAKE_EMISSION_MASK_ METHOD=$method THRESHOLD=$standing_thr RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth PER_LINE=$per_line
-          $integ_mask = $_MAKE_EMISSION_MASK_{MASK};
+         $integ_mask = $_MAKE_EMISSION_MASK_{MASK};
+         _VALIDATE_INTEG_MASK_ MASK=$integ_mask
       }
 
       # The Group moment and noise maps, and restricted-velocity cubes need
@@ -621,8 +622,7 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       my $underline = "-" x 41;
       orac_say "Iterations completed.\n\nCreating final Frame products.\n$underline\n" if $do_tiling;
 
-      my ( @swc, @swci );
-      my @tsref;
+      my ( @swc, @swci, @tsref );
 
       foreach my $Frm ( $Grp->members ) {
 
@@ -630,7 +630,9 @@ if ( $Grp->lastallmembers( $Frm ) ) {
          $Frm->uhdr( "JSA_TILES", 1 ) if $do_tiling;
 
          if ( $standing ) {
-            push @tsref, $Frm->file;
+            foreach my $i ( 1..$Frm->nfiles ) {
+               push @tsref, $Frm->file( $i );
+            }
          }
 
          # Generate the observation cube.
@@ -640,7 +642,19 @@ if ( $Grp->lastallmembers( $Frm ) ) {
 
       if ( $standing ) {
          $Grp->uhdr( "REFERENCE_TIMESERIES", \@tsref );
-        _REMOVE_STANDING_WAVE_ INTEG_MASK=$integ_mask SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling
+
+         if ( undef( $integ_mask ) ) {
+            _REMOVE_STANDING_WAVE_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling
+         } else {
+            _REMOVE_STANDING_WAVE_ INTEG_MASK=$integ_mask SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling
+         }
+
+         foreach my $Obj ( $Grp->members ) {
+            foreach my $j ( 1..$Obj->nfiles ) {
+                push @swci, $Obj->file($j);
+            }
+         }
+         orac_print "Standing-wave corrected files: " . join( ",", @swci ) . "\n";
       }
 
       foreach my $Frm ( $Grp->members ) {
@@ -661,6 +675,7 @@ if ( $Grp->lastallmembers( $Frm ) ) {
          _CALCULATE_STANDARD_ QUIET=1
          orac_print "\n";
       }
+      my $islast = $Grp->lastmember( $Frm );
 
       # Create the moments for each Frame in the group.
       if ( lc( $moments ) ne "none" ) {
@@ -695,8 +710,9 @@ if ( $Grp->lastallmembers( $Frm ) ) {
       }
 
       if ( $standing_spatial_mask ) {
-         orac_print "Standing-wave corrected files: " . join( ",", @swci ) . "\n";
+         $Grp->uhdr( "STANDING_WAVE_CORRECTED", \@swci );
          $Grp->uhdr( "REFERENCE_TIMESERIES", \@tsref );
+         orac_print "Standing-wave  ts files: " . join( ",", @tsref ) . "\n";
 
          # Convert the PPVs with standing waves subtracted back
          # into time series to be used to make the final group
