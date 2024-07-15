@@ -1,0 +1,178 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MAKE_EMISSION_MASK_  -- Makes an emission mask from the Group integ map.
+
+=head1 DESCRIPTION
+
+This primitive creates an integ map by smoothing and baseline fitting
+for the Group spectral cube.  Should this fail, the returned integ map
+is filled with zeroes.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FREQUENCY_SMOOTH = INTEGER (Given)
+
+The number of channels to smooth in the frequency axis when smoothing
+to determine baselines.  This number should be small (~10) for
+narrow-line observations and large (~25) for broad-line observations.
+This argument can be overridden by the RECPAR_FREQUENCY_SMOOTH uhdr
+via the recipe parameter system.  [25]
+
+=item MASK = STRING (Returned)
+
+The name of the integ mask created within the primitive.
+
+=item METHOD = STRING (Given)
+
+Method to use to find emission in the data: 'clumpfind', 'fellwalker',
+or 'thresh'.  This argument can be overridden by the RECPAR_CLUMP_METHOD
+uhdr via the recipe parameter system.  ['clumpfind']
+
+=item PER_LINE = LOGICAL (Given)
+
+Whether or not to create a moments map for each detected line. [0]
+
+=item RMS_THRESHOLD = REAL (Given)
+
+The RMS threshold above which emission will be considered to be a
+clump. A separate threshold can be specified for each moments map
+requested. The last specified number will be applied to any further
+moments requested. Typically 'integ' can tolerate a rms of 3-sigma,
+but the higher order moments need a higher threshold. Comma-separated
+string in the same order as the requested MOMENTS. [3.0,4.0]
+
+=item SPATIAL_SMOOTH = INTEGER (Given)
+
+The number of pixels to smooth in both spatial axes when smoothing to
+determine baselines.   This argument can be overridden by the
+RECPAR_SPATIAL_SMOOTH uhdr via the recipe parameter system.  [3]
+
+=item SYSTEM = STRING (Given)
+
+The celestial coordinate system for the output cube. Can be any one of
+ICRS, GAPPT, FK5, FK4, FK4-NO-E, AZEL, GALACTIC, or ECLIPTIC.  A
+special value of TRACKING can also be given, in which case the system
+used will be that used as the tracking system during the observation.
+
+If this argument is not defined, then the system is determined from
+the data and is typically set to 'tracking'. The only case where this
+does not apply is if the observation is a scan and the scanning was
+done in AZ/EL, in which case the system will be set to 'AZEL'.
+
+This argument can be overridden by the RECPAR_SYSTEM uhdr via the
+recipe parameter system. [undef]
+
+=item THRESHOLD = REAL (Given)
+
+The threshold above which is regarded as emission.  [0.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The image mask takes the Group name with the "_integmask" suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CMULT, THRESH.
+
+See _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ and primitives therein.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2023 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Obtain arguements and recipe parameter overrides.
+# =================================================
+
+my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
+my $method =  get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
+my $per_line = get_prim_arg( $_PRIM_ARGS_, "PER_LINE", 0 );
+my $rms_levels =  get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.0' );
+my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
+my $threshold = get_prim_arg( $_PRIM_ARGS_, "THRESHOLD", 0.0 );
+
+my ( $integ_mask, $params );
+orac_say "Form emission mask from integ map\n";
+my $underline = "-" x 50;
+orac_say "$underline\n";
+
+# Form the integ moment map and make it the current frame.
+_CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=integ METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=1 PER_LINE=$per_line
+
+# Mask the emission found in the group integ map.
+{
+   my $integ_map = $Grp->inout( "_integ"  );
+   ( undef, $integ_mask ) = $Grp->inout( "integmask" );
+   my $integ_file = $integ_map . ".sdf";
+   if ( -e $integ_file ) {
+      orac_say "Using " . $integ_map . " to mask emission regions.";
+      $params = "in=$integ_map out=$integ_mask newhi=bad newlo=0.0 thrlo=0 thrhi=$threshold";
+      orac_say "Created $integ_mask.";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# For some reason, there is no integ map.  This might be a lack of
+# emission.  Instead create an image the size of the spatial axes of
+# the group PPV, filled with zeroes.  Thus all the spectra in the
+# scan direction are used to corrrect for the standing waves.       
+   } else {
+      orac_warn "There was no integ map to mask to define emission.\n";
+
+      my $temp = new ORAC::TempFile( 0 );
+      my $oracblank = $temp->file;
+      my $in = $Grp->file;
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,,~1) out=$oracblank trim trimwcs" );
+      $params = "in=oracblank  out=$integ_mask scalar=0.0";
+      $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+   }
+}
+
+$_MAKE_EMISSION_MASK_{MASK} = $integ_mask;
