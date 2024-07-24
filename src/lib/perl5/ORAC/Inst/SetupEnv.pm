@@ -25,6 +25,7 @@ use warnings;
 use strict;
 use Carp;
 use File::Spec;
+use IO::File;
 use Net::Domain;
 use Sys::Hostname;
 use Fcntl ":mode";
@@ -337,14 +338,14 @@ sub orac_calc_instrument_settings {
 
     # If running by SSH from one of the dedicated pipeline display machines,
     # redirect audio warnings to the corresponding operator desktop.
-    my %ql_display = (
-        acsis10 => 'palila',
-        ou => 'awa',
-        po => 'hoku',
-    );
     my $pulse_server = undef;
-    if ((exists $ENV{'REMOTEHOST'}) and (exists $ql_display{$ENV{'REMOTEHOST'}})) {
-        $pulse_server = $ql_display{$ENV{'REMOTEHOST'}};
+    my $process_layout = _read_acsis_process_layout();
+    if (defined $process_layout) {
+        my %ql_display = reverse $process_layout->getDRDispMachines();
+
+        if ((exists $ENV{'REMOTEHOST'}) and (exists $ql_display{$ENV{'REMOTEHOST'}})) {
+            $pulse_server = $ql_display{$ENV{'REMOTEHOST'}};
+        }
     }
 
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
@@ -1201,6 +1202,37 @@ sub _determine_semester {
   }
 
   return $sem;
+}
+
+=item B<_read_acsis_process_layout>
+
+Attempt to read a basic ACSIS process layout, including the machine table
+and monitor layout files.  Returns undef if either doesn't exist or an error
+occurs reading them.
+
+=cut
+
+sub _read_acsis_process_layout {
+    require JAC::OCS::Config::ACSIS::ProcessLayout;
+    my $xml = '<process_layout>';
+
+    my $wiredir = File::Spec->catfile(File::Spec->rootdir(), qw/jac_sw hlsroot acsis_prod wireDir/);
+    my $machine_table =  File::Spec->catfile($wiredir, qw/machine_table.xml/);
+    my $monitor_layout = File::Spec->catfile($wiredir, qw/acsis monitor_layout.ent/);
+    return undef unless -e $machine_table
+        and -e $monitor_layout;
+
+    return undef unless eval {
+        local $/;
+        my $fh = IO::File->new($machine_table, 'r'); $xml .= <$fh>; $fh->close();
+        $fh = IO::File->new($monitor_layout, 'r'); $xml .= <$fh>; $fh->close();
+        1;
+    };
+
+    $xml .= '</process_layout>';
+
+    return JAC::OCS::Config::ACSIS::ProcessLayout->new(
+        XML => $xml, validation => 0);
 }
 
 =back
