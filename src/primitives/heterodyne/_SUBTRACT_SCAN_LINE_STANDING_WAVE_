@@ -141,13 +141,12 @@ $em_regions = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS" ) )
               $em_regions );
 
 $interpolate = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE" ) ) ?
-          $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE" )              :
-          $interpolate );
+               $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE" )              :
+               $interpolate );
 
 $kernel = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" ) ) ?
           $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" )              :
           $kernel );
-
 
 # Set some processing directives.  Masking emission across velocity
 # ranges needs some smoothing to assist the interpolation.
@@ -207,11 +206,13 @@ if ( $mask_emission ) {
 # Generate the observation's spectral cube of standing-wave baselines.
 # ====================================================================
 
-# Find the bounds of the  spectral cube.
+# Find the bounds of the spectral cube.
 my $ppvcube = $Frm->file;
 _GET_DIMENSIONS_ FILE=$ppvcube
 my $lbnd = $_GET_DIMENSIONS_{LBOUND};
 my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+orac_print($lbnd->[0] . ' ' . $lbnd->[1] . ' ' . $lbnd->[2]);
+orac_print($ubnd->[0] . ' ' . $ubnd->[1] . ' ' . $ubnd->[2]);
 
 # Obtain some work filenames.
 my $temp = new ORAC::TempFile( 0 );
@@ -233,7 +234,7 @@ my $filled_baselines = $temp8->file;
 my $temp9 = new ORAC::TempFile( 0 );
 my $original_baselines = $temp9->file;
 
-# There are two main routes to correction of the standing waves:
+# There are three main routes to correction of the standing waves:
 
 # a) there are sufficient emission-free zones, use the spectral-cube
 # emission mask to select those and form median spectra along the scan
@@ -291,31 +292,37 @@ if ( $spectral_mask ) {
 # Align the scan axis with the closer Cartesian axis.
 # ---------------------------------------------------
 
-# The scan may not be aligned with the Cartesian pixel axes.  This
-# appears to comprise the PPV's WCS rotation and the scan orientation.
-# These two headers are not currently (20230330) translated.
+# The scan may not be aligned with the Cartesian pixel axes.  There
+#  are two relevant position angles.  SCAN_PA specifies the orientation
+# of the scan axis, and MAP_PA defines the orientation of the scan with
+# respect to north.  A SCAN_PA of 0 degrees corresponds to scanning
+# along the longitude/h axis , and 90 degrees indicates that the scanns
+# wdirection is along the latitude axis.  Neither header is currently
+# (20230330) translated.
 my $scan_pa = defined( $Frm->hdr( "SCAN_PA" ) ) ? $Frm->hdr( "SCAN_PA" ) : 90.0;
 my $map_pa = defined( $Frm->hdr( "MAP_PA" ) ) ? $Frm->hdr( "MAP_PA" ) : 0.0;
-#my $map_pa = 0.0;
 
-my $totangle = $scan_pa + $map_pa;
-my $rotangle;
-if ( $totangle > 45.0 ) {
-   $rotangle = $totangle - 90.0;
-} else {
-   $rotangle = - $totangle;
-}
+# We want to adjust the scan orientation to be parallel with the pixel axes
+# in order to remove the standing waves.  Thus we want to rotate by
+# the MAP_PA.  The sense of angle in KAPPA;ROTATE is reversed from the MAP_PA
+# to have the map align with Cartesian axes.
+my $rotangle = -$map_pa;
+
+# To decide which of the two pixel axes is the scan xis the map p.a. has to be
+# subtracted from the scan_pa.
+my $scanangle = $scan_pa - $map_pa;
+
 my $modangle = abs( $rotangle );
 
 # Perform the rotation so that the scan axes align with the pixel axes.
 my $rotate = $modangle > 0.01;
 if ( $rotate ) {
-   $params = "in=$masked_cube out=$rotated_cube angle=$rotangle useaxis='1,2'";
+   $params = "in=$masked_cube out=$rotated_cube angle=$rotangle useaxis='1,2' variance";
    $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
-   orac_print "Rotate spatial axes $rotangle clockwise\n";
+   orac_print "Rotate spatial axes $rotangle degrees clockwise\n";
 
 # Find bounds of rotated cube.
-   _GET_DIMENSIONS_ FILE=$ppvcube
+   _GET_DIMENSIONS_ FILE=$rotated_cube
     $lbnd = $_GET_DIMENSIONS_{LBOUND};
     $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
@@ -329,7 +336,7 @@ if ( $rotate ) {
 # This needs the development version of MANIC with the ESTIMATOR parameter.
 # The SCAN_PA header (not currently translated) specifies the scan axis.
 # It is normally 0 or 90 degrees. Also define other indexing variables.
-my $keepaxis = $totangle > 45.0 ? 2 : 1;
+my $keepaxis = abs( $scanangle ) > 45.0 ? 2 : 1;
 my $cubegrow = $keepaxis == 1 ? "[1,0,2]" : "[0,1,2]";
 my $scanaxis = $keepaxis == 1 ? 2 : 1;
 my $growindex = $scanaxis - 1;
@@ -401,25 +408,50 @@ $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 # -------------------------------------------
 my $irotangle = - $rotangle;
 if ( $rotate ) {
-   $params = "in=$baseline_cube out=$derot_baseline_cube angle=$irotangle useaxis='1,2'";
+   $params = "in=$baseline_cube out=$derot_baseline_cube angle=$irotangle useaxis='1,2' variance";
    $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+
 } else {
-   $derot_baseline_cube = $baseline_cube;;
+   $derot_baseline_cube = $baseline_cube;
 }
 
-# Subract the baselines.
-# ----------------------
+# Subtract the baselines for each subscan.
+# -----------------------------------------
 
-my ( $junk, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix );
-$params = "in1=$ppvcube in2=$derot_baseline_cube out=$ppvcube_ssw";
-$Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+my @swcfiles;
+my @spcubes = @{$Frm->uhdr( "SUBSCAN_SPECTRAL_CUBES" )};
+my $i = 1;
+my $ppvcube_ssw;
+my $subscan_present = scalar( @spcubes ) > 1;
+foreach my $spcube ( @spcubes ) {
+    if ( $subscan_present ) {
+      my $Frm = new $Frm;
+      $Frm->file( $spcube );
+      ( undef, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix , $i );
+    } else {
+      ( undef, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix  );
+    }
+    $params = "in1=$spcube in2=$derot_baseline_cube out=$ppvcube_ssw";
+    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
-orac_print "Subtracted standing wave along scan axis ($scanaxis) in $ppvcube to make $ppvcube_ssw.\n";
+    orac_print "Subtracted standing wave along scan axis ($scanaxis) in $spcube to make $ppvcube_ssw.\n";
 
-$Frm->file( $ppvcube_ssw );
+    if ( $subscan_present ) {
+       $Frm->file( $i, $ppvcube_ssw );
+    } else {
+       $Frm->file( $ppvcube_ssw );
+    }
+
+    $Grp->push_intermediates( $ppvcube_ssw );
+    push @swcfiles , $ppvcube_ssw;
 
 # Display, if necessary.
-$Display->display_data( $Frm ) if defined $Display;
+    $Display->display_data( $Frm ) if defined $Display;
+
+    $i++;
+}
+
+$Frm->uhdr( "STANDING_WAVE_CORRECTED", \@swcfiles );
 
 # Tidy-up output.
 orac_print "\n";
