@@ -77,7 +77,10 @@ The spectral cube after the smoothed standing wave has been subtracted.
 
 =head1 TASKS
 
-KAPPA: ADD, BLOCK, MANIC, NDFTRACE (via _GET_DIMENSIONS_), SUB
+KAPPA: ADD, BLOCK, CHPIX, COLLAPSE, FILLBAD, MANIC, NDFCOPY, NDFTRACE
+       (via _GET_DIMENSIONS_), PASTE, ROTATE, STATS, SUB, WCSCOPY.
+
+Also see _ROTATE_MAP_PA_TO_SYSTEM_.
 
 =head1 REQUIRED PERL MODULES
 
@@ -89,7 +92,7 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2023 Science and Technology Facilities Council.
+Copyright (C) 2023-2024 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -148,6 +151,23 @@ $kernel = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" ) ) ?
           $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" )              :
           $kernel );
 
+# Obtain and validate angular recipe parameters.  These angular recipe
+# paramters may be removed if the transformation between the supplied and
+# requested WCS works at the ASTANGLE step in _ROTATE_MAP_PA_TO_SYSTEM_.
+my $map_pa = ( defined( $Frm->uhdr( "RECPAR_MAP_PA" ) ) ?
+              $Frm->uhdr( "RECPAR_MAP_PA" )             :
+              undef );
+if ( defined( $map_pa ) ) {
+   $map_pa = undef if ( $map_pa <= -90.0 || $map_pa >= 90.0 );
+}
+
+my $scan_pa = ( defined( $Frm->uhdr( "RECPAR_SCAN_PA" ) ) ?
+              $Frm->uhdr( "RECPAR_SCAN_PA" )              :
+              undef );
+if ( defined( $scan_pa ) ) {
+   $scan_pa = undef if ( $scan_pa <= 0.0 || $scan_pa >= 90.0 );
+}
+
 # Set some processing directives.  Masking emission across velocity
 # ranges needs some smoothing to assist the interpolation.
 my $mask_spatial = defined( $image_mask );
@@ -166,6 +186,7 @@ if ( $smooth ) {
 
 # Store the emission regions in a text file for CHPIX.
 # ====================================================
+
 #  First store the emission regions in an array.
 my ( $maskfile, @regions );
 if ( $mask_emission ) {
@@ -202,37 +223,55 @@ if ( $mask_emission ) {
    }
 }
 
+# Obtain the orientation of the spectral cube and any rotation required.
+# ======================================================================
+
+# The scan may not be aligned with the Cartesian pixel axes.  There
+# are two relevant position angles.  SCAN_PA specifies the orientation
+# of the scan axis, and MAP_PA defines the orientation of the scan with
+# respect to north.  A SCAN_PA of 0 degrees corresponds to scanning
+# along the latitude axis, and 90 degrees indicates that the scan
+# direction is along the longitude axis.  Neither header is currently
+# (20230330) translated.  Now these are normally with respect to the
+# tracking system, normally equatorial.  Until code is developed to
+# convert these angles from tracking to other systems, especially
+# galactic, there is an option to supply the values through recipe
+# parameters when the WCS system is not tracking.
+if ( !defined( $scan_pa ) ) {
+    $scan_pa = defined( $Frm->hdr( "SCAN_PA" ) ) ? $Frm->hdr( "SCAN_PA" ) : 90.0;
+}
+if ( !defined( $map_pa ) ) {
+    _ROTATE_MAP_PA_TO_SYSTEM_
+    $map_pa = $_ROTATE_MAP_PA_TO_SYSTEM_{MAP_PA};
+}
+
+# We want to adjust the scan orientation to be parallel with the pixel axes
+# in order to remove the standing waves.  Thus we want to rotate by
+# the MAP_PA.  The sense of angle in KAPPA:ROTATE is reversed from the MAP_PA
+# but this step is to reverse the rotation to have the map align with Cartesian
+# axes.  Hence the rotation angle required is the MAP_PA.  Also defined the
+# reverse rotation needed to restore the original orientation.
+my $rotangle = $map_pa;
+my $irotangle = - $rotangle;
+
+# To decide which of the two pixel axes is the scan axis the map p.a. has to be
+# subtracted from the scan_pa.
+my $scanangle = $scan_pa - $map_pa;
+
+my $modangle = abs( $rotangle );
+my $rotate = $modangle > 0.01;
+
+# The SCAN_PA header (not currently translated) specifies the scan axis.
+# It is normally 0 or 90 degrees.  Also define other indexing variables.
+my $keepaxis = abs( $scanangle ) > 45.0 ? 2 : 1;
+my $cubegrow = $keepaxis == 1 ? "[1,0,2]" : "[0,1,2]";
+my $scanaxis = $keepaxis == 1 ? 2 : 1;
+my $collapse_axis = $keepaxis == 1 ? "SKYLAT" : "SKYLON";
+my $growindex = $scanaxis - 1;
+
 
 # Generate the observation's spectral cube of standing-wave baselines.
 # ====================================================================
-
-# Find the bounds of the spectral cube.
-my $ppvcube = $Frm->file;
-_GET_DIMENSIONS_ FILE=$ppvcube
-my $lbnd = $_GET_DIMENSIONS_{LBOUND};
-my $ubnd = $_GET_DIMENSIONS_{UBOUND};
-orac_print($lbnd->[0] . ' ' . $lbnd->[1] . ' ' . $lbnd->[2]);
-orac_print($ubnd->[0] . ' ' . $ubnd->[1] . ' ' . $ubnd->[2]);
-
-# Obtain some work filenames.
-my $temp = new ORAC::TempFile( 0 );
-my $cube_mask = $temp->file;
-my $temp2 = new ORAC::TempFile( 0 );
-my $masked_cube = $temp2->file;
-my $temp3 = new ORAC::TempFile( 0 );
-my $baselines = $temp3->file;
-my $temp4 = new ORAC::TempFile( 0 );
-my $smoothed_baselines = $temp4->file;
-my $temp5 = new ORAC::TempFile( 0 );
-my $baseline_cube = $temp5->file;
-my $temp6 = new ORAC::TempFile( 0 );
-my $rotated_cube = $temp6->file;
-my $temp7 = new ORAC::TempFile( 0 );
-my $derot_baseline_cube = $temp7->file;
-my $temp8 = new ORAC::TempFile( 0 );
-my $filled_baselines = $temp8->file;
-my $temp9 = new ORAC::TempFile( 0 );
-my $original_baselines = $temp9->file;
 
 # There are three main routes to correction of the standing waves:
 
@@ -253,101 +292,118 @@ my $original_baselines = $temp9->file;
 # If both an emission image mask and emission velocity ranges are
 # supplied, the former takes priority.
 
-my $params;
+# Obtain some work filenames.
+my $temp = new ORAC::TempFile( 0 );
+my $cube_mask = $temp->file;
+my $temp2 = new ORAC::TempFile( 0 );
+my $masked_cube = $temp2->file;
+my $temp3 = new ORAC::TempFile( 0 );
+my $baselines = $temp3->file;
+my $temp4 = new ORAC::TempFile( 0 );
+my $smoothed_baselines = $temp4->file;
+my $temp5 = new ORAC::TempFile( 0 );
+my $baseline_cube = $temp5->file;
+my $temp6 = new ORAC::TempFile( 0 );
+my $rotated_cube = $temp6->file;
+my $temp7 = new ORAC::TempFile( 0 );
+my $derot_baseline_cube = $temp7->file;
+my $temp8 = new ORAC::TempFile( 0 );
+my $filled_baselines = $temp8->file;
+my $temp9 = new ORAC::TempFile( 0 );
+my $original_baselines = $temp9->file;
+my $temp10 = new ORAC::TempFile( 0 );
+my $rotated_untrimmed = $temp10->file;
+
+# Loop through all of the PPV subscans.
+foreach my $i ( 1..$Frm->nfiles ) {
+   my ( $params, $lbnd, $ubnd );
+   my ( $ppvcube, $ppvcube_ssw );
+
+# Find the bounds of the spectral cube.
+   $ppvcube = $Frm->file( $i );
+   _GET_DIMENSIONS_ FILE=$ppvcube
+   $lbnd = $_GET_DIMENSIONS_{LBOUND};
+   $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
 # Option a)
 # ---------
-if ( $spectral_mask ) {
-   my $cube_mask = $Grp->uhdr( "BASELINE_MASKS" )->[1];
+   if ( $spectral_mask || ! ( $mask_spatial || $mask_emission ) ) {
+      if ( ! defined ( $Grp->uhdr( "BASELINE_MASKS" ) ) ) {
+         orac_err "BASELINE_MASKS is undefined; or either the image mask " .
+                  "or the emission velocity ranges have not been set via " .
+                  "STANDING_WAVE_MASK or STANDING_WAVE_EMISSION_REGIONS " .
+                  "recipe parameters, respectively.  The image mask " .
+                  "may have been selected but has no emission-free pixels.";
+      }
+
+      my $cube_mask = $Grp->uhdr( "BASELINE_MASKS" )->[1];
+      _GET_DIMENSIONS_ FILE=$cube_mask
 
 # Mask the input spectral cube.
-   $params = "in1=$ppvcube in2=$cube_mask out=$masked_cube";
-   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
-   orac_print "Used $cube_mask to exclude emission regions.\n";
+      $params = "in1=$ppvcube in2=$cube_mask out=$masked_cube";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+      orac_print "Used $cube_mask to exclude emission regions.\n";
 
 # Option b)
 # ---------
 
 # Grow the image mask to match the input spectral cube.
 
-} elsif ( $mask_spatial ) {
-   $params = "axes=[1,2,0] in=$image_mask out=$cube_mask lbound=" . $lbnd->[2] . " ubound=" . $ubnd->[2];
-   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+   } elsif ( $mask_spatial ) {
+      $params = "axes=[1,2,0] in=$image_mask out=$cube_mask lbound=";
+      $params .= $lbnd->[2] . " ubound=" . $ubnd->[2];
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
 # Mask the input spectral cube.
-   $params = "in1=$ppvcube in2=$cube_mask out=$masked_cube";
-   $Mon{'kappa_mon'}->obeyw( "add", "$params" );
-   orac_print "Used $image_mask to exclude emission regions.\n";
+      $params = "in1=$ppvcube in2=$cube_mask out=$masked_cube";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+      orac_print "Used $image_mask to exclude emission regions.\n";
 
 # Option c)
 # ---------
 
-# Mask the input spectral cube using approximate solutions to
-# Laplace's Equation.
-} else {
-   $params = "in=$ppvcube out=$masked_cube mode=file file=" . $maskfile->file;
-   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
-}
+# Mask the input spectral cube using the supplied emission regions.
+   } else {
+      $params = "in=$ppvcube out=$masked_cube mode=file file=" . $maskfile->file;
+      $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+   }
 
 # Align the scan axis with the closer Cartesian axis.
 # ---------------------------------------------------
 
-# The scan may not be aligned with the Cartesian pixel axes.  There
-#  are two relevant position angles.  SCAN_PA specifies the orientation
-# of the scan axis, and MAP_PA defines the orientation of the scan with
-# respect to north.  A SCAN_PA of 0 degrees corresponds to scanning
-# along the longitude/h axis , and 90 degrees indicates that the scanns
-# wdirection is along the latitude axis.  Neither header is currently
-# (20230330) translated.
-my $scan_pa = defined( $Frm->hdr( "SCAN_PA" ) ) ? $Frm->hdr( "SCAN_PA" ) : 90.0;
-my $map_pa = defined( $Frm->hdr( "MAP_PA" ) ) ? $Frm->hdr( "MAP_PA" ) : 0.0;
-
-# We want to adjust the scan orientation to be parallel with the pixel axes
-# in order to remove the standing waves.  Thus we want to rotate by
-# the MAP_PA.  The sense of angle in KAPPA;ROTATE is reversed from the MAP_PA
-# to have the map align with Cartesian axes.
-my $rotangle = -$map_pa;
-
-# To decide which of the two pixel axes is the scan xis the map p.a. has to be
-# subtracted from the scan_pa.
-my $scanangle = $scan_pa - $map_pa;
-
-my $modangle = abs( $rotangle );
-
 # Perform the rotation so that the scan axes align with the pixel axes.
-my $rotate = $modangle > 0.01;
-if ( $rotate ) {
-   $params = "in=$masked_cube out=$rotated_cube angle=$rotangle useaxis='1,2' variance";
-   $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
-   orac_print "Rotate spatial axes $rotangle degrees clockwise\n";
+   if ( $rotate ) {
+      $params = "in=$masked_cube out=$rotated_untrimmed angle=$rotangle ";
+      $params .= "useaxis='1,2' variance";
+      $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+      orac_print "Rotate spatial axes $rotangle degrees clockwise\n";
+
+# ROTATE will make a bigger region than is needed, as it calculates the
+# output bounds from the transformed input bounds, ignoring the fact that
+# the rotation will align with the Cartesian axes, and thus will be
+# smaller.  So trim the bad border pixels.
+      $params = "in=$rotated_untrimmed out=$rotated_cube trimbad";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
 # Find bounds of rotated cube.
-   _GET_DIMENSIONS_ FILE=$rotated_cube
-    $lbnd = $_GET_DIMENSIONS_{LBOUND};
-    $ubnd = $_GET_DIMENSIONS_{UBOUND};
+      _GET_DIMENSIONS_ FILE=$rotated_cube
+      $lbnd = $_GET_DIMENSIONS_{LBOUND};
+      $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
-} else {
-   $rotated_cube = $masked_cube;
-}
+   } else {
+      $rotated_cube = $masked_cube;
+   }
 
 # Form the baselines from each unmasked spectrum along the scan direction.
 # ------------------------------------------------------------------------
-#
-# This needs the development version of MANIC with the ESTIMATOR parameter.
-# The SCAN_PA header (not currently translated) specifies the scan axis.
-# It is normally 0 or 90 degrees. Also define other indexing variables.
-my $keepaxis = abs( $scanangle ) > 45.0 ? 2 : 1;
-my $cubegrow = $keepaxis == 1 ? "[1,0,2]" : "[0,1,2]";
-my $scanaxis = $keepaxis == 1 ? 2 : 1;
-my $growindex = $scanaxis - 1;
 
-$params = "axes=[" . $keepaxis . ",3] estimator=median in=$rotated_cube out=$baselines";
-$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+   $params = "axis=$collapse_axis estimator=median in=$rotated_cube out=$baselines";
+   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Are there scan-direction columns or rows that are devoid of
 # background?
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$baselines" );
-my ( $ORAC_STATUS, $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$baselines" );
+   my ( $ORAC_STATUS, $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
 
 # Repeat for the original PPV cube in case there are scan rows or
 # columns that have emission across them, giving rise to bad columns
@@ -360,18 +416,18 @@ my ( $ORAC_STATUS, $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
 # To overcome this, paste the spectral cube with the bad rows or columns
 # on to the original PPV cube, but bad data are transparent, so the
 # blank spectra are replaced by the original counterparts.
-#$params = "in=$original_baselines p1=baselines out=filled_baselines transp";
-#$Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+#   $params = "in=$original_baselines p1=baselines out=filled_baselines transp";
+#   $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
 
 # Smooth the spectra with a user-defined kernel.
 # ----------------------------------------------
-if ( $smooth ) {
-   $params = "box=[1,$kernel] estimator=mean in=$baselines out=$smoothed_baselines";
-   $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-} else {
-   $smoothed_baselines = $baselines;
-}
+   if ( $smooth ) {
+      $params = "box=[1,$kernel] estimator=mean in=$baselines out=$smoothed_baselines";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+   } else {
+      $smoothed_baselines = $baselines;
+   }
 
 # Fill bad pixels (Option b)
 # --------------------------
@@ -379,79 +435,62 @@ if ( $smooth ) {
 # The number of iterations and size might become parameters.
 # Interpolate across bad pixels, i.e where there is known emission
 # (Option b).
-if ( $mask_emission && $interpolate ) {
-   $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
-   $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+   if ( $mask_emission && $interpolate ) {
+      $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
+      $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
 
 # Option a) may require bad pixels to be filled.
-} else {
+   } else {
 
 # Interpolate across the case where there are a few scan contiguous
 # scan lines devoid of background.  The waves patterns adjust smoothly
 # between adjacent scan lines, so interpolation ought to provide a
 # reasonable approximation.
-   if ( $numbad > 0 && $interpolate ) {
-      $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
-      $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
-   } else {
-      $filled_baselines = $smoothed_baselines;
+      if ( $numbad > 0 && $interpolate ) {
+         $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
+         $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+      } else {
+         $filled_baselines = $smoothed_baselines;
+      }
    }
-}
 
 # Grow the baselines to the bounds of the input spectral cube.
-$params = "in=$filled_baselines out=$baseline_cube axes=" . $cubegrow;
-$params .= " lbound=" . $lbnd->[$growindex] . " ubound=" . $ubnd->[$growindex];
-$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+   $params = "in=$filled_baselines out=$baseline_cube axes=" . $cubegrow;
+   $params .= " lbound=" . $lbnd->[$growindex] . " ubound=" . $ubnd->[$growindex];
+   $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
+# Copy the original WCS lost during the above operations.
+   $params = "ndf=$baseline_cube like=$rotated_cube confirm=f";
+   $Mon{'ndfpack_mon'}->obeyw( "wcscopy", "$params" );
 
 # Rotate the PPV to its original orientation.
 # -------------------------------------------
-my $irotangle = - $rotangle;
-if ( $rotate ) {
-   $params = "in=$baseline_cube out=$derot_baseline_cube angle=$irotangle useaxis='1,2' variance";
-   $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+   if ( $rotate ) {
+      $params = "in=$baseline_cube out=$derot_baseline_cube angle=$irotangle useaxis='1,2' variance";
+      $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
 
-} else {
-   $derot_baseline_cube = $baseline_cube;
-}
+   } else {
+      $derot_baseline_cube = $baseline_cube;
+   }
 
 # Subtract the baselines for each subscan.
-# -----------------------------------------
-
-my @swcfiles;
-my @spcubes = @{$Frm->uhdr( "SUBSCAN_SPECTRAL_CUBES" )};
-my $i = 1;
-my $ppvcube_ssw;
-my $subscan_present = scalar( @spcubes ) > 1;
-foreach my $spcube ( @spcubes ) {
-    if ( $subscan_present ) {
-      my $Frm = new $Frm;
-      $Frm->file( $spcube );
-      ( undef, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix , $i );
-    } else {
-      ( undef, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix  );
-    }
-    $params = "in1=$spcube in2=$derot_baseline_cube out=$ppvcube_ssw";
+# ---------------------------------------
+    ( undef, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix, $i );
+    $params = "in1=$ppvcube in2=$derot_baseline_cube out=$ppvcube_ssw";
     $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
-    orac_print "Subtracted standing wave along scan axis ($scanaxis) in $spcube to make $ppvcube_ssw.\n";
+    orac_print "Subtracted standing wave along scan axis ($scanaxis) in $ppvcube to make $ppvcube_ssw.\n";
 
-    if ( $subscan_present ) {
-       $Frm->file( $i, $ppvcube_ssw );
-    } else {
-       $Frm->file( $ppvcube_ssw );
-    }
+# Update the frame subscan to be the corrected file.
+    $Frm->file( $i, $ppvcube_ssw );
 
     $Grp->push_intermediates( $ppvcube_ssw );
-    push @swcfiles , $ppvcube_ssw;
 
 # Display, if necessary.
     $Display->display_data( $Frm ) if defined $Display;
 
     $i++;
 }
-
-$Frm->uhdr( "STANDING_WAVE_CORRECTED", \@swcfiles );
 
 # Tidy-up output.
 orac_print "\n";
