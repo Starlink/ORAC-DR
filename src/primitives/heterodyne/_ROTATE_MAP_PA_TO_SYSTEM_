@@ -1,0 +1,147 @@
+=head1 NAME
+
+_ROTATE_MAP_PA_TO_SYSTEM_
+
+=head1 DESCRIPTION
+
+This primitive determines the rotation to be applied in the chosen WCS
+system in order for the pixel grid to align with the Cartesian axes.
+Should the requested system be that of the scan co-ordinates, no
+correction is applied and the value of MAP_PA header is returned.
+
+The rotation correction will normally be required if the requested
+products are oriented in galactic co-ordinates while the scan uses
+TRACKING (normally FK5).
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MAP_PA = DOUBLE (Returned)
+
+The map position angle in the desired co-ordinate system.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item The CUBE_WCS recipe parameter chooses the WCS of the spectral cube.
+
+=back
+
+=head1 TASKS
+
+ATOOLS: ASTANGLE, ASTCONVERT, ASTSKYFRAME, ASTTRAN2;
+KAPPA: CALC.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+David Berry E<lt>d.berry@eaobservatory.orgE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2024 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Define DR2D: radians to degrees.
+use Astro::PAL qw/ :constants /;
+
+# Calculates the angle from north of the chosen WCS to tracking north (measured through
+# equatorial east) in radians, at a specified tracking base position.
+my $tracking_system = defined( $Frm->hdr( "TRACKSYS" ) ) ?
+                      $Frm->hdr( "TRACKSYS" ) : "FK5";
+$tracking_system = "FK5" if $tracking_system =~ /J2000/;
+   
+my $requested_system = defined( $Frm->uhdr( "RECPAR_SYSTEM" ) ) ?
+                       $Frm->uhdr( "RECPAR_SYSTEM" ) : "TRACKING";
+$requested_system = $tracking_system if $requested_system =~ /TRACKING/;
+
+my $scan_system = defined( $Frm->hdr( "SCAN_CRD" ) ) ?
+                  $Frm->hdr( "SCAN_CRD" ) : "FK5";
+$scan_system = $tracking_system if $scan_system =~ /TRACKING/;
+
+my ( $params, $rotation );
+
+# When co-ordinate systems are unchanged, use the MAP_PA from the header.
+$rotation = $Frm->hdr( "MAP_PA" );
+
+# Otherwise correct the rotation to the chosen WCS.
+if ( $scan_system ne $requested_system ) {
+
+# Create the scan co-ordinate-system Frame.
+   $params = "options='system=$scan_system' result=scan_frame";
+   $Mon{'atools_mon'}->obeyw( "astskyframe", "$params" );
+
+# Create the desired co-ordinate-system Frame.
+   $params = "options='system=$requested_system' result=requested_frame";
+   $Mon{'atools_mon'}->obeyw( "astskyframe", "$params" );
+
+# Get a FrameSet/Mapping from the scan to the requersted system.
+   $params = "from=scan_frame to=requested_frame domainlist=! result=frame_mapping quiet";
+   $Mon{'atools_mon'}->obeyw( "astconvert",  "$params" );
+
+# Obtain the scan co-ordinates in radians, at which the angle is to
+# be calculated.  
+   my $scan_ew0 = $Frm->hdr( "BASEC1" ) * DD2R;
+   my $scan_ns0 = $Frm->hdr( "BASEC2" ) * DD2R;
+
+# Get another position which is about one arcminute to the (equatorial) north of
+# the above position.
+   my $scan_ew1 = $scan_ew0;
+   my $params = "exp='pa+3e-4' pa=$scan_ns0 prec=_DOUBLE";
+   $Mon{'kappa_mon'}->obeyw( "calc", "$params" );
+   my ( $ORAC_STATUS, $scan_ns1 ) = $Mon{'kappa_mon'}->get( "calc", "result" );
+
+# Convert these two positions from the scan to requested co-ordinates, using 
+# the FrameSet created earlier.
+   $params = "this=frame_mapping forward xin=$scan_ew0 yin=$scan_ns0";
+   $Mon{'atools_mon'}->obeyw( "asttran2", "$params" );
+   ( $ORAC_STATUS, my $req_ew0 ) = $Mon{'atools_mon'}->get( "asttran2", "xval" );
+   ( $ORAC_STATUS, my $req_ns0 ) = $Mon{'atools_mon'}->get( "asttran2", "yval" );
+
+   $params = "this=frame_mapping forward xin=$scan_ew1 yin=$scan_ns1";
+   $Mon{'atools_mon'}->obeyw( "asttran2", "$params" );
+   ( $ORAC_STATUS, my $req_ew1 ) = $Mon{'atools_mon'}->get( "asttran2", "xval" );
+   ( $ORAC_STATUS, my $req_ns1 ) = $Mon{'atools_mon'}->get( "asttran2", "yval" );
+
+# Since ATOOLS does not include ASTAXANGLE, we need to use ASTANGLE, which
+# requires a third point, displaced from (req_ew0,req_ns0) by a small amount
+# along the desired frame's latitude axis.
+   my $req_ew3 = $req_ew0;
+   $params = "exp='pa+3e-4' pa=$req_ns0 prec=_DOUBLE";
+   $Mon{'kappa_mon'}->obeyw( "calc", "$params" );
+   ( $ORAC_STATUS, my $req_ns3 ) = $Mon{'kappa_mon'}->get( "calc", "result" );
+
+# Now use ASTANGLE to get the angle (in degrees) from the line
+# (req_ew0,req_ns0)->(req_ew1,req_ns1) to the line
+# (req_ew0,req_ns0)->(req_ew3,req_ns3), measured at (req_ew0,req_ns0).
+   $params = "this=requested_frame degs a=[$req_ew1,$req_ns1] " .
+             "b=[$req_ew0,$req_ns0] c=[$req_ew3,$req_ns3]";
+   $Mon{'atools_mon'}->obeyw( "astangle",  "$params" );
+   ( $ORAC_STATUS, my $angle ) = $Mon{'atools_mon'}->get( "astangle", "angle" );
+   $rotation += $angle;
+}
+
+$_ROTATE_MAP_PA_TO_SYSTEM_{MAP_PA} = $rotation;
