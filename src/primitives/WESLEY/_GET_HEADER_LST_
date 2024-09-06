@@ -1,0 +1,84 @@
+=head1 NAME
+
+_GET_HEADER_LST_ - Check for new values of LSTSTART/LSTEND headers
+
+=head1 DESCRIPTION
+
+This primitive checks each file in the frame to determine whether
+its LSTSTART and LSTEND headers should be replaced with a new value
+calculated from the JCMTSTATE.  New values are stored in the C<uhdr>
+WESLEY_SET_HEADERS (for subsequent writing by C<_SET_HEADERS_>).
+
+=head1 COPYRIGHT
+
+Copyright (C) 2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use Astro::PAL;
+
+# JCMTSTATE column from which to read TAI.
+my $column = 'RTS_END';
+
+# Number of decimal places in seconds.
+my $ndp = 4;
+
+_GET_TAI_OFFSET_
+
+my $dtai_days = $_GET_TAI_OFFSET_{'DTAI'} / 86400.0;
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my $in = $Frm->file($i + 1);
+
+    _READ_JCMT_STATE_ FILE=$in COLUMN=$column
+
+    my $state = $_READ_JCMT_STATE_{'STATE'};
+    my $times_tai = $state->{$column};
+
+    foreach (['LSTSTART', $times_tai->[0]],
+            ['LSTEND', $times_tai->[-1]]) {
+        my ($header, $time_tai) = @$_;
+
+        unless (defined $time_tai) {
+            $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$in}->{$header} = undef;
+            next;
+        }
+
+        my $header_value = $Frm->hdrval($header, $i);
+
+        # Conversion code based on Astro::PAL mjd.t test script.
+        my ($iy, $im, $id, $frac, $status) = Astro::PAL::palDjcl(
+            $time_tai - $dtai_days);
+        orac_throw('Unable to process MJD value')
+            unless $status == 0;
+
+        my ($sign, @ihmsf) = Astro::PAL::palDd2tf($ndp, $frac);
+        my $iseconds = sprintf '%d.%0*d', $ihmsf[2], $ndp, $ihmsf[3];
+
+        my ($lst, $mjd) = Astro::PAL::ut2lst_tel(
+            $iy, $im, $id, $ihmsf[0], $ihmsf[1], $iseconds,
+            'JCMT');
+
+        my ($lst_sign, @lst_hmsf) = Astro::PAL::palDr2tf($ndp, $lst);
+        my $lst_str = sprintf "%02d:%02d:%02d.%0*d",
+            $lst_hmsf[0], $lst_hmsf[1], $lst_hmsf[2], $ndp, $lst_hmsf[3];
+
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$in}->{$header} = $lst_str
+            if $lst_str ne $header_value;
+    }
+}
