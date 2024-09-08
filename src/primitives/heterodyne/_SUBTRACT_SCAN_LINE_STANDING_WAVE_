@@ -45,7 +45,8 @@ RECPAR_STANDING_WAVE_INTERPOLATE uhdr via the recipe parameter system.
 
 The size of the kernel in channels to block smooth the median spectra
 in each row.  It should be at least 3, and and odd.  If this is
-undefined or 0, no smoothing occurs.  If a negative value or 1 or 2
+undefined or 0, no smoothing occurs unless EMISSION_REGIONS is
+defined and EMISSION_MASK is false.  If a negative value or 1 or 2
 is supplied, a default of 11 is used.  If an even-sized kernel is
 supplied, 1 is added.  This argument can be overridden by the
 RECPAR_STANDING_WAVE_SMOOTH uhdr via the recipe parameter system.
@@ -159,8 +160,16 @@ $kernel = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" ) ) ?
           $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" )              :
           $kernel );
 
+# There may be a list of kernel widths.
+my @kernels;
+if ( ref( $kernel ) eq 'ARRAY' ) {
+   @kernels = @{ $kernel };
+} else {
+   push @kernels, $kernel;
+}
+
 # Obtain and validate angular recipe parameters.  These angular recipe
-# paramters may be removed if the transformation between the supplied and
+# parameters may be removed if the transformation between the supplied and
 # requested WCS works at the ASTANGLE step in _ROTATE_MAP_PA_TO_SYSTEM_.
 my $map_pa = ( defined( $Frm->uhdr( "RECPAR_MAP_PA" ) ) ?
               $Frm->uhdr( "RECPAR_MAP_PA" )             :
@@ -179,17 +188,22 @@ if ( defined( $scan_pa ) ) {
 # Set some processing directives.  Masking emission across velocity
 # ranges needs some smoothing to assist the interpolation.
 my $mask_spatial = defined( $image_mask );
-my $mask_emission = defined( $em_regions );
-my $smooth = 1 if defined ( $kernel );
+my $mask_emission = defined( $em_regions ) && ! $spectral_mask;
+my $smooth = 1 if defined ( $kernels[0] );
+$smooth = 0 if $kernels[0] == 0;
 if ( $mask_emission ) {
    $smooth = 1;
-   $kernel = 11 if ! defined( $kernel );
+   $kernels[0] = 11 if ! defined( $kernel );
 }
 
-# Make sure the smoothing kernel is a positive odd integer.
+# Make sure each smoothing kernel is a positive odd integer.
 if ( $smooth ) {
-   $kernel = 11 if $kernel < 3;
-   $kernel = $kernel++ if $kernel % 2 == 0;
+   foreach ( @kernels ) {
+      if ( $_ =~ /^-?\d+\z/ ) {
+         $_ = 11 if $_ < 3;
+         $_ = $_++ if $_ % 2 == 0;
+      }
+   }
 }
 
 # Store the emission regions in a text file for CHPIX.
@@ -427,12 +441,21 @@ foreach my $i ( 1..$Frm->nfiles ) {
 #   $params = "in=$original_baselines p1=baselines out=filled_baselines transp";
 #   $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
 
-
-# Smooth the spectra with a user-defined kernel.
-# ----------------------------------------------
+# Smooth the spectra with user-specified multiscale smoothing.
+# ------------------------------------------------------------
    if ( $smooth ) {
-      $params = "box=[1,$kernel] estimator=mean in=$baselines out=$smoothed_baselines";
-      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+      my $in = $baselines;
+      my $out = $smoothed_baselines;
+      my ( $tempmsm, $msmoothed_baselines );
+      foreach ( @kernels ) {
+         $params = "box=[1,$_] estimator=mean in=$in out=$out";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+         $in = $out;
+         my $tempms = new ORAC::TempFile( 0 );
+         my $msmoothed_baselines = $tempms->file;
+         $out = $msmoothed_baselines;
+      }
+
    } else {
       $smoothed_baselines = $baselines;
    }
@@ -450,8 +473,8 @@ foreach my $i ( 1..$Frm->nfiles ) {
 # Option a) may require bad pixels to be filled.
    } else {
 
-# Interpolate across the case where there are a few scan contiguous
-# scan lines devoid of background.  The waves patterns adjust smoothly
+# Interpolate across the case where there are a few contiguous scan
+# lines devoid of background.  The waves patterns adjust smoothly
 # between adjacent scan lines, so interpolation ought to provide a
 # reasonable approximation.
       if ( $numbad > 0 && $interpolate ) {
