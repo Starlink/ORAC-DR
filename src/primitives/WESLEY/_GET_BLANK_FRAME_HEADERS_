@@ -1,0 +1,89 @@
+=head1 NAME
+
+_GET_BLANK_FRAME_HEADERS_ - Find headers which are blank in some frame files
+
+=head1 DESCRIPTION
+
+This primitive checks the subheader for each file in the frame looking
+for "blank" values.  If all non-blank subheader values for this key
+are the same, then their value will be stored in the C<uhdr>
+WESLEY_SET_HEADERS (for subsequent writing by C<_SET_HEADERS_>).
+
+Headers considered blank are those of type "UNDEF" and those of
+numerical types ("INT" or "FLOAT") with value zero.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $nfile = $Frm->nfiles;
+my $subhdr = $Frm->fits->subhdrs;
+
+unless ($nfile == scalar @$subhdr) {
+    orac_termerr("Unable to find blank headers: number of files and subheaders differ\n");
+}
+
+my $is_blank = sub {
+    my $item = shift;
+    my $type = $item->type;
+
+    return (
+        ($type eq 'UNDEF')
+        or ((($type eq 'INT') or ($type eq 'FLOAT')) and ($item->value == 0))
+    );
+};
+
+my $find_item = sub {
+    my $name = shift;
+    my $found = undef;
+
+    foreach my $hdr (@$subhdr) {
+        my $item = $hdr->itembyname($name);
+        next if $is_blank->($item);
+        unless (defined $found) {
+            $found = $item;
+        }
+        elsif (not $found->equals($item)) {
+            orac_warn("Different values found for header $name\n");
+            return undef;
+        }
+    }
+
+    return $found;
+};
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my $in = $Frm->file($i + 1);
+    my $hdr = $subhdr->[$i];
+
+    foreach my $item ($hdr->allitems) {
+        my $type = $item->type;
+        next if (($type eq 'COMMENT') or ($type eq 'HEADER'));
+
+        next unless $is_blank->($item);
+
+        my $name = $item->keyword;
+
+        my $newitem = $find_item->($name);
+
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$in}->{$name} = $newitem
+            if defined $newitem;
+    }
+}
