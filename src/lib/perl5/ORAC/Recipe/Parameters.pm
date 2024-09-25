@@ -142,9 +142,9 @@ REDUCE_SCIENCE_BROADLINE for all sources except for OMC1 (where you
 want to use REDUCE_SCIENCE_NARROWLINE), you would have a recipe
 parameter file with:
 
-[RECIPES_GRID:#SPECIES=CS#TRANSITION=7 - 6]
-.*=REDUCE_SCIENCE_BROADLINE
-OMC1=REDUCE_SCIENCE_NARROWLINE
+  [RECIPES_GRID:#SPECIES=CS#TRANSITION=7 - 6]
+  .*=REDUCE_SCIENCE_BROADLINE
+  OMC1=REDUCE_SCIENCE_NARROWLINE
 
 (A specific name will override a regexp, but if there are 2 regexps
 that match than the first one that mathces will be used.)
@@ -152,7 +152,7 @@ that match than the first one that mathces will be used.)
 If you wanted to match e.g. all sources beginnning with OMC, you would
 do:
 
-OMC.*=REDUCE_SCIENCE_NARROWLINE.
+  OMC.*=REDUCE_SCIENCE_NARROWLINE
 
 =cut
 
@@ -544,9 +544,9 @@ will use the override of param1.
 
 You can also set the recipe choice specifically for various header values, e.g.
 
-[RECIPES_GRID:#SPECIES=CS#TRANSITION=7 - 6]
-.*=REDUCE_SCIENCE_BROADLINE
-OMC1=REDUCE_SCIENCE_NARROWLINE
+ [RECIPES_GRID:#SPECIES=CS#TRANSITION=7 - 6]
+ .*=REDUCE_SCIENCE_BROADLINE
+ OMC1=REDUCE_SCIENCE_NARROWLINE
 
 Would use REDUCE_SCIENCE_BROADLINE for grid observations with molecule=CS
 and transition=7 - 6, unless the name of the object was OMC1.
