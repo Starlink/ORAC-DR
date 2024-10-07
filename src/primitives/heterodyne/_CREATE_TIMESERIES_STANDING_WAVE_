@@ -46,6 +46,10 @@ The output pixel scale. If not defined, this value is automatically
 determined from the data. This argument can be overridden by the
 RECPAR_PIXSIZE uhdr via the recipe parameter system. []
 
+=item SUFFIX = STRING (Given)
+
+The file suffix for the created time-series cubes. ["tssw"]
+
 =back
 
 =head1 NOTES
@@ -123,6 +127,8 @@ my $interp = uc( get_prim_arg( $_PRIM_ARGS_, 'INTERP', 'NEAREST' ) );
 my $param1 = get_prim_arg( $_PRIM_ARGS_, 'PARAM1', 0 );
 my $param2 = get_prim_arg( $_PRIM_ARGS_, 'PARAM2', undef );
 my $pixsize = get_prim_arg( $_PRIM_ARGS_, 'PIXSIZE', undef );
+my $suffix = get_prim_arg( $_PRIM_ARGS_, 'SUFFIX', 'tssw' );
+
 
 # UNMAKECUBE can't take GAUSS, so if the interpolation method is set
 # to that, reset the three parameters.
@@ -132,20 +138,6 @@ if( $interp eq 'GAUSS' ) {
     $interp = 'NEAREST';
     $param1 = 0;
     $param2 = undef;
-}
-
-my @ref;
-my @tscube;
-my @swcin;
-foreach my $Frm ( $Grp->members ) {
-   foreach my $i ( 1 .. $Frm->nfiles ) {
-      my ( $in, $out ) = $Frm->inout( "_tssw", $i );
-      push @tscube, $out;
-      my ( $rootname, $suffix ) = split /_([^_]+)$/, $in;
-
-# Record that the output file will be deleted after grouo processing.
-      $Grp->push_intermediates( $out );
-   }
 }
 
 # Access thee input standing-ave-corrected PPV cubes and reference
@@ -173,6 +165,18 @@ my $reflist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
 my $reflist_fh = $reflist->handle;
 print $reflist_fh join "\n", @ref;
 $reflist->handle->close;
+my @swcin = @{$Grp->uhdr( "STANDING_WAVE_CORRECTED" )};
+my @ref = @{$Grp->uhdr( "REFERENCE_TIMESERIES" )};
+my @tscube;
+my $j = 0;
+foreach my $Frm ( $Grp->members ) {
+   foreach my $i ( 1 .. $Frm->nfiles ) {
+      my $swcFrm = new $Frm;
+      $swcFrm->file( $swcin[$j] );
+      my ( $in, $out ) = $swcFrm->inout( $suffix, $i );
+      push @tscube, $out;
+      my ( $rootname, $suffix ) = split /_([^_]+)$/, $in;
+      $j++;
 
 my $outlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
 my $outlist_fh = $outlist->handle;
