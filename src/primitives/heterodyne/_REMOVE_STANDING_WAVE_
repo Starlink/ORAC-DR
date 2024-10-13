@@ -12,7 +12,7 @@ the motion to the off position that occurs once per scan row, and
 subtracts these.  It operates on all the Frames in the current Group,
 which must be position-position-velocity (PPV) spectral cubes.
 
-Using other primitives this finds the median and optionally smoothed 
+Using other primitives this finds the median and optionally smoothed
 spectrum for each scan line.  This is normally achieved using an image
 mask of the emission present.  The spectra are grown along the scan
 axis to the corresponing dimension of the original spectral cube, and
@@ -192,7 +192,7 @@ _swci if the iterative option is selected.
 
 =head1 TASKS
 
-See _CREATE_BASELINE_MASK_, _CREATE_CUBE_GROUP_,
+See _CREATE_BASELINE_MASK_, _CREATE_CUBE_FRAME_, _CREATE_CUBE_GROUP_,
 _CREATE_TIMESERIES_STANDING_WAVE_, _RETRIEVE_TAG_, _SET_TAG_ and
 _SUBTRACT_SCAN_LINE_STANDING_WAVE_.
 
@@ -239,7 +239,7 @@ my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", 6 );
 my $sp_param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
 my $sp_param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
 my $refine = get_prim_arg( $_PRIM_ARGS_, "REFINE", 1 );
-
+my $source = get_prim_arg( $_PRIM_ARGS_, "REFINE_SOURCE", "Original" );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $spread = get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' );
 my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
@@ -250,43 +250,120 @@ $refine = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_REFINE" ) ) ?
            $Frm->uhdr( "RECPAR_STANDING_WAVE_REFINE" )              :
            $refine );
 
-my $standing_mask = defined( $integ_mask );
-$standing_mask = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK" ) ) ?
-                  $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK" )              :
-                  $standing_mask );
-my $standing_spatial_mask = defined( $standing_mask ) && $standing_mask;
+$source = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_REFINE_SOURCE" ) ) ?
+           $Frm->uhdr( "RECPAR_STANDING_WAVE_REFINE_SOURCE" )             :
+           $source );
+$source = "Original" if $source !~ /^O/ && $source !~ /^C/;
+my $original = ( $source =~ /^O/ ? 1 : 0 );
+
+my $supplied_mask = defined( $integ_mask );
+my $use_integ_mask = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK" ) ) ?
+                     $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK" )              :
+                     0 );
+my $standing_spatial_mask = $use_integ_mask && $supplied_mask;
+
+my $em_regions = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS" ) ) ?
+                   $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS" )            :
+                   undef );
+
+
+# Refinement requires that a mask is also provided.
+my $mask_provided = $standing_spatial_mask || defined( $em_regions ) ||
+                    defined ( $Grp->uhdr( "BASELINE_MASKS" ) );
+my $refine_swc = $mask_provided && $refine;
 
 # TAG PPV cubes of each Frame.
 ###### Should check whether current Frames are PPVs.
 _SET_TAG_ TAG=PPV_FRAMES GROUP=2
 
-my ( @swc, @swci );
-my @tsref = @{ $Grp->uhdr( "REFERENCE_TIMESERIES" ) }; 
+my ( @swc, @swci, @tsref, @subscans, @nsubscans );
+my ( $swcfile, $swcGrp, $swcFrm );
 
+# Determine whether or not there are subscans present.  First revert
+# to a tag where subscans would be present, should any exist.  Later
+# restore the group to its previous state.
+_RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+my $subscans_present = 0;
 foreach my $Frm ( $Grp->members ) {
+   my $subscans_in_frame = $Frm->nfiles > 1 ?  1 : 0;
+   $subscans_present = $subscans_in_frame || $subscans_present;
+}
+
+# Continue with the baseline-corrected timeseries in order to create
+# PPV cubes for each subframe.  Store these so they may have the
+# standing wave subtracted from them, and importantly each PPV
+# corresponds to the original time-series files to recreate the
+# standing-wave-removed time series.
+if ( $refine_swc && $subscans_present ) {
+   foreach my $Frm ( $Grp->members ) {
+      push @nsubscans, $Frm->nfiles;
+
+# This reverse loop order is to avoid overwriting earlier PPV
+# cubes from CREATE_CUBE_FRAME_.
+      for my $sfc ( 1 .. $Frm->nfiles ) {
+         my $tscube = $Frm->file( $sfc );
+         my $blFrm = new $Frm;
+         $blFrm->file( $tscube );
+         $blFrm->readhdr;
+
+# Generate the subscan spectral cube, and save it in the main group.
+# The _CREATE_CUBE_FRAME_ primitive will create a single tile here,
+# but it will always have the 001 counter suffix.  So rename each of
+# these to the correct counter to have distinct files.
+         {
+            my $Frm = $blFrm;
+            _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder SUFFIX=_scube PRODUCT=subframe_cube PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=$do_tiling CHUNK=1
+            push @subscans, $Frm->file;
+         }
+      }
+   }
+}
+
+# Return to the PPV group and update the files with the recently created
+# PPV cubes for all the subscans.
+_RETRIEVE_TAG_ TAG=PPV_FRAMES GROUP=2
+if ( $refine_swc && $subscans_present ) {
+   my $i = 1;
+   my $j = 0;
+   foreach my $Frm ( $Grp->members ) {
+      for my $sfc ( 1..$nsubscans[$j] ) {
+         $Frm->file( $sfc, $subscans[$i-1] );
+         $i++;
+      }
+      $j++;
+   }
+}
 
 # Attempt removal of standing waves.
 # ----------------------------------
 
-# Find the median, smoothed spectrum for each scan line.
-# Grow it to the original spectral cube shape and subtract it.
-# First use the integ map to remove most of the standing waves
-# in order to define the emission regions better in
-# three-dimensional space.  Then apply this better mask to
-# form the median spectra along scan linss.
+foreach my $Frm ( $Grp->members ) {
+
+# Find the median, smoothed spectrum for each scan line.  Grow it to
+# the original spectral cube shape and subtract it.  First use the
+# integ map to remove most of the standing waves in order to define
+# the emission regions better in three-dimensional space.  Then apply
+# this better mask to form the median spectra along scan lines.
    if ( $standing_spatial_mask ) {
       orac_say "Using emission mask $integ_mask for removal of standing waves.";
       _SUBTRACT_SCAN_LINE_STANDING_WAVE_ INTEG_MASK=$integ_mask
    } else {
       _SUBTRACT_SCAN_LINE_STANDING_WAVE_
    }
-   my $swcfile = $Frm->file;
-   push @swc, $swcfile;
+
+# Keep a tally of all the standing-wave-corrected files.
+   foreach my $i ( 1..$Frm->nfiles ) {
+      push @swc, $Frm->file( $i );
+   }
 }
 
 $Grp->uhdr( "STANDING_WAVE_CORRECTED", \@swc );
-if ( $standing_spatial_mask && $refine ) {
-   $Grp->uhdr( "REFERENCE_TIMESERIES", \@tsref );
+
+# Save the current PPVs.
+_SET_TAG_ TAG=PPV_SWC GROUP=2
+
+if ( $refine_swc ) {
+   my $ppvcube;
 
 # Convert the PPVs with standing waves subtracted back into time-series
 # cube to be used to make the final group products in the next iteration.
@@ -294,27 +371,35 @@ if ( $standing_spatial_mask && $refine ) {
 
 # Form new group PPV.
    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system TILE=$tile JSATILE=0
-   my $ppvcube = $Grp->file;
-   orac_say "New PPV cube is $ppvcube";
+   $ppvcube = $Grp->file;
+
+   orac_say "The new PPV cube is $ppvcube";
+
+# Restore the PPVs frames to the main group.  Need to delineate the
+# BASELINE_MASKs, so copy the previous one for now.
+   my @masks = @{$Grp->uhdr("BASELINE_MASKS" )};
 
 # Create the PPV cube with the emission masked.
-# Need to delineate the BASELINE_MASKs, so copy the previous one for
-# mow.
-   $Grp->uhdr( "BASELINE_MASKS_CLONE", $Grp->uhdr( "BASELINE_MASKS" ) ); 
-   _RETRIEVE_TAG_ TAG=PPV_FRAMES GROUP=2
-
    _CREATE_BASELINE_MASK_ GROUP=1 FREQUENCY_SMOOTH=$freqsmooth  SPATIAL_SMOOTH=$spatsmooth ORDER=$order REPORT=1
    orac_say "Using three-dimensional emission mask in _SUBTRACT_SCAN_LINE_STANDING_WAVE_";
 
-# Now redo the standing-wave subtraction, applied to the
-# original PPV cubes.
+# Now redo the standing-wave subtraction, applied to either the supplied
+# PPV cubes or to those that have had a first-pass at removal of standing
+# waves.
+   if ( $original ) {
+      _RETRIEVE_TAG_ TAG=PPV_FRAMES GROUP=2
+   } else {
+      _RETRIEVE_TAG_ TAG=PPV_SWC GROUP=2
+   }
    foreach my $Frm ( $Grp->members ) {
       _SUBTRACT_SCAN_LINE_STANDING_WAVE_ EMISSION_MASK=1 SUFFIX=swci
-      push @swci, $Frm->file;
+      foreach my $i ( 1..$Frm->nfiles ) {
+         push @swci, $Frm->file( $i );
+      }
    }
-
    $Grp->uhdr( "STANDING_WAVE_CORRECTED", \@swci );
-}
 
 # Restore the original baseline masks.
-$Grp->uhdr( "BASELINE_MASKS", $Grp->uhdr( "BASELINE_MASKS_CLONE" ) ); 
+   $Grp->uhdr( "BASELINE_MASKS", \@masks );
+
+}
