@@ -323,25 +323,22 @@ my $cube_mask = $temp->file;
 my $temp2 = new ORAC::TempFile( 0 );
 my $masked_cube = $temp2->file;
 my $temp3 = new ORAC::TempFile( 0 );
-my $baselines = $temp3->file;
+my $tempwcs = $temp3->file;
 my $temp4 = new ORAC::TempFile( 0 );
-my $smoothed_baselines = $temp4->file;
+my $rotated_with_wcs = $temp4->file;
 my $temp5 = new ORAC::TempFile( 0 );
 my $baseline_cube = $temp5->file;
 my $temp6 = new ORAC::TempFile( 0 );
 my $rotated_cube = $temp6->file;
 my $temp7 = new ORAC::TempFile( 0 );
 my $derot_baseline_cube = $temp7->file;
-my $temp8 = new ORAC::TempFile( 0 );
-my $filled_baselines = $temp8->file;
 my $temp9 = new ORAC::TempFile( 0 );
 my $original_baselines = $temp9->file;
 my $temp10 = new ORAC::TempFile( 0 );
 my $rotated_untrimmed = $temp10->file;
-my $temp11 = new ORAC::TempFile( 0 );
-my $tempwcs = $temp11->file;
-my $temp12 = new ORAC::TempFile( 0 );
-my $rotated_with_wcs = $temp12->file;
+
+
+my ( $in, $out, $baselines, $filled_baselines, $smoothed_baselines );
 
 # Loop through all of the PPV subscans.
 foreach my $i ( 1..$Frm->nfiles ) {
@@ -435,8 +432,13 @@ foreach my $i ( 1..$Frm->nfiles ) {
 
 # Form the baselines from each unmasked spectrum along the scan direction.
 # ------------------------------------------------------------------------
+   ( undef, $baselines ) = $Frm->inout( "_scmd", $i );
+   ( undef, $filled_baselines ) = $Frm->inout( "_scmdf", $i );
+   ( undef, $smoothed_baselines ) = $Frm->inout( "_scmds", $i ) if $smooth;
 
-   $params = "axis=$collapse_axis estimator=median in=$rotated_cube out=$baselines";
+# Keep the collapsed data three-dimensional in order to be able to restore
+# the original WCS.
+   $params = "axis=$collapse_axis estimator=median in=$rotated_cube out=$baselines trim=f";
    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
 # Copy the original WCS lost during the above operation.
@@ -474,18 +476,9 @@ foreach my $i ( 1..$Frm->nfiles ) {
 # Smooth the spectra with user-specified multiscale smoothing.
 # ------------------------------------------------------------
    if ( $smooth ) {
-      my $in = $baselines;
-      my $out = $smoothed_baselines;
-      my ( $tempmsm, $msmoothed_baselines );
-      foreach ( @boxes ) {
-         $params = "box=[1,$_] estimator=mean in=$in out=$out";
-         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-         $in = $out;
-         my $tempms = new ORAC::TempFile( 0 );
-         my $msmoothed_baselines = $tempms->file;
-         $out = $msmoothed_baselines;
-      }
-
+      $params = "box=[1,$boxes[0]] estimator=mean in=$baselines out=$smoothed_baselines";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+      $Grp->push_intermediates( $baselines );
    } else {
       $smoothed_baselines = $baselines;
    }
@@ -535,7 +528,7 @@ foreach my $i ( 1..$Frm->nfiles ) {
    }
 
 # Subtract the baselines for each subscan.
-# ---------------------------------------
+# ----------------------------------------
     ( undef, $ppvcube_ssw ) = $Frm->inout( "_" . $suffix, $i );
     $params = "in1=$ppvcube in2=$derot_baseline_cube out=$ppvcube_ssw";
     $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
@@ -550,7 +543,6 @@ foreach my $i ( 1..$Frm->nfiles ) {
 # Display, if necessary.
     $Display->display_data( $Frm ) if defined $Display;
 
-    $i++;
 }
 
 # Tidy-up output.
