@@ -496,8 +496,8 @@ foreach my $i ( 1..$Frm->nfiles ) {
 # Option a) may require bad pixels to be filled.
    } else {
 
-# Interpolate across the case where there are a few contiguous scan
-# lines devoid of background.  The waves patterns adjust smoothly
+# Interpolate across the case where there are a few contiguous
+# scan lines devoid of background.  The waves patterns adjust smoothly
 # between adjacent scan lines, so interpolation ought to provide a
 # reasonable approximation.
       if ( $numbad > 0 && $interpolate ) {
@@ -506,6 +506,70 @@ foreach my $i ( 1..$Frm->nfiles ) {
       } else {
          $filled_baselines = $smoothed_baselines;
       }
+   }
+
+   my $tempms = new ORAC::TempFile( 0 );
+   my $msmoothed_baselines = $tempms->file;
+   my $tempau = new ORAC::TempFile( 0 );
+   my $augmented_baselines = $tempau->file;
+   my $tempwave = new ORAC::TempFile( 0 );
+   my $wave = $tempwave->file;
+   my $tempclone = new ORAC::TempFile( 0 );
+   my $clone = $tempclone->file;
+   my $tempaugin = new ORAC::TempFile( 0 );
+   my $augin = $tempaugin->file;
+
+   if ( scalar( @boxes ) > 1 ) {
+      my ( $in, $out, $augout );
+      my ( $tempwork, $tempwork2, $tempworkau, $tempout );
+
+# Initialise sum of residual waves.
+      $in = $filled_baselines;
+      $params = "in=$in out=$clone";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+      $params = "in=$clone out=$augin scalar=0.0";
+      $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+      my $first = 1;
+      shift @boxes;
+
+      foreach ( @boxes ) {
+         if ( $first ) {
+            $first = 0;
+            $out = $msmoothed_baselines;
+            $tempwork2 = new ORAC::TempFile( 0 );
+            $tempout = $tempwork2->file;
+
+            $augout = $augmented_baselines;
+         } else {
+            $params = "in=$tempout out=$in";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+            $tempwork = new ORAC::TempFile( 0 );
+            $out = $tempwork->file;
+
+            $augin = $augout;
+            $tempworkau = new ORAC::TempFile( 0 );
+            $augout = $tempworkau->file;
+         }
+
+         $params = "box=[1,$_] estimator=mean in=$in out=$out";
+         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+         $params = "in1=$augin in2=$out out=$augout";
+         $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+         $params = "in1=$in in2=$out out=$tempout";
+         $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+      }
+
+# Subtract the summed residual wave frequencies.
+      $params = "in1=$filled_baselines in2=$augout out=$wave";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+      $params = "in=$wave out=$filled_baselines";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
    }
 
 # Grow the baselines to the bounds of the input spectral cube.
