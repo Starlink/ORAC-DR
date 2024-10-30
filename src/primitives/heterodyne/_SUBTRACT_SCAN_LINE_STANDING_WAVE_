@@ -86,7 +86,7 @@ The spectral cube after the smoothed standing wave has been subtracted.
 
 =head1 TASKS
 
-KAPPA: ADD, BLOCK, CHPIX, COLLAPSE, FILLBAD, MANIC, NDFCOPY, NDFTRACE
+KAPPA: ADD, BLOCK, CHPIX, COLLAPSE, ERASE, FILLBAD, MANIC, NDFCOPY, NDFTRACE
        (via _GET_DIMENSIONS_), PASTE, ROTATE, STATS, SUB, WCSCOPY.
 
 Also see _ROTATE_MAP_PA_TO_SYSTEM_.
@@ -285,11 +285,14 @@ my $rotate = $modangle > 0.01;
 
 # The SCAN_PA header (not currently translated) specifies the scan axis.
 # It is normally 0 or 90 degrees.  Also define other indexing variables.
+# Set the collapse axis to the aprropriate pixel axis.  SKYLON and
+# SKYLAT can be muddled for map position angles around +/- 45 degrees.
 my $keepaxis = abs( $scanangle ) > 45.0 ? 2 : 1;
 my $cubegrow = $keepaxis == 1 ? "[1,0,2]" : "[0,1,2]";
 my $scanaxis = $keepaxis == 1 ? 2 : 1;
-my $collapse_axis = $keepaxis == 1 ? "SKYLAT" : "SKYLON";
+my $collapse_axis = $keepaxis == 1 ? 2 : 1;
 my $growindex = $scanaxis - 1;
+my $remove_axis =  $keepaxis == 1 ? "(,~1,)" : "(~1,,)";
 
 
 # Generate the observation's spectral cube of standing-wave baselines.
@@ -335,6 +338,10 @@ my $temp9 = new ORAC::TempFile( 0 );
 my $original_baselines = $temp9->file;
 my $temp10 = new ORAC::TempFile( 0 );
 my $rotated_untrimmed = $temp10->file;
+my $temp11 = new ORAC::TempFile( 0 );
+my $tempwcs = $temp11->file;
+my $temp12 = new ORAC::TempFile( 0 );
+my $rotated_with_wcs = $temp12->file;
 
 # Loop through all of the PPV subscans.
 foreach my $i ( 1..$Frm->nfiles ) {
@@ -412,6 +419,16 @@ foreach my $i ( 1..$Frm->nfiles ) {
       $lbnd = $_GET_DIMENSIONS_{LBOUND};
       $ubnd = $_GET_DIMENSIONS_{UBOUND};
 
+# For angles around +/-45 degress the WCS can be confused as to which
+# axis is which when collapsing along the scan axis.  It's better to collapse
+# using pixel axes, but that is insufficient, as it's possible to
+# request Axis 1 and COLLAPSE to compress along Axis 2.  The solution
+# is to remove the WCS from the NDF.  The WCS is restored after the
+# the standing-wave-subtracted spectra are rotated back to the original
+# position angle.
+      $params = "object=$rotated_cube.wcs ok";
+      $Mon{'ndfpack_mon'}->obeyw( "erase", "$params" );
+
    } else {
       $rotated_cube = $masked_cube;
    }
@@ -421,6 +438,19 @@ foreach my $i ( 1..$Frm->nfiles ) {
 
    $params = "axis=$collapse_axis estimator=median in=$rotated_cube out=$baselines";
    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Copy the original WCS lost during the above operation.
+   if ( $rotate ) {
+      $params = "ndf=$baselines like=$rotated_cube confirm=f";
+      $Mon{'ndfpack_mon'}->obeyw( "wcscopy", "$params" );
+
+# Now reduce to two dimensions using a temporary NDF, and then copy
+# back into the original name.
+      $params = "in=$baselines out=$tempwcs trim";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+      $params = "in=$tempwcs out=$baselines";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+   }
 
 # Are there scan-direction columns or rows that are devoid of
 # background?
