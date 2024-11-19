@@ -20,10 +20,11 @@ to avoid duplicated code.
 =item
 
 The recipe parameters accessed by this primitive are: BASELINE_EDGES,
-BASELINE_EMISSION_CLIP, BASELINE_METHOD, BASELINE_NUMBIN,
-BASELINE_REGIONS, BASELINE_ORDER, STANDING_WAVE,
-STANDING_WAVE_EMISSION_MASK. STANDING_WAVE_EMISSION_REGIONS,
-STANDING_WAVE_INTERPOLATE, STANDING_WAVE_REFINE, and STANDING_WAVE_SMOOTH.
+BASELINE_EMISSION_CLIP, BASELINE_KNOTS, BASELINE_METHOD, BASELINE_NUMBIN,
+BASELINE_ORDER, BASELINE_REGIONS, BASELINE_SPLINE_TYPE, MAP_PA, SCAN_PA,
+STANDING_WAVE, STANDING_WAVE_EMISSION_MASK. STANDING_WAVE_EMISSION_REGIONS,
+STANDING_WAVE_EMISSION_THRESHOLD, STANDING_WAVE_INTERPOLATE,
+STANDING_WAVE_REFINE, and STANDING_WAVE_SMOOTH.
 These should be added to the list of parameters to verify with
 ORAC::Recipe::Parameters::verify_parameters in the calling steering
 primitive.
@@ -51,7 +52,7 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2018-2023 Science and Technology Facilities Council.
+Copyright (C) 2018-2024 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -112,7 +113,7 @@ if ( defined( $RECPARS{'BASELINE_ORDER'} ) ) {
   my $order = lc( $RECPARS{'BASELINE_ORDER'} );
 
 # Set the spline recipe parameters.  Include defaults should the
-# number of knots not be supplied.  Set allowed ranges
+# number of knots not be supplied.  Set allowed ranges.
   my ( $spline_type, $knots, $maxknots );
   if ( $order =~ /spl/ ) {
     my $minknots = 4;
@@ -173,6 +174,21 @@ if ( defined( $RECPARS{'STANDING_WAVE'} ) ) {
       $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_MASK", $RECPARS{'STANDING_WAVE_EMISSION_MASK'} );
       if ( $RECPARS{'STANDING_WAVE_EMISSION_MASK'} != 0 ) {
           orac_say( "       Use the group integ map to select spectra free of emission.", "yellow" );
+
+      }
+      if ( defined( $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} ) ) {
+         $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS", $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} );
+         if ( ref( $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} ) eq 'ARRAY' ) {
+            $commasep = join( ",", @{ $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} } );
+         } else {
+            $commasep = $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'};
+         }
+         if ( $RECPARS{'STANDING_WAVE_EMISSION_MASK'} != 0 ) {
+            orac_say( "       Mask and interpolate across velocity ranges $commasep.", "yellow" );
+         } else {
+            orac_say( "       Mask and interpolate across velocity ranges $commasep if the \n" .
+                      "       integ has no emission-free regions.", "yellow" );
+         }
       }
       if ( defined( $RECPARS{'STANDING_WAVE_EMISSION_THRESHOLD'} ) ) {
          $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_THRESHOLD", $RECPARS{'STANDING_WAVE_EMISSION_THRESHOLD'} );
@@ -184,7 +200,10 @@ if ( defined( $RECPARS{'STANDING_WAVE'} ) ) {
 
    if ( defined( $RECPARS{'STANDING_WAVE_SMOOTH'} ) ) {
       $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH", $RECPARS{'STANDING_WAVE_SMOOTH'} );
-      if ( $RECPARS{'STANDING_WAVE_SMOOTH'} > 0 ) {
+      if ( ref( $RECPARS{'STANDING_WAVE_SMOOTH'} ) eq 'ARRAY' ) {
+         $commasep = join( ",", @{ $RECPARS{'STANDING_WAVE_SMOOTH'} } );
+         orac_say( "       Block smooth the waves with successive widths of $commasep channels.", "yellow" );
+      } elsif ( $RECPARS{'STANDING_WAVE_SMOOTH'} > 0 ) {
          orac_say( "       Block smooth the waves with a width of $RECPARS{'STANDING_WAVE_SMOOTH'} channels.", "yellow" );
       }
    }
@@ -193,28 +212,45 @@ if ( defined( $RECPARS{'STANDING_WAVE'} ) ) {
       $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE", $RECPARS{'STANDING_WAVE_INTERPOLATE'} );
       if ( $RECPARS{'STANDING_WAVE_INTERPOLATE'} ) {
          orac_say( "       Interpolate spatially across blank spectra and spectrally across emission gaps.", "yellow" );
+         if ( defined( $RECPARS{'STANDING_WAVE_INTERPOLATE_WIDTH'} ) ) {
+            $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE_WIDTH", $RECPARS{'STANDING_WAVE_INTERPOLATE_WIDTH'} );
+            orac_say( "       The initial size for interpolation is $RECPARS{'STANDING_WAVE_INTERPOLATE_WIDTH'} channels.", "yellow" );
+         } else {
+            orac_say( "       The initial size for interpolation will be determined empirically.", "yellow" );
+         }
       } else {
          orac_say( "       Do not interpolate across blank standing-wave spectra and gaps due to emission", "yellow" );
       }
    }
 
    if ( defined( $RECPARS{'STANDING_WAVE_REFINE'} ) ) {
+      my $source_text;
       $Frm->uhdr( "RECPAR_STANDING_WAVE_REFINE", $RECPARS{'STANDING_WAVE_REFINE'} );
       if ( $RECPARS{'STANDING_WAVE_REFINE'} ) {
-         orac_say( "       Refine estimation by creating and applying PPV emission mask.", "yellow" );
-      } else {
-         orac_say( "       Do not refine using a PPV emission mask.", "yellow" );
+         orac_say( "       Refine estimation by creating and applying an improved emission mask", "yellow" );
+         $source_text = "       to the original PPV cubes.";
+         if ( defined( $RECPARS{'STANDING_WAVE_REFINE_SOURCE'} ) ) {
+            $Frm->uhdr( "RECPAR_STANDING_WAVE_REFINE_SOURCE", $RECPARS{'STANDING_WAVE_REFINE_SOURCE'} );
+            if ( $RECPARS{'STANDING_WAVE_REFINE_SOURCE'} =~ /^C/ ) {
+               $source_text =  "       to the initial standing-wave-subtracted PPV cubes.";
+            }
+         }
+      }
+      orac_say( $source_text, "yellow" );
+   }
+
+   if ( defined( $RECPARS{'MAP_PA'} ) ) {
+      $Frm->uhdr( "RECPAR_MAP_PA", $RECPARS{'MAP_PA'} );
+      if ( $RECPARS{'MAP_PA'} >= 0.0 && $RECPARS{'MAP_PA'} <= 90.0 ) {
+         orac_say( "       Set the map position angle to $RECPARS{'MAP_PA'} degrees.", "yellow" );
       }
    }
 
-# This could be an elsif as the two methods are currently independent.
-   if ( defined( $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} ) ) {
-      $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS", $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} );
-      if ( ref( $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} ) eq 'ARRAY' ) {
-         $commasep = join( ",", @{ $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'} } );
-      } else {
-         $commasep = $RECPARS{'STANDING_WAVE_EMISSION_REGIONS'};
+   if ( defined( $RECPARS{'SCAN_PA'} ) ) {
+      $Frm->uhdr( "RECPAR_SCAN_PA", $RECPARS{'SCAN_PA'} );
+      if ( $RECPARS{'SCAN_PA'} >= -90.0 && $RECPARS{'SCAN_PA'} <= 90.0 ) {
+         orac_say( "       Set the scan orientation to $RECPARS{'SCAN_PA'} degrees.", "yellow" );
       }
-      orac_say( "       Mask and interpolate across velocity ranges $commasep.", "yellow" );
    }
+
 }
