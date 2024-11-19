@@ -41,6 +41,16 @@ contain emission.   This argument can be overridden by the
 RECPAR_STANDING_WAVE_INTERPOLATE uhdr via the recipe parameter system.
 [1]
 
+=item INTERPOLATE_WIDTH = INTEGER (Given)
+
+The initial scale length for the interpolation in spectral channels.
+Best results are expected when this is a half the width of a gap,
+although its value is not critical.  It is ignored if no interpolation
+is requested.  This argument can be overridden by the
+RECPAR_STANDING_WAVE_INTERPOLATE_WIDTH uhdr via the recipe parameter
+system.  If both this argument and the recipe parameter are undefined,
+a value of 5 is adopted.  [undef]
+
 =item SMOOTH_WIDTH = INTEGER (Given)
 
 The size of the kernel in channels to block smooth the median spectra
@@ -71,6 +81,10 @@ This primitive is suitable for ACSIS data.
 
 This primitive will not run if the STANDING_WAVE uhdr in the
 currentFrame object is defined and false.
+
+=item *
+
+Frame uhdr GAP_BOUNDS_<subscan> stores the emission gap range for each subscan.
 
 =back
 
@@ -139,6 +153,7 @@ orac_say "$underline\n";
 my $spectral_mask = get_prim_arg( $_PRIM_ARGS_, "EMISSION_MASK", 0 );
 my $image_mask = get_prim_arg( $_PRIM_ARGS_, "INTEG_MASK", undef );
 my $interpolate =  get_prim_arg( $_PRIM_ARGS_, "INTERPOLATE", 1 );
+my $width = get_prim_arg( $_PRIM_ARGS_, "INTERPOLATE_WIDTH", undef );
 my $em_regions = get_prim_arg( $_PRIM_ARGS_, "EMISSION_REGIONS", undef );
 my $kernel = get_prim_arg( $_PRIM_ARGS_, "SMOOTH_WIDTH", undef );
 my $suffix = get_prim_arg( $_PRIM_ARGS_, "SUFFIX", "swc" );
@@ -155,6 +170,10 @@ $em_regions = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_EMISSION_REGIONS" ) )
 $interpolate = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE" ) ) ?
                $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE" )              :
                $interpolate );
+
+$width = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE_WIDTH" ) ) ?
+         $Frm->uhdr( "RECPAR_STANDING_WAVE_INTERPOLATE_WIDTH" )              :
+         $width );
 
 $kernel = ( defined( $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" ) ) ?
           $Frm->uhdr( "RECPAR_STANDING_WAVE_SMOOTH" )              :
@@ -483,6 +502,33 @@ foreach my $i ( 1..$Frm->nfiles ) {
       $smoothed_baselines = $baselines;
    }
 
+# Obtain the bounds and width of the widest emission gap.  These may have
+# already been derived on a first pass and stored in the uhdr.  The
+# recommended normal width for best convergence is half of the gap width,
+# but here the widest gap is determined.  As an arbitrary compromise,
+# halve the fill gap size (hence division by four, not two),so as not
+# to make Parameter SIZE too large for the narrowest gaps.
+   my ( @bounds, $lbound, $ubound );
+   if ( $interpolate && ! ( defined( $width ) ||
+                            defined( $Frm->uhdr( "GAP_BOUNDS_${i}" ) ) ) ) {
+      _FIND_WIDEST_EMISSION_GAP_ FILE=$smoothed_baselines
+      $lbound = $_FIND_WIDEST_EMISSION_GAP_{LOWER};
+      $ubound = $_FIND_WIDEST_EMISSION_GAP_{UPPER};
+      $width = int( ( $ubound - $lbound ) / 4 );
+      push @bounds, $lbound;
+      push @bounds, $ubound;
+      $Frm->uhdr( "GAP_BOUNDS_${i}", \@bounds );
+
+   } elsif ( defined( $Frm->uhdr( "GAP_BOUNDS_${i}" ) ) ) {
+      my $boundref = $Frm->uhdr( "GAP_BOUNDS_${i}" );
+      $lbound = $boundref->[0];
+      $ubound = $boundref->[1];
+      $width = int( ( $ubound - $lbound ) / 4 );
+
+   } else {
+      $width = 5;
+   }
+
 # Fill bad pixels (Option b)
 # --------------------------
 
@@ -490,7 +536,8 @@ foreach my $i ( 1..$Frm->nfiles ) {
 # Interpolate across bad pixels, i.e. where there is known emission
 # (Option b).
    if ( $mask_emission && $interpolate ) {
-      $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
+      $params = "in=$smoothed_baselines out=$filled_baselines ";
+         $params .= "niter=10 size=[0,$width]";
       $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
 
 # Option a) may require bad pixels to be filled.
@@ -501,7 +548,8 @@ foreach my $i ( 1..$Frm->nfiles ) {
 # between adjacent scan lines, so interpolation ought to provide a
 # reasonable approximation.
       if ( $numbad > 0 && $interpolate ) {
-         $params = "in=$smoothed_baselines out=$filled_baselines niter=10 size=5";
+         $params = "in=$smoothed_baselines out=$filled_baselines ";
+            $params .= "niter=10 size=[0,$width]";
          $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
       } else {
          $filled_baselines = $smoothed_baselines;
