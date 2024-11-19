@@ -1,0 +1,135 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_FIND_WIDEST_EMISSION_GAP_  -- Determines the maximum width of the emission region
+
+=head1 DESCRIPTION
+
+This primitive should be applied to a two-dimensional array of
+scan-line spectra in which there is a gap from masked emission.  It
+determines the pixel bounds of the spectral channels that enclose the full
+extent of the gap across all scan lines.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILE = STRING (Given)
+
+The name of the file containing the scan-line spectra.  If it is
+undefined, then the current Frame's file is used.  [undef]
+
+=item LOWER = INTEGER (Returned)
+
+The lower bound enclosing the emission gap.
+
+=item LOWER = INTEGER (Returned)
+
+The upper bound enclosing the emission gap.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for U'u data affected by standing waves.
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFCOPY, NOMAGIC, PASTE, THRESH.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2024 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either Version 3 of
+the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public
+License along with this program; if not, write to the Free
+Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+MA 02111-1307, USA.
+
+=cut
+
+# Obtain arguments.
+my $in = get_prim_arg( $_PRIM_ARGS_, "FILE", undef );
+$in = $Frm->file if ! defined( $in );
+
+# Define an arbitrary large value and a high temperature
+# threshold, that greatly exceeds any real data.
+my $BIGVAL = 444444;
+my $MAXT = 10000;
+
+# Create work NDFs.
+my $temp = new ORAC::TempFile( 0 );
+my $trimbadlines = $temp->file;
+my $temp1 = new ORAC::TempFile( 0 );
+my $nobad = $temp1->file;
+my $temp2 = new ORAC::TempFile( 0 );
+my $thresholded = $temp2->file;
+my $temp3 = new ORAC::TempFile( 0 );
+my $allbad = $temp3->file;
+my $temp4 = new ORAC::TempFile( 0 );
+my $pasted = $temp4->file;
+my $temp5 = new ORAC::TempFile( 0 );
+my $gapregion = $temp5->file;
+
+# Remove exterior rows that are fully bad.
+my $params = "in=$in out=$trimbadlines trimbad";
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# The ends of the scan lines may have bad values, especially in the outermost
+# scan lines.
+$params = "in=$trimbadlines(,~20%) out=$nobad repval=$BIGVAL";
+$Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+# Set the good values bad, and the original bad values retain the BIGVAL value.
+$params = "in=$nobad out=$thresholded thrlo=$MAXT newlo=bad thrhi=$BIGVAL newhi=$BIGVAL";
+$Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Make the original full-width scan-line spectra all bad.
+$params = "in=$in out=$allbad thrlo=$MAXT newlo=bad thrhi=$MAXT newhi=bad";
+$Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+# Paste the narrower on top of the wider scan-line spectra.
+$params = "in=$allbad p1=$thresholded transp=f out=$pasted";
+$Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+# Trim the outer bad pixels, leaving the rectangular region
+# enclosing all the gap channels.
+$params = "in=$pasted out=$gapregion trimbad";
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+# Obtain the pixel bounds of the original gap region.
+_GET_DIMENSIONS_ FILE=$gapregion
+my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+$_FIND_WIDEST_EMISSION_GAP_{LOWER} = $lbnd->[1];
+$_FIND_WIDEST_EMISSION_GAP_{UPPER} = $ubnd->[1];
+
