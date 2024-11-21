@@ -35,7 +35,7 @@ overwrite any already present with those names.
 
 =head1 COPYRIGHT
 
-Copyright (C) 2019 East Asian Observatory
+Copyright (C) 2019-2024 East Asian Observatory
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -53,35 +53,35 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 =cut
 
-use DateTime;
 use File::Spec;
-use IO::File;
-
-# Read steering parameters.
-my $maxorder = $Frm->uhdr('HIPS_MAX_ORDER');
 
 # Read recpars.
 my $root = $RECPARS{'HIPS_DIR'} // "hips-$$";
+my $input_jsa_tiles = $RECPARS{'INPUT_JSA_TILES'} // 0;
 
-my $hips_creator = $RECPARS{'HIPS_CREATOR'} // 'ivo://NONE/NONE';
-my $hips_title = $RECPARS{'HIPS_TITLE'} // 'Untitled';
-my $initial_ra = $RECPARS{'HIPS_INITIAL_RA'};
-my $initial_dec = $RECPARS{'HIPS_INITIAL_DEC'};
-my $initial_fov = $RECPARS{'HIPS_INITIAL_FOV'};
+unless ($input_jsa_tiles) {
+    _EXTRACT_JSA_TILES_
 
-my $fits_opts = 'comp=D proexts=false prohis=false encoding="FITS-WCS(CD)" axisorder="RA DEC WAVE" bitpix="-32"';
-
-my $ORAC_STATUS;
-
-my $untrim_bounds = sub {
-    my ($bound, $size) = @_;
-    $bound -= $size - 1 if $bound < 0;
-    my $lower = $size * int($bound / $size);
-    return ($lower, $lower + $size - 1);
-};
+    _DELETE_TEMP_FILES_ KEEP=_dice_ RETAINKEPT=1 FORCE=.
+}
 
 if ($Grp->lastallmembers($Frm)) {
-    # Mosaic all files for the same tile.
+    # Read steering parameters.
+    my $maxorder = $Frm->uhdr('HIPS_MAX_ORDER');
+
+
+    my $fits_opts = 'comp=D proexts=false prohis=false encoding="FITS-WCS(CD)" axisorder="RA DEC WAVE" bitpix="-32"';
+
+    my $ORAC_STATUS;
+
+    my $untrim_bounds = sub {
+        my ($bound, $size) = @_;
+        $bound -= $size - 1 if $bound < 0;
+        my $lower = $size * int($bound / $size);
+        return ($lower, $lower + $size - 1);
+    };
+
+    # Co-add all files for the same tile.
     my %tiles = ();
 
     do {
@@ -97,25 +97,24 @@ if ($Grp->lastallmembers($Frm)) {
         }
 
         while (my ($tile, $files) = each %grouped) {
-            orac_say("  Mosaicing tile $tile");
-
-            my $mosaic;
+            my $coadd;
 
             if (1 == scalar @$files) {
-                $mosaic = $files->[0];
+                $coadd = $files->[0];
             }
             else {
-                $mosaic  = sprintf('mosaic_%i', $tile);
+                orac_say("  Co-adding tile $tile");
+                $coadd  = sprintf('coadd_%i', $tile);
 
                 my $mosfiles = write_file_list(@$files);
 
-                $Mon{'ccdpack_reg'}->obeyw('makemos', "in=^$mosfiles out=$mosaic method=mean usevar=true");
-                $Mon{'ndfpack_mon'}->obeyw('provrem', "ndf=$mosaic ancestor=all");
+                $Mon{'ccdpack_reg'}->obeyw('makemos', "in=^$mosfiles out=$coadd method=mean usevar=true");
+                $Mon{'ndfpack_mon'}->obeyw('provrem', "ndf=$coadd ancestor=all");
 
-                $Grp->push_intermediates($mosaic);
+                $Grp->push_intermediates($coadd);
             }
 
-            $tiles{$tile} = $mosaic;
+            $tiles{$tile} = $coadd;
         }
     };
 
@@ -143,19 +142,16 @@ if ($Grp->lastallmembers($Frm)) {
                 my $xx = $x + 511;
                 my $yy = $y + 511;
 
-                my $out = sprintf('%s_%i', $file, $i);
-                $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$file($x:$xx,$y:$yy) out=$out trim");
-                $Grp->push_intermediates($out);
-
-                $Mon{'kappa_mon'}->obeyw('stats',"ndf=$out");
+                my $section = "($x:$xx,$y:$yy)";
+                $Mon{'kappa_mon'}->obeyw('stats',"ndf=$file$section");
                 ($ORAC_STATUS, my $ngood) = $Mon{'kappa_mon'}->get('stats', 'numgood');
                 next unless $ngood > 0;
 
-                my $permuted = $out . '_perm';
-                $Mon{'kappa_mon'}->obeyw('permaxes', "in=$out out=$permuted perm=[2,1]");
-                $Grp->push_intermediates($permuted);
+                my $out = sprintf('%s_%i', $file, $i);
+                $Mon{'kappa_mon'}->obeyw('permaxes', "in=$file$section out=$out perm=[2,1]");
+                $Grp->push_intermediates($out);
 
-                $chopped{4 * $tile + $i} = $permuted;
+                $chopped{4 * $tile + $i} = $out;
             }
         }
 
@@ -163,27 +159,9 @@ if ($Grp->lastallmembers($Frm)) {
     };
 
     # Construct the HiPS.
-    orac_say('Creating HiPS properties file');
     mkdir $root;
-    do {
-        my $datestr = DateTime->now(time_zone => "UTC")->strftime("%Y-%m-%dT%H:%MZ");
-        my $fh = new IO::File(File::Spec->catfile($root, 'properties'), 'w');
-        print $fh "creator_did = $hips_creator\n";
-        print $fh "obs_title = $hips_title\n";
-        print $fh "dataproduct_type = image\n";
-        print $fh "dataproduct_subtype = live\n";
-        print $fh "hips_version = 1.4\n";
-        print $fh "hips_release_date = $datestr\n";
-        print $fh "hips_status = private master unclonable\n";
-        print $fh "hips_tile_format = fits\n";
-        print $fh "hips_tile_width = 512\n";
-        print $fh "hips_order = $maxorder\n";
-        print $fh "hips_frame = equatorial\n";
-        print $fh "hips_initial_ra = $initial_ra\n" if defined $initial_ra;
-        print $fh "hips_initial_dec = $initial_dec\n" if defined $initial_dec;
-        print $fh "hips_initial_fov = $initial_fov\n" if defined $initial_fov;
-        close $fh;
-    };
+
+    _MAKE_HIPS_PROPERTIES_ ROOT=$root
 
     my $isfirst = 1;
     for (my $order = $maxorder; $order > -1; $order --) {
@@ -273,43 +251,8 @@ if ($Grp->lastallmembers($Frm)) {
         }
 
         if ($order == 3) {
-            # Make an "allsky" file -- this is a concatenated grid of 27x28 64x64 tiles.
-            orac_say("  Creating 'all sky' file");
-
-            my @thumbnails = ();
-
-            while (my ($tile, $file_orig) = each %tiles) {
-                my $file = $file_orig . '_thumb';
-                $Mon{'kappa_mon'}->obeyw('sqorst', "in=$file_orig out=$file mode=factors factors=[0.125,0.125] method=auto");
-
-                my $x = 64 * ($tile % 27);
-                my $y = 64 * (27 - int($tile / 27));
-
-                $Mon{'ndfpack_mon'}->obeyw('setorigin', "ndf=$file origin=[$x, $y]");
-
-                $Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$file quiet");
-                ($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
-                ($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
-                die 'Unexpected lbnd x' unless $lbnd[0] == $x;
-                die 'Unexpected lbnd y' unless $lbnd[1] == $y;
-                die 'Unexpected ubnd x' unless $ubnd[0] == $x + 63;
-                die 'Unexpected ubnd y' unless $ubnd[1] == $y + 63;
-
-                push @thumbnails, $file;
-            }
-
-            my $allsky = "allskyfile";
-            my $allskyref = "allskyfileref";
-            $Mon{'kappa_mon'}->obeyw('creframe', "out=$allskyref mode=bl lbound=[0, 0] ubound=[1727, 1791]");
-
-            my $files = write_file_list($allskyref, @thumbnails);
-
-            $Mon{'kappa_mon'}->obeyw('paste', "in=^$files out=$allsky transp=true confine=true");
-
-            my $tilefile = File::Spec->catfile($orderdir, 'Allsky.fits');
-            $Mon{'convert_mon'}->obeyw('ndf2fits', "in=$allsky out=$tilefile $fits_opts");
-
-            $Grp->push_intermediates($allsky, $allskyref, @thumbnails);
+            my $tilesref = \%tiles;
+            _MAKE_HIPS_ALLSKY_ ROOT=$root ORDER=$order TILES=$tilesref
         }
     }
 }
