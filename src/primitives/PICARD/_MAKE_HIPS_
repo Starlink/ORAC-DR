@@ -127,8 +127,31 @@ if ($Grp->lastallmembers($Frm)) {
             $Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$file quiet");
             ($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
             ($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
-            die 'Unexpected width' unless ($ubnd[0] - $lbnd[0]) == 1023;
-            die 'Unexpected height' unless ($ubnd[1] - $lbnd[1]) == 1023;
+            my $width = 1 + $ubnd[0] - $lbnd[0];
+            my $height = 1 + $ubnd[1] - $lbnd[1];
+            unless ($width == 1024 and $height == 1024) {
+                unless ($input_jsa_tiles) {
+                    # Non-JSA tile input: we should have constructed
+                    # the correct size.
+                    die 'Unexpected width or height';
+                }
+                elsif ($width > 1024 or $height > 1024) {
+                    # In the case of JSA tile input, allow for trimmed tiles,
+                    # but they should not exceed the nominal tile size.
+                    die 'Excess width or height';
+                }
+
+                # We have a trimmed JSA tile: recompute @lbnd (and @ubnd
+                # although it is not currently used) to take into account
+                # what the bounds of the full tile would have been.
+                my @xbnd = $untrim_bounds->($lbnd[0], 1024);
+                my @ybnd = $untrim_bounds->($lbnd[1], 1024);
+                if ($xbnd[1] < $ubnd[0] or $ybnd[1] < $ubnd[1]) {
+                    die 'Inconsistent tile bounds';
+                }
+                @lbnd = ($xbnd[0], $ybnd[0]);
+                @ubnd = ($xbnd[1], $ybnd[1]);
+            }
 
             foreach my $subtile (
                         [0, 512, 0],
