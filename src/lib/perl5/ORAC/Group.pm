@@ -404,6 +404,9 @@ this index is modified by an external user/program.
 The index is created automatically the first time this method
 is invoked.
 
+B<Note:> subclasses may override this method to return C<undef>
+in order to disable checking of the bad observation index.
+
 =cut
 
 sub badobs_index {
@@ -709,21 +712,24 @@ sub check_membership {
     next unless UNIVERSAL::can($member, 'isgood');
 
     if ($member->isgood > 0) {
+      my $badobs = undef;
+      my $badobs_index = $self->badobs_index;
 
-      # Now compare the current frame with the bad observation
-      # index list. This routine will return undef if there was
-      # no match [ie a good file] and an index key if the file
-      # was bad (the first matching key is returned)
-      # Note that we have to make sure that the keys are in
-      # alphabetical order (not very clever) since this is the
-      # order constrained by the Index class and must match the
-      # order used in the user-supplied index file
+      if (defined $badobs_index) {
+        # Now compare the current frame with the bad observation
+        # index list. This routine will return undef if there was
+        # no match [ie a good file] and an index key if the file
+        # was bad (the first matching key is returned)
+        # Note that we have to make sure that the keys are in
+        # alphabetical order (not very clever) since this is the
+        # order constrained by the Index class and must match the
+        # order used in the user-supplied index file
 
-      my $badobs =
-        $self->badobs_index->cmp_with_hash({
+        $badobs = $badobs_index->cmp_with_hash({
                                             ORACNUM => $member->number,
                                             ORACUT => $member->hdr('ORACUT')
                                            });
+      }
 
       # if the $badobs is not defined then we have a good observation
       unless (defined $badobs) {
