@@ -1,0 +1,95 @@
+=head1 NAME
+
+_MERGE_HIPS_TILE_ - Merge files to make a HiPS tile
+
+=head1 DESCRIPTION
+
+This primitive pastes together the files in the frame and then applies a squash
+by a factor of 2 in order to generate the next lower order HiPS tile.
+
+=head1 ARGUMENTS
+
+=over 2
+
+=item B<ORDER>
+
+The order of the tile.
+
+=item B<TILE>
+
+The tile number.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019-2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $order = get_prim_arg($_PRIM_ARGS_, 'ORDER', undef);
+my $tile = get_prim_arg($_PRIM_ARGS_, 'TILE', undef);
+
+my $untrim_bounds = sub {
+    my ($bound, $size) = @_;
+    $bound -= $size - 1 if $bound < 0;
+    my $lower = $size * int($bound / $size);
+    return ($lower, $lower + $size - 1);
+};
+
+orac_say("Merging HiPS tile $tile, order $order");
+
+my $pasted;
+
+if ($Frm->nfiles == 1) {
+    $pasted = $Frm->file;
+}
+else {
+    $pasted = sprintf('tile_%i_%i_pasted', $order, $tile);
+    $Frm->push_intermediates($pasted);
+    my $in = join ' ', $Frm->files;
+    $Mon{'kappa_mon'}->obeyw('paste', "$in out=$pasted transp=true confine=false");
+}
+
+my $out = sprintf('tile_%i_%i_squashed', $order, $tile);
+$Mon{'kappa_mon'}->obeyw('sqorst', "in=$pasted out=$out mode=factors factors=[0.5,0.5] method=auto");
+
+my $ORAC_STATUS;
+$Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$out quiet");
+($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
+($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
+
+my $width = 1 + $ubnd[0] - $lbnd[0];
+my $height = 1 + $ubnd[1] - $lbnd[1];
+
+# Sometimes sqorst can squash a 0:1023 dimension to 0:512? So allow width 513?
+die 'Unexpected width' if $width > 513;
+die 'Unexpected height' if $height > 513;
+
+if ($width != 512 or $height != 512) {
+    my ($x, $xx) = $untrim_bounds->($lbnd[0], 512);
+    my ($y, $yy) = $untrim_bounds->($lbnd[1], 512);
+
+    $Frm->push_intermediates($out);
+    my $trimmed = $out;
+    $out = sprintf('%s_untrim', $trimmed);
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$trimmed($x:$xx,$y:$yy) out=$out");
+}
+
+_EXPORT_HIPS_TILE_ ORDER=$order TILE=$tile FILE=$out
+
+$Frm->files($out);

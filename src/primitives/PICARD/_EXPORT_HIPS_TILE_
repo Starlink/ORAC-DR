@@ -1,0 +1,82 @@
+=head1 NAME
+
+_EXPORT_HIPS_TILE_ - Export a tile to a HiPS structure
+
+=head1 DESCRIPTION
+
+This primitive exports the given tile into the directory structure used
+by HiPS, converting it to a FITS file with minimal headers.
+
+The output is written in the directory specified by the C<HIPS_DIR>
+recipe parameter.
+
+=head1 ARGUMENTS
+
+=over 2
+
+=item B<ORDER>
+
+The order of the tile.
+
+=item B<TILE>
+
+The tile number.
+
+=item B<FILE>
+
+The file to export.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019-2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $order = get_prim_arg($_PRIM_ARGS_, 'ORDER', undef);
+my $tile = get_prim_arg($_PRIM_ARGS_, 'TILE', undef);
+my $file_orig = get_prim_arg($_PRIM_ARGS_, 'FILE', undef);
+
+my $root = $Frm->uhdr('HIPS_ROOT');
+my $fits_opts = $Frm->uhdr('HIPS_FITS_OPTS');
+
+# Copy the file and remove all unnecessary information because
+# Aladin seems to fail to read the files properly if the header
+# is too long!
+my $file = $file_orig . '_copy';
+$Frm->push_intermediates($file);
+
+$Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$file_orig out=$file");
+
+$Mon{'ndfpack_mon'}->obeyw('wcsremove', "ndf=$file frames=*");
+$Mon{'ndfpack_mon'}->obeyw('setorigin', "ndf=$file origin=[1,1]");
+
+my $hdrfile = ORAC::TempFile->new();
+my $fh = $hdrfile->handle();
+printf $fh "ORDER   = %20i                                                  \n", $order;
+printf $fh "NPIX    = %20i                                                  \n", $tile;
+close $fh;
+$Mon{'ndfpack_mon'}->obeyw('fitstext', "ndf=$file file=$hdrfile");
+
+my $dirnum = int($tile / 10000) * 10000;
+my $tiledir = File::Spec->catdir($root, sprintf('Norder%i', $order), sprintf('Dir%i', $dirnum));
+mkdir $tiledir;
+my $tilefile = File::Spec->catfile($tiledir, sprintf('Npix%i.fits', $tile));
+
+orac_say("Exporting HiPS tile $tilefile");
+$Mon{'convert_mon'}->obeyw('ndf2fits', "in=$file out=$tilefile $fits_opts");

@@ -1,0 +1,138 @@
+=head1 NAME
+
+_MAKE_HIPS_TILE_ - Recursively construct a HiPS tile
+
+=head1 DESCRIPTION
+
+This primitive combines the given inputs to construct the specified
+HiPS tile.
+
+=head1 ARGUMENTS
+
+=over 2
+
+=item B<ORDER>
+
+The order of the tile.
+
+=item B<TILE>
+
+The tile number.
+
+=item B<CONTENT>
+
+The inputs to be used to construct the tile.  This should be an array of
+tile, content pairs.  Each gives the tile number of a sub-tile and
+either a filename or a reference to another such array.  In the latter
+case the array must be processed recursively to generate the inputs for
+the specified tile.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019-2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $order = get_prim_arg($_PRIM_ARGS_, 'ORDER', undef);
+my $tile = get_prim_arg($_PRIM_ARGS_, 'TILE', undef);
+my $content = get_prim_arg($_PRIM_ARGS_, 'CONTENT', undef);
+
+my %hips_uhdr = map {$_ => $Frm->uhdr($_)} grep {/^HIPS_/} keys %{$Frm->uhdr};
+
+# Use a subroutine since we can't actually call this primitive recursively.
+my $make_tile;
+$make_tile = sub {
+    my $order = shift;
+    my $tile = shift;
+    my $content = shift;
+
+    my $suborder = $order + 1;
+    my @files = ();
+
+    foreach my $item (sort {$a->[0] cmp $b->[0]} @$content) {
+        my ($subtile, $entry) = @$item;
+
+        if (ref $entry) {
+            # Recurse to generate the tiles at higher orders, which can
+            # then be used as the inputs for this tile.
+
+            push @files, $make_tile->($order + 1, $subtile, $entry);
+        }
+        else {
+            # We have an input file.  Split it (from JSA tile input to
+            # our highest order HiPS tile) to make tiles at order + 2
+            # then merge to make tiles at order + 1, finally using these
+            # as inputs for this tile.
+
+            my $Frm = $Frm->new();
+            $Frm->uhdr(%hips_uhdr);
+            $Frm->files($entry);
+
+            _SPLIT_HIPS_TILE_ ORDER=$suborder TILE=$subtile
+
+            # Remove provenance in case we did not already do so after
+            # extracting tiles from input (JSA tile input mode).  This is
+            # to prevent provenance becoming too large as the HiPS
+            # structure is assembled.
+            _TURN_OFF_PROVENANCE_
+
+            _MERGE_HIPS_TILE_ ORDER=$suborder TILE=$subtile
+
+            my $output = $Frm->file;
+            push @files, $output;
+
+            # Remove intermediates: give final file name in place of "extension".
+            _DELETE_TEMP_FILES_ ALSOGRP=0 KEEP=$output
+        }
+    }
+
+    my $merged = undef;
+
+    do {
+        my $Frm = $Frm->new();
+        $Frm->uhdr(%hips_uhdr);
+
+        # Unless saving the inputs for an allsky file, arrange for them
+        # to be deleted by setting a dummy "raw" file so that they end up
+        # in the intermediates list.
+        $Frm->raw(sprintf 'dummy_raw_%i', $tile)
+            unless exists $Frm->uhdr('HIPS_ALLSKY')->{$suborder};
+
+        $Frm->files(@files);
+
+        _MERGE_HIPS_TILE_ ORDER=$order TILE=$tile
+
+        $merged = $Frm->file;
+
+        # Remove intermediates: give final file name in place of "extension".
+        _DELETE_TEMP_FILES_ ALSOGRP=0 KEEP=$merged
+    };
+
+    # If we want an allsky image at this order, record the output tile
+    # in the uhdr.
+    if (exists $Frm->uhdr('HIPS_ALLSKY')->{$order}) {
+        $Frm->uhdr('HIPS_ALLSKY')->{$order}->{$tile} = $merged;
+    }
+
+    return $merged;
+};
+
+my $output = $make_tile->($order, $tile, $content);
+
+$Grp->push_intermediates($output);

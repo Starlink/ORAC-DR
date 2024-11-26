@@ -55,24 +55,21 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 use File::Spec;
 
-# Read recpars.
-my $root = $RECPARS{'HIPS_DIR'} // "hips-$$";
-my $input_jsa_tiles = $RECPARS{'INPUT_JSA_TILES'} // 0;
+my $input_jsa_tiles = $Frm->uhdr('HIPS_INPUT_JSA_TILES');
 
 unless ($input_jsa_tiles) {
     _EXTRACT_JSA_TILES_
 
-    _DELETE_TEMP_FILES_ KEEP=_dice_ RETAINKEPT=1 FORCE=.
+    # Remove provenance in case we have multiple files to co-add for each tile.
+    _TURN_OFF_PROVENANCE_
+
+    _DELETE_TEMP_FILES_ KEEP=_dice_ RETAINKEPT=1
 }
 
 if ($Grp->lastallmembers($Frm)) {
     # Read steering parameters.
     my $maxorder = $Frm->uhdr('HIPS_MAX_ORDER');
-
-
-    my $fits_opts = 'comp=D proexts=false prohis=false encoding="FITS-WCS(CD)" axisorder="RA DEC WAVE" bitpix="-32"';
-
-    my $ORAC_STATUS;
+    my $root = $Frm->uhdr('HIPS_ROOT');
 
     my $untrim_bounds = sub {
         my ($bound, $size) = @_;
@@ -103,13 +100,12 @@ if ($Grp->lastallmembers($Frm)) {
                 $coadd = $files->[0];
             }
             else {
-                orac_say("  Co-adding tile $tile");
+                orac_say("Co-adding tile $tile");
                 $coadd  = sprintf('coadd_%i', $tile);
 
                 my $mosfiles = write_file_list(@$files);
 
                 $Mon{'ccdpack_reg'}->obeyw('makemos', "in=^$mosfiles out=$coadd method=mean usevar=true");
-                $Mon{'ndfpack_mon'}->obeyw('provrem', "ndf=$coadd ancestor=all");
 
                 $Grp->push_intermediates($coadd);
             }
@@ -118,164 +114,51 @@ if ($Grp->lastallmembers($Frm)) {
         }
     };
 
-    # Chop up tiles to 512 pixels (ours are 1024) and permute axes.
-    do {
-        my %chopped = ();
-        while (my ($tile, $file) = each %tiles) {
-            orac_say("Splitting file $file");
+    # Assume the our tiles are 1024x1024 and so are 1 order lower than
+    # 512x512 tiles at $maxorder.
+    my $inorder = $maxorder - 1;
 
-            $Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$file quiet");
-            ($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
-            ($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
-            my $width = 1 + $ubnd[0] - $lbnd[0];
-            my $height = 1 + $ubnd[1] - $lbnd[1];
-            unless ($width == 1024 and $height == 1024) {
-                unless ($input_jsa_tiles) {
-                    # Non-JSA tile input: we should have constructed
-                    # the correct size.
-                    die 'Unexpected width or height';
-                }
-                elsif ($width > 1024 or $height > 1024) {
-                    # In the case of JSA tile input, allow for trimmed tiles,
-                    # but they should not exceed the nominal tile size.
-                    die 'Excess width or height';
-                }
-
-                # We have a trimmed JSA tile: recompute @lbnd (and @ubnd
-                # although it is not currently used) to take into account
-                # what the bounds of the full tile would have been.
-                my @xbnd = $untrim_bounds->($lbnd[0], 1024);
-                my @ybnd = $untrim_bounds->($lbnd[1], 1024);
-                if ($xbnd[1] < $ubnd[0] or $ybnd[1] < $ubnd[1]) {
-                    die 'Inconsistent tile bounds';
-                }
-                @lbnd = ($xbnd[0], $ybnd[0]);
-                @ubnd = ($xbnd[1], $ybnd[1]);
-            }
-
-            foreach my $subtile (
-                        [0, 512, 0],
-                        [1, 0, 0],
-                        [2, 512, 512],
-                        [3, 0, 512],
-                    ) {
-                my ($i, $x, $y) = @$subtile;
-                $x += $lbnd[0];
-                $y += $lbnd[1];
-                my $xx = $x + 511;
-                my $yy = $y + 511;
-
-                my $section = "($x:$xx,$y:$yy)";
-                $Mon{'kappa_mon'}->obeyw('stats',"ndf=$file$section");
-                ($ORAC_STATUS, my $ngood) = $Mon{'kappa_mon'}->get('stats', 'numgood');
-                next unless $ngood > 0;
-
-                my $out = sprintf('%s_%i', $file, $i);
-                $Mon{'kappa_mon'}->obeyw('permaxes', "in=$file$section out=$out perm=[2,1]");
-                $Grp->push_intermediates($out);
-
-                $chopped{4 * $tile + $i} = $out;
-            }
-        }
-
-        %tiles = %chopped;
-    };
-
-    # Construct the HiPS.
-    mkdir $root;
-
-    _MAKE_HIPS_PROPERTIES_ ROOT=$root
-
-    my $isfirst = 1;
-    for (my $order = $maxorder; $order > -1; $order --) {
-        orac_say("Processing HiPS order: $order");
-        if ($isfirst) {
-            $isfirst = 0;
-        }
-        else {
+    # Rearrange %tiles into a tree structure so that we can assemble
+    # the HiPS tiles recursively.
+    for (my $order = $inorder - 1; $order > -1; $order --) {
             my %grouped = ();
 
-            while (my ($tile, $file) = each %tiles) {
+            while (my ($tile, $content) = each %tiles) {
                 my $sub = int($tile / 4);
-                push @{$grouped{$sub}}, $file;
+                push @{$grouped{$sub}}, [$tile, $content];
             }
 
-            my %merged = ();
+            %tiles = %grouped;
+    }
 
-            while (my ($tile, $files) = each %grouped) {
-                orac_say("  Processing tile $tile");
+    # Construct the HiPS directory structure.
+    mkdir $root;
 
-                my $pasted;
+    _MAKE_HIPS_PROPERTIES_
 
-                if (1 == scalar @$files) {
-                    $pasted = $files->[0];
-                }
-                else {
-                    $pasted = sprintf('tile_%i_%i_unsquashed', $order, $tile);
-                    $Grp->push_intermediates($pasted);
-                    my $in = join ' ', @$files;
-                    $Mon{'kappa_mon'}->obeyw('paste', "$in out=$pasted transp=true confine=false");
-                }
-
-                my $out = sprintf('tile_%i_%i', $order, $tile);
-                $Mon{'kappa_mon'}->obeyw('sqorst', "in=$pasted out=$out mode=factors factors=[0.5,0.5] method=auto");
-                $Grp->push_intermediates($out);
-
-                $Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$out quiet");
-                ($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
-                ($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
-
-                die 'Unexpected width' if ($ubnd[0] - $lbnd[0]) > 512;
-                die 'Unexpected height' if ($ubnd[1] - $lbnd[1]) > 512;
-
-                my ($x, $xx) = $untrim_bounds->($lbnd[0], 512);
-                my ($y, $yy) = $untrim_bounds->($lbnd[1], 512);
-
-                my $untrim = sprintf('%s_untrim', $out);
-                $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$out($x:$xx,$y:$yy) out=$untrim");
-                $Grp->push_intermediates($untrim);
-
-                $merged{$tile} = $untrim;
-
-            }
-
-            %tiles = %merged;
-        }
-
+    for (my $order = $maxorder; $order > -1; $order --) {
         my $orderdir = File::Spec->catdir($root, sprintf('Norder%i', $order));
         mkdir $orderdir;
+    }
 
-        while (my ($tile, $file_orig) = each %tiles) {
-            # Copy the file and remove all unnecessary information because
-            # Aladin seems to fail to read the files properly if the header
-            # is too long!
-            my $file = $file_orig . '_copy';
-            $Grp->push_intermediates($file);
+    # Set up hashes to contain tiles for allsky files.
+    $Frm->uhdr('HIPS_ALLSKY', {3 => {}});
 
-            $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$file_orig out=$file");
+    # Assemble the HiPS tiles.
+    foreach my $tile (sort {$a <=> $b} keys %tiles) {
+        orac_say("Creating HiPS facet $tile");
 
-            $Mon{'ndfpack_mon'}->obeyw('wcsremove', "ndf=$file frames=*");
-            $Mon{'ndfpack_mon'}->obeyw('setorigin', "ndf=$file origin=[1,1]");
+        my $content = $tiles{$tile};
+        _MAKE_HIPS_TILE_ ORDER=0 TILE=$tile CONTENT=$content
+    }
 
-            my $hdrfile = new ORAC::TempFile();
-            my $fh = $hdrfile->handle();
-            printf $fh "ORDER   = %20i                                                  \n", $order;
-            printf $fh "NPIX    = %20i                                                  \n", $tile;
-            close $fh;
-            $Mon{'ndfpack_mon'}->obeyw('fitstext', "ndf=$file file=$hdrfile");
+    # Finally construct the allsky files and place their inputs
+    # in the intermediates list for clean up.
+    foreach my $order (sort {$b <=> $a} keys %{$Frm->uhdr('HIPS_ALLSKY')}) {
+        my $tiles = $Frm->uhdr('HIPS_ALLSKY')->{$order};
 
-            my $dirnum = int($tile / 10000) * 10000;
-            my $tiledir = File::Spec->catdir($orderdir, sprintf('Dir%i', $dirnum));
-            mkdir $tiledir;
-            my $tilefile = File::Spec->catfile($tiledir, sprintf('Npix%i.fits', $tile));
+        _MAKE_HIPS_ALLSKY_ ORDER=$order TILES=$tiles
 
-            orac_say("  Writing tile $tilefile");
-            $Mon{'convert_mon'}->obeyw('ndf2fits', "in=$file out=$tilefile $fits_opts");
-        }
-
-        if ($order == 3) {
-            my $tilesref = \%tiles;
-            _MAKE_HIPS_ALLSKY_ ROOT=$root ORDER=$order TILES=$tilesref
-        }
+        $Grp->push_intermediates(values %$tiles);
     }
 }
