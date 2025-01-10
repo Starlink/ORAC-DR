@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/12517/Starlink/ORAC-DR.svg)](http://dx.doi.org/10.5281/zenodo.17214)
+sudo su && [![DOI](https://zenodo.org/badge/12517/Starlink/ORAC-DR.svg)](http://dx.doi.org/10.5281/zenodo.17214)
 
 This is the ORAC Data Reduction pipeline software (ORAC-DR)
 
