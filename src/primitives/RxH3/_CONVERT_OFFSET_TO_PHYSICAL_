@@ -1,0 +1,35 @@
+my ($in, $physical) = $Frm->inout('offset-physical');
+$Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$in quiet");
+my ($ORAC_STATUS, $label) = $Mon{'ndfpack_mon'}->get('ndftrace', 'label');
+
+my $units = $Frm->uhdr('OFFSET_UNITS');
+
+if ($label eq 'Offset (physical)') {
+    orac_termerr('Beam offset requested but map has already been converted to physical units')
+        unless ($units eq 'physical');
+
+    orac_say('Offset is already physical surface normal.');
+}
+else {
+    unless ($label eq 'Offset (along beam)') {
+        orac_warn("Offset label '$label' not recognized - assuming along beam.\n");
+    }
+
+    if ($units eq 'physical') {
+        orac_say('Converting offset along beam to surface normal.');
+
+        my $args = $Frm->uhdr('CONFIGECHO_ARGS');
+        $Mon{'kappa_mon'}->obeyw('configecho', "$args name=geometry.primary_focal_length");
+        ($ORAC_STATUS, my $primary_focal) = $Mon{'kappa_mon'}->get('configecho', 'value');
+
+        foreach my $dim (1, 2) {
+            $Mon{'ndfpack_mon'}->obeyw('setaxis', "ndf=$in dim=$dim mode=wcs");
+        }
+
+        $Mon{'kappa_mon'}->obeyw('maths', "exp='IA*SQRT(1+((CA*CA+CB*CB)/(4*PA*PA)))' ia=$in out=$physical pa=$primary_focal");
+
+        $Mon{'ndfpack_mon'}->obeyw('setlabel', "ndf=$physical label='Offset (physical)'");
+
+        $Frm->files($physical);
+    }
+}
