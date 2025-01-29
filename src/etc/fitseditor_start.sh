@@ -1,16 +1,16 @@
-
+#!/bin/sh
 #+
 #  Name:
-#    fitseditor_start.csh
+#    fitseditor_start.h
 
 #  Purposes:
 #     Sets aliases for FITS Editor and prints welcome message
 
 #  Language:
-#    C-shell script
+#    Bourne shell
 
 #  Invocation:
-#    source $ORAC_DIR/etc/fitseditor_start.csh
+#    $ORAC_DIR/etc/fitseditor_start.sh
 
 #  Description:
 #    Sets all the aliases required to run the FITS Header Editor and
@@ -46,40 +46,29 @@
 
 # Need to make sure we use the Starlink PERL command
 # in general this is in /star/Perl/bin/perl
-set STARPERL=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+STARPERL=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
 # Set up back door for the version number
-set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
+pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Default for ORAC_PERL5LIB
 
-if (! $?ORAC_PERL5LIB) then
-  setenv ORAC_PERl5LIB ${ORAC_DIR}/lib/perl5
+if [ -z "$ORAC_PERL5LIB" ]; then
+  export ORAC_PERL5LIB="${ORAC_DIR}/lib/perl5"
   echo " "
-  echo " Warning: ORAC_PERL5LIB = ${ORAC_PERl5LIB}"
-endif
+  echo " Warning: ORAC_PERL5LIB = ${ORAC_PERL5LIB}"
+fi
 
 # These are perl programs
 
-if (-e $STARPERL ) then
-
-  # pass through command line arguements
-  set args = ($argv[1-])
-  set editor_args = ""
-  if ( $#args > 0  ) then
-    while ( $#args > 0 )
-       set editor_args = "${editor_args} $args[1]"
-       shift args
-    end
-  endif
-
+if [ -e "$STARPERL" ]; then
   echo " "
   echo " FITS Header Editor -- (Version ${pkgvers})"
   echo " "
-  echo " Please wait, spawning fitseditor${editor_args}..."
-  $STARPERL ${ORAC_DIR}/bin/fitseditor.pl ${editor_args}
+  echo " Please wait, spawning fitseditor $@ ..."
+  $STARPERL ${ORAC_DIR}/bin/fitseditor.pl  ${1+"$@"}
 
 else
   echo "FITS Header Editor -- (Version $pkgvers)"
   echo "Starlink PERL could not be found, please install STARPERL"
-endif
+fi

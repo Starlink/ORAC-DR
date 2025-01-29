@@ -6,9 +6,9 @@ _MAKE_MOSAIC_ - Main primitive for mosaicking images
 
 =head1 SYNOPSIS
 
-_MAKE_MOSAIC_ USEGRP=1 COADD_MODE=RUNNING
+_MAKE_MOSAIC_ GROUP=1 COADD_MODE=RUNNING
 
-_MAKE_MOSAIC_ USEGRP=0 MAKEMOS=1
+_MAKE_MOSAIC_ GROUP=0 MAKEMOS=1
 
 =head1 DESCRIPTION
 
@@ -64,13 +64,6 @@ is chosen.
 Flag to determine whether or not to generate variances when
 mosaicking. Default is 1 (yes).
 
-=item B<GROUP>
-
-A Group object may be passed in and a mosaic formed from the members
-within that, rather than using the global Grp. A warning is issued if
-the parameter is not a member of ORAC::Group class. Optional
-parameter: default is Grp.
-
 =item B<MAKEMOS>
 
 Flag to denote whether or not to use WCSALIGN+MAKEMOS or
@@ -94,6 +87,11 @@ Group-processing parameter. The number of images to combine to create
 the group mosaic. Default is 1, forcing the user to specify a suitable
 value if the DESPIKE method is requested.
 
+=item B<OUT>
+
+Name of output file.  Default depends on B<GROUP> option - see
+L<OUTPUT FILES>.
+
 =item B<SIGMAS>
 
 The number of standard deviations at which to clip the data before
@@ -106,7 +104,7 @@ frame. Default is 1 (yes). Only used if no reference image currently
 exists. If set to 0 (no) then the images will be aligned to the first
 image in the Frame, which may or may not be desireable.
 
-=item B<USEGRP>
+=item B<GROUP>
 
 A flag to denote Group processing. Default is 0 (Frame processing).
 
@@ -180,7 +178,7 @@ The Frame or Group is updated to contain the new image.
 
 Creates a single output image with a suffix of C<_fmos> for Frame
 mosaics, or C<_mos> for Group mosaics which is registered with the
-appropriate object.
+appropriate object, unless a specific B<OUT> file is specified.
 
 =head1 KNOWN ISSUES
 
@@ -230,7 +228,10 @@ my $complist = "exp_time,weights";
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
 
 # Are we processing Group data?
-my $usegrp = get_prim_arg( $_PRIM_ARGS_, "USEGRP", 0);
+my $usegrp = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0);
+
+# Was a specific output file given?
+my $outfile = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
 
 # Do we want to take advantage of what MAKEMOS can do?
 my $makemos = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS", 0);
@@ -272,22 +273,9 @@ my ($in, $out);
 # the image bounds.
 my @bounds;
 
-my $Grpobj = undef; # Group object if group processing
-
 # Set the number of Frames to mosaic for good variance; initialize to 1.
 my $nmos = 1;
 my $despike = 0; # Flag for Despike method of creating Group images
-if ( $usegrp ) {
-
-  # Determine which group object to use. Fall back on Grp if it is not
-  # defined.
-  $Grpobj = get_prim_arg( $_PRIM_ARGS_, "GROUP", $Grp );
-
-  # Check that the supplied GROUP object is indeed an ORAC-DR group object.
-  unless (UNIVERSAL::isa($Grpobj, "ORAC::Group") ) {
-    orac_throw "Error: input GROUP is not an ORAC-DR Grp object\n";
-  }
-}
 
 # Establish which Frame is being used.
 my $Frmobj = get_prim_arg( $_PRIM_ARGS_, "FRAME", $Frm );
@@ -298,7 +286,7 @@ unless ( UNIVERSAL::isa($Frmobj, "ORAC::Frame") ) {
 }
 
 # Define the reference image. Use the  default coordinate frame.
-_GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose GROUP=$Grpobj
+_GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
 my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 
 # Flag for moving sources.
@@ -345,17 +333,18 @@ if ( $usegrp ) {
     # Combine all the images in the current Frm with the Grp image
     orac_print "Collecting files to mosaic...\n";
     $nfiles = 0;
-    if ($Grpobj->file_exists) {
+    if ($Grp->file_exists) {
       $nfiles = 1;
 
       # Make a copy of the group image to avoid it ending up in the
       # intermediates array.
-      $in = $Grpobj->inout("_copy");
-      my $grpfile = $Grpobj->file;
+      $in = $Grp->inout("_copy");
+      my $grpfile = $Grp->file;
       $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$grpfile out=$in");
+      $Grp->push_intermediates($in);
       print {$listhandle} "$in\n";
       push (@mosfiles, $in);
-    } elsif ($Grpobj->num > 0) {
+    } elsif ($Grp->num > 0) {
 
       # Warn if the Group object has multiple members but no Group
       # file, except for processing calibrator data with the SUMMIT
@@ -381,7 +370,7 @@ if ( $usegrp ) {
     # COADD_MODE = STACKALL or DESPIKE
     # #################################
     # Retrieve the number of Frames in the Group object/
-    my @members = $Grpobj->members;
+    my @members = $Grp->members;
     my $nFrm = scalar(@members);
 
     # Obtain the number of Frames to mosaic for calculating a
@@ -391,7 +380,7 @@ if ( $usegrp ) {
 
     # If the OBSEND flag is set then make a group mosaic anyway even
     # if the number of files is fewer than NMOS.
-    my $lastfrm = $Grpobj->frame(-1);
+    my $lastfrm = $Grp->frame(-1);
     if ( $lastfrm->hdrval("OBSEND",-1) && ( $nFrm < $nmos ) ) {
       orac_print "End of observation reached: making group mosaic with $nFrm available files\n";
       $nmos = $nFrm;
@@ -502,6 +491,9 @@ if ( $usegrp ) {
   }
 
   $make_mosaic = 1;
+
+  # Override output filename if requested.
+  $out = $outfile if defined $outfile;
 }
 $listhandle->close;
 
@@ -696,7 +688,9 @@ if ( $make_mosaic ) {
   if ( $usegrp ) {
 
     # Use the inout method to get filename if it's not defined already.
-    my $outname = ($Grp->file_exists) ? $Grp->file : $Grpobj->inout("_mos");
+    my $outname = (defined $outfile)
+        ? $outfile
+        : (($Grp->file_exists) ? $Grp->file : $Grp->inout("_mos"));
 
     my $bounds = ( scalar(@bounds) == 4 ) ? \@bounds : undef;
     unless ( $Frm->uhdr("QUICKLOOK") ) {
@@ -710,16 +704,15 @@ if ( $make_mosaic ) {
     # confusing the command-line parser, which attributes the parentheses to
     # the NDF.
     my $title = $Frm->hdr("OBJECT");
-    _FILTER_QUOTED_STRING_ SINGLE=1 STRING=$title
-    my $quoted_title = $_FILTER_QUOTED_STRING_{'QUOTED'};
+    my $quoted_title = filter_quoted_string($title, 1);
     $Mon{ndfpack_mon}->obeyw("settitle","title='$quoted_title' ndf=$out");
 
-    rename $out.$Grpobj->filesuffix, $outname.$Grpobj->filesuffix
+    rename $out.$Grp->filesuffix, $outname.$Grp->filesuffix
       or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
 
     # Register the new output file with Grp.
-    $Grpobj->file( $outname );
-    $Grpobj->readhdr;
+    $Grp->file( $outname );
+    $Grp->readhdr;
   } else {
 
     # Add up the exp_time and weights components.

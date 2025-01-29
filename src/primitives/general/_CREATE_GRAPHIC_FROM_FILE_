@@ -106,6 +106,10 @@ This can be a comma-separated list to produce graphic files at a
 series of sizes.  If it is undefined a square graphic is assumed
 using XRES to set the size.  [undef]
 
+=item WCSMETADATA = BOOLEAN (Given)
+
+Whether or not to generate WCS metadata.  [true]
+
 =back
 
 =head1 NOTES
@@ -223,6 +227,7 @@ my $xres = get_prim_arg( $_PRIM_ARGS_, 'XRES', 64 );
 my $yres = get_prim_arg( $_PRIM_ARGS_, 'YRES', undef );
 $yres = $xres if ( !defined( $yres ) );
 my $outroot = get_prim_arg( $_PRIM_ARGS_, 'OUTROOT', $file );
+my $wcsmetadata = get_prim_arg( $_PRIM_ARGS_, 'WCSMETADATA', 1 );
 
 # Get catalogue files and overlay text.
 my $extents = get_prim_arg( $_PRIM_ARGS_, 'EXTENTS', undef );
@@ -588,64 +593,67 @@ for ( my $i = 0; $i < $nx; $i++ ) {
 # WCS metadata
 # ------------
 
-# Get the RA/Dec.
-            my $bounds = retrieve_bounds( $file );
-            my ( $ra, $dec );
-            if ( defined $bounds->{'centre'} ) {
-               $ra = $bounds->{'centre'}->ra->degrees;
-               $dec = $bounds->{'centre'}->dec->degrees;
+            if ($wcsmetadata) {
 
-               if ( defined $ra && defined $dec ) {
-                  push @keywords, "astro:RA=$ra";
-                  push@keywords, "astro:Dec=$dec";
+# Get the RA/Dec.
+               my $bounds = retrieve_bounds( $file );
+               my ( $ra, $dec );
+               if ( defined $bounds->{'centre'} ) {
+                  $ra = $bounds->{'centre'}->ra->degrees;
+                  $dec = $bounds->{'centre'}->dec->degrees;
+
+                  if ( defined $ra && defined $dec ) {
+                     push @keywords, "astro:RA=$ra";
+                     push@keywords, "astro:Dec=$dec";
+                  }
                }
-            }
 
 # Retrieve the orientation.
-            if ( $#nondegen == 1 && defined $dec ) {
-               my $lbound = $_GET_DIMENSIONS_{LBOUND};
-               my $ubound = $_GET_DIMENSIONS_{UBOUND};
-               my $wcs = $Frm->read_wcs( $file );
-               my $skytemplate = Starlink::AST::SkyFrame->new( "" );
-               $skytemplate->Set( 'MaxAxes' => 3,
-                                  'MinAxes' => 1 );
-               my $skyframe = $wcs->FindFrame( $skytemplate, "" );
-               $skyframe->Set( 'system' => 'ICRS' );
+               if ( $#nondegen == 1 && defined $dec ) {
+                  my $lbound = $_GET_DIMENSIONS_{LBOUND};
+                  my $ubound = $_GET_DIMENSIONS_{UBOUND};
+                  my $wcs = $Frm->read_wcs( $file );
+                  my $skytemplate = Starlink::AST::SkyFrame->new( "" );
+                  $skytemplate->Set( 'MaxAxes' => 3,
+                                     'MinAxes' => 1 );
+                  my $skyframe = $wcs->FindFrame( $skytemplate, "" );
+                  $skyframe->Set( 'system' => 'ICRS' );
 
-               my $cen_x = 0.5 + ( $lbound->[0] + $ubound->[0] ) / 2;
-               my $cen_y = 0.5 + ( $lbound->[1] + $ubound->[1] ) / 2;
+                  my $cen_x = 0.5 + ( $lbound->[0] + $ubound->[0] ) / 2;
+                  my $cen_y = 0.5 + ( $lbound->[1] + $ubound->[1] ) / 2;
 
 # Add an arcminute to the central Dec position, then find in which
 # pixel that is located, then derive the angle.
-               my $dec_new = $bounds->{'centre'}->dec->radians + 0.000290888209;
-               my @new_pos = $skyframe->TranP( 0,
-                                               [ $bounds->{'centre'}->ra->radians ],
-                                               [ $dec_new ] );
+                  my $dec_new = $bounds->{'centre'}->dec->radians + 0.000290888209;
+                  my @new_pos = $skyframe->TranP( 0,
+                                                  [ $bounds->{'centre'}->ra->radians ],
+                                                  [ $dec_new ] );
 
 # Calculate the angle.
-               my $x = $new_pos[0]->[0] - $cen_x;
-               my $y = $new_pos[1]->[0] - $cen_y;
-               my $angle = atan2( $y, $x );
-               my $angle_deg = $angle * 180 / ( atan2( 1, 1 ) * 4 );
+                  my $x = $new_pos[0]->[0] - $cen_x;
+                  my $y = $new_pos[1]->[0] - $cen_y;
+                  my $angle = atan2( $y, $x );
+                  my $angle_deg = $angle * 180 / ( atan2( 1, 1 ) * 4 );
 
 # Handle the quadrant.
-               if ( $x < 0 ) {
-                  if ( $y < 0 ) {
-                     $angle_deg = 90 - $angle_deg;
+                  if ( $x < 0 ) {
+                     if ( $y < 0 ) {
+                        $angle_deg = 90 - $angle_deg;
+                     } else {
+                        $angle_deg = 450 - $angle_deg;
+                     }
                   } else {
-                     $angle_deg = 450 - $angle_deg;
+                     $angle_deg = 90 - $angle_deg;
                   }
-               } else {
-                  $angle_deg = 90 - $angle_deg;
-               }
-               push @keywords, "astro:orientation=$angle_deg";
+                  push @keywords, "astro:orientation=$angle_deg";
 
 # Find the pixel scale of the original NDF, then scale the pixel scale
 # accordingly.
-               $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
-               my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
-               $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
-                                      $fpixscale[1] * $fpixscale[1] );
+                  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+                  my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+                  $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
+                                         $fpixscale[1] * $fpixscale[1] );
+               }
             }
          }
 

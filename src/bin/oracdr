@@ -65,6 +65,7 @@ use ORAC::Recipe;
 #
 use Pod::Usage;
 use Getopt::Long;                       # command line arguments
+use List::Util qw/all/;
 
 #
 #  Optional modules
@@ -136,6 +137,7 @@ my $status = GetOptions("nodisplay" => \$opt{nodisplay},
                         'audiosuffix=s' => \$opt{'audio_suffix'},
                         'preprocess!' => \$opt{'preproc'},
                         'rechelp' => \$opt{'rechelp'},
+                        'flagsync' => \$opt{'flagsync'},
 		       );
 
 pod2usage(1) if $opt{help};
@@ -170,6 +172,10 @@ else {
   ORAC::Version->setApp('WESLEY');
   orac_print_prefix('Wesley Says: ');
 }
+
+# This variable is used for error messages from exception handlers.
+# undefine it before each try block
+my $ErrText;
 
 ############### S I G N A L  H A N D L E R S ##############################
 
@@ -208,6 +214,27 @@ if (exists $opt{'header_override'} && defined $opt{'header_override'}) {
   ORAC::BaseFile::header_override_file($opt{'header_override'});
 }
 
+# Similarly process the --files command line option before changing
+# to ORAC_DATA_OUT.
+my @obs;
+if ( defined $opt{files} ) {
+   try {
+      @obs = orac_parse_files( $opt{files} );
+   }
+   catch ORAC::Error with
+   {
+      my $Error = shift;
+      $ErrText = "$Error";
+   }
+   otherwise
+   {
+      # this should sucessfully catch croaks
+      my $Error = shift;
+      $ErrText = "$Error";
+   };
+   orac_exit_if_error( $ErrText );
+}
+
 ######## C H A N G E   T O   O U T P U T   D I R E C TO R Y  ###############
 
 orac_chdir_output_dir();
@@ -217,15 +244,22 @@ orac_chdir_output_dir();
 
 if (exists $opt{loop} && defined $opt{loop} && $opt{loop} eq 'task') {
   # no need to do anything
-} else {
-  if (exists $ENV{ORAC_DATA_IN}) {
-
-    unless (-d $ENV{ORAC_DATA_IN}) {
-      orac_err("ORAC_DATA_IN directory ($ENV{ORAC_DATA_IN}) does not exist. Aborting\n");
-      orac_exit_normally( err => 1);
-    }
-
-  } else {
+}
+elsif (not ((exists $ENV{ORAC_DATA_IN}) and -d $ENV{ORAC_DATA_IN})) {
+  # If in loop "file" mode, check whether all files are already absolute paths.
+  # Use same test for files mode ($obs[0] being defined) as
+  # orac_process_argument_list.
+  # Rather than requiring absolute paths we could try to determine ORAC_DATA_IN,
+  # e.g. as the parent directory of the file list?  For now just set a dummy
+  # path in case anything still accesses ORAC_DATA_IN.
+  if ((defined $obs[0]) and (all {File::Spec->file_name_is_absolute($_)} @obs)) {
+    $ENV{'ORAC_DATA_IN'} = '/dummy/orac/data/in';
+  }
+  elsif (exists $ENV{ORAC_DATA_IN}) {
+    orac_err("ORAC_DATA_IN directory ($ENV{ORAC_DATA_IN}) does not exist. Aborting\n");
+    orac_exit_normally( err => 1);
+  }
+  else {
     orac_err("ORAC_DATA_IN environment variable not set. Aborting\n");
     orac_exit_normally( err => 1);
   }
@@ -235,10 +269,6 @@ if (exists $opt{loop} && defined $opt{loop} && $opt{loop} eq 'task') {
 
 # $CURRENT_RECIPE is used in Xoracdr and for the recipe progress window
 my ( $CURRENT_RECIPE );
-
-# This variable is used for error messages from exception handlers.
-# undefine it before each try block
-my $ErrText;
 
 # Enable the logging system
 my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
@@ -296,28 +326,6 @@ my $Display = orac_start_display( $opt{nodisplay},
                                   recsuffix => $opt{'recsuffix'});
 
 ################## P R O C E S S  A R G U M E N T  L I S T ##################
-
-# declare observations array
-my @obs;
-
-# Process the -files file1 file2 file3 command line option into
-if ( defined $opt{files} ) {
-   try {
-      @obs = orac_parse_files( $opt{files} );
-   }
-   catch ORAC::Error with
-   {
-      my $Error = shift;
-      $ErrText = "$Error";
-   }
-   otherwise
-   {
-      # this should sucessfully catch croaks
-      my $Error = shift;
-      $ErrText = "$Error";
-   };
-   orac_exit_if_error( $ErrText );
-}
 
 # Check -groupid and -onegroup. If -onegroup, set grptrans to -1.
 # if -groupid set grptrans to "-$groupid". -groupid takes precedence.
@@ -693,6 +701,14 @@ list of arbitarly named files input from the C<-files> command line option.
 =item B<-loop task>
 
 Obtain data from a remote (DRAMA) task.
+
+=item B<-flagsync>
+
+Read flag files "in sync".  I.e., if there are multiple flag files for
+an observation, as is the case for SCUBA-2, only read matching numbers
+of entries from these files.  Entries in any flag files in excess of
+the minimum number will not be read, instead being left for potential
+future processing.
 
 =back
 

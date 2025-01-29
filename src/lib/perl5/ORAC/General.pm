@@ -42,6 +42,7 @@ use vars qw/ @EXPORT /;
               sindeg dectodms hmstodec deg2rad rad2deg is_numeric
               write_file_list write_file_list_inout read_file_list
               hardlink oractime2mjd oractime2dt oractime2iso
+              filter_quoted_string
            );
 
 use Carp;
@@ -486,6 +487,7 @@ sub read_file_list {
   my $intmp = shift;
 
   my $fh;
+  my $opened = 0;
   if (blessed($intmp) && $intmp->can( "handle" )) {
     $fh = $intmp->handle;
     seek( $fh, 0, 0); # seek to start of file
@@ -493,6 +495,7 @@ sub read_file_list {
     if ( ! open $fh, "<", $intmp ) {
       return undef;
     }
+    $opened = 1;
   }
 
   # Strip comments and only store non-blank lines
@@ -504,6 +507,8 @@ sub read_file_list {
     s/\s*$//;   # Trailing whitespace
     $_
   } <$fh>;
+
+  close $fh if $opened;
 
   return (wantarray ? @contents : \@contents);
 }
@@ -673,6 +678,55 @@ sub oractime2dt {
     $dt->add( seconds => $daysec );
   }
   return $dt;
+}
+
+=item B<filter_quoted_string>
+
+Prepare a string for use in Starlink command lines,
+such that the string may be passed to a character parameter without
+losing any quotation marks within the string.  This will typically be
+passed to an NDF character component.
+
+Performs this by doubling any quotation marks present
+within the string, and escaping these too, if necessary.  This should
+be used where the string is a priori unknown and may contain quotes
+such as those to represent arcseconds and arcminutes, or a possessive
+like "Barnard's Loop".  A common example is a user-defined object
+name.
+
+    $filtered = filter_quoted_string($string, $single);
+
+C<$single> should be true if the string has been wrapped in single quotes.
+For example,
+
+    my $title = '$object offset by 10"';
+
+
+Otherwise it is assumed to have been enclosed in double quotes.
+For example,
+
+    my $title = "Halley's Comet";
+
+=cut
+
+sub filter_quoted_string {
+    my $string = shift;
+    my $single = shift;
+
+    # Replace quotes to preserve the string when passing it to a Starlink
+    # application.  Double the quotation marks but also escape when the
+    # quote is also that being used to delimit the string in the calling
+    # primitive.
+    if ($single) {
+        $string =~ s/"/""/g;
+        $string =~ s/'/\\'\\'/g;
+    }
+    else {
+        $string =~ s/'/''/g;
+        $string =~ s/"/\\"\\"/g;
+    }
+
+    return $string;
 }
 
 =back

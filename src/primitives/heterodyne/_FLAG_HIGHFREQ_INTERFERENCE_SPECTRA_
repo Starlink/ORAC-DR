@@ -76,12 +76,15 @@ parameter system.  Even if set to 1 (true), at least RINGING_MIN_SPECTRA
 spectra are required to give a sufficient baseline against which to
 detect spectra with ringing.  [0]
 
-=item RINGING_ALL = BOOLEAN (Given)
+=item RINGING_RECEPTORS = STRING (Given)
 
-If RINGING is true, should it be applied to all receptors.  By
-default ringing filtering is limited to Receptor H07.  This argument
-can be overridden by the RECPAR_HIGHFREQ_RINGING_ALL uhdr via the
-recipe parameter system. [0]
+If RINGING is true, this selects the receptors for which ringing
+filtering is applied.  "All" requests that all the receptors be
+checked, otherwise this should be a comma-separated list of
+receptors potentially affected by ringing.  By default ringing
+filtering is limited to Receptor H07.  This argument can be overridden
+by the RECPAR_HIGHFREQ_RINGING_RECEPTORS uhdr via the recipe parameter
+system. [H07]
 
 =item RINGING_MIN_SPECTRA = INTEGER (Given)
 
@@ -167,7 +170,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2011-2013 Science & Technology Facilities Council.
+Copyright (C) 2011-2015, 2023 Science & Technology Facilities Council.
 All Rights Reserved.
 
 =head1 LICENCE
@@ -203,7 +206,7 @@ if ( ! $apply ) { goto RETURN }
 
 my $edge_clip = get_prim_arg( $_PRIM_ARGS_, "EDGE_CLIP", "2.0,2.0,2.5,3.0" );
 my $ringing = get_prim_arg( $_PRIM_ARGS_, "RINGING", "0" );
-my $ringing_all = get_prim_arg( $_PRIM_ARGS_, "RINGING_ALL", "0" );
+my $ringing_reclist = get_prim_arg( $_PRIM_ARGS_, "RINGING_RECEPTORS", "H07" );
 my $ringing_min_spec = get_prim_arg( $_PRIM_ARGS_, "RINGING_MIN_SPECTRA", "400" );
 my $min_spec = get_prim_arg( $_PRIM_ARGS_, "MIN_SPECTRA", "20" );
 my $thresh_def = $ringing ? 4.0 : 3.0;
@@ -221,14 +224,16 @@ $edge_clip = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_EDGE_CLIP" ) )
 if ( ref( $edge_clip ) eq 'ARRAY' ) { $edge_clip = join( ",", @{ $edge_clip } ) }
 
 $ringing = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" ) ) ?
-             $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" )            : $ringing );
+           $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING" )            : $ringing );
 
-$ringing_all = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_ALL" ) ) ?
-                 $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_ALL" )    : $ringing_all );
+$ringing_reclist = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_RECEPTORS" ) ) ?
+                   $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_RECEPTORS" )              :
+                   $ringing_reclist );
+if ( ref( $ringing) eq 'ARRAY' ) { $edge_clip = join( ",", @{ $edge_clip } ) }
 
 $ringing_min_spec = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" ) ) ?
-                   $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" )              :
-                   $min_spec );
+                    $Frm->uhdr( "RECPAR_HIGHFREQ_RINGING_MIN_SPECTRA" )              :
+                    $min_spec );
 
 $thresh_clip = ( defined( $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP" ) ) ?
              $Frm->uhdr( "RECPAR_HIGHFREQ_INTERFERENCE_THRESH_CLIP" )                :
@@ -325,6 +330,8 @@ if ( defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) &&
 # See later for a description.  Suffice it to say the filter to remove
 # ringing uses FINDCLUMPS.
 my $fc_param;
+$ringing_reclist = uc( $ringing_reclist );
+my $ringing_all = uc( $ringing_reclist) eq "ALL";
 if ( $ringing ) {
 
 # Create configuration-parameter file for FINDCLUMPS.
@@ -605,8 +612,9 @@ foreach my $subsys ( 0 .. $nsubsys - 1 ) {
 # just the intensity varies.  The signal this generates peaks about 5%
 # of the strong signal.  This is just a first crude attempt at
 # filtering them.  They seem to occur between the first type of
-# high-frequency interference and only in Receptor H07.
-         if ( $ringing && ( $receptor eq "H07" || $ringing_all ) ) {
+# high-frequency interference and only in Receptor H07. (2022 update, now
+# also seen in H12, hence the change in code to have a list of receptors).
+         if ( $ringing && ( $ringing_reclist =~ /$receptor/ || $ringing_all ) ) {
             my $hfi = new ORAC::TempFile( 0 );
             my $temp19file = new ORAC::TempFile( 0 );
             orac_say "\n";

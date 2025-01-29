@@ -102,200 +102,223 @@ if ( $Frm->uhdr( "ISHYBRID" ) ) {
   orac_say "$underline\n";
 
   my @newfrmout;
-  my @outfiles;
   my $params;
 
   # Retrieve WCS lower bounds for the files.
   my @lbounds;
+  my %timechunks;
   foreach my $i ( 1 .. $Frm->nfiles ) {
     my $file = $Frm->file( $i );
     _GET_DIMENSIONS_ FILE=$file
     my $flb = $_GET_DIMENSIONS_{FLBOUND};
     push @lbounds, $flb->[0];
-  }
 
-  # The files may not be in increasing bounds order, so provide an index
-  # to the bounds-sorted order to merge adjacent sub-bands.  Frm file
-  # indexing starts from 1, so increment the index by one.
-  my @bounds_order = map{ $_ + 1 }
-                     sort { $lbounds[$a] <=> $lbounds[$b] }
-                     0 .. scalar( @lbounds ) - 1;
-
-  # Previous subband is the initially the first.
-  my $last_dc_corrected = $Frm->file( $bounds_order[0] );
-
-  my @tiles_tsys;
-  my $tsys_prop = 0;
-  my $tsys_present;
-
-  # Convert the first subband's Tsys array to an NDF.  First make
-  # the container file, then the individual NDF I1 containing the
-  # first data array.  Having just one container file makes tidying
-  # easier.
-  my $tsys_container = new ORAC::TempFile( 0 );
-  $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_container type=tsys_set" );
-
-  my $tsys_ndf = $tsys_container . ".I1";
-  $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_ndf type=ndf" );
-
-  chomp( $last_dc_corrected );
-  my $tsys_comp = $last_dc_corrected . ".MORE.ACSIS.TSYS";
-  my $HCOPY_STATUS = $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$tsys_comp out=$tsys_ndf.DATA_ARRAY" );
-
-  # Add any Tsys arrays to a list for combination later.
-  if ( $HCOPY_STATUS == ORAC__OK ) {
-    push @tiles_tsys, $tsys_ndf;
-    $tsys_present = 1;
-
-    # The output NDF will inherit from the first sub-band.
-    $tsys_prop = 1;
-  }
-
-  # Retrieve bounds for the first file.
-  _GET_DIMENSIONS_ FILE=$last_dc_corrected
-  my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
-  my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
-
-  # Record initial subband for mosaicking as we do not apply a DC offset to it.
-  push @outfiles, $last_dc_corrected;
-  foreach my $nsubband ( 1 .. $Frm->nfiles - 1 ) {
-
-    my $next_subband = $Frm->file( $bounds_order[$nsubband] );
-    orac_say " Calculating overlap for subband $nsubband.";
-    orac_say " Comparing $next_subband with $last_dc_corrected";
-
-    # Get the overlap range.
-    _CALCULATE_HYBRID_OVERLAP_ FILE1=$last_dc_corrected FILE2=$next_subband
-    my $low = $_CALCULATE_HYBRID_OVERLAP_{LBOUND};
-    my $high = $_CALCULATE_HYBRID_OVERLAP_{UBOUND};
-
-    # Retrieve bounds for the next subband file.
-    _GET_DIMENSIONS_ FILE=$next_subband
-    my $lbounds2 = $_GET_DIMENSIONS_{LBOUND};
-    my $ubounds2 = $_GET_DIMENSIONS_{UBOUND};
-
-    orac_print sprintf( "  Overlap range: [%d:%d]\n", $low, $high );
-
-    my $range = "";
-    if ( $low > $high ) {
-      orac_warn "No overlap between the input cubes.";
-
-      # Record the uncorrected spectra for mosaicking.
-      push @outfiles, $next_subband;
-
-    } else {
-
-      # Compare the differences element by element in the overlap region.
-      my $temp1file = new ORAC::TempFile( 0 );
-      $params = "in1=$last_dc_corrected($range,,) in2=$next_subband($range,,) ";
-      $params .= "out=$temp1file";
-      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
-
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file order" );
-      my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
-
-      # Allow for mostly or entirely bad values.
-      ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-      ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
-      if ( $numbad > $numpix - 3 ) {
-        $median = 0.0;
+    # Determine which time chunk this file belongs to:
+    # round to precision of ~9 seconds.
+    my $starttime = sprintf '%.4f', $flb->[2];
+    my $matchtime = undef;
+    foreach my $chunktime (keys %timechunks) {
+      # Find match within a couple of minutes
+      if (abs($chunktime - $starttime) < 0.002) {
+        $matchtime = $chunktime;
+        last;
       }
-
-      # Apply the DC level adjustment.  It is applied incrementally to the
-      # next subband.  Thus the first subband level is unaltered and
-      # subsequent bands are corrected to its level.
-      ( undef, my $out ) = $Frm->inout( "_dc", $bounds_order[$nsubband] );
-      $params = "in=$next_subband out=$out scalar=$median";
-      $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
-      my $fs_median = sprintf( "%.4f", $median );
-
-      orac_print "  Removed DC-level offset:\n";
-      orac_print "   $next_subband with offset $fs_median to $out.\n";
-
-      # Record the DC-corrected spectra for mosaicking.
-      push @outfiles, $out;
-
-      # Enable DC-offset files to be tidied.  These are not the final
-      # product of this primitive.
-      $Frm->push_intermediates( $out );
-
-      # Convert the Tsys array to an NDF.
-      my $comp_no = $nsubband + 1;
-      $tsys_ndf = $tsys_container . ".I$comp_no";
-      $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_ndf type=ndf" );
-
-      chomp( $next_subband );
-      my $tsys_comp = $next_subband . ".MORE.ACSIS.TSYS";
-      $HCOPY_STATUS = $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$tsys_comp out=$tsys_ndf.DATA_ARRAY" );
-
-      # Add any Tsys arrays to a list for combination later.
-      if ( $HCOPY_STATUS == ORAC__OK ) {
-        push @tiles_tsys, $tsys_ndf;
-        $tsys_present = 1;
-      }
-
-      # Want to offset against the already corrected nth subband.
-      $last_dc_corrected = $out;
-
-      # The upper subband now becomes the lower.
-      $lbounds1 = $lbounds2;
-      $ubounds1 = $ubounds2;
+    }
+    if (defined $matchtime) {
+      push @{$timechunks{$matchtime}}, $i - 1;
+    }
+    else {
+      $timechunks{$starttime} = [$i - 1];
     }
   }
 
-  # We have $nsubband DC-corrected files.  Form text file listing
-  # the NDFs to mosaic.
-  my $mos_file = write_file_list( @outfiles );
-  my $mos_filename = basename( $mos_file->file );
-  ( undef, my $out ) = $Frm->inout( "_merge", 1 );
-  $params = "in='^$mos_filename' out=$out method=nearest";
-  $params .= " lbnd=! ubnd=! ref=! variance genvar=false wlim=0";
-  $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+  my $timechunk = 0;
+  foreach my $chunktime (sort keys %timechunks) {
+    $timechunk ++;
 
-  # Since we used equal weights for combining the data, we just determine the
-  # mean TSYS for the merged spectrum.
-  my $tsys_out = $out . ".MORE.ACSIS.TSYS";
+    # The files may not be in increasing bounds order, so provide an index
+    # to the bounds-sorted order to merge adjacent sub-bands.  Frm file
+    # indexing starts from 1, so increment the index by one.
+    my @bounds_order = map{ $_ + 1 }
+                       sort { $lbounds[$a] <=> $lbounds[$b] }
+                       @{$timechunks{$chunktime}};
 
-  # Delete the existing version of the extension NDF in the output file.
-  $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$tsys_out ok" ) if ( $tsys_prop );
+    # Previous subband is the initially the first.
+    my $last_dc_corrected = $Frm->file( $bounds_order[0] );
 
-  if ( $tsys_present ) {
+    my @tiles_tsys;
+    my $tsys_prop = 0;
+    my $tsys_present;
 
-    # Form text file listing the subbands contributing TSYS chunks to average.
-    my $mslist = write_file_list( @tiles_tsys );
+    # Convert the first subband's Tsys array to an NDF.  First make
+    # the container file, then the individual NDF I1 containing the
+    # first data array.  Having just one container file makes tidying
+    # easier.
+    my $tsys_container = new ORAC::TempFile( 0 );
+    $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_container type=tsys_set" );
 
-    # Average the TSYS arrays.
-    my $temp_tsys = new ORAC::TempFile( 0 );
-    $params = "wlim=0 variance=f trim estimator=mean single=false";
-    $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$mslist out=$temp_tsys $params" );
+    my $tsys_ndf = $tsys_container . ".I1";
+    $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_ndf type=ndf" );
 
-    # Copy the mean Tsys array back into the merged spectra.
-    $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$temp_tsys.data_array out=$tsys_out" );
-    orac_print "Averaging system temperatures for merged spectrum.\n";
+    chomp( $last_dc_corrected );
+    my $tsys_comp = $last_dc_corrected . ".MORE.ACSIS.TSYS";
+    my $HCOPY_STATUS = $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$tsys_comp out=$tsys_ndf.DATA_ARRAY" );
 
-    undef $temp_tsys;
-    undef $mslist;
-  }
+    # Add any Tsys arrays to a list for combination later.
+    if ( $HCOPY_STATUS == ORAC__OK ) {
+      push @tiles_tsys, $tsys_ndf;
+      $tsys_present = 1;
 
-  orac_print join ',', @outfiles;
-  orac_print " to $out:\n";
-  orac_print " Merged hybrid-mode files.\n";
+      # The output NDF will inherit from the first sub-band.
+      $tsys_prop = 1;
+    }
 
-  my @subsysnrs;
-  # Fix up the SUBSYSNR fitsheader; force it to be the lowest one from
-  # the input files so that filenames and productids are consistent.
-  foreach my $inputfile (@outfiles) {
-    my $hdr = Astro::FITS::Header::NDF->new( File => $inputfile );
-    if (defined $hdr->value("SUBSYSNR")){
-       push @subsysnrs,  $hdr->value("SUBSYSNR");
+    # Retrieve bounds for the first file.
+    _GET_DIMENSIONS_ FILE=$last_dc_corrected
+    my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
+    my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
+
+    # Record initial subband for mosaicking as we do not apply a DC offset to it.
+    my @outfiles = ($last_dc_corrected);
+    foreach my $nsubband ( 1 .. $#bounds_order ) {
+
+      my $next_subband = $Frm->file( $bounds_order[$nsubband] );
+      orac_say " Calculating overlap for subband $nsubband.";
+      orac_say " Comparing $next_subband with $last_dc_corrected";
+
+      # Get the overlap range.
+      _CALCULATE_HYBRID_OVERLAP_ FILE1=$last_dc_corrected FILE2=$next_subband
+      my $low = $_CALCULATE_HYBRID_OVERLAP_{LBOUND};
+      my $high = $_CALCULATE_HYBRID_OVERLAP_{UBOUND};
+
+      # Retrieve bounds for the next subband file.
+      _GET_DIMENSIONS_ FILE=$next_subband
+      my $lbounds2 = $_GET_DIMENSIONS_{LBOUND};
+      my $ubounds2 = $_GET_DIMENSIONS_{UBOUND};
+
+      orac_print sprintf( "  Overlap range: [%d:%d]\n", $low, $high );
+
+      my $range = "";
+      if ( $low > $high ) {
+        orac_warn "No overlap between the input cubes.";
+
+        # Record the uncorrected spectra for mosaicking.
+        push @outfiles, $next_subband;
+
+      } else {
+
+        # Compare the differences element by element in the overlap region.
+        my $temp1file = new ORAC::TempFile( 0 );
+        $params = "in1=$last_dc_corrected($range,,) in2=$next_subband($range,,) ";
+        $params .= "out=$temp1file";
+        $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file order" );
+        my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+        # Allow for mostly or entirely bad values.
+        ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
+        ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
+        if ( $numbad > $numpix - 3 ) {
+          $median = 0.0;
+        }
+
+        # Apply the DC level adjustment.  It is applied incrementally to the
+        # next subband.  Thus the first subband level is unaltered and
+        # subsequent bands are corrected to its level.
+        ( undef, my $out ) = $Frm->inout( "_dc", $bounds_order[$nsubband] );
+        $params = "in=$next_subband out=$out scalar=$median";
+        $Mon{'kappa_mon'}->obeyw( "cadd", "$params" );
+        my $fs_median = sprintf( "%.4f", $median );
+
+        orac_print "  Removed DC-level offset:\n";
+        orac_print "   $next_subband with offset $fs_median to $out.\n";
+
+        # Record the DC-corrected spectra for mosaicking.
+        push @outfiles, $out;
+
+        # Enable DC-offset files to be tidied.  These are not the final
+        # product of this primitive.
+        $Frm->push_intermediates( $out );
+
+        # Convert the Tsys array to an NDF.
+        my $comp_no = $nsubband + 1;
+        $tsys_ndf = $tsys_container . ".I$comp_no";
+        $Mon{'hdstools_mon'}->obeyw( "hcreate", "inp=$tsys_ndf type=ndf" );
+
+        chomp( $next_subband );
+        my $tsys_comp = $next_subband . ".MORE.ACSIS.TSYS";
+        $HCOPY_STATUS = $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$tsys_comp out=$tsys_ndf.DATA_ARRAY" );
+
+        # Add any Tsys arrays to a list for combination later.
+        if ( $HCOPY_STATUS == ORAC__OK ) {
+          push @tiles_tsys, $tsys_ndf;
+          $tsys_present = 1;
+        }
+
+        # Want to offset against the already corrected nth subband.
+        $last_dc_corrected = $out;
+
+        # The upper subband now becomes the lower.
+        $lbounds1 = $lbounds2;
+        $ubounds1 = $ubounds2;
       }
+    }
+
+    # We have $nsubband DC-corrected files.  Form text file listing
+    # the NDFs to mosaic.
+    my $mos_file = write_file_list( @outfiles );
+    my $mos_filename = basename( $mos_file->file );
+    ( undef, my $out ) = $Frm->inout( "_merge", $timechunk );
+    $params = "in='^$mos_filename' out=$out method=nearest";
+    $params .= " lbnd=! ubnd=! ref=! variance genvar=false wlim=0";
+    $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+
+    # Since we used equal weights for combining the data, we just determine the
+    # mean TSYS for the merged spectrum.
+    my $tsys_out = $out . ".MORE.ACSIS.TSYS";
+
+    # Delete the existing version of the extension NDF in the output file.
+    $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$tsys_out ok" ) if ( $tsys_prop );
+
+    if ( $tsys_present ) {
+
+      # Form text file listing the subbands contributing TSYS chunks to average.
+      my $mslist = write_file_list( @tiles_tsys );
+
+      # Average the TSYS arrays.
+      my $temp_tsys = new ORAC::TempFile( 0 );
+      $params = "wlim=0 variance=f trim estimator=mean single=false";
+      $Mon{'kappa_mon'}->obeyw( "mstats", "in=^$mslist out=$temp_tsys $params" );
+
+      # Copy the mean Tsys array back into the merged spectra.
+      $Mon{'hdstools_mon'}->obeyw( "hcopy", "inp=$temp_tsys.data_array out=$tsys_out" );
+      orac_print "Averaging system temperatures for merged spectrum.\n";
+
+      undef $temp_tsys;
+      undef $mslist;
+    }
+
+    orac_print join ',', @outfiles;
+    orac_print " to $out:\n";
+    orac_print " Merged hybrid-mode files.\n";
+
+    my @subsysnrs;
+    # Fix up the SUBSYSNR fitsheader; force it to be the lowest one from
+    # the input files so that filenames and productids are consistent.
+    foreach my $inputfile (@outfiles) {
+      my $hdr = Astro::FITS::Header::NDF->new( File => $inputfile );
+      if (defined $hdr->value("SUBSYSNR")){
+         push @subsysnrs,  $hdr->value("SUBSYSNR");
+        }
+    }
+
+    @subsysnrs = sort {$a <=> $b} @subsysnrs;
+    my $merged_subsysnr = $subsysnrs[0];
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$out edit=update keyword=SUBSYSNR value=$merged_subsysnr position=! comment=\$C");
+
+    push @newfrmout, $out;
   }
-
-  @subsysnrs = sort {$a <=> $b} @subsysnrs;
-  my $merged_subsysnr = $subsysnrs[0];
-  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$out edit=update keyword=SUBSYSNR value=$merged_subsysnr position=! comment=\$C");
-
-  push @newfrmout, $out;
 
   $Frm->product( "merge" );
   $Frm->files( @newfrmout );

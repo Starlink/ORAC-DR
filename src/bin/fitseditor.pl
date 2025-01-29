@@ -13,7 +13,7 @@
 #    Perl script
 
 #  Invocation:
-#    Invoked by ${ORAC_DIR}/etc/fitseditor_start.csh
+#    Invoked by ${ORAC_DIR}/etc/fitseditor_start.sh
 
 #  Description:
 #

@@ -1,0 +1,92 @@
+=head1 NAME
+
+_CREATE_PREVIEW_SUMMIT_ - create preview image if summit reduction ready
+
+=head1 DESCRIPTION
+
+This primitive creates a preview image if the summit pipeline has a map
+ready, hopefully quicker than using _TAG_AS_REDUCED_PRODUCT_.
+
+If in frame mode (B<GROUP> = 0) and B<RUNNING_COADD> is specified,
+then attempt to create a running mosaic for the purpose of creating
+this preview.  This file will be tracked by the group uhdr
+C<RUNNING_PREVIEW> which must be cleared by C<_SUMMIT_STEER_>
+at the start of a new observation.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2022 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $group = get_prim_arg($_PRIM_ARGS_, 'GROUP', 0);
+my $running_coadd = get_prim_arg($_PRIM_ARGS_, 'RUNNING_COADD', 0);
+
+my ($Obj, $proceed);
+unless ($group) {
+    if ($Frm->tagexists('newimage')) {
+        unless ($running_coadd) {
+            $Obj = $Frm;
+            $proceed = 1;
+        }
+        else {
+            my $out = $Frm->inout('_rimgmos');
+            my $running = $Grp->uhdr('RUNNING_PREVIEW');
+
+            # Create temporary group to contain the running file.
+            $Obj = $Grp->new('rimgmos');
+
+            if (defined $running) {
+                $Obj->file($running);
+
+                do {
+                    my $Grp = $Obj;
+                    _MAKE_MOSAIC_ GROUP=1 METHOD=nearest COADD_MODE=RUNNING OUT=$out
+                    $Frm->push_intermediates($Obj->intermediates());
+                };
+
+                if ($_MAKE_MOSAIC_{'NEWIMAGE'}) {
+                    $Grp->uhdr('RUNNING_PREVIEW', $out);
+                    $proceed = 1;
+                }
+            }
+            else {
+                my $in = $Frm->file;
+                $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+                $Obj->file($out);
+                $Grp->uhdr('RUNNING_PREVIEW', $out);
+                $Frm->push_intermediates($out);
+                $proceed = 1;
+            }
+        }
+    }
+}
+else {
+    $Obj = $Grp;
+    $proceed = !! ($Grp->product and grep {$Grp->product eq $_}
+       qw/newimage reduced Matched-filtered/);
+}
+
+if ($proceed) {
+    my $file = $Obj->file;
+
+    # Check the file is still there and wasn't deleted in a previous pass.
+    if (-e $Obj->fullfname($file)) {
+        _CREATE_GRAPHIC_FROM_FILE_ FILE=$file ADDRES=1 XRES=64,256,1024 TYPE=PNG
+    }
+}

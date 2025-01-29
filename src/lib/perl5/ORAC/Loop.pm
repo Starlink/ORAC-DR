@@ -56,6 +56,7 @@ use File::Find;
 use Cwd;
 
 use ORAC::Error qw/ :try /;
+use ORAC::General;
 use ORAC::Print;
 use ORAC::Convert;
 use ORAC::Msg::EngineLaunch;    # For -loop 'task'
@@ -71,6 +72,10 @@ $VERSION = '1.0';
 @ISA = qw/Exporter/;
 @EXPORT = qw/ orac_loop_list  orac_loop_wait orac_loop_inf orac_loop_task
               orac_loop_flag orac_loop_file orac_check_data_dir /;
+
+# Should multiple flag files be read "in sync"?
+# (Controls the behavior of _read_flagfiles.)
+our $read_flag_sync = 0;
 
 =head1 LOOP SUBROUTINES
 
@@ -492,7 +497,7 @@ sub orac_loop_flag {
 
       # simply compare number of entries. Not very robust but good enough
       if (@all > @$prev) {
-        orac_print "Found additional data associated with current observation...";
+        orac_print "\nFound additional data associated with current observation...";
 
         last;
       }
@@ -1384,16 +1389,26 @@ sub _read_flagfiles {
       or orac_throw "Unable to open flag file $flagname: $!";
 
     # Read the filenames from the file.
-    push(@names, grep /\w/, <$flagfile> );
+    push @names, [grep /\w/, <$flagfile>];
 
     # Close the file.
     close $flagfile
       or orac_throw "Error closing flag file $flagname: $!";
   }
-  chomp(@names);
+
+  my @allnames;
+  unless ($read_flag_sync) {
+    @allnames = (map {@$_} @names);
+  }
+  else {
+    my $min_last = min(map {$#$_} @names);
+    @allnames = (map {@{$_}[0 .. $min_last]} @names);
+  }
+
+  chomp @allnames;
 
   # add $ORAC_DATA_IN to path if not absolute
-  return _to_abs_path( @names );
+  return _to_abs_path( @allnames );
 }
 
 =back

@@ -697,6 +697,29 @@ sub hdrvals {
   return @values;
 }
 
+=item B<hdrkeys>
+
+Return a list of FITS header keys, including those found
+in subheaders.
+
+=cut
+
+sub hdrkeys {
+  my $self = shift;
+
+  my %keys = ();
+  my $hdr = $self->hdr;
+  foreach my $shdr ($hdr, @{$hdr->{'SUBHEADERS'}}) {
+    foreach my $key (keys %$shdr) {
+      next unless $key;
+      next if $key eq 'SUBHEADERS';
+      $keys{$key} = 1;
+    }
+  }
+
+  return sort keys %keys;
+}
+
 =item B<inout>
 
 Method to return the current input filename and the new output

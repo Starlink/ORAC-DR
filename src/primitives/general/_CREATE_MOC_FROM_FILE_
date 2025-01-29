@@ -1,0 +1,114 @@
+=head1 NAME
+
+_CREATE_MOC_FROM_FILE_ - Create a MOC from a given file
+
+=head1 DESCRIPTION
+
+This primitive creates a MOC from the given file in FITS format.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<FILE>
+
+The name of the file.
+
+=item B<ORDER>
+
+The HEALPix order at which to write the MOC.
+
+=item B<OVERSAMPLE>
+
+Search for MOC cells at this factor higher resolution
+than the input image.  [2]
+
+=item B<UNDERSAMPLE>
+
+If C<ORDER> is not given, use this factor lower resolution
+than the input image.  [4]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The MOC file will have the same root filename as the input
+file, with the addition of a "_moc" suffix (and ".fits" extension).
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $file = get_prim_arg($_PRIM_ARGS_, 'FILE', undef);
+orac_throw('_CREATE_MOC_FROM_FILE_: FILE not specified') unless defined $file;
+
+my $order = get_prim_arg($_PRIM_ARGS_, 'ORDER', undef);
+my $oversample = get_prim_arg($_PRIM_ARGS_, 'OVERSAMPLE', 2);
+my $undersample = get_prim_arg($_PRIM_ARGS_, 'UNDERSAMPLE', 4);
+
+# Determine the resolution of the input file.
+$Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$file");
+my ($ORAC_STATUS, @fpixscale) = $Mon{'ndfpack_mon'}->get('ndftrace', 'fpixscale');
+my $fileres = sqrt($fpixscale[0] * $fpixscale[1]);
+
+# Check for more than 2 dimensions.  Perhaps should collapse the
+# file in this case?  But for now just use the mid-point of
+# each axis beyond the first two.
+($ORAC_STATUS, my $ndim) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ndim');
+my $section = '';
+if ($ndim > 2) {
+    ($ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
+    ($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
+    my @axis = ();
+    for (my $i = 0; $i < $ndim; $i ++) {
+        if ($i < 2) {
+            push @axis, '';
+        }
+        else {
+            push @axis, int(($lbound[$i] + $ubound[$i]) / 2);
+        }
+    }
+    $section = '(' . (join ',', @axis) . ')';
+}
+
+my $res;
+unless (defined $order) {
+    # Determine resolution (order) via the UNDERSAMPLE parameter.
+    $res = $fileres * $undersample;
+}
+else {
+    # Convert the requested order to a resolution.
+    $res = 211076.29 / (1 << $order);
+}
+
+# Determine search resolution (order) via the OVERSAMPLE parameter.
+my $minres = sprintf '%.3f', $fileres / $oversample;
+
+$res = sprintf '%.3f', $res;
+
+my $moc = $file . '_moc.fits';
+
+$Mon{'kappa_mon'}->obeyw('mocgen', "in=$file$section out=$moc maxres=$res minres=$minres format=FITS");

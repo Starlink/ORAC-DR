@@ -194,7 +194,7 @@ sub bad_receptors_list {
   # Validate the receptor name for old instruments and U'u, ignoring
   # other bad_receptor modes.
   my @valid_receptors = $self->receptor_names;
-  push @valid_receptors, ( "INDEX", "FILE", "MASTER", "MASTERORINDEX" );
+  push @valid_receptors, ( "INDEX", "FILE", "MASTER", "MASTERORINDEX", "INDEXORMASTER" );
 
   my $uselist = 1;
   foreach my $receptor ( split /:/, $sys ) {
@@ -273,7 +273,7 @@ sub bad_receptors_list {
     $self->thingtwo( $thing2 );
 
     # Merge the master and QA bad receptors.
-    my %seen = map { $_, 1 } @master_bad, @index_bad;
+    my %seen = map {($_ eq ' ') ? () : ($_, 1)} @master_bad, @index_bad;
     @bad_receptors = keys %seen;
 
   } elsif ( $usefile ) {
@@ -294,14 +294,14 @@ sub bad_receptors_list {
 
     # Remove other options and delimiters.
     $sys =~ s/INDEXORMASTER//;
+    $sys =~ s/MASTERORINDEX//;
     $sys =~ s/INDEX//;
     $sys =~ s/MASTER//;
     $sys =~ s/FILE//;
     $sys =~ s/,//;
-    $sys =~ s/::/:/;
 
     # Look for bad receptors in $sys itself.
-    my @list_bad = split /:/, $sys;
+    my @list_bad = grep {/\S/} split /:/, $sys;
 
     # Merge the list receptor with those from other sources.
     my %seen = map { $_, 1 } @bad_receptors, @list_bad;

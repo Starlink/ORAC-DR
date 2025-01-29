@@ -1,0 +1,99 @@
+=head1 NAME
+
+_MAKE_HIPS_ALLSKY_ - Create allsky file for a HiPS structure
+
+=head1 DESCRIPTION
+
+Writes an allsky file for the given order of a HiPS structure.  This is a
+concatenated grid of 27x29 (at order 3) 64x64 tiles.
+
+=head1 ARGUMENTS
+
+=over 2
+
+=item B<ORDER>
+
+The order at which to create the allsky file.
+
+=item B<TILES>
+
+Reference to a hash of tiles by tile number.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2019-2024 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use File::Spec;
+use POSIX qw/ceil/;
+
+my $order = get_prim_arg($_PRIM_ARGS_, 'ORDER', undef);
+my $tiles = get_prim_arg($_PRIM_ARGS_, 'TILES', undef);
+
+my $root = $Frm->uhdr('HIPS_ROOT');
+my $fits_opts = $Frm->uhdr('HIPS_FITS_OPTS');
+
+orac_say("Creating HiPS \"all sky\" file (order $order)");
+
+my $ntile = 12 << (2 * $order);
+my $ncol = int(sqrt($ntile));
+my $nrow = ceil($ntile / $ncol);
+my $tilesize = 64; # Assumed in sqorst factors below.
+my $uboundx = ($ncol * $tilesize) - 1;
+my $uboundy = ($nrow * $tilesize) - 1;
+
+my $ORAC_STATUS;
+my @thumbnails = ();
+
+while (my ($tile, $file_orig) = each %$tiles) {
+    my $file = $file_orig . '_thumb';
+    $Mon{'kappa_mon'}->obeyw('sqorst', "in=$file_orig out=$file mode=factors factors=[0.125,0.125] method=auto");
+
+    my $x = $tilesize * ($tile % $ncol);
+    my $y = $tilesize * ($nrow - int($tile / $ncol) - 1);
+
+    $Mon{'ndfpack_mon'}->obeyw('setorigin', "ndf=$file origin=[$x, $y]");
+
+    $Mon{'ndfpack_mon'}->obeyw('ndftrace', "ndf=$file quiet");
+    ($ORAC_STATUS, my @lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'lbound');
+    ($ORAC_STATUS, my @ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'ubound');
+    die 'Unexpected lbnd x' unless $lbnd[0] == $x;
+    die 'Unexpected lbnd y' unless $lbnd[1] == $y;
+    die 'Unexpected ubnd x' unless $ubnd[0] == $x + $tilesize - 1;
+    die 'Unexpected ubnd y' unless $ubnd[1] == $y + $tilesize - 1;
+
+    push @thumbnails, $file;
+}
+
+my $allsky = sprintf 'allsky_%i_pasted', $order;
+my $allskyref = sprintf 'allsky_%i_ref', $order;
+my $allskybad = sprintf 'allsky_%i_bad', $order;
+$Mon{'kappa_mon'}->obeyw('creframe', "out=$allskyref mode=bl lbound=[0, 0] ubound=[$uboundx, $uboundy]");
+$Mon{'kappa_mon'}->obeyw('setmagic', "in=$allskyref out=$allskybad repval=0");
+
+my $files = write_file_list($allskybad, @thumbnails);
+
+$Mon{'kappa_mon'}->obeyw('paste', "in=^$files out=$allsky transp=true confine=true");
+
+my $allskyfile = File::Spec->catfile($root, sprintf('Norder%i', $order), 'Allsky.fits');
+orac_say("Exporting HiPS allsky file $allskyfile");
+$Mon{'convert_mon'}->obeyw('ndf2fits', "in=$allsky out=$allskyfile $fits_opts");
+
+$Grp->push_intermediates($allsky, $allskyref, $allskybad, @thumbnails);

@@ -87,7 +87,8 @@ sub new {
   my %args = @_;
   for my $key (keys %args) {
     my $method = lc( $key );
-    $rec->$method( $args{$key} ) if $rec->can($method);
+    my @extra_args = ($method eq 'name') ? 1 : ();
+    $rec->$method( $args{$key}, @extra_args ) if $rec->can($method);
   }
 
   # if we have a name, frame and instrument we can proceed
@@ -159,7 +160,9 @@ available. If a compiled recipe is available the method will be delegated
 to that object.
 
   $name = $rec->name;
-  $rec->name( $name );
+  $rec->name( $name [, $no_read] );
+
+The additional C<no_read> parameter can be used to disable automatic reading.
 
 =cut
 
@@ -168,6 +171,7 @@ sub name {
   if (@_) {
     # we are setting a name
     $self->{RecipeName} = shift;
+    my $no_read = shift // 0;
 
     # if we have a parsed recipe which indicates a different name
     # clear it
@@ -179,7 +183,7 @@ sub name {
 
     # reread if we do not have one stored and we know we have all the information
     # we can get (be pessimistic otherwise)
-    if (!defined $compiled && defined $self->instrument && defined $self->frame) {
+    if ((! $no_read) && !defined $compiled && defined $self->instrument && defined $self->frame) {
       $self->_read_recipe();
     }
   }

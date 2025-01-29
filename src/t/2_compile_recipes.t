@@ -89,17 +89,6 @@ BEGIN {
         },
     );
 
-#  Some of the above recipes may not be included in the ORAC-DR installation. If
-#  these extra recipes are not in the installation, then skip the corresponding tests.
-    if( ! defined $ENV{'ORAC_TEST_EXTRA'} ){
-       foreach my $instrument (@instruments) {
-           if( $instrument->{'name'} eq 'WESLEY_SCUBA2_850' ){
-              $instrument->{'skip'} = ['FIX_HEADER_IFFREQ',];
-           }
-       }
-    }
-
-
     sub find_recipes {
         my $name = shift;
         my %opt = @_;

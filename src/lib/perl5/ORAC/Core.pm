@@ -172,6 +172,7 @@ sub orac_store_frm_in_correct_grp {
   # If we've been asked to only do one group ever (i.e. $transient begins
   # with a "-") then skip all of the stuff that sorts out which Group this
   # Frame is in and just put it in the Group.
+  my $grpname_fixed = 0;
   my $grpname;
   my $override_grpasn;
 
@@ -186,6 +187,10 @@ sub orac_store_frm_in_correct_grp {
       $Frm->asn_id( $grpname ) if $Frm->can("asn_id");
       $override_grpasn = 1; # we want to use this ASN_ID everywhere
     }
+
+    # Record that we have a fixed group name (and so do not need to
+    # write to log.group).
+    $grpname_fixed = 1;
   } else {
     # query Frame for its group
     $grpname = $Frm->group;
@@ -238,12 +243,12 @@ sub orac_store_frm_in_correct_grp {
   }
 
   # Write log.group entry.
-  do {
+  unless ($grpname_fixed) {
     my (undef, $num, undef) = split '#', $Grp->name();
     my $log = new ORAC::LogFile('log.group');
     $log->header('# Group File');
     $log->addentry(map {$num . ' ' . $_} $Frm->raw());
-  };
+  }
 
   # If we were previously requested to check if the file exists, do so
   # now and erase it if the $resume flag is not set.
@@ -1294,6 +1299,8 @@ sub orac_process_argument_list {
 
   # Read the argument list
   my ($frameclass, $obs, %opt) = @_;
+
+  $ORAC::Loop::read_flag_sync = 1 if $opt{'flagsync'};
 
   my $loop;
 

@@ -1,16 +1,16 @@
-#!/bin/csh -f
+#!/bin/sh
 #+
 #  Name:
-#    xoracdr_start.csh
+#    xoracdr_start.sh
 
 #  Purposes:
 #     Sets aliases for ORAC-DR and prints welcome message
 
 #  Language:
-#    C-shell script
+#    Bourne shell
 
 #  Invocation:
-#    csh $ORAC_DIR/etc/xoracdr_start.csh
+#    $ORAC_DIR/etc/xoracdr_start.sh
 
 #  Description:
 #    Sets all the aliases required to run the ORAC-DR GUI pipeline
@@ -78,32 +78,21 @@
 
 # Need to make sure we use the Starlink PERL command
 # in general this is in /star/Perl/bin/perl
-set STARPERL=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+STARPERL=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
 # Set up back door for the version number
-set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
+pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
 # These are perl programs
 
-if (-e $STARPERL ) then
-
-  # pass through command line arguements
-  set args = $*
-  set oracdr_args = ""
-  if ( $#args > 0  ) then
-    while ( $#args > 0 )
-       set oracdr_args = "${oracdr_args} $args[1]"
-       shift args
-    end
-  endif
-
+if [ -e "$STARPERL" ]; then
   echo " "
   echo " ORAC Data Reduction Pipeline -- (ORAC-DR Version ${pkgvers})"
   echo " "
-  echo " Please wait, spawning Xoracdr${oracdr_args}..."
-  $STARPERL  ${ORAC_DIR}/bin/Xoracdr ${oracdr_args}
+  echo " Please wait, spawning $@ ..."
+  $STARPERL ${ORAC_DIR}/bin/Xoracdr ${1+"$@"}
 
 else
   echo "ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
   echo "Starlink PERL could not be found, please install STARPERL"
-endif
+fi

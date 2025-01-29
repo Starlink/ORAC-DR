@@ -111,6 +111,14 @@ sub filesuffix {
   return ".sdf";
 }
 
+# For PICARD, do not check observations against a badobs index because we may
+# not have the ORACNUM and/or ORACUT parameters.  Moreover the user presumably
+# expects the list of files they have provided to be processed.
+sub badobs_index {
+  my $self = shift;
+  return undef;
+}
+
 =back
 
 =head1 SEE ALSO
