@@ -16,34 +16,44 @@ $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$col(-20:20,-20:20) out=$colcrop title
 
 $Frm->push_intermediates($spl, $col);
 $Frm->files($colcrop);
-$Display->display_data($Frm);
 
 my $ORAC_STATUS;
 $Mon{'kappa_mon'}->obeyw('stats', "ndf=$colcrop");
-($ORAC_STATUS, my $min) = $Mon{'kappa_mon'}->get('stats', 'minimum');
+($ORAC_STATUS, my $numgood) = $Mon{'kappa_mon'}->get('stats', 'numgood');
 
-my $colsub = $Frm->inout($suffix . '-spl-col-sub');
-$Mon{'kappa_mon'}->obeyw('csub', "in=$colcrop scalar=$min out=$colsub");
-$Frm->push_intermediates($colsub);
+if ($numgood > 0) {
+    $Display->display_data($Frm);
 
-$Mon{'kappa_mon'}->obeyw('beamfit', "ndf=$colsub mode=interface pos=\"0, 0\" beams=1");
-($ORAC_STATUS, my @coord) = $Mon{'kappa_mon'}->get('beamfit', 'centre');
+    ($ORAC_STATUS, my $min) = $Mon{'kappa_mon'}->get('stats', 'minimum');
 
-my $freq = $Frm->hdr('FREQBAND');
-my $scale = $freq * 1.0e9 / 2.99792458e8;
+    my $colsub = $Frm->inout($suffix . '-spl-col-sub');
+    $Mon{'kappa_mon'}->obeyw('csub', "in=$colcrop scalar=$min out=$colsub");
+    $Frm->push_intermediates($colsub);
 
-# Apply empirical "fudge factor": pointing appeared to have been over-corrected.
-$scale /= 1.4;
+    $Mon{'kappa_mon'}->obeyw('beamfit', "ndf=$colsub mode=interface pos=\"0, 0\" beams=1");
+    ($ORAC_STATUS, my @coord) = $Mon{'kappa_mon'}->get('beamfit', 'centre');
 
-@coord = map {$scale * $_} split ' ', $coord[0];
-$coord[1] = - $coord[1];
+    my $freq = $Frm->hdr('FREQBAND');
+    my $scale = $freq * 1.0e9 / 2.99792458e8;
 
-$_PRIM_ARGS_->{'OFFSET'} = [map {sprintf('%.1f', $_)} @coord];
+    # Apply empirical "fudge factor": pointing appeared to have been over-corrected.
+    $scale /= 1.4;
 
-if (defined $logfile) {
-    my $params = sprintf '%-6s %-6s', qw/DX DY/;
-    my $units = sprintf '%-6s %-6s', qw/(") (")/;
-    my $entry = sprintf '%-6.1f %-6.1f', @coord;
+    @coord = map {$scale * $_} split ' ', $coord[0];
+    $coord[1] = - $coord[1];
 
-    _ADD_LOG_ENTRY_ LOGFILE=$logfile PARAMS=$params UNITS=$units ENTRIES=$entry
+    $_PRIM_ARGS_->{'OFFSET'} = [map {sprintf('%.1f', $_)} @coord];
+
+    if (defined $logfile) {
+        my $params = sprintf '%-6s %-6s', qw/DX DY/;
+        my $units = sprintf '%-6s %-6s', qw/(") (")/;
+        my $entry = sprintf '%-6.1f %-6.1f', @coord;
+
+        _ADD_LOG_ENTRY_ LOGFILE=$logfile PARAMS=$params UNITS=$units ENTRIES=$entry
+    }
+}
+else {
+    # NOTE: maybe this should be a fatal error so that we abort here.
+    orac_warn("No good data from which to estimate pointing offset.\n");
+    $_PRIM_ARGS_->{'OFFSET'} = ['0.0', '0.0'];
 }
