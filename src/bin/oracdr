@@ -105,6 +105,7 @@ my @ORAC_ARGS = @ARGV;
 
 my ( %opt );
 $opt{calib} = []; # Want to support --calib a=b --calib c=d
+$opt{'specific_files'} = [];
 
 my $status = GetOptions("nodisplay" => \$opt{nodisplay},
 	  		"debug!"    => \$opt{debug},
@@ -138,6 +139,7 @@ my $status = GetOptions("nodisplay" => \$opt{nodisplay},
                         'preprocess!' => \$opt{'preproc'},
                         'rechelp' => \$opt{'rechelp'},
                         'flagsync' => \$opt{'flagsync'},
+                        'input-file=s' => $opt{'specific_files'},
 		       );
 
 pod2usage(1) if $opt{help};
@@ -217,23 +219,36 @@ if (exists $opt{'header_override'} && defined $opt{'header_override'}) {
 # Similarly process the --files command line option before changing
 # to ORAC_DATA_OUT.
 my @obs;
-if ( defined $opt{files} ) {
-   try {
-      @obs = orac_parse_files( $opt{files} );
-   }
-   catch ORAC::Error with
-   {
-      my $Error = shift;
-      $ErrText = "$Error";
-   }
-   otherwise
-   {
-      # this should sucessfully catch croaks
-      my $Error = shift;
-      $ErrText = "$Error";
-   };
-   orac_exit_if_error( $ErrText );
+try {
+  if ( defined $opt{files} ) {
+    @obs = orac_parse_files( $opt{files} );
+  }
+
+  if ( scalar @{$opt{'specific_files'}} ) {
+    foreach my $file (@{$opt{'specific_files'}}) {
+      unless (-e $file) {
+        # Report error in the same way as orac_parse_files
+        # (using orac_err and throwing FatalError).
+        orac_err("File $file not found\n");
+        throw ORAC::Error::FatalError("File $file not found", ORAC__FATAL);
+      }
+      # NOTE: this lacks the check for duplicate entries of orac_parse_files.
+      push @obs, File::Spec->rel2abs($file);
+    }
+  }
 }
+catch ORAC::Error with
+{
+  my $Error = shift;
+  $ErrText = "$Error";
+}
+otherwise
+{
+  # this should sucessfully catch croaks
+  my $Error = shift;
+  $ErrText = "$Error";
+};
+orac_exit_if_error( $ErrText );
 
 ######## C H A N G E   T O   O U T P U T   D I R E C TO R Y  ###############
 
@@ -574,6 +589,13 @@ For example, `1,2,4:6,10' means 1,2,4,5,6,10.
 File name of a flat ASCII text file containing a list of observation
 I<files> to be reduced, one file per line.  Path information should be
 either relative to C<$ORAC_DATA_IN>, or the absolute path.
+
+=item B<--input-file>
+
+The name of an observation I<file> to be reduced, as if read from a text
+file given by the C<--files> option.  The file name should be either
+absolute or relative to the current directory.  This option can be
+repeated to specify multiple files.
 
 =back
 
