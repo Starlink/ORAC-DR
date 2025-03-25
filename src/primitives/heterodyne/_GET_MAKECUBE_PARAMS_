@@ -13,9 +13,7 @@ give by Argument TYPE.
 The default values as part of the MAKECUBE command line are as follows.
 C<system=tracking autogrid badmask=and alignsys usedetpos=no poserrfatal>
 
-For jiggle, pixsize is set.  Other primitives are called for raster/scan maps
-(L<_GET_MAKECUBE_PARAMS_SCAN_|_GET_MAKECUBE_PARAMS_SCAN_>, and pointing
-observations (L<_GET_MAKECUBE_PARAMS_POINTING_|_GET_MAKECUBE_PARAMS_POINTING_>).
+For jiggle, pixsize is set.
 
 =head1 ARGUMENTS
 
@@ -118,9 +116,29 @@ my %return_hash = ( 'system' => 'tracking',
 
 if( $type eq 'RASTER' or $type eq 'SCAN' ) {
 
-  _GET_MAKECUBE_PARAMS_SCAN_
+  $return_hash{'sparse'} = 'no';
 
-  %return_hash = ( %return_hash, %{$_GET_MAKECUBE_PARAMS_SCAN_{HASH}} );
+  # We get the pixel scale by multiplying SCAN_VEL and STEPTIME headers,
+  # and the position angle comes from the MAP_PA header. Force the
+  # position angle to be between -45 and 45 degrees. Set the system to
+  # azel if the LOCL_CRD header is AZEL.
+  my $pixsize = $Frm->hdr( "SCAN_VEL" ) * $Frm->hdr( "STEPTIME" );
+  my $crota = - $Frm->hdr( "MAP_PA" );
+  while ( $crota < -45 || $crota > 45 ) {
+    if( $crota < -45 ) {
+      $crota += 90;
+    } elsif( $crota > 45 ) {
+      $crota -= 90;
+    }
+  }
+
+  $return_hash{'pixsize'} = $pixsize;
+  $return_hash{'crota'} = $crota;
+
+  # If we SCANned in AZEL, then set the system to AZEL.
+  if( uc( $Frm->hdr( "LOCL_CRD" ) ) eq 'AZEL' ) {
+    $return_hash{'system'} = 'azel';
+  }
 
 } elsif( $type eq 'JIGGLE' ) {
 
@@ -146,9 +164,38 @@ if( $type eq 'RASTER' or $type eq 'SCAN' ) {
 
 } elsif( $type eq 'POINTING' or $type eq 'FOCUS' ) {
 
-  _GET_MAKECUBE_PARAMS_POINTING_
+  my $instap = ( defined( $Frm->hdr( "INSTAP" ) ) ?
+                 uc( $Frm->hdr( "INSTAP" ) )      :
+                 '' );
 
-  %return_hash = ( %return_hash, %{$_GET_MAKECUBE_PARAMS_POINTING_{HASH}} );
+  # Force rotation angle to 0 and turn off autogrid.
+  $return_hash{'autogrid'} = 'no';
+  $return_hash{'crota'} = 0;
+
+  # Check if we're doing a specific detector.
+  if( $instap ne '' ) {
+    $return_hash{'detectors'} = $instap;
+  }
+
+  # Always force system=tracking and alignsys=true.
+  $return_hash{'system'} = 'tracking';
+  $return_hash{'alignsys'} = 'true';
+
+  my $jig_name = $Frm->hdr('JIGL_NAM');
+  if ((defined $jig_name) and ($jig_name =~ /harp([45])/i)) {
+    # We have a fixed HARP jiggle pattern (which doesn't use scaling).
+    # Therefore we need to use the appropriate pixel scale (taken from
+    # the routine for type JIGGLE).
+    $return_hash{'pixsize'} = $1 == 4 ? 7.5 : 6;
+  }
+  else {
+    # Check to see if we have a JIG_SCAL header defined. If so, then we
+    # can force the pixel scale to that.
+    my $jig_scale = $Frm->hdr('JIG_SCAL');
+    if ((defined $jig_scale) and ($jig_scale ne '')) {
+      $return_hash{'pixsize'} = $jig_scale;
+    }
+  }
 
 } else {
   orac_throw "Unable to determine MAKECUBE parameters for observation type $type."
