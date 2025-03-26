@@ -1,0 +1,72 @@
+=head1 NAME
+
+_ROTATE_TO_AZEL_ - Rotate image to Az-El system and display
+
+=head1 DESCRIPTION
+
+This primitive can be used when an image has been made in
+non-Az-El coordinates, but needs to be displayed in them.
+An example would be a HARP pointing gridded in tracking
+coordinates.  We must process this data in the coordinate
+system used for the observation such that slices
+align with the (typically) 5-point pattern, but we
+should display in Az-El in order to help the operator
+verify the direction of the pointing offset.
+
+The map is first enlarged using sqorst to give a reasonable
+number of pixels for rotation.  The required angle is
+then estimated via astRate and appled using the KAPPA
+rotate task.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item SUFFIX = STRING (Given)
+
+Output file name suffix.  [azel]
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2025 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $suffix = get_prim_arg($_PRIM_ARGS_, 'SUFFIX', 'azel');
+
+my ($in, $out) = $Frm->inout('_' . $suffix);
+
+# Scale up the input file using sqorst and set its system to AzEl.
+my $sq = ORAC::TempFile->new(0);
+$Mon{'kappa_mon'}->obeyw('sqorst', "in=$in out=$sq mode=factors factors=[20,20,1] method=nearest");
+$Mon{'ndfpack_mon'}->obeyw('wcsattrib', "ndf=$sq mode=set name=system newval=AzEl");
+
+# Determine angle from upright using astRate.
+$Mon{'atools_mon'}->obeyw('astrate', "this=$sq at=[0,0,0] ax1=1 ax2=1");
+my ($ORAC_STATUS, $dx) = $Mon{'atools_mon'}->get('astrate', 'rate');
+$Mon{'atools_mon'}->obeyw('astrate', "this=$sq at=[0,0,0] ax1=1 ax2=2");
+($ORAC_STATUS, my $dy) = $Mon{'atools_mon'}->get('astrate', 'rate');
+my $angle = atan2($dy, $dx) * DR2D;
+
+# Apply the rotation to generate the output file.
+$Mon{'kappa_mon'}->obeyw('rotate', "angle=$angle in=$sq out=$out");
+
+$Frm->file($out);
+$Display->display_data($Frm);
