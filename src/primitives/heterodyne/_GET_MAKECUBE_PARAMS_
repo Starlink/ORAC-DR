@@ -23,6 +23,10 @@ For jiggle, pixsize is set.
 
 The MAKECUBE parameters and their values.
 
+=item SYSTEM = STRING (Given)
+
+The coordinate system to be used.  ['tracking']
+
 =item TYPE = STRING (Given)
 
 The type of observation done. This must be one of 'jiggle', 'raster',
@@ -96,12 +100,14 @@ MA 02111-1307, USA.
 my $type = get_prim_arg( $_PRIM_ARGS_, "TYPE", undef, 1 );
 $type = uc( $type );
 
+my $system = get_prim_arg($_PRIM_ARGS_, 'SYSTEM', undef);
+
 my $file = $Frm->file;
 
 orac_print "Determining MAKECUBE parameters for $type for $file.\n";
 
 # Set up some defaults.
-my %return_hash = ( 'system' => 'tracking',
+my %return_hash = ( 'system' => ($system // 'tracking'),
                     'autogrid' => 'yes',
                     'badmask' => 'and',
                     'alignsys' => 'yes',
@@ -130,8 +136,9 @@ if( $type eq 'RASTER' or $type eq 'SCAN' ) {
   $return_hash{'pixsize'} = $pixsize;
   $return_hash{'crota'} = $crota;
 
-  # If we SCANned in AZEL, then set the system to AZEL.
-  if( uc( $Frm->hdr( "LOCL_CRD" ) ) eq 'AZEL' ) {
+  # If we SCANned in AZEL, then set the system to AZEL,
+  # unless a sytem was explicity specified.
+  if ((not defined $system) and ('AZEL' eq uc $Frm->hdr('LOCL_CRD'))) {
     $return_hash{'system'} = 'azel';
   }
 
@@ -172,20 +179,25 @@ if( $type eq 'RASTER' or $type eq 'SCAN' ) {
     $return_hash{'detectors'} = $instap;
   }
 
-  # Always force system=azel or tracking and alignsys=true.
-  my $jig_crd = uc $Frm->hdr('JIG_CRD');
-  if ($jig_crd eq 'FPLANE') {
-    # This is likely HARP pointing, performed in focal plane coordinates
-    # with the K-mirror tracking the source -- grid in tracking coordinates.
-    $return_hash{'system'} = 'tracking';
-    $Frm->uhdr('POINTING_IS_AZEL', 0);
+  # Always force system=azel or tracking (unless specified) and alignsys=true.
+  unless (defined $system) {
+    my $jig_crd = uc $Frm->hdr('JIG_CRD');
+    if ($jig_crd eq 'FPLANE') {
+      # This is likely HARP pointing, performed in focal plane coordinates
+      # with the K-mirror tracking the source -- grid in tracking coordinates.
+      $return_hash{'system'} = 'tracking';
+      $Frm->uhdr('POINTING_IS_AZEL', 0);
+    }
+    else {
+      unless ($jig_crd eq 'AZEL') {
+        orac_warn("Unexpected jiggle coordinate system '$jig_crd', gridding in Az-El.\n");
+      }
+      $return_hash{'system'} = 'azel';
+      $Frm->uhdr('POINTING_IS_AZEL', 1);
+    }
   }
   else {
-    unless ($jig_crd eq 'AZEL') {
-      orac_warn("Unexpected jiggle coordinate system '$jig_crd', gridding in Az-El.\n");
-    }
-    $return_hash{'system'} = 'azel';
-    $Frm->uhdr('POINTING_IS_AZEL', 1);
+      $Frm->uhdr('POINTING_IS_AZEL', ('AZEL' eq uc $system) ? 1 : 0);
   }
   $return_hash{'alignsys'} = 'true';
 
