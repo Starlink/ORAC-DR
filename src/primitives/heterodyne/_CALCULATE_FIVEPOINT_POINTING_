@@ -8,23 +8,7 @@ _CALCULATE_FIVEPOINT_POINTING_
 
 =head1 ARGUMENTS
 
-=over 4
-
-=item CACHE = LOGICAL (Given)
-
-Whether or not to cache the results in internal headers. [0]
-
-=item REPORT = LOGICAL (Given)
-
-Whether or not to report results to the user. [1]
-
-=item TYPE = STRING (Given)
-
-The type of pointing being calculated. This is purely for bookkeeping
-purposes, and should be either CONTINUUM or LINE. This argument is
-case-insensitive. ['LINE']
-
-=back
+None.
 
 =head1 NOTES
 
@@ -40,7 +24,9 @@ This primitive is suitable for ACSIS pointing observations.
 
 =over 4
 
-None.
+=item RESULT
+
+Array containing (daz, del) if successful, undef otherwise.
 
 =back
 
@@ -81,10 +67,7 @@ MA 02111-1307, USA.
 
 =cut
 
-# Handle arguments.
-my $cache = get_prim_arg( $_PRIM_ARGS_, "CACHE", 0 );
-my $report = get_prim_arg( $_PRIM_ARGS_, "REPORT", 1 );
-my $type = uc( get_prim_arg( $_PRIM_ARGS_, "TYPE", "LINE" ) );
+$_PRIM_ARGS_->{'RESULT'} = undef;
 
 my $in = $Frm->file;
 
@@ -193,76 +176,7 @@ if ($FitStatus == ORAC__OK) {
     my $daz = $skyframe->Format( 1, $azel[0]->[0] );
     my $del = $skyframe->Format( 1, $azel[1]->[0] );
 
-    # Display the results to the user.
-    my $p_daz = sprintf( "%.2f", $daz );
-    my $p_del = sprintf( "%.2f", $del );
-    orac_say( "Pointing results using Gaussian fit:", "blue" ) if $report;
-    orac_say( " DAZ: $p_daz\n DEL: $p_del", "blue" ) if $report;
-
-    # Store with the calibration system.
-    my %pointinghash = ( DAZ => $daz,
-                         DEL => $del,
-                         DAZ_ERR => 0,
-                         DEL_ERR => 0,
-                         POINTING_TYPE => $type,
-                         METHOD => 'FIVEPOINT',
-                       );
-    my %calhash = ( %{$Frm->hdr},
-                    %pointinghash,
-                  );
-
-    if( $cache ) {
-      if( ! defined( $Frm->uhdr( "POINTING_INFO" ) ) ) {
-        $Frm->uhdr( "POINTING_INFO", [] );
-      }
-      my $pointing_info = $Frm->uhdr( "POINTING_INFO" );
-      push @$pointing_info, \%pointinghash;
-      $Frm->uhdr( "POINTING_INFO", $pointing_info );
-    }
-
-    # Display a warning if values are large.
-    if( abs( $daz ) > 10 ) {
-      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n" if $report;
-    } elsif( abs( $daz ) > 5 ) {
-      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n" if $report;
-    }
-    if( abs( $del ) > 10 ) {
-      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n" if $report;
-    } elsif( abs( $del ) > 5 ) {
-      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n" if $report;
-    }
-
-    $Cal->pointingindex->add( $Frm->file, \%calhash );
-
-    # Start a log file.
-    my $logfile = "log.pointing";
-    my $log = new ORAC::LogFile( $logfile );
-    my $time = gmtime();
-    $log->header( "Pointing log file - created on $time",
-                  "\n#    Time         DAZ    DEL   Method    Type",
-                  "--------------------------------------------------",
-                );
-    $log->addentry( sprintf( "%-4d %11.2f %6.2f %6.2f %9s %s",
-                             $Frm->number,
-                             $Frm->hdr( "ORACTIME" ),
-                             $daz,
-                             $del,
-                             "fivepoint",
-                             lc( $type ) ) );
-
-    orac_say "Pointing information stored in $logfile";
-
-    # Try to store this in the file using JCMT::Pointing.
-    my $isok = eval { require JCMT::Pointing; 1; };
-    if( $isok ) {
-
-      my @fit;
-      push @fit, new JCMT::Pointing::Fit( label => lc( "fivepoint-$type" ),
-                                          offset => Astro::Coords::Offset->new( $daz, $del,
-                                                                                system => 'AZEL' ) );
-      JCMT::Pointing->write_fit_to_datafile( $in, @fit );
-
-    }
+    $_PRIM_ARGS_->{'RESULT'} = [$daz, $del];
 
   } else {
     orac_err "Error fitting pointing data second time.\n";
@@ -273,6 +187,3 @@ if ($FitStatus == ORAC__OK) {
 
 # Set SkyRefIs and Format back to what they were before.
 $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=$skyrefis,Format(1)=$format1,Format(2)=$format2'" );
-
-# Tidy-up output.
-orac_say "";
