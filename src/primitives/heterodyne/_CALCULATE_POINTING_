@@ -75,12 +75,98 @@ MA 02111-1307, USA.
 
 =cut
 
-if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
+# Handle arguments.
+my $cache = get_prim_arg($_PRIM_ARGS_, 'CACHE', 0);
+my $report = get_prim_arg($_PRIM_ARGS_, 'REPORT', 1);
+my $type = uc get_prim_arg($_PRIM_ARGS_, 'TYPE', 'LINE');
 
-  # Handle arguments.
-  my $cache = get_prim_arg( $_PRIM_ARGS_, "CACHE", 0 );
-  my $report = get_prim_arg( $_PRIM_ARGS_, "REPORT", 1 );
-  my $type = uc( get_prim_arg( $_PRIM_ARGS_, "TYPE", 'LINE' ) );
+my $have_jcmt_pointing = eval {require JCMT::Pointing; 1;};
+
+my $store_pointing_result = sub {
+  my ($xcen, $ycen, $xerr, $yerr, $method, $file) = @_;
+
+  if ($report) {
+    # Make them pretty for output.
+    my $p_xcen = sprintf "%.2f", $xcen;
+    my $p_ycen = sprintf "%.2f", $ycen;
+
+    # Display the results to the user.
+    orac_say( "Pointing results using $method", "blue" );
+    if (defined $xerr and defined $yerr) {
+      my $p_xerr = sprintf "%.2f", $xerr;
+      my $p_yerr = sprintf "%.2f", $yerr;
+      orac_say( " DAZ: $p_xcen +/- $p_xerr\n DEL: $p_ycen +/- $p_yerr", "blue" );
+    }
+    else {
+      orac_say( " DAZ: $p_xcen\n DEL: $p_ycen", "blue" );
+    }
+
+    # Display a warning if values are large.
+    if( abs( $xcen ) > 10 ) {
+      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $xcen ) > 5 ) {
+      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+    }
+    if( abs( $ycen ) > 10 ) {
+      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $ycen ) > 5 ) {
+      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
+    }
+
+    orac_say "";
+  }
+
+  # Store with the calibration system.
+  my %pointing = (
+    DAZ => $xcen,
+    DEL => $ycen,
+    DAZ_ERR => $xerr // 0,
+    DEL_ERR => $yerr // 0,
+    POINTING_TYPE => $type,
+    METHOD => uc $method,
+  );
+
+  my %calhash = (%{$Frm->hdr}, %pointing);
+  $Cal->pointingindex->add( $Frm->file, \%calhash );
+
+  # Start a log file.
+  my $log = ORAC::LogFile->new('log.pointing');
+  my $time = gmtime();
+  $log->header(
+    "Pointing log file - created on $time",
+    "\n#    Time         DAZ    DEL   Method    Type",
+    "------------------------------------------------------");
+
+  $log->addentry(sprintf "%-4d %11.2f %6.2f %6.2f %9s %s",
+    $Frm->number,
+    $Frm->hdr('ORACTIME'),
+    $xcen,
+    $ycen,
+    $method,
+    lc $type);
+
+  if ($cache) {
+    unless (defined $Frm->uhdr("POINTING_INFO")) {
+      $Frm->uhdr("POINTING_INFO", []);
+    }
+    my $pointing_info = $Frm->uhdr("POINTING_INFO");
+    push @$pointing_info, \%pointing;
+  }
+
+  # Store this fit in the file.
+  if ($have_jcmt_pointing) {
+    my @fit;
+    push @fit, JCMT::Pointing::Fit->new(
+        label => "$method-$type",
+        offset => Astro::Coords::Offset->new(
+            $xcen, $ycen,
+            system => 'AZEL'));
+    JCMT::Pointing->append_fit_to_datafile( $file, @fit );
+  }
+};
+
+
+if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
 
   # Check the JIGL_CNT header. If it's five or smaller, then do the
   # fivepoint pointing calculation. We don't check for equality to
@@ -111,83 +197,13 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     $Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
 
     # Retrieve the x and y centre.
-    ( my $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
-    ( $ORAC_STATUS, my $ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
-    ( $ORAC_STATUS, my $xerr ) = $Mon{'kappa_mon'}->get( "centroid", "xerr" );
-    ( $ORAC_STATUS, my $yerr ) = $Mon{'kappa_mon'}->get( "centroid", "yerr" );
+    ( my $ORAC_STATUS, my $cen_xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
+    ( $ORAC_STATUS, my $cen_ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
+    ( $ORAC_STATUS, my $cen_xerr ) = $Mon{'kappa_mon'}->get( "centroid", "xerr" );
+    ( $ORAC_STATUS, my $cen_yerr ) = $Mon{'kappa_mon'}->get( "centroid", "yerr" );
 
-    # Make them pretty for output.
-    my $p_xcen = sprintf( "%.2f", $xcen );
-    my $p_ycen = sprintf( "%.2f", $ycen );
-    my $p_xerr = sprintf( "%.2f", $xerr );
-    my $p_yerr = sprintf( "%.2f", $yerr );
-
-    # Display the results to the user.
-    orac_say( "Pointing results using CENTROID:", "blue" ) if $report;
-    orac_say( " DAZ: $p_xcen +/- $p_xerr\n DEL: $p_ycen +/- $p_yerr", "blue" ) if $report;
-
-    # Display a warning if values are large.
-    if( abs( $xcen ) > 10 ) {
-      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n" if $report;
-    } elsif( abs( $xcen ) > 5 ) {
-      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n" if $report;
-    }
-    if( abs( $ycen ) > 10 ) {
-      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n" if $report;
-    } elsif( abs( $ycen ) > 5 ) {
-      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n" if $report;
-    }
-
-    # Store with the calibration system.
-    my %pointing_centroid = ( DAZ => $xcen,
-                         DEL => $ycen,
-                         DAZ_ERR => $xerr,
-                         DEL_ERR => $yerr,
-                         POINTING_TYPE => $type,
-                         METHOD => 'CENTROID',
-                       );
-
-    my %calhash = ( %{$Frm->hdr},
-                    %pointing_centroid,
-                  );
-    $Cal->pointingindex->add( $Frm->file, \%calhash );
-
-    # Start a log file.
-    my $logfile = "log.pointing";
-    my $log = new ORAC::LogFile( $logfile );
-    my $time = gmtime();
-    $log->header( "Pointing log file - created on $time",
-                  "\n#    Time         DAZ    DEL   Method    Type",
-                  "------------------------------------------------------",
-                );
-    $log->addentry( sprintf( "%-4d %11.2f %6.2f %6.2f %9s %s",
-                             $Frm->number,
-                             $Frm->hdr( "ORACTIME" ),
-                             $xcen,
-                             $ycen,
-                             "centroid",
-                             lc( $type ) ) );
-
-    if( $cache ) {
-      if( ! defined( $Frm->uhdr( "POINTING_INFO" ) ) ) {
-        $Frm->uhdr( "POINTING_INFO", [] );
-      }
-      my $pointing_info = $Frm->uhdr( "POINTING_INFO" );
-      push @$pointing_info, \%pointing_centroid;
-    }
-
-    # Store this fit in the file.
-    my $isok = eval { require JCMT::Pointing; 1; };
-    if( $isok ) {
-      my @fit;
-      push @fit, JCMT::Pointing::Fit->new( label => "centroid-$type",
-                                            offset => Astro::Coords::Offset->new( $xcen, $ycen,
-                                                                                  system => 'AZEL' ) );
-      JCMT::Pointing->append_fit_to_datafile( $in, @fit );
-    }
-
-    # Tidy up the output so we have differentiation between CENTROID and PSF.
-    orac_say "";
+    $store_pointing_result->(
+      $cen_xcen, $cen_ycen, $cen_xerr, $cen_yerr, 'centroid', $in);
 
     # Now do the PSF pointing calculation.
     #
@@ -196,6 +212,7 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$in mode=wcs dim=2" );
     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in" );
     ( $ORAC_STATUS, my @maxcoord ) = $Mon{'kappa_mon'}->get( "stats", "maxcoord" );
+    ($ORAC_STATUS, my $maxwcs) = $Mon{'kappa_mon'}->get('stats', 'maxwcs');
     my $x_max = $maxcoord[0] * 3600;
     my $y_max = $maxcoord[1] * 3600;
 
@@ -224,70 +241,28 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
       ( $ORAC_STATUS, my $psf_xcen ) = $Mon{'kappa_mon'}->get( "psf", "xcen" );
       ( $ORAC_STATUS, my $psf_ycen ) = $Mon{'kappa_mon'}->get( "psf", "ycen" );
 
-      # Make these pretty for output.
-      my $p_psf_xcen = sprintf( "%.2f", $psf_xcen );
-      my $p_psf_ycen = sprintf( "%.2f", $psf_ycen );
-
-      # Display the results to the user.
-      orac_say( "Pointing results using PSF:", "blue" ) if $report;
-      orac_say( " DAZ: $p_psf_xcen\n DEL: $p_psf_ycen", "blue" ) if $report;
-
-      # Display a warning if values are large.
-      if( abs( $psf_xcen ) > 10 ) {
-        orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n" if $report;
-      } elsif( abs( $psf_xcen ) > 5 ) {
-        orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n" if $report;
-      }
-      if( abs( $psf_ycen ) > 10 ) {
-        orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n" if $report;
-      } elsif( abs( $psf_ycen ) > 5 ) {
-        orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n" if $report;
-      }
-
-      # Store with the calibration system.
-      my %pointing_psf = ( DAZ => $psf_xcen,
-                        DEL => $psf_ycen,
-                        DAZ_ERR => 0,
-                        DEL_ERR => 0,
-                        POINTING_TYPE => $type,
-                        METHOD => 'PSF',
-                      );
-      %calhash = ( %{$Frm->hdr},
-                   %pointing_psf,
-                 );
-      $Cal->pointingindex->add( $Frm->file, \%calhash );
-
-      # Add to the logfile.
-      $log->addentry( sprintf( "%-4d %11.2f %6.2f %6.2f %9s %s",
-                               $Frm->number,
-                               $Frm->hdr( "ORACTIME" ),
-                               $psf_xcen,
-                               $psf_ycen,
-                               "psf",
-                               lc( $type ) ) );
-
-      if( $cache ) {
-        if( ! defined( $Frm->uhdr( "POINTING_INFO" ) ) ) {
-          $Frm->uhdr( "POINTING_INFO", [] );
-        }
-        my $pointing_info = $Frm->uhdr( "POINTING_INFO" );
-        push @$pointing_info, \%pointing_psf;
-      }
-
-      # Try to store the pointing information in the file using
-      # JCMT::Pointing.
-      if( $isok ) {
-
-        my @fit;
-        push @fit, new JCMT::Pointing::Fit( label => lc( "psf-$type" ),
-                                            offset => Astro::Coords::Offset->new( $psf_xcen, $psf_ycen,
-                                                                                  system => 'AZEL' ) );
-        JCMT::Pointing->append_fit_to_datafile( $in, @fit );
-      }
+      $store_pointing_result->(
+        $psf_xcen, $psf_ycen, undef, undef, 'psf', $in);
 
     } else {
       # some untrappable error
       $ORAC_STATUS = $PSF_STATUS;
+    }
+
+    $maxwcs =~ s/,//g;
+    my @maxwcs = split /\s+/, $maxwcs;
+    my $BF_STATUS = $Mon{'kappa_mon'}->obeyw('beamfit', "ndf=$in mode=interface pos=\"$maxwcs[0],$maxwcs[1]\" beams=1 fwhm=15");
+
+    unless ($BF_STATUS == ORAC__OK) {
+      orac_warn "Unable to fit pointing source using beamfit\n";
+    }
+    else {
+      ($ORAC_STATUS, my @bf_cen) = $Mon{'kappa_mon'}->get('beamfit', 'centre');
+
+      $store_pointing_result->(
+        (split /\s+/, $bf_cen[0], 2),
+        (split /\s+/, $bf_cen[1], 2),
+        'beamfit', $in);
     }
 
     # Set System, SkyRefIs and Format back to what they were before.
