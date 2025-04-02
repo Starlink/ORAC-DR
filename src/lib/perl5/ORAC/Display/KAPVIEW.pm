@@ -1963,7 +1963,6 @@ sub datamodel {
     orac_err("Error sectioning file $file\n");
     return ORAC__ERROR;
   }
-  $file = $secfile;
 
   # A resetpars also seems to be necessary to instruct KAPPA to
   # update its current frame for plotting. Without this the new PICDEF
@@ -2016,10 +2015,10 @@ sub datamodel {
   }
 
   # Now plot the data.
-  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
+  $status = $self->obj->obeyw("linplot","ndf=$secfile device=$device $args");
   if ($status != ORAC__OK) {
-    orac_err("Error displaying data file\n");
-    orac_err("Trying to execute: linplot ndf=$file device=$device $args\n");
+    orac_err("Error displaying data secfile\n");
+    orac_err("Trying to execute: linplot ndf=$secfile device=$device $args\n");
     return $status;
   }
 
