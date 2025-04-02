@@ -2007,7 +2007,7 @@ sub datamodel {
   } else {
     $args = "mode=mark marker=2 style='colour(marker)=white'";
   }
-  $args .= " clear $range";
+  $args .= " clear $range margin=!";
 
   # Select the array component.
   if (exists $options{COMP} && defined $options{COMP}) {
