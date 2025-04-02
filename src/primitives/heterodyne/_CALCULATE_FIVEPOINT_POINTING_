@@ -85,6 +85,10 @@ my $skyframe = $wcs->FindFrame( $skytemplate, "" );
 my $restfreq = $wcs->Get("RestFreq");
 my $fwhm = 0.024383119917 / $restfreq; # FWHM in radians.
 
+# Get pixel size from 2nd axis to avoid cos term (assuming square pixels).
+my $pixsize = $wcs->Rate([0, 0, 0], 2, 2);
+my $fwhm_pix = $fwhm / $pixsize;
+
 # Original status of frameset
 my $skyrefis = $wcs->Get("SkyRefIs");
 my $format1 = $wcs->Get("Format(1)");
@@ -102,8 +106,6 @@ $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=Origi
 # First, the horizontal.
 my $temp1 = new ORAC::TempFile( 0 );
 my $temp1_file = $temp1->file;
-my $temp2 = new ORAC::TempFile( 0 );
-my $temp2_file = $temp2->file;
 
 $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,1) out=$temp1_file trim trimwcs" );
 $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=pixel" );
@@ -114,19 +116,21 @@ $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
 ( my $ORAC_STATUS, my $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
 ( $ORAC_STATUS, my $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
 
+my $temp_horiz = $in . 'hori';
 my $peak = $max;
 if( $min < 0 && $max < 0 ) {
-  $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp2_file scalar=$min" );
+  $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp_horiz scalar=$min" );
   $peak = $min - $max;
 } else {
-  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp2_file" );
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp_horiz" );
 }
+$Frm->push_intermediates($temp_horiz);
 
 # Fit the gaussian.
-my $params = "in=$temp2_file device=! dialog=f varuse mask1=[-10]";
-$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=1";
-$params   .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
-my $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
+my $params = "device=! dialog=f varuse=no mask1=[-10]"
+    . " mask2=[10] ncomp=1 centre=0 cont=0 fwhm=$fwhm_pix"
+    . " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
+my $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "in=$temp_horiz peak=$peak $params" );
 
 if ($FitStatus == ORAC__OK) {
 
@@ -144,19 +148,18 @@ if ($FitStatus == ORAC__OK) {
   ( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
   ( $ORAC_STATUS, $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
 
+  my $temp_vert = $in . 'vert';
   $peak = $max;
   if( $min < 0 && $max < 0 ) {
-    $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp2_file scalar=$min" );
+    $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp_vert scalar=$min" );
     $peak = $min - $max;
   } else {
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp2_file" );
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp_vert" );
   }
+  $Frm->push_intermediates($temp_vert);
 
   # Fit the polynomial.
-  $params  = "in=$temp2_file device=! dialog=f varuse mask1=[-10]";
-  $params .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=1";
-  $params .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
-  $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
+  $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "in=$temp_vert peak=$peak $params" );
 
   if ($FitStatus == ORAC__OK) {
 
