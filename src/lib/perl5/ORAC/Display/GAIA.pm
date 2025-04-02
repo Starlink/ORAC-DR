@@ -89,7 +89,7 @@ sub new {
 
   if ($status != ORAC__OK) {
     my $app = ORAC::Version->getApp;
-    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within $app. Try deleting the ~/.skycat/history file and restarting $app. If that does not work, please rerun either with the display switched off or with a different display device selected.";
+    croak "Error launching/contacting or configuring GAIA. It is unlikely that this can be fixed by retrying from within $app. Try deleting the ~/.skycat/history file and restarting $app. If that does not work, please rerun either with the display switched off or with a different display device selected.";
   }
 
   # Return object
