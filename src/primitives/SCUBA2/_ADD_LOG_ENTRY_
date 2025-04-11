@@ -28,6 +28,13 @@ B<PARLIST> argument.
 An array reference containing the values to be written to the log
 file. No default.
 
+=item B<ENTRY_FORMAT>
+
+Format specification for the entries.  If provided, it should be
+a single string suitable for use with C<sprintf> to format
+the values given a in C<ENTRIES>.  If not specified the values
+are assumed to already have been formatted.
+
 =item B<GROUP>
 
 Flag to denote whether the Group file or Frame file has been
@@ -43,6 +50,15 @@ of log file and will write a custom header accordingly. No default.
 An array reference containing the parameter names for the values
 written to the log file. There should be one for every entry. No
 default.
+
+=item B<PARAM_FORMAT>
+
+Format specification for the parameter names and units.  If specifed
+then it should be a single string suitable for use with C<sprintf>
+to format the names given in C<PARAMS> and the units specified by
+C<UNITS> after enclosing them in brackets.  If not specified then
+the names are assumed to already have been formatted and the
+units to already be enclosed in brackets.
 
 =item B<PARLIST>
 
@@ -176,6 +192,8 @@ if ( !defined $logfile ) {
 my $entries = get_prim_arg($_PRIM_ARGS_, "ENTRIES", undef);
 my $params  = get_prim_arg($_PRIM_ARGS_, "PARAMS", undef);
 my $units  = get_prim_arg($_PRIM_ARGS_, "UNITS", undef);
+my $entry_fmt = get_prim_arg($_PRIM_ARGS_, 'ENTRY_FORMAT', undef);
+my $param_fmt = get_prim_arg($_PRIM_ARGS_, 'PARAM_FORMAT', undef);
 
 my (@entries, @params, @units);
 if ( $entries && $params ) {
@@ -217,8 +235,9 @@ my $time = gmtime();
 # Entry names and units - define base list and add given names
 my ($entry_names, $logunits);
 if ($paramlist eq "BRIEF") {
-  $entry_names = sprintf "%15s %22s %4s ", "UT","HST","Obs";
-  $logunits = sprintf "%15s %22s %4s ","(YYYYMMDD.frac)","(YYYY-MM-DDThh:mm:ss)","()";
+  my $formatstr = '%15s %22s %4s ';
+  $entry_names = sprintf $formatstr, "UT","HST","Obs";
+  $logunits = sprintf $formatstr, "(YYYYMMDD.frac)","(YYYY-MM-DDThh:mm:ss)","()";
 } elsif ($paramlist =~ /^full/i) {
   my $formatstr = "%15s %22s %4s %20s %13s %6s %5s ";
   $entry_names = sprintf $formatstr, "UT","HST","Obs", "Source", "Mode", "Filter", "El";
@@ -233,8 +252,14 @@ if ($paramlist eq "BRIEF") {
   $logunits .= sprintf $formatstr,"()","()";
 }
 
-$entry_names .= join(" ",@params);
-$logunits .= join(" ",@units);
+if (defined $param_fmt) {
+  $entry_names .= sprintf $param_fmt, @params;
+  $logunits .= sprintf $param_fmt, map {"($_)"} @units;
+}
+else {
+  $entry_names .= join ' ', @params;
+  $logunits .= join ' ', @units;
+}
 
 # Create the log file object - define the actual name to use
 $logfile = "log." . $logfile;
@@ -244,7 +269,9 @@ $log->header("# $logtitle - created on $time UT",
             );
 
 # Create list of values to write in log file
-my $logentry = join(" ",@entries);
+my $logentry = (defined $entry_fmt)
+    ? (sprintf $entry_fmt, @entries)
+    : (join ' ', @entries);
 
 # Define set of base parameters to write if requested
 my $entry;
