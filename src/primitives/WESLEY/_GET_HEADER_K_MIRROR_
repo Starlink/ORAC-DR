@@ -32,10 +32,9 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 =cut
 
-use JCMT::HARP_K_Mirror;
-use Astro::Coords;
-use Astro::Telescope;
-use DateTime::Format::ISO8601;
+use Astro::PAL qw/:constants/;
+
+my $column = ['TCS_TR_ANG', 'TCS_AZ_ANG', 'TCS_AZ_BC2'];
 
 for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
     my $in = $Frm->file($i + 1);
@@ -43,32 +42,22 @@ for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
     my $ia_en_hdr = $Frm->hdrval('ROT_IAEN', $i);
 
     unless ((defined $ia_st_hdr) and (defined $ia_en_hdr)) {
-        die 'TRACKSYS is not J2000'
-            unless 'J2000' eq $Frm->hdrval('TRACKSYS', $i);
-
-        my $coord = Astro::Coords->new(
-           ra => $Frm->hdrval('BASEC1', $i),
-           dec => $Frm->hdrval('BASEC2', $i),
-           type => 'J2000',
-           units => 'degrees');
-
-        $coord->telescope(Astro::Telescope->new('JCMT'));
-
         my $angle = $Frm->hdrval('ROT_PA', $i);
 
+        _READ_JCMT_STATE_ FILE=$in COLUMN=$column
+        my $state = $_READ_JCMT_STATE_{'STATE'};
+
         foreach my $hdrinfo (
-                ['DATE-OBS', 'ROT_IAST', $ia_st_hdr],
-                ['DATE-END', 'ROT_IAEN', $ia_en_hdr]) {
-            my ($hdr_dt, $hdr_angle, $val_angle) = @$hdrinfo;
+                ['ROT_IAST', $ia_st_hdr, 0],
+                ['ROT_IAEN', $ia_en_hdr, -1]) {
+            my ($hdr_angle, $val_angle, $element) = @$hdrinfo;
             next if defined $val_angle;
 
-            my $date = $Frm->hdrval($hdr_dt, $i);
-            my $dt = DateTime::Format::ISO8601->parse_datetime($date);
-            $coord->datetime($dt);
+            my $el = $state->{'TCS_AZ_BC2'}->[$element] * DR2D;
+            my $pa = ($state->{'TCS_AZ_ANG'}->[$element]
+                - $state->{'TCS_TR_ANG'}->[$element]) * DR2D;
 
-            # Specify PA=0 as the translator should have already included
-            # this in the choices for ROT_PA.
-            my $kmirror = JCMT::HARP_K_Mirror::get_kmirror_angle($coord, 0);
+            my $kmirror = $el - $pa;
 
             my $beam = $kmirror + $angle;
 
