@@ -1,0 +1,81 @@
+=head1 NAME
+
+_GET_HEADER_K_MIRROR_ - Check for missing K-mirror IA headers
+
+=head1 DESCRIPTION
+
+This primitive checks each file in the frame, and if the
+new K-mirror headers ROT_IAST and ROT_IAEN are missing,
+estimates values for them.
+
+New values are stored in the C<uhdr> WESLEY_SET_HEADERS
+(for subsequent writing by C<_SET_HEADERS_>).
+
+=head1 COPYRIGHT
+
+Copyright (C) 2025 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use JCMT::HARP_K_Mirror;
+use Astro::Coords;
+use Astro::Telescope;
+use DateTime::Format::ISO8601;
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my $in = $Frm->file($i + 1);
+    my $ia_st_hdr = $Frm->hdrval('ROT_IAST', $i);
+    my $ia_en_hdr = $Frm->hdrval('ROT_IAEN', $i);
+
+    unless ((defined $ia_st_hdr) and (defined $ia_en_hdr)) {
+        die 'TRACKSYS is not J2000'
+            unless 'J2000' eq $Frm->hdrval('TRACKSYS', $i);
+
+        my $coord = Astro::Coords->new(
+           ra => $Frm->hdrval('BASEC1', $i),
+           dec => $Frm->hdrval('BASEC2', $i),
+           type => 'J2000',
+           units => 'degrees');
+
+        $coord->telescope(Astro::Telescope->new('JCMT'));
+
+        my $angle = $Frm->hdrval('ROT_PA', $i);
+
+        foreach my $hdrinfo (
+                ['DATE-OBS', 'ROT_IAST', $ia_st_hdr],
+                ['DATE-END', 'ROT_IAEN', $ia_en_hdr]) {
+            my ($hdr_dt, $hdr_angle, $val_angle) = @$hdrinfo;
+            next if defined $val_angle;
+
+            my $date = $Frm->hdrval($hdr_dt, $i);
+            my $dt = DateTime::Format::ISO8601->parse_datetime($date);
+            $coord->datetime($dt);
+
+            # Specify PA=0 as the translator should have already included
+            # this in the choices for ROT_PA.
+            my $kmirror = JCMT::HARP_K_Mirror::get_kmirror_angle($coord, 0);
+
+            my $beam = $kmirror + $angle;
+
+            $beam += 360.0 while $beam <= -180.0;
+            $beam -= 360.0 while $beam > 180.0;
+
+            $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$in}->{$hdr_angle} = $beam;
+        }
+    }
+}
