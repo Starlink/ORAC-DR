@@ -1,0 +1,141 @@
+=head1 NAME
+
+_GET_POINTING_LOG_INFO_ - Assemble additional information for pointing logs
+
+=head1 DESCRIPTION
+
+This primitive prepares information which may be useful to include
+in pointing log files.  This will include information found in the
+frame header values.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<DAZ>
+
+Calculated offset in azimuth.
+
+=item B<DEL>
+
+Calculated offset in elevation.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item B<INFO>
+
+Reference to a hash containing:
+
+=over 4
+
+=item B<AZ>
+
+=item B<EL>
+
+=item B<UAZ> (initial UAZ + DAZ)
+
+=item B<UEL> (initial UEL + UEL)
+
+=item B<URA> (UAZ, UEL rotated to RA)
+
+=item B<UDEC> (UAZ, UEL rotated to DEC)
+
+=back
+
+=back
+
+=head1 NOTES
+
+Currently assumes the telescope (location) is (that of) JCMT.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2025 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use Astro::Coords;
+use Astro::Coords::Angle;
+use Astro::Coords::Offset;
+use Astro::Telescope;
+
+my $daz = get_prim_arg($_PRIM_ARGS_, 'DAZ', undef);
+my $del = get_prim_arg($_PRIM_ARGS_, 'DEL', undef);
+
+# Extract basic information from headers.
+my $az_st = $Frm->hdrval('AZSTART', 0);
+my $az_en = $Frm->hdrval('AZEND', -1);
+
+my $el_st = $Frm->hdrval('ELSTART', 0);
+my $el_en = $Frm->hdrval('ELEND', -1);
+
+# Get initial UAZ, UEL values from the header (before pointing) in order
+# to be able to estimate the total offset afterwards (e.g. UAZ + DAZ).
+my $uaz_start = $Frm->hdrval('UAZ', 0) // 0.0;
+my $uel_start = $Frm->hdrval('UEL', 0) // 0.0;
+
+my $az = undef;
+if ((defined $az_st) and (defined $az_en)) {
+    $az = ($az_st + $az_en) / 2.0;
+}
+
+my $el = undef;
+if ((defined $el_st) and (defined $el_en)) {
+    $el = ($el_st + $el_en) / 2.0;
+}
+
+my $dt_st = $Frm->uhdr('ORAC_UTSTART');
+
+# Prepare pointing log information.
+my $uaz = undef;
+if (defined $daz) {
+    $uaz = $uaz_start + $daz;
+}
+
+my $uel = undef;
+if (defined $del) {
+    $uel = $uel_start + $del;
+}
+
+my $ura = undef;
+my $udec = undef;
+if ((defined $uaz) and (defined $uel)
+        and (defined $az_st) and (defined $el_st) and (defined $dt_st)) {
+    my $coord = Astro::Coords->new(az => $az_st, el => $el_st);
+
+    my $telescope = Astro::Telescope->new('JCMT');
+    $coord->telescope($telescope);
+    $coord->datetime($dt_st);
+
+    my $offset = Astro::Coords::Offset->new(- $uaz, $uel, posang => $coord->pa());
+    ($ura, $udec) = map {$_->arcsec()} $offset->offsets_rotated();
+}
+
+# Return a hash via primitive parameter 'INFO'.
+$_PRIM_ARGS_->{'INFO'} = {
+    AZ => $az,
+    EL => $el,
+    UAZ => $uaz,
+    UEL => $uel,
+    URA => $ura,
+    UDEC => $udec,
+};

@@ -129,10 +129,8 @@ my $store_pointing_result = sub {
   my %calhash = (%{$Frm->hdr}, %pointing);
   $Cal->pointingindex->add( $Frm->file, \%calhash );
 
-  # Get initial UAZ, UEL values from the header (before pointing) in order
-  # to be able to estimate the total offset afterwards (UAZ + DAZ), etc.
-  my $uaz_start = $Frm->hdr('UAZ') // 0.0;
-  my $uel_start = $Frm->hdr('UEL') // 0.0;
+  _GET_POINTING_LOG_INFO_ DAZ=$xcen DEL=$ycen
+  my %info = %{$_GET_POINTING_LOG_INFO_{'INFO'}};
 
   my $rot_st = $Frm->hdr('ROT_IAST');
   my $rot_en = $Frm->hdr('ROT_IAEN');
@@ -145,16 +143,20 @@ my $store_pointing_result = sub {
     $rot_angle = sprintf '%7.2f', ($rot_st + $rot_en) / 2.0;
   }
 
-  my $az_st = $Frm->hdr('AZSTART');
-  my $az_en = $Frm->hdr('AZEND');
-  my $az = ((defined $az_st) and (defined $az_en))
-    ? (sprintf '%7.2f', ($az_st + $az_en) / 2.0)
+  my $az = (defined $info{'AZ'})
+    ? (sprintf '%7.2f', $info{'AZ'})
     : (sprintf '%7s', '**');
 
-  my $el_st = $Frm->hdr('ELSTART');
-  my $el_en = $Frm->hdr('ELEND');
-  my $el = ((defined $el_st) and (defined $el_en))
-    ? (sprintf '%6.2f', ($el_st + $el_en) / 2.0)
+  my $el = (defined $info{'EL'})
+    ? (sprintf '%6.2f', $info{'EL'})
+    : (sprintf '%6s', '**');
+
+  my $ura = (defined $info{'URA'})
+    ? (sprintf '%6.2f', $info{'URA'})
+    : (sprintf '%6s', '**');
+
+  my $udec = (defined $info{'UDEC'})
+    ? (sprintf '%6.2f', $info{'UDEC'})
     : (sprintf '%6s', '**');
 
   # Start a log file.
@@ -162,19 +164,18 @@ my $store_pointing_result = sub {
   my $time = gmtime();
   $log->header(
     "Pointing log file - created on $time\n",
-    "#    Time         DAZ    DEL   Method    Type      UAZ    UEL    IMG_ANG AZ      EL",
-    "---------------------------------------------------------------------------------------");
+    "#    Time         DAZ    DEL   Method    Type      UAZ    UEL    IMG_ANG AZ      EL     URA    UDEC",
+    "-----------------------------------------------------------------------------------------------------");
 
-  $log->addentry(sprintf "%-4d %11.2f %6.2f %6.2f %-9s %-9s %6.2f %6.2f %s %s %s",
+  $log->addentry(sprintf "%-4d %11.2f %6.2f %6.2f %-9s %-9s %6.2f %6.2f %s %s %s %s %s",
     $Frm->number,
     $Frm->hdr('ORACTIME'),
     $xcen,
     $ycen,
     $method,
     (lc $type),
-    ($uaz_start + $xcen),
-    ($uel_start + $ycen),
-    $rot_angle, $az, $el);
+    @info{qw/UAZ UEL/},
+    $rot_angle, $az, $el, $ura, $udec);
 
   if ($cache) {
     unless (defined $Frm->uhdr("POINTING_INFO")) {
