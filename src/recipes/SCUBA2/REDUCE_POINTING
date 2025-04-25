@@ -77,31 +77,26 @@ USA.
 # Standard introduction
 _SCUBA2_HELLO_
 
-# Carry out some checks on scan data. This is a no-op for non-SCAN
-# data.
+# Set steering parameters
 _REDUCE_SCAN_STEER_
 
-# Combine subarrays into a single image. This is a no-op for SCAN
-# data.
-_ALIGN_AND_MOSAIC_SUBARRAY_
-
-# Remove sky - assume a simple DC level is good enough.  This is a
-# no-op for SCAN data.
-_REMOVE_DC_SKY_ VERBOSE=0
-
-# Correct for extinction, using a single correction factor across the
-# entire image.  This is a no-op for SCAN data.
-_EXTINCTION_CORRECT_FRAME_ EXTCOR=QUICK
-
 # Create image to analyze
-_CREATE_IMAGE_FRAME_ SPREAD=BILINEAR MAKEMOS_METHOD=SIGMA GENVAR=1 MAKEMOS=1 SYSTEM=AZEL
+# NOTE: add SYSTEM=AZEL here to make maps in Az-El coordinates.
+_MAKEMAP_FRAME_
 
-# Trim images to a given size - 150 arcsec is necessary if calculating
-# an FCF
-_CROP_IMAGE_ALL_ HEIGHT=150 WIDTH=150
+# The next few steps are no-ops for non-calibrators. First, determine
+# the beam size.
+_FIND_BEAM_SIZE_ LOGFILE=0
 
-# Calculate an FCF if a standard source has been observed
-_FIND_CALIBRATION_MAP_
+# Second, derive FCFs - the image is trimmed and (optionally) has a
+# background subtracted before calculating FCFs. However, the original
+# file created by _MAKEMAP_FRAME_ is stored again on completion.
+# (The trimmed image is tagged "crop" by _CROP_IMAGE_ALL_ during this step,
+# and we request this to happen for all sources by specifying CALONLY=0.)
+_CALCULATE_FCFS_ CALONLY=0
+
+# Third, write log file with calibrator results
+_WRITE_CALSTATS_LOGFILE_
 
 # Calibrate the data in mJy/beam using the standard FCF
 _CALIBRATE_DATA_
@@ -109,22 +104,32 @@ _CALIBRATE_DATA_
 # Tag the calibrated map as a reduced product
 _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GRAPHIC=1
 
+# Determine the median noise from the variance in the image
+_CALC_IMAGE_NOISE_ METHOD=VARIANCE GROUP=0 RADIUS=SCAN
+
+# Calculate an NEFD from the current Frame
+_CALCULATE_NEFD_ GROUP=0
+
+# Write log file with map results
+_WRITE_MAPSTATS_LOGFILE_
+
+# Retrieve the trimmed image from _CALCULATE_FCFS_.
+_RETRIEVE_TAG_ TAG=crop
+
 # Create Group coadd
 _MAKE_MOSAIC_GROUP_ COADD_MODE=RUNNING
 
-# Tag the group coadd as a reduced product
-_TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 GRAPHIC=1
-
-# Display the coadd
-_DISPLAY_GROUP_
+# Do not make a group "reduced" product because ORAC::Frame::JCMT::findgroup
+# ensures observations are not grouped together unless OBS_TYPE is SCIENCE,
+# and because at this point we will have cropped out the center of the map.
+# _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1 GRAPHIC=1
 
 # Determine beam properties from the Group file
 _FIND_BEAM_SIZE_ GROUP=1
 
 # Apply the matched filter to improve signal-to-noise (especially
-# useful at 450 um). Wait until the observation has ended to match the
-# expectations of _FIND_POINTING_OFFSETS_.
-_APPLY_MATCHED_FILTER_ GROUP=1 OBSEND=1
+# useful at 450 um).
+_APPLY_MATCHED_FILTER_ GROUP=1
 
 # Determine the pointing offsets and write results to a log file.
 # Note that a flag file is not written.
@@ -134,4 +139,5 @@ _FIND_POINTING_OFFSETS_
 # file created by the frame will not be deleted because it is never
 # replaced by anything so will never get pushed onto the intermediates
 # array
-_DELETE_TEMP_FILES_ KEEP=_reduced ALSOGRP=1
+# NOTE: keep _mf because it's where we write the pointing results exension?
+_DELETE_TEMP_FILES_ KEEP=_reduced,_mf ALSOGRP=1
