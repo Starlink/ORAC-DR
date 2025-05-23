@@ -53,7 +53,10 @@ SUFFIX).
 =head1 OUTPUT FILES
 
 The mosaic of the noise images has a suffix specified by the SUFFIX
-parameter.
+parameter.  If scan direction-specific ZPD calibration has been
+requested (via uhdr C<FTS_SCANDIR_ZPD>) then "fwd" or "bck" will be
+added to this suffix.  (This will be done in a temporary frame
+without C<ALLOW_NUMBERED_SUFFICES> to avoid including a number.)
 
 =head1 AUTHOR
 
@@ -82,24 +85,50 @@ USA.
 
 =cut
 
+my $scandir = $Frm->uhdr('FTS_SCANDIR_ZPD');
+
 my $suffix = get_prim_arg($_PRIM_ARGS_, 'SUFFIX', '_zpdmos');
 my $title = get_prim_arg($_PRIM_ARGS_, 'TITLE', 'ZPD Position');
 
-# Create the mosaic
+my %dir_files;
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+  my $type = $scandir
+    ? ($Frm->hdrval('SCANDIR', $i) > 0 ? 'fwd' : 'bck')
+    : '';
+  push @{$dir_files{$type}}, $Frm->file($i + 1);
+}
 
-_MAKE_MOSAIC_FPLANE_ SUFFIX=$suffix
-my $out = $Frm->file();
+my @output = ();
+foreach my $type (sort keys %dir_files) {
+  # Create temporary frame containing the files for this direction
+  # (which doesn't have uhdr "ALLOW_NUMBERED_SUFFICES" enabled).
+  $Frm = $Frm->new;
+  $Frm->files(@{$dir_files{$type}});
 
-# Make sure there is a defined upper limit for the histogram
+  # Create the mosaic
+  my $fullsuffix = $suffix . $type;
+  _MAKE_MOSAIC_FPLANE_ SUFFIX=$fullsuffix
+  my $out = $Frm->file();
+  push @output, $out;
 
-_FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=data VERBOSE=0
-my $plotmin = $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MIN'};
-my $plotmax = $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MAX'};
+  # Make sure there is a defined upper limit for the histogram
+  _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=data VERBOSE=0
+  my $plotmin = $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MIN'};
+  my $plotmax = $_FIND_IMAGE_STATISTICS_{'RESULTS'}->{'MAX'};
 
-# Display the histograms
+  # Display the histograms
+  my $fulltitle = $title;
+  $fulltitle .= ' (Forward)' if $type eq 'fwd';
+  $fulltitle .= ' (Backward)' if $type eq 'bck';
 
-my %options = (ZMIN => $plotmin, ZMAX => $plotmax, WINDOW => 1,
-               ZAUTOSCALE => 0, TITLE => $title);
+  my %options = (
+    ZMIN => $plotmin,
+    ZMAX => $plotmax,
+    TITLE => $fulltitle,
+  );
 
-$Display->display_data($Frm, \%options, -1);
+  $Display->display_data($Frm, \%options, -1);
+}
 
+$Frm->files(@output);
+$Frm->readhdr();
