@@ -13,10 +13,23 @@ in an interferogram.
 
 =head1 ARGUMENTS
 
-ESTIMATE can either be 'fixed' to search only near the
+=over 4
+
+=item ESTIMATE
+
+Can either be 'fixed' to search only near the
 specified ZPD position estimate, or 'smooth' to smooth
 the interferogram to determine an initial estimate of
 the position.
+
+=item POSMETH
+
+If C<ESTIMATE> is 'smooth', specifies the method used to
+obtain a positive-only interferogram for fitting the
+initial estimate: 'abs' for absolute value (using
+KAPPA MATHS) or 'findback' to use CUPID FINDBACK.
+
+=back
 
 =head1 EXTERNAL TASKS
 
@@ -67,6 +80,8 @@ my @output = ();
 my @intermediate_display = ();
 
 my $estimate = lc(get_prim_arg($_PRIM_ARGS_, 'ESTIMATE', 'fixed'));
+my $posmeth = lc(get_prim_arg($_PRIM_ARGS_, 'POSMETH', 'abs'));
+
 my $zpd = $Frm->uhdr('FTS_ZPD_ESTIMATE');
 orac_termerr('FTS_ZPD_ESTIMATE is missing') unless defined $zpd;
 my $height = $Frm->uhdr('FTS_ZPD_PEAK_HEIGHT');
@@ -203,12 +218,20 @@ for (my $i = 1; $i <= $Frm->nfiles(); $i ++) {
     # to fit the ZPD feature.  This gives us an NDF we can feed back
     # into FIT1D to fit the central fringe.
 
-    my (undef, $bak) = $Frm->inout('_bak', $i);
-    $Frm->push_intermediates($bak);
-    $Mon{'cupid_mon'}->obeyw('findback', "$in $bak box=[1,1,$boxwidth_findback] rms=!");
     my (undef, $abs) = $Frm->inout('_abs', $i);
     $Frm->push_intermediates($abs);
-    $Mon{'kappa_mon'}->obeyw('sub', "$in $bak $abs");
+    if ($posmeth eq 'findback') {
+        my (undef, $bak) = $Frm->inout('_bak', $i);
+        $Frm->push_intermediates($bak);
+        $Mon{'cupid_mon'}->obeyw('findback', "$in $bak box=[1,1,$boxwidth_findback] rms=!");
+        $Mon{'kappa_mon'}->obeyw('sub', "$in $bak $abs");
+    }
+    elsif ($posmeth eq 'abs') {
+        $Mon{'kappa_mon'}->obeyw('maths', "abs(ia) $abs ia=$in");
+    }
+    else {
+        orac_termerr('Unknown ZPD positive method ' . $posmeth);
+    }
 
     my (undef, $smo) = $Frm->inout('_smo', $i);
     $Frm->push_intermediates($smo);
