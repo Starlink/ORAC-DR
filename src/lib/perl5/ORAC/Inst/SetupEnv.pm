@@ -540,7 +540,7 @@ sub orac_calc_instrument_settings {
           push(@rec , '-audiosuffix', $oracinst =~ /_850/ ? 'ql_850' : 'ql_450');
         }
       } elsif ($options{mode} eq 'SUMMIT') {
-        push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef);
+        push(@rec, "-recsuffix", "SUMMIT", "-nobatch", undef, "-loop", "flag", "-skip", undef);
         $nobatch = 1;
         # For SCUBA2 try reading flag files in sync.
         if ($inst eq 'SCUBA2') {
