@@ -186,7 +186,14 @@ if test -e $starperl; then
   fi
 
   echo " "
-  echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+  case "$oracdr_args" in
+  *-loop*)
+    echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr +++++++++"
+    ;;
+  *)
+    echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+    ;;
+  esac
   echo ""
   echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON
   echo 'For problems with the ORAC-DR system mail oracdr@eaobservatory.org'

@@ -184,7 +184,14 @@ if ( -e $starperl ) then
   endif
 
   echo " "
-  echo " ++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+  switch ( "$oracdr_args" )
+  case *-loop*:
+    echo " ++++++++ For online $ORAC_INSTRUMENT reduction use oracdr +++++++++"
+    breaksw
+  default:
+    echo " ++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+    breaksw
+  endsw
   echo ""
   echo " For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON"
   echo ' For problems with the ORAC-DR system mail oracdr@eaobservatory.org'
