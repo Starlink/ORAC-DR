@@ -30,6 +30,7 @@ use vars qw/ $VERSION /;
 use warnings;
 use Carp;
 use File::Spec;                 # For pedants everywhere
+use File::Basename;
 use IO::File;                   # until perl5.6 is guaranteed
 use Text::Balanced qw/ extract_bracketed /;
 use Time::HiRes qw( gettimeofday tv_interval );
@@ -722,10 +723,7 @@ The instrument, frame object and recipe name must be set in the object for optim
 parsing. The frame object can be left out in some cases (eg if a parse test
 is being performed). An error will occur during execution if the frame object is required.
 
-The search path is set from the instrument name and from the
-C<ORAC_RECIPE_DIR> environment variable. The C<ORAC_RECIPE_DIR>
-environment variable is similar to a normal C<PATH> variable in that
-multiple directories can be supplied if separated by colons.
+The search path is determined by the C<_recipe_path> method (below).
 
 Croaks if the recipe could not be found or opened. Returns ORAC__OK
 on success.
@@ -747,20 +745,7 @@ sub _read_recipe {
   my $parser = $self->parser;
 
   # Arguments are okay. Now need to determine search path.
-  my @path;
-
-  # if it is in ORAC_RECIPE_DIR we do not need an instrument but since it is highly likely
-  # that we do in fact need an instrument subsequently, we do not try to be overly clever.
-
-  # ORAC_RECIPE_DIR should be at start of path
-  push( @path, $parser->_split_path_env_var($ENV{ORAC_RECIPE_DIR}))
-    if exists $ENV{ORAC_RECIPE_DIR};
-
-  # Instrument specific search path
-  push(@path, orac_determine_recipe_search_path( $inst, %{$self->options} ));
-
-  # If the path array is empty add cwd (should not happen in oracdr)
-  @path = ( File::Spec->curdir ) unless @path;
+  my @path = $self->_recipe_path($inst);
 
   # Now look for a recipe in that path, taking care to try the supplied suffices first
   my $recipe;
@@ -797,8 +782,77 @@ sub _read_recipe {
   return ORAC__OK;
 }
 
+=item B<_recipe_path>
 
+Determine recipe path.  Code (and comments) extracted from C<_read_recipe>
+method (above).
 
+  @path = $rec->_recipe_path($inst);
+
+The search path is set from the instrument name and from the
+C<ORAC_RECIPE_DIR> environment variable. The C<ORAC_RECIPE_DIR>
+environment variable is similar to a normal C<PATH> variable in that
+multiple directories can be supplied if separated by colons.
+
+=cut
+
+sub _recipe_path {
+  my $self = shift;
+  my $inst = shift;
+
+  # Get the parser
+  my $parser = $self->parser;
+
+  my @path;
+
+  # if it is in ORAC_RECIPE_DIR we do not need an instrument but since it is highly likely
+  # that we do in fact need an instrument subsequently, we do not try to be overly clever.
+
+  # ORAC_RECIPE_DIR should be at start of path
+  push( @path, $parser->_split_path_env_var($ENV{ORAC_RECIPE_DIR}))
+    if exists $ENV{ORAC_RECIPE_DIR};
+
+  # Instrument specific search path
+  push(@path, orac_determine_recipe_search_path( $inst, %{$self->options} ));
+
+  # If the path array is empty add cwd (should not happen in oracdr)
+  @path = ( File::Spec->curdir ) unless @path;
+
+  return @path;
+}
+
+=item B<list_recipes>
+
+Return a list of recipe names found in the current search path.
+
+  @recipe = $rec->list_recipes();
+
+Files found in the recipe search directories if they look like
+recipe names, i.e. multiple words consisting of A-Z0-9
+separated by underscores.
+
+=cut
+
+sub list_recipes {
+  my $self = shift;
+
+  my $inst = $self->instrument;
+  throw ORAC::Error::FatalError( "list_recipes: No recipe INSTRUMENT available. Aborting", ORAC__FATAL)
+    unless defined $inst;
+
+  my @path = $self->_recipe_path($inst);
+
+  my @recipes = ();
+
+  foreach my $dir (@path) {
+    foreach my $file (glob($dir . '/*_*')) {
+      $file = basename($file);
+      push @recipes, $1 if $file =~ /^([A-Z0-9]+(?:_[A-Z0-9]+)+)$/;
+    }
+  }
+
+  return sort @recipes;
+}
 
 =back
 
