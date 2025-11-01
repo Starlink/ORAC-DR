@@ -2,8 +2,9 @@
 
 use strict;
 
-use Test::More tests => (1 + 5 + 5);
+use Test::More tests => (1 + 5 + 5 + 3 + 3);
 
+use DateTime::Format::ISO8601;
 use ORAC::Recipe::Parameters;
 
 # Create dummy recipe parameters object and configure it manually to
@@ -37,7 +38,37 @@ $par->_parameters(
     },
     REDUCE_OTHER => {
         PARAM_A => 4,
-    }
+    },
+    'REDUCE_DATE#DATE=2025-01-01T00:00:00' => {
+        PARAM_A => 1,
+    },
+    'REDUCE_DATE#DATE!=2025-01-01T00:00:00' => {
+        PARAM_B => 1,
+    },
+    'REDUCE_DATE#DATE<=2025-01-01T00:00:00' => {
+        PARAM_C => 1,
+    },
+    'REDUCE_DATE#DATE<2025-01-01T00:00:00' => {
+        PARAM_D => 1,
+    },
+    'REDUCE_DATE#DATE>=2025-01-01T00:00:00' => {
+        PARAM_E => 1,
+    },
+    'REDUCE_DATE#DATE>2025-01-01T00:00:00' => {
+        PARAM_F => 1,
+    },
+    'REDUCE_NUM#VALUE<10' => {
+        PARAM_A => 1,
+    },
+    'REDUCE_NUM#VALUE<=10' => {
+        PARAM_B => 1,
+    },
+    'REDUCE_NUM#VALUE>10' => {
+        PARAM_C => 1,
+    },
+    'REDUCE_NUM#VALUE>=10' => {
+        PARAM_D => 1,
+    },
 );
 
 # Test reading recipe parameters from the object.
@@ -80,3 +111,26 @@ is_deeply(\%params,
      ORAC_SOMETHING => 'SOMEVALUE'});
 is_deeply(\%params,
     {PARAM_A => 5, PARAM_B => 6, PARAM_C => 200, PARAM_D => 300});
+
+# Test recipe parameters including date matches.
+%params = $par->for_recipe('REDUCE_DATE', {
+    ORAC_DATE => DateTime::Format::ISO8601->parse_datetime('2025-01-01')});
+is_deeply(\%params, {PARAM_A => 1, PARAM_C => 1, PARAM_E => 1});
+
+%params = $par->for_recipe('REDUCE_DATE', {
+    ORAC_DATE => DateTime::Format::ISO8601->parse_datetime('2024-04-01')});
+is_deeply(\%params, {PARAM_B => 1, PARAM_C => 1, PARAM_D => 1});
+
+%params = $par->for_recipe('REDUCE_DATE', {
+    ORAC_DATE => DateTime::Format::ISO8601->parse_datetime('2025-12-25')});
+is_deeply(\%params, {PARAM_B => 1, PARAM_E => 1, PARAM_F => 1});
+
+# Test numeric comparisons
+%params = $par->for_recipe('REDUCE_NUM', {ORAC_VALUE => 10});
+is_deeply(\%params, {PARAM_B => 1, PARAM_D => 1});
+
+%params = $par->for_recipe('REDUCE_NUM', {ORAC_VALUE => 9});
+is_deeply(\%params, {PARAM_A => 1, PARAM_B => 1});
+
+%params = $par->for_recipe('REDUCE_NUM', {ORAC_VALUE => 11});
+is_deeply(\%params, {PARAM_C => 1, PARAM_D => 1});

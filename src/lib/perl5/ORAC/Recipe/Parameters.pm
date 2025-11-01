@@ -389,8 +389,25 @@ sub _parse_file {
 
 $rec should either be a recipe name, or a a RECIPES_<ORAC_OBSERVATION_TYPE> value.
 
-
 =cut
+
+# String-specific comparisons ($<, etc) are needed for dates but not currently
+# matched by the general pattern -- so for internal use only.
+# Note: for string comparisons, we force the header value to upper case
+# because _parse_file() will already have forced the whole "key"
+# (including filters) to upper case.
+my %_match_filter_type = (
+    '='   => sub {(uc $_[0]) eq $_[1]},
+    '!='  => sub {(uc $_[0]) ne $_[1]},
+    '$<'  => sub {(uc $_[0]) lt $_[1]},
+    '$<=' => sub {(uc $_[0]) le $_[1]},
+    '$>'  => sub {(uc $_[0]) gt $_[1]},
+    '$>=' => sub {(uc $_[0]) ge $_[1]},
+    '<'   => sub {$_[0] < $_[1]},
+    '<='  => sub {$_[0] <= $_[1]},
+    '>'   => sub {$_[0] > $_[1]},
+    '>='  => sub {$_[0] >= $_[1]},
+);
 
 sub _match_filters {
     my $self = shift;
@@ -426,17 +443,20 @@ sub _match_filters {
         }
 
         foreach my $filter (@filters) {
-            # For now assume all filters are "=" operations (string-wise) but
-            # we could add more operations here.  E.g date < X might be useful.
-            # Note: we force the header value to upper case because _parse_file()
-            # will already have forced the whole "key" (including filters)
-            # to upper case.
-
-            my ($filter_key, $filter_val) = split '=', $filter, 2;
+            my ($filter_key, $filter_type, $filter_val) = split /([<>]=?|!?=)/, $filter, 2;
             my $hdr_val = $hdr->{'ORAC_' . $filter_key};
             next SECTION unless defined $hdr_val;
-            $hdr_val = $hdr_val->datetime() if UNIVERSAL::can($hdr_val, 'datetime');
-            next SECTION unless uc($hdr_val) eq $filter_val;
+
+            die "Filter match function for operator '$filter_type' not found."
+                unless exists $_match_filter_type{$filter_type};
+
+            # If this is a date, convert to a string and force string comparison.
+            if (eval {$hdr_val->can('datetime')}) {
+                $hdr_val = $hdr_val->datetime();
+                $filter_type = '$' . $filter_type if exists $_match_filter_type{'$' . $filter_type};
+            }
+
+            next SECTION unless $_match_filter_type{$filter_type}->($hdr_val, $filter_val);
             $spec ++;
         }
 
@@ -569,6 +589,36 @@ headers, for example:
 
   [REDUCE_SCAN#FILTER=450#SCAN_PATTERN=CV_DAISY]
   MAKEMAP_CONFIG = my_daisy_450_dimmconfig.lis
+
+The supported header value comparison operations are:
+
+=over 4
+
+=item =
+
+Equal (as text, case-insensitive).
+
+=item !=
+
+Not equal (as text, case-insensitive).
+
+=item <
+
+Less than (numerical except dates).
+
+=item <=
+
+Less than or equal (numerical except dates).
+
+=item >
+
+Greater than (numerical except dates).
+
+=item >=
+
+Greater than or equal (numerical except dates).
+
+=back
 
 There can be multiple such general header specifiers but they must
 follow any object names.  To see which translated headers are available,
