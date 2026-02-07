@@ -1254,7 +1254,7 @@ sub wcs {
     }
   }
 
-  $index = 0 if ( $index > $#{$self->{WCS}} - 1);
+  $index = 0 if ( $index > $#{$self->{WCS}} );
 
   # Nothing else of interest so return specified member.
   return $self->{WCS}->[$index];
