@@ -448,7 +448,7 @@ sub receptor_names {
   } else {
     if ( $instrument eq "HARP" ) {
       foreach my $i ( 0..15 ) {
-        my $receptor_name = "H" . printf("%02d", $i );
+        my $receptor_name = sprintf("H%02d", $i );
         push @receptors, $receptor_name;
       }
 
@@ -456,12 +456,15 @@ sub receptor_names {
       @receptors = ( "A" );
 
     } elsif ( $instrument =~ /^RXB/ ) {
-      @receptors = ( "A", "B" );
+      @receptors = qw/B BA BB/;
+
+    } elsif ( $instrument =~ /^RXC/ ) {
+      @receptors = qw/C/;
 
     } elsif ( $instrument =~ /^RXW/ ) {
       @receptors = ( "CA", "CB", "DA", "DB" );
 
-    } elsif ( $instrument eq /UU/ ) {
+    } elsif ( $instrument eq 'UU' ) {
       @receptors = ( "NU0L", "NU1L", "NU0U", "NU1U" );
 
     } elsif ( $instrument eq "AWEOWEO" ) {
@@ -469,6 +472,9 @@ sub receptor_names {
 
     } elsif ( $instrument eq "ALAIHI" ) {
       @receptors = ( "NA0", "NA1" );
+
+    } elsif ( $instrument eq 'KUNTUR' ) {
+      @receptors = qw/KU0L KU0U KU1L KU1U/;
     }
   }
 
