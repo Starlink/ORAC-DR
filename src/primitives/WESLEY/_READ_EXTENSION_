@@ -1,0 +1,166 @@
+=head1 NAME
+
+_READ_EXTENSION_ - Read one (or more) extension(s) from a file
+
+=head1 DESCRIPTION
+
+Reads the specified extension(s) from the given file.
+
+Each extension is returned via the primitive hash:
+
+    _READ_EXTENSION_ FILE=$in EXTENSION=ACSIS
+
+    my $acsis = $_READ_EXTENSION_{'ACSIS'};
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<FILE>
+
+The file from which to read the extension.
+
+=item B<EXTENSION>
+
+Name of the extension(s) to read.  Can be a comma-separated
+list or array reference.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2026 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use NDF;
+
+my $filename = get_prim_arg($_PRIM_ARGS_, 'FILE', undef);
+my $extensions = get_prim_arg($_PRIM_ARGS_, 'EXTENSION', undef);
+
+my $reshape_array; $reshape_array = sub {
+    my $val = shift;
+    my @dims = @_;
+
+    my $dim = shift @dims;
+    return $val unless @dims;
+
+    my $nelem = $dim;
+    $nelem *= $_ foreach @dims;
+
+    return [map {
+        my $i = $_;
+        my @val = ();
+        for (my $j = $i; $j < $nelem; $j += $dim) {
+            push @val, $val->[$j];
+        }
+        $reshape_array->(\@val, @dims)
+    } 0 .. ($dim - 1)];
+};
+
+my $read_extension; $read_extension = sub {
+    my $eloc = shift;
+    my $status = shift;
+
+    return undef unless $$status == &NDF::SAI__OK();
+
+    my %extension = ();
+
+    dat_ncomp($eloc, my $ncomp, $$status);
+    for (my $i = 1; ($i <= $ncomp) && ($$status == &NDF::SAI__OK()); $i ++) {
+        dat_index($eloc, $i, my $iloc, $$status);
+        dat_name($iloc, my $name, $$status);
+
+        dat_struc($iloc, my $struct, $$status);
+        if ($struct) {
+            $extension{$name} = $read_extension->($iloc, $status);
+        }
+        else {
+            dat_type($iloc, my $type, $$status);
+            dat_size($iloc, my $size, $$status);
+            dat_shape($iloc, 7, my @dims, my $ndim, $$status);
+            my @val;
+
+            if ($type =~ /^_REAL/) {
+                dat_getvr($iloc, $size, @val, my $size, $$status);
+                for (my $i = 0; $i < $size; $i ++) {
+                    undef $val[$i] if $val[$i] == &NDF::VAL__BADR();
+                }
+            }
+            elsif ($type =~ /^_DOUBLE/) {
+                dat_getvd($iloc, $size, @val, my $size, $$status);
+                for (my $i = 0; $i < $size; $i ++) {
+                    undef $val[$i] if $val[$i] == &NDF::VAL__BADD();
+                }
+            }
+            elsif ($type =~ /^_INTEGER/) {
+                dat_getvi($iloc, $size, @val, my $size, $$status);
+                for (my $i = 0; $i < $size; $i ++) {
+                    undef $val[$i] if $val[$i] == &NDF::VAL__BADI();
+                }
+            }
+            else {
+                dat_getvc($iloc, $size, @val, my $size, $$status);
+            }
+
+            $extension{$name} = ($ndim == 0)
+                    ? $val[0]
+                    : $reshape_array->(\@val, @dims);
+        }
+
+        dat_annul($iloc, $$status);
+    }
+
+    return \%extension;
+};
+
+do {
+    my @extensions = ();
+    unless (defined $extensions) {
+        orac_throw('Extension name(s) not specified');
+    }
+    elsif (ref $extensions) {
+        @extensions = @$extensions;
+    }
+    else {
+        @extensions = split /,/, $extensions;
+    }
+
+    my $status = &NDF::SAI__OK();
+    err_begin($status);
+    hds_open($filename, 'READ', my $loc, $status);
+    dat_find($loc, 'MORE', my $mloc, $status);
+
+    foreach my $extension (@extensions) {
+        dat_find($mloc, $extension, my $eloc, $status);
+
+        $_READ_EXTENSION_{$extension} = $read_extension->($eloc, \$status);
+
+        dat_annul($eloc, $status);
+    }
+
+    dat_annul($mloc, $status);
+    dat_annul($loc, $status);
+    my $errstr = undef;
+    if ($status != &NDF::SAI__OK()) {
+        $errstr = &NDF::err_flush_to_string($status);
+    }
+    err_end($status);
+
+    orac_throw("Could not read extension: $errstr") if defined $errstr;
+};

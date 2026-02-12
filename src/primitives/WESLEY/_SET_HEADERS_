@@ -13,6 +13,16 @@ instances of C<Astro::FITS::Header::Item> or scalars suitable
 for writing directly to a C<fitsmod> file, such as numbers.
 Other files are retained in the frame as they are.
 
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<COPY>
+
+Whether to copy each file before setting the new headers. [1]
+
+=back
+
 =head1 COPYRIGHT
 
 Copyright (C) 2021 East Asian Observatory
@@ -36,6 +46,9 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 use Scalar::Util qw/blessed/;
 
+# Should we copy files before setting headers?
+my $do_copy = get_prim_arg($_PRIM_ARGS_, 'COPY', 1);
+
 # Get new headers.
 my $headers = $Frm->uhdr('WESLEY_SET_HEADERS') // {};
 
@@ -46,7 +59,22 @@ for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
     my $in = $Frm->file($i + 1);
 
     if (exists $headers->{$in}) {
-        my $out = $in . '_hdr';
+        my $out = undef;
+
+        if ($do_copy) {
+            $out = $in . '_hdr';
+
+            $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+        }
+        else {
+            $out = $in;
+
+            # Ensure we are not modifying the input data.
+            foreach my $rawfile ($Frm->raw) {
+                orac_termerr "Can not write headers to input file '$in'"
+                    if $rawfile eq $in;
+            }
+        }
 
         orac_say("Setting headers in file $out");
 
@@ -81,7 +109,6 @@ for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
 
         $table_fh->close();
 
-        $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
         $Mon{'ndfpack_mon'}->obeyw('fitsmod', "ndf=$out mode=file table=$table");
 
         push @output, $out;

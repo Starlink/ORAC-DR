@@ -1,0 +1,184 @@
+=head1 NAME
+
+_SEPARATE_RECEPTORS_ - Separate input files by receptor
+
+=head1 DESCRIPTION
+
+This primitive groups the receptors in each input file according
+to the "GROUP_BY" recpar (receptor name or polarization).
+It is then split into a number of separate files using
+"timesort" with a receptor list parameter.
+
+The OCS config. XML is used to determine the total number
+of spectral windows used in the observation.
+
+The identifying information of files is updated as follows:
+
+=over 4
+
+=item SPECID and SUBSYSNR
+
+Offset by the number of spectral windows for each group.
+
+=over 4
+
+=item SPECID
+
+Used to control grouping of files into frames.
+
+(See ORAC::Frame::ACSIS::framegroupkeys.)
+
+=item SUBSYSNR
+
+Modified to ensure group products have different file names,
+and raw files are renamed to include this subsysten number to avoid confusion.
+
+(See ORAC::Frame::ACSIS::file_from_bits_extra and ORAC::Group::ACSIS::file_from_bits.
+file_from_bits_extra is also included in the group names shown in the log output
+-- see ORAC::Core::orac_store_frm_in_correct_grp and ORAC::Group::name.)
+
+=back
+
+=item DRGROUP
+
+A grouping key is added to the end of the current group name
+in order to control grouping of frames.
+
+(See ORAC::Frame::JCMT::findgroup.)
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2026 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+my $group_by = $RECPARS{'GROUP_BY'} // 'receptor';
+my $include_all = $RECPARS{'INCLUDE_ALL'} // 0;
+
+my @output = ();
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my $in = $Frm->file($i + 1);
+
+    my $group = $Frm->findgroup;
+    my $subsys = [$Frm->subsysnrs]->[0];
+    my $specid = $Frm->hdrval('SPECID', $i);
+
+    # Get the file dimensions.
+    _GET_DIMENSIONS_ FILE=$in
+    die "Input file $in is not 3D"
+        unless $_GET_DIMENSIONS_{'NDIM'} == 3;
+    my $lbnd = $_GET_DIMENSIONS_{'LBOUND'};
+    my $ubnd = $_GET_DIMENSIONS_{'UBOUND'};
+
+    # Read the OCS config. to get the total number of spectral windows in the
+    # whole observation (in case we are not processing all of it at once).
+    _READ_OCS_CONFIG_ FILE=$in
+    my $config = $_READ_OCS_CONFIG_{'CONFIG'};
+    my %spws = $config->acsis()->spw_list()->spectral_windows();
+    my $nspw = scalar keys %spws;
+
+    # Check that $subsys and $specid are reasonable so that we can
+    # construct identifiers for separated groups.
+    die "SUBSYSNR ($subsys) less than 1"
+        unless $subsys > 0;
+    die "SUBSYSNR ($subsys) greater than number of spectral windows ($nspw)"
+        if $subsys > $nspw;
+    die "SPECID ($specid) less than 1"
+        unless $specid > 0;
+    die "SPECID ($specid) greater than number of spectral windows ($nspw)"
+        if $specid > $nspw;
+
+    # Read the receptors from the ACSIS extension.
+    _READ_EXTENSION_ FILE=$in EXTENSION=ACSIS
+    my $receptors = $_READ_EXTENSION_{'ACSIS'}->{'RECEPTORS'};
+    my $nreceptors = scalar @$receptors;
+
+    # Check the dimensions match the receptor list.
+    die "Input file $in axis 2 lbnd is not 1"
+        unless $lbnd->[1] == 1;
+    die "Input file $in axis 2 ubnd is not number of receptors"
+        unless $ubnd->[1] == $nreceptors;
+
+    my %group = ();
+
+    foreach my $receptor (sort @$receptors) {
+        my $key = '';
+        if ($group_by eq 'receptor') {
+            $key = lc $receptor;
+        }
+        elsif ($group_by eq 'polarization') {
+            # Determine the polarization of the receptor -- ideally
+            # we would read the receptor descriptions from the
+            # OCS config. but for now parse Namakanui receptor names.
+            die "Did not understand receptor name '$receptor'"
+                unless $receptor =~ /^[A-Z][A-Z]([01])/;
+            $key = sprintf 'p%d', $1;
+        }
+        else {
+            die "Unknown GROUP_BY method '$group_by'";
+        }
+
+        push @{$group{$key}}, $receptor;
+    }
+
+    # Was a copy of the original file requested?
+    if ($include_all) {
+        push @output, $in;
+    }
+
+    die "Did not understand file name '$in'"
+        unless $in =~ /^(a\d{8}_\d{5})_(\d\d)_(.*)$/;
+    my $prefix = $1;
+    my $subsys_str = $2;
+    my $suffix = $3;
+
+    die 'Subsystem does not match that in file name'
+        unless $subsys_str == $subsys;
+
+    # Create a copy of the file for each group.
+    my $offset = 0;
+    foreach my $key (sort keys %group) {
+        $offset += $nspw;
+
+        my $newsubsys = $subsys + $offset;
+        my $newspecid = $specid + $offset;
+
+        my $out = sprintf "%s_%02d_%s_%s",
+            $prefix, $newsubsys, $suffix, $key;
+
+        orac_say "Separating receptors from $in to $out";
+
+        my $detectors = join ',', @{$group{$key}};
+
+        $Mon{'smurf_mon'}->obeyw('timesort', "in=$in out=$out merge=no detectors='$detectors'");
+
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'SUBSYSNR'} = $newsubsys;
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'SPECID'} = $newspecid;
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'DRGROUP'} = sprintf '%s%s', $group, $key;
+
+        push @output, $out;
+    }
+}
+
+# Store processed files in the frame.
+$Frm->files(@output);
+
+$Frm->readhdr();
