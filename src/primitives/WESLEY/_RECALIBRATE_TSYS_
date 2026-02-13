@@ -1,0 +1,308 @@
+=head1 NAME
+
+_RECALIBRATE_TSYS_ - Recalculate TSYS correction factor and apply it
+
+=head1 DESCRIPTION
+
+This primitive attempts to calculate the TSYS correction factor in the
+same way as ACSIS for receivers using the 2-load calibration scheme
+(i.e. Namakanui).
+
+The input data is then multiplied by the new correction factor divided
+by the original correction factor from the TSYS_C array of the ACSIS
+extension.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2026 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use Astro::PAL qw/:constants/;
+use NDF;
+
+my $t0 = 273.15;
+my $h = 6.62607015E-34;
+my $k = 1.380649E-23;
+
+# Values of eta_tel by instrument.  Should also be by frequency?
+my %inst_eta_tel = (
+    ALAIHI => 0.9,
+    UU => 0.9,
+    AWEOWEO => 0.85,
+    KUNTUR => 0.65,
+);
+
+my $brightness_temperature = sub {
+    my ($frequency_hz, $physical) = @_;
+
+    my $temp = $h * $frequency_hz / $k;
+
+    return $temp / (exp($temp / $physical) - 1);
+};
+
+my $t_sys_correction_factor = sub {
+    my ($eta_tel, $frequency_hz, $tau_freq, $am,
+        $t_load_k, $t_spill_k, $t_air_k) = @_;
+
+    my $t_atm_k = $t_air_k - 10.0;
+
+    my $j_load = $brightness_temperature->($frequency_hz, $t_load_k);
+    my $j_spill = $brightness_temperature->($frequency_hz, $t_spill_k);
+    my $j_atm = $brightness_temperature->($frequency_hz, $t_atm_k);
+
+    return 1.0
+        + ((1.0 - $eta_tel) / $eta_tel) * (($j_load - $j_spill) / $j_load) * exp($tau_freq * $am)
+        + (($j_load - $j_atm) / $j_load) * (exp($tau_freq * $am) - 1.0);
+};
+
+my $vectorize_array = sub {
+    my $in = shift;
+
+    # Check all inputs are the same length.
+    my $n = scalar @{$in->[0]};
+    for (my $i = 1; $i <= $#$in; $i ++) {
+        die 'Mismatch in vectorized array sizes'
+            unless $n == scalar @{$in->[$i]};
+    }
+
+    # Prepare vectorized array.
+    my @result = ();
+    for (my $i = 0; $i < $n; $i ++) {
+        for (my $j = 0; $j <= $#$in; $j ++) {
+            push @result, $in->[$j]->[$i];
+        }
+    }
+
+    return \@result;
+};
+
+my $set_tsys_tsys_c = sub {
+    my $filename = shift;
+    my $tsys = shift;
+    my $tsys_c = shift;
+
+    # Open the raw file and find the ACSIS extension.
+    my $status = &NDF::SAI__OK();
+    err_begin($status);
+    hds_open($filename, 'UPDATE', my $loc, $status);
+    dat_find($loc, 'MORE', my $mloc, $status);
+    dat_find($mloc, 'ACSIS', my $eloc, $status);
+
+    # Replace each exising component with the new one.
+    foreach my $component (
+            ['TSYS', $tsys],
+            ['TSYS_C', $tsys_c]) {
+        my ($comp, $data) = @$component;
+        my $size = scalar @$data;
+        cmp_putvr($eloc, $comp, $size, @$data, $status);
+    }
+
+    # Annul locators and check the error status.
+    dat_annul($eloc, $status);
+    dat_annul($mloc, $status);
+    dat_annul($loc, $status);
+    my $errstr = undef;
+    if ($status != &NDF::SAI__OK()) {
+        $errstr = &NDF::err_flush_to_string($status);
+    }
+    err_end($status);
+    orac_throw("Could not update TSYS/TSYS_C data: $errstr") if defined $errstr;
+};
+
+# Axes of arrays:
+#     Main data array:
+#         1: Frequency
+#         2: Receptor
+#         3: Step
+#     ACSIS.TSYS, TSYS_C and TSYS_TAU:
+#         1: Receptor
+#         2: Step
+
+my $sideband = $Frm->uhdr('ORAC_OBSERVED_SIDEBAND');
+my $sideband_sign = ($sideband =~ /USB/i ? 1.0 : -1.0);
+
+my $column = ['TCS_AZ_AC2', 'FE_LOFREQ'];
+
+my @output = ();
+
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    my $in = $Frm->file($i + 1);
+
+    my $eta_tel_hdr = $Frm->hdrval('ETAL', $i);
+    my $t_air = $Frm->hdrval('ATSTART', $i) + $t0;
+    my $t_spill = $Frm->hdrval('TSPSTART', $i);
+    my $t_load = $Frm->hdrval('TAMSTART', $i);
+    my $freq_if = $Frm->hdrval('IFFREQ', $i);
+    my $medtsys = $Frm->hdrval('MEDTSYS', $i);
+
+    # Get the file dimensions.
+    _GET_DIMENSIONS_ FILE=$in
+    die "Input file $in does not have three dimensions"
+        unless $_GET_DIMENSIONS_{'NDIM'} == 3;
+    my $lbnd = $_GET_DIMENSIONS_{'LBOUND'};
+    my $ubnd = $_GET_DIMENSIONS_{'UBOUND'};
+    my $nreceptor = 1 + $ubnd->[1] - $lbnd->[1];
+    my $nstep = 1 + $ubnd->[2] - $lbnd->[2];
+
+    # Read the receptors from the ACSIS extension.
+    _READ_EXTENSION_ FILE=$in EXTENSION=ACSIS
+    my $acsis = $_READ_EXTENSION_{'ACSIS'};
+    my $t_sys_orig = $acsis->{'TSYS'};
+    my $t_sys_c_orig = $acsis->{'TSYS_C'};
+    my $t_sys_tau = $acsis->{'TSYS_TAU'};
+
+    # Read JCMT state to get elevation and LO frequency.
+    _READ_JCMT_STATE_ FILE=$in COLUMN=$column
+    my $state = $_READ_JCMT_STATE_{'STATE'};
+    my $el = $state->{'TCS_AZ_AC2'};
+    my $freq_lo = $state->{'FE_LOFREQ'};
+
+    # Check the dimensions match.
+    die "$in: dimensions do not match"
+        unless ($nreceptor == scalar @$t_sys_orig)
+        and ($nreceptor == scalar @$t_sys_c_orig)
+        and ($nreceptor == scalar @$t_sys_tau)
+        and ($nstep == scalar @{$t_sys_orig->[0]})
+        and ($nstep == scalar @{$t_sys_c_orig->[0]})
+        and ($nstep == scalar @{$t_sys_tau->[0]})
+        and ($nstep == scalar @$el)
+        and ($nstep == scalar @$freq_lo);
+
+    # Check the expected eta_tel for this instrument.
+    # For now use the header value unless it differs significantly from our
+    # expected value by instrument.
+    # TODO: add a recipe parameter to control this?
+    my $eta_tel_expect = $inst_eta_tel{$Frm->uhdr('ORAC_INSTRUMENT')};
+    orac_throw('No expected eta_tel value known for this instrument')
+        unless defined $eta_tel_expect;
+    my $eta_tel;
+    if (abs($eta_tel_hdr- $eta_tel_expect) < 0.05) {
+        $eta_tel = $eta_tel_hdr;
+    }
+    else {
+        $eta_tel = $eta_tel_expect;
+    }
+
+    # Prepare a collection of NDF sections and the correction factor
+    # to apply to each.
+    my %sections = ();
+    my @t_sys_new = ();
+    my @t_sys_c_new = ();
+    for (my $receptor = 0; $receptor < $nreceptor; $receptor ++) {
+        my $t_sys_prev = undef;
+        my $t_sys_new = undef;
+        my $t_sys_c_new = undef;
+        my $warned = 0;
+
+        for (my $step = 0; $step < $nstep; $step ++) {
+            my $t_sys = $t_sys_orig->[$receptor]->[$step];
+
+            if ($step == 0) {
+                my $am = 1.0 / cos(DPIBY2 - $el->[$step]);
+
+                my $freq = ($freq_lo->[$step]
+                    + $sideband_sign * $freq_if);
+
+                my $tau_225 = $t_sys_tau->[$receptor]->[$step];
+                _CALCULATE_INTERPOLATED_OPACITY_ OPACITY_225=$tau_225 FREQ_GHZ=$freq
+                my $tau_freq = $_CALCULATE_INTERPOLATED_OPACITY_{'OPACITY'};
+
+                $t_sys_c_new = $t_sys_correction_factor->(
+                    $eta_tel, $freq * 1.0E9, $tau_freq, $am,
+                    $t_load, $t_spill, $t_air);
+
+                my $t_sys_c_orig_step = $t_sys_c_orig->[$receptor]->[$step];
+
+                my $factor = $t_sys_c_new / $t_sys_c_orig_step;
+
+                $t_sys_new = $t_sys * $factor;
+
+                orac_say sprintf
+                    'Receptor %d, time slice %d: TSYS_C %.6f -> %.6f (factor %.6f)',
+                    $receptor + 1, $step + 1,
+                    $t_sys_c_orig_step, $t_sys_c_new, $factor;
+
+                $sections{sprintf ':,%d,:', $receptor + 1} = $factor;
+            }
+            elsif ($t_sys != $t_sys_prev) {
+                orac_warn sprintf
+                    "Receptor %d, time slice %d: TSYS changed but this recipe currently only processes a single value\n",
+                    $receptor + 1, $step + 1
+                    unless $warned;
+
+                $warned = 1;
+            }
+
+            $t_sys_prev = $t_sys;
+            $t_sys_new[$receptor]->[$step] = $t_sys_new;
+            $t_sys_c_new[$receptor]->[$step] = $t_sys_c_new;
+        }
+    }
+
+    # Create a correction factor file of the same shape as the input by appying
+    # chpix to it.
+    my $factor = $in . '_factor';
+
+    do {
+        my $table = ORAC::TempFile->new();
+        my $table_fh = $table->handle();
+
+        foreach my $section (sort keys %sections) {
+            printf $table_fh "%s %f\n", $section, $sections{$section};
+        }
+
+        $table_fh->close();
+
+        $Mon{'kappa_mon'}->obeyw('chpix', "in=$in out=$factor mode=file file=$table");
+
+        $Mon{'ndfpack_mon'}->obeyw('setunits', "ndf=$factor units=!");
+    };
+
+    # Multiply the output by the correction factor file to obtain the output.
+    my $out = $in . '_cal';
+
+    $Mon{'kappa_mon'}->obeyw('mult', "in1=$in in2=$factor out=$out");
+
+    push @output, $out;
+    $Frm->push_intermediates($factor);
+
+    # Update TSYS and TSYS_C values in ACSIS extension.
+    my $t_sys_new_v = $vectorize_array->(\@t_sys_new);
+    my $t_sys_c_new_v = $vectorize_array->(\@t_sys_c_new);
+    die "$in: output vectorized dimensions do not match"
+        unless ($nreceptor * $nstep == scalar @$t_sys_new_v)
+        and ($nreceptor * $nstep == scalar @$t_sys_c_new_v);
+    $set_tsys_tsys_c->($out, $t_sys_new_v, $t_sys_c_new_v);
+
+    # Determine new "MED" Tsys header value.
+    my $sum = 0.0;
+    $sum += $_ foreach values %sections;
+    my $average_factor = $sum / $nreceptor;
+
+    $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'MEDTSYS'}
+        = $medtsys * $average_factor;
+
+    # Set ETAL header if we used a different value.
+    $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'ETAL'}
+        = $eta_tel if $eta_tel != $eta_tel_hdr;
+}
+
+# Store processed files in the frame.
+$Frm->files(@output);
+
+$Frm->readhdr();

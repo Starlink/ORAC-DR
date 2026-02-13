@@ -1,0 +1,142 @@
+=head1 NAME
+
+_CALCULATE_INTERPOLATED_OPACITY_ - Get an opacity value for a frequency
+
+=head1 DESCRIPTION
+
+This primitive interpolates the ITC-style opacity data files found in
+the C<cal/acsis/itcdata> directory.  There is a selection of files
+for different 225 GHz opacities.  First the pair of files either side
+of the given 225 GHz opacity is found (using a list of filenames
+present in this primitive).  Then each file is interpolated to obtain
+an opacity value for the given frequency.  Finally we interpolate
+between these two values to obtain an estimate for the desired conditions.
+
+(This primitive is based on the heterodyne ITC's get_interpolated_opacity
+method, which itself was based on the corresponding routine in HITEC.)
+
+=head1 PARAMETERS
+
+=over 4
+
+=item OPACITY (Returned)
+
+The interpolated opacity value.
+
+=item OPACITY_225 (Given)
+
+Opacity at 225 GHz.
+
+=item FREQ_GHZ (Given)
+
+Frequency in GHz.
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007-2009 Science and Technology Facilities Council.
+Copyright (C) 2015-2026 East Asian Observatory
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc.,51 Franklin
+Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+=cut
+
+use File::Spec;
+use IO::File;
+
+my $opacity_225 = get_prim_arg($_PRIM_ARGS_, 'OPACITY_225', undef);
+die 'OPACITY_225 not specified' unless defined $opacity_225;
+
+my $freq_ghz = get_prim_arg($_PRIM_ARGS_, 'FREQ_GHZ', undef);
+die 'FREQ_GHZ not specified' unless defined $freq_ghz;
+
+my $directory = 'itcdata';
+my @files = (
+    [0.015 => 'tau015.dat'],
+    [0.030 => 'tau030.dat'],
+    [0.050 => 'tau050.dat'],
+    [0.065 => 'tau065.dat'],
+    [0.100 => 'tau100.dat'],
+    [0.160 => 'tau160.dat'],
+    [0.200 => 'tau200.dat'],
+    [0.250 => 'tau250.dat'],
+    [0.320 => 'tau320.dat'],
+);
+
+my @values = ();
+for (my $i = 0; $i < scalar @files; $i ++) {
+    if ($files[$i]->[0] >= $opacity_225) {
+        if ($i == 0) {
+            @values = ($files[0], $files[1]);
+        }
+        else {
+            @values = ($files[$i - 1], $files[$i]);
+        }
+        last;
+    }
+}
+unless (@values) {
+    @values = ($files[-2], $files[-1]);
+}
+
+my @interpolated;
+foreach my $value (@values) {
+    my $freq;
+    my $opacity;
+    my $prev_freq = undef;
+    my $prev_opacity = undef;
+    my $interpolated = undef;
+
+    my $fh = IO::File->new($Cal->find_file(
+        File::Spec->catfile($directory, $value->[1])),
+        'r');
+
+    while (my $line = <$fh>) {
+        chomp $line;
+        ($freq, $opacity) = split ' ', $line, 2;
+
+        if ($freq >= $freq_ghz) {
+            unless (defined $prev_freq) {
+                $interpolated = $opacity;
+            }
+            else {
+                $interpolated = $prev_opacity
+                    + (($opacity - $prev_opacity)
+                    * ($freq_ghz - $prev_freq)
+                    / ($freq - $prev_freq));
+            }
+            last;
+        }
+
+        $prev_freq = $freq;
+        $prev_opacity = $opacity;
+    }
+
+    $fh->close();
+
+    push @interpolated, $interpolated // $opacity;
+}
+
+my $opacity = $interpolated[0]
+    + (($interpolated[1] - $interpolated[0])
+    * ($opacity_225 - $values[0]->[0])
+    / ($values[1]->[0] - $values[0]->[0]));
+
+orac_say sprintf 'Interpolated opacity for %.3f at %.3f GHz: %.3f',
+    $opacity_225, $freq_ghz, $opacity;
+
+$_CALCULATE_INTERPOLATED_OPACITY_{'OPACITY'} = $opacity;
