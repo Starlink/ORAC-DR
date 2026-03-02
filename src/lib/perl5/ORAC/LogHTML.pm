@@ -197,6 +197,11 @@ sub _fixup_line {
   my @output;
   for my $part (@split) {
     if ($part !~ /^\e/) {
+      # Retain spaces at start and end (used by primitives to make "passed"
+      # and "failed" banners) and multiples (sometimes used for alignment).
+      $part =~ s/^( +)/'&nbsp;' x length($1)/e;
+      $part =~ s/( +)$/'&nbsp;' x length($1)/e;
+      $part =~ s/(  +)/'&nbsp;' x length($1)/eg;
       push(@output, $part );
     } else {
 
