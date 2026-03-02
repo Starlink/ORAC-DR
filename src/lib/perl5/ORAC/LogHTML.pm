@@ -124,23 +124,25 @@ code {
 <body>
 <code>
 |;
-  return bless \$fh, $class;
+  return bless {
+    fh => $fh,
+    n_span => 0,
+  }, $class;
 }
 
 sub PRINT {
   my $self = shift;
   for my $line (@_) {
-    my $l = _fixup_line( $line );
-    print { $$self } "$l";
+    print { $self->{'fh'} } $self->_fixup_line( $line );
   }
 }
 
 sub CLOSE {
   my $self = shift;
-  return unless defined $$self; # prevent double close
-  print { $$self } "\n</code></body></html>\n";
-  close $$self;
-  $$self = undef;
+  return unless defined $self->{'fh'}; # prevent double close
+  print { $self->{'fh'} } "\n</code></body></html>\n";
+  close $self->{'fh'};
+  $self->{'fh'} = undef;
 }
 
 sub DESTROY {
@@ -172,6 +174,7 @@ my @ENTS = (
 my $TAB = '&nbsp;' x 8;
 
 sub _fixup_line {
+  my $self = shift;
   my $line = shift;
 
   # Sort out protected characters and spaces
@@ -218,7 +221,18 @@ sub _fixup_line {
       # Loop over all the escape sequences
       for my $esc (@escs) {
         if (exists $ANSILUT{$esc}) {
-          push(@output, $ANSILUT{$esc});
+          my $rep = $ANSILUT{$esc};
+          # All of our replacements open a span except clear which should close
+          # them all.  Therefore increase span counter unless this is a close.
+          unless ($rep =~ /^<\/span/) {
+            push @output, $rep;
+            $self->{'n_span'} ++;
+          } else {
+            while ($self->{'n_span'} > 0) {
+              push @output, $rep;
+              $self->{'n_span'} --;
+            }
+          }
         } else {
           print STDERR "Unrecognised control code - ignoring\n";
           for (split //, $esc) {
