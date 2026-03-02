@@ -32,6 +32,7 @@ our $VERSION = '0.01';
 use Symbol;
 use base qw/ Tie::Handle /;
 use Term::ANSIColor;
+use ORAC::Version;
 
 sub new {
   my $proto = shift;
@@ -47,73 +48,79 @@ sub TIEHANDLE {
   my $class = shift;
   my $file = shift;
   croak "Must supply a filename!" unless defined $file;
+
+  my $app = ORAC::Version->getApp();
+
   # open the file and write a header
   open(my $fh, ">", $file ) || croak "Unable to open file $file: $!";
   # Define the style sheet elements for the ANSI color codes. The elements
   # will be defined by the name used by Term::ANSIColor
-  print $fh qq|<HTML>
-<style TYPE="text/css">
-<!--
-BODY {
+  print $fh qq|<html>
+<head>
+<title>$app Log</title>
+<style>
+body {
   background: #aaaaaa;
 }
+code {
+  white-space: nowrap;
+}
 .red {
-  color: red
+  color: red;
 }
 .green {
-  color: green
+  color: green;
 }
 .black {
-  color: black
+  color: black;
 }
 .yellow {
-  color: yellow
+  color: yellow;
 }
 .blue {
-  color: blue
+  color: blue;
 }
 .magenta {
-  color: magenta
+  color: magenta;
 }
 .cyan {
-  color: lightcyan
+  color: lightcyan;
 }
 .white {
-  color: white
+  color: white;
 }
 .on_red {
-  background: red
+  background: red;
 }
 .on_green {
-  background: green
+  background: green;
 }
 .on_black {
-  background: black
+  background: black;
 }
 .on_yellow {
-  background: yellow
+  background: yellow;
 }
 .on_blue {
-  background: blue
+  background: blue;
 }
 .on_magenta {
-  background: magenta
+  background: magenta;
 }
 .on_cyan {
-  background: cyan
+  background: cyan;
 }
 .on_white {
-  background: white
+  background: white;
 }
 .bold {
-  font-weight: bold
+  font-weight: bold;
 }
 .underline {
-  text-decoration: underline
+  text-decoration: underline;
 }
-
--->
 </style>
+</head>
 <body>
 <code>
 |;
@@ -145,38 +152,39 @@ sub DESTROY {
 # Create a hash of control codes
 
 my %ANSILUT = (
-               color("clear") => "</span>",
-               color("bold") => "<span CLASS=\"bold\">",
-               color("underline") => "<span CLASS=\"underline\">",
+               color('clear') => '</span>',
+               color('bold') => '<span class="bold">',
+               color('underline') => '<span class="underline">',
               );
-my @colors = qw/black red green yellow blue magenta cyan white/;
-for (@colors) {
-  $ANSILUT{color($_)} = "<span CLASS=\"$_\">";
-  $ANSILUT{color("on_$_")} = "<span CLASS=\"on_$_\">";
+foreach (qw/black red green yellow blue magenta cyan white/) {
+  $ANSILUT{color($_)} = "<span class=\"$_\">";
+  $ANSILUT{color("on_$_")} = "<span class=\"on_$_\">";
 }
+
+my @ENTS = (
+    ['&' => '&amp;'],
+    ['>' => '&gt;'],
+    ['<' => '&lt;'],
+    ["'" => '&quot;'],
+    ['~' => '&tilde;'],
+);
+
+my $TAB = '&nbsp;' x 8;
 
 sub _fixup_line {
   my $line = shift;
 
-  # convert tabs to non-breakable spaces
-  my $nbsp = "&nbsp;";
-  my $tab = $nbsp x 8;
-  $line =~ s/\t/$tab/g;
-
   # Sort out protected characters and spaces
-  my %ents = ( ">" => 'gt',
-               "<" => 'lt',
-               '"' => 'quot',
-               '~' => 'tilde',
-               " " => 'nbsp',
-             );
-  for my $e (keys %ents) {
-    my $ent = '&' . $ents{$e} . ';';
-    $line =~ s/$e/$ent/g;
+  foreach (@ENTS) {
+    my ($ent, $rep) = @$_;
+    $line =~ s/$ent/$rep/g;
   }
 
-  # Newlines to <BR> has to happen after entity replacement
-  $line =~ s/\n/<BR>\n/g;
+  # convert tabs to non-breakable spaces
+  $line =~ s/\t/$TAB/g;
+
+  # Newlines to <br> has to happen after entity replacement
+  $line =~ s/\n/<br \/>\n/g;
 
   # look for escape codes (see Tk::TextANSIColor)
   # Split into chunks
