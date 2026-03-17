@@ -34,6 +34,7 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 use Astro::PAL qw/:constants/;
 use NDF;
+use Statistics::Descriptive;
 
 my $t0 = 273.15;
 my $h = 6.62607015E-34;
@@ -46,6 +47,8 @@ my %inst_eta_tel = (
     AWEOWEO => 0.85,
     KUNTUR => 0.65,
 );
+
+my $verbose = 0;
 
 my $brightness_temperature = sub {
     my ($frequency_hz, $physical) = @_;
@@ -138,168 +141,241 @@ my $sideband_sign = ($sideband =~ /USB/i ? 1.0 : -1.0);
 
 my $column = ['TCS_AZ_AC2', 'FE_LOFREQ'];
 
+my $eta_tel_expect = $inst_eta_tel{$Frm->uhdr('ORAC_INSTRUMENT')};
+orac_throw('No expected eta_tel value known for this instrument')
+    unless defined $eta_tel_expect;
+
 my @output = ();
 
-for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
-    my $in = $Frm->file($i + 1);
+foreach my $subfrm (sort
+        {$a->hdr('OBSIDSS') cmp $b->hdr('OBSIDSS')}
+        $Frm->subfrms('OBSIDSS')) {
+    my @files = $subfrm->files;
+    my $nfiles = scalar @files;
 
-    my $eta_tel_hdr = $Frm->hdrval('ETAL', $i);
-    my $t_air = $Frm->hdrval('ATSTART', $i) + $t0;
-    my $t_spill = $Frm->hdrval('TSPSTART', $i);
-    my $t_load = $Frm->hdrval('TAMSTART', $i);
-    my $freq_if = $Frm->hdrval('IFFREQ', $i);
-    my $medtsys = $Frm->hdrval('MEDTSYS', $i);
-
-    # Get the file dimensions.
-    _GET_DIMENSIONS_ FILE=$in
-    die "Input file $in does not have three dimensions"
-        unless $_GET_DIMENSIONS_{'NDIM'} == 3;
-    my $lbnd = $_GET_DIMENSIONS_{'LBOUND'};
-    my $ubnd = $_GET_DIMENSIONS_{'UBOUND'};
-    my $nreceptor = 1 + $ubnd->[1] - $lbnd->[1];
-    my $nstep = 1 + $ubnd->[2] - $lbnd->[2];
-
-    # Read the receptors from the ACSIS extension.
-    _READ_EXTENSION_ FILE=$in EXTENSION=ACSIS
-    my $acsis = $_READ_EXTENSION_{'ACSIS'};
-    my $t_sys_orig = $acsis->{'TSYS'};
-    my $t_sys_c_orig = $acsis->{'TSYS_C'};
-    my $t_sys_tau = $acsis->{'TSYS_TAU'};
-
-    # Read JCMT state to get elevation and LO frequency.
-    _READ_JCMT_STATE_ FILE=$in COLUMN=$column
-    my $state = $_READ_JCMT_STATE_{'STATE'};
-    my $el = $state->{'TCS_AZ_AC2'};
-    my $freq_lo = $state->{'FE_LOFREQ'};
-
-    # Check the dimensions match.
-    die "$in: dimensions do not match"
-        unless ($nreceptor == scalar @$t_sys_orig)
-        and ($nreceptor == scalar @$t_sys_c_orig)
-        and ($nreceptor == scalar @$t_sys_tau)
-        and ($nstep == scalar @{$t_sys_orig->[0]})
-        and ($nstep == scalar @{$t_sys_c_orig->[0]})
-        and ($nstep == scalar @{$t_sys_tau->[0]})
-        and ($nstep == scalar @$el)
-        and ($nstep == scalar @$freq_lo);
+    my $eta_tel_hdr = $subfrm->hdrval('ETAL', 0);
+    my $t_air = $subfrm->hdrval('ATSTART', 0) + $t0;
+    my $t_spill = $subfrm->hdrval('TSPSTART', 0);
+    my $t_load = $subfrm->hdrval('TAMSTART', 0);
+    my $freq_if = $subfrm->hdrval('IFFREQ', 0);
 
     # Check the expected eta_tel for this instrument.
     # For now use the header value unless it differs significantly from our
     # expected value by instrument.
     # TODO: add a recipe parameter to control this?
-    my $eta_tel_expect = $inst_eta_tel{$Frm->uhdr('ORAC_INSTRUMENT')};
-    orac_throw('No expected eta_tel value known for this instrument')
-        unless defined $eta_tel_expect;
     my $eta_tel;
-    if (abs($eta_tel_hdr- $eta_tel_expect) < 0.05) {
+    if (abs($eta_tel_hdr - $eta_tel_expect) < 0.05) {
         $eta_tel = $eta_tel_hdr;
     }
     else {
         $eta_tel = $eta_tel_expect;
     }
 
+    # Number of receptors (should be same for all files in subfrm).
+    my $nreceptor = undef;
+
+    # Bounds by [file][axis]
+    my @lbnd = ();
+    my @ubnd = ();
+
+    # Number of steps by [file]
+    my @nstep = ();
+
+    # General data by [file][step]
+    my @el = ();
+    my @freq_lo = ();
+
+    # Original t_sys values by [file][receptor][step]
+    my @t_sys_orig = ();
+    my @t_sys_c_orig = ();
+    my @t_sys_tau = ();
+
+    # First iterate over files to read information.  Check receptor bounds
+    # are consistent between files, and other bounds are consistent within
+    # each file.
+    for (my $file = 0; $file < $nfiles; $file ++) {
+        my $in = $files[$file];
+
+        # Get the file dimensions.
+        _GET_DIMENSIONS_ FILE=$in
+        die "Input file $in does not have three dimensions"
+            unless $_GET_DIMENSIONS_{'NDIM'} == 3;
+        $lbnd[$file] = $_GET_DIMENSIONS_{'LBOUND'};
+        $ubnd[$file] = $_GET_DIMENSIONS_{'UBOUND'};
+
+        unless (defined $nreceptor) {
+            $nreceptor = 1 + $ubnd[$file]->[1] - $lbnd[$file]->[1];
+        }
+        elsif ($lbnd[0]->[1] != $lbnd[$file]->[1] or $ubnd[0]->[1] != $ubnd[$file]->[1]) {
+            die "$in: bounds of receptors differ from previous file";
+        }
+
+        # Read the receptors from the ACSIS extension.
+        _READ_EXTENSION_ FILE=$in EXTENSION=ACSIS
+        my $acsis = $_READ_EXTENSION_{'ACSIS'};
+        $t_sys_orig[$file] = $acsis->{'TSYS'};
+        $t_sys_c_orig[$file] = $acsis->{'TSYS_C'};
+        $t_sys_tau[$file] = $acsis->{'TSYS_TAU'};
+
+        # Read JCMT state to get elevation and LO frequency.
+        _READ_JCMT_STATE_ FILE=$in COLUMN=$column
+        my $state = $_READ_JCMT_STATE_{'STATE'};
+        $el[$file] = $state->{'TCS_AZ_AC2'};
+        $freq_lo[$file] = $state->{'FE_LOFREQ'};
+
+        # Check the dimensions.
+        $nstep[$file] = 1 + $ubnd[$file]->[2] - $lbnd[$file]->[2];
+        die "$in: dimensions do not match"
+            unless ($nreceptor == scalar @{$t_sys_orig[$file]})
+            and ($nreceptor == scalar @{$t_sys_c_orig[$file]})
+            and ($nreceptor == scalar @{$t_sys_tau[$file]})
+            and ($nstep[$file] == scalar @{$t_sys_orig[$file]->[0]})
+            and ($nstep[$file] == scalar @{$t_sys_c_orig[$file]->[0]})
+            and ($nstep[$file] == scalar @{$t_sys_tau[$file]->[0]})
+            and ($nstep[$file] == scalar @{$el[$file]})
+            and ($nstep[$file] == scalar @{$freq_lo[$file]});
+    }
+
     # Prepare a collection of NDF sections and the correction factor
     # to apply to each.
-    my %sections = ();
+    my @sections = ();
+    my $push_section = sub {
+        my ($file, $receptor, $start, $end, $factor) = @_;
+        push @{$sections[$file]}, [
+            (sprintf ':,%d,%d:%d',
+                $receptor + $lbnd[$file]->[1],
+                $start + $lbnd[$file]->[2],
+                $end + $lbnd[$file]->[2]),
+            $factor,
+        ];
+    };
+
+    # New t_sys values by [file][receptor][step]
     my @t_sys_new = ();
     my @t_sys_c_new = ();
+
+    # Next work receptor-by-receptor, looking for changes in t_sys.
     for (my $receptor = 0; $receptor < $nreceptor; $receptor ++) {
-        my $t_sys_prev = undef;
-        my $t_sys_new = undef;
-        my $t_sys_c_new = undef;
-        my $warned = 0;
+        my $t_sys_orig_prev = undef;
+        my $t_sys_new_step = undef;
+        my $t_sys_c_new_step = undef;
+        my $factor = undef;
 
-        for (my $step = 0; $step < $nstep; $step ++) {
-            my $t_sys = $t_sys_orig->[$receptor]->[$step];
+        for (my $file = 0; $file < $nfiles; $file ++) {
+            my $step_start = 0;
 
-            if ($step == 0) {
-                my $am = 1.0 / cos(DPIBY2 - $el->[$step]);
+            for (my $step = 0; $step < $nstep[$file]; $step ++) {
+                my $t_sys_orig_step = $t_sys_orig[$file]->[$receptor]->[$step];
 
-                my $freq = ($freq_lo->[$step]
-                    + $sideband_sign * $freq_if);
+                unless ((defined $factor) and ($t_sys_orig_step == $t_sys_orig_prev)) {
+                    # This is either the start (we didn't calculate $factor
+                    # yet) or t_sys_orig changed (so we need to recalculate $factor).
 
-                my $tau_225 = $t_sys_tau->[$receptor]->[$step];
-                _CALCULATE_INTERPOLATED_OPACITY_ OPACITY_225=$tau_225 FREQ_GHZ=$freq
-                my $tau_freq = $_CALCULATE_INTERPOLATED_OPACITY_{'OPACITY'};
+                    if ($step > 0) {
+                        # This isn't the start of the file, so write out
+                        # the factor for the previous section.
+                        $push_section->($file, $receptor, $step_start, $step - 1, $factor);
+                    }
 
-                $t_sys_c_new = $t_sys_correction_factor->(
-                    $eta_tel, $freq * 1.0E9, $tau_freq, $am,
-                    $t_load, $t_spill, $t_air);
+                    # Record where this section started.
+                    $step_start = $step;
 
-                my $t_sys_c_orig_step = $t_sys_c_orig->[$receptor]->[$step];
+                    # Determine which information to use for the new calibration.
+                    # The current step of the current file.
+                    my $cal_file = $file;
+                    my $cal_step = $step;
 
-                my $factor = $t_sys_c_new / $t_sys_c_orig_step;
+                    # This isn't where we actually calibrated -- can we get the ref. coords from the file?
+                    my $am = 1.0 / cos(DPIBY2 - $el[$cal_file]->[$cal_step]);
 
-                $t_sys_new = $t_sys * $factor;
+                    my $freq = ($freq_lo[$cal_file]->[$cal_step] + $sideband_sign * $freq_if);
 
-                orac_say sprintf
-                    'Receptor %d, time slice %d: TSYS_C %.6f -> %.6f (factor %.6f)',
-                    $receptor + 1, $step + 1,
-                    $t_sys_c_orig_step, $t_sys_c_new, $factor;
+                    my $tau_225 = $t_sys_tau[$cal_file]->[$receptor]->[$cal_step];
+                    _CALCULATE_INTERPOLATED_OPACITY_ OPACITY_225=$tau_225 FREQ_GHZ=$freq VERBOSE=$verbose
+                    my $tau_freq = $_CALCULATE_INTERPOLATED_OPACITY_{'OPACITY'};
 
-                $sections{sprintf ':,%d,:', $receptor + 1} = $factor;
+                    $t_sys_c_new_step = $t_sys_correction_factor->(
+                        $eta_tel, $freq * 1.0E9, $tau_freq, $am,
+                        $t_load, $t_spill, $t_air);
+
+                    my $t_sys_c_orig_step = $t_sys_c_orig[$file]->[$receptor]->[$step];
+
+                    $factor = $t_sys_c_new_step / $t_sys_c_orig_step;
+
+                    $t_sys_new_step = $t_sys_orig_step * $factor;
+
+                    orac_say sprintf
+                        'Receptor %d, time slice %d: TSYS_C %.6f -> %.6f (factor %.6f)',
+                        $receptor + 1, $step + 1,
+                        $t_sys_c_orig_step, $t_sys_c_new_step, $factor
+                        if $verbose;
+                }
+
+                $t_sys_orig_prev = $t_sys_orig_step;
+                $t_sys_new[$file]->[$receptor]->[$step] = $t_sys_new_step;
+                $t_sys_c_new[$file]->[$receptor]->[$step] = $t_sys_c_new_step;
             }
-            elsif ($t_sys != $t_sys_prev) {
-                orac_warn sprintf
-                    "Receptor %d, time slice %d: TSYS changed but this recipe currently only processes a single value\n",
-                    $receptor + 1, $step + 1
-                    unless $warned;
 
-                $warned = 1;
+            # Write out the factor for the last section in the file.
+            if (defined $factor) {
+                $push_section->($file, $receptor, $step_start, $nstep[$file] - 1, $factor);
             }
-
-            $t_sys_prev = $t_sys;
-            $t_sys_new[$receptor]->[$step] = $t_sys_new;
-            $t_sys_c_new[$receptor]->[$step] = $t_sys_c_new;
         }
     }
 
-    # Create a correction factor file of the same shape as the input by appying
-    # chpix to it.
-    my $factor = $in . '_factor';
+    # Accumulate Tsys values for statistics and determine new median Tsys value.
+    my $tsys_stat = Statistics::Descriptive::Full->new();
+    foreach my $file_t_sys_new (@t_sys_new) {
+        $tsys_stat->add_data(@$_) foreach @$file_t_sys_new;
+    }
+    my $t_sys_median = $tsys_stat->median;
 
-    do {
-        my $table = ORAC::TempFile->new();
-        my $table_fh = $table->handle();
+    # Finally iterate over files again, applying updates.
+    for (my $file = 0; $file < $nfiles; $file ++) {
+        my $in = $files[$file];
 
-        foreach my $section (sort keys %sections) {
-            printf $table_fh "%s %f\n", $section, $sections{$section};
-        }
+        # Create a correction factor file of the same shape as the input by appying
+        # chpix to it.
+        my $factor = ($in =~ s/_[a-z]*$//r) . '_fct';
 
-        $table_fh->close();
+        do {
+            my $table = ORAC::TempFile->new();
+            my $table_fh = $table->handle();
 
-        $Mon{'kappa_mon'}->obeyw('chpix', "in=$in out=$factor mode=file file=$table");
+            foreach my $section (@{$sections[$file]}) {
+                printf $table_fh "%s %f\n", @$section;
+            }
 
-        $Mon{'ndfpack_mon'}->obeyw('setunits', "ndf=$factor units=!");
-    };
+            $table_fh->close();
 
-    # Multiply the output by the correction factor file to obtain the output.
-    my $out = $in . '_cal';
+            $Mon{'kappa_mon'}->obeyw('chpix', "in=$in out=$factor mode=file file=$table");
 
-    $Mon{'kappa_mon'}->obeyw('mult', "in1=$in in2=$factor out=$out");
+            $Mon{'ndfpack_mon'}->obeyw('setunits', "ndf=$factor units=!");
+        };
 
-    push @output, $out;
-    $Frm->push_intermediates($factor);
+        # Multiply the output by the correction factor file to obtain the output.
+        my $out = ($in =~ s/_[a-z]*$//r) . '_cal';
 
-    # Update TSYS and TSYS_C values in ACSIS extension.
-    my $t_sys_new_v = $vectorize_array->(\@t_sys_new);
-    my $t_sys_c_new_v = $vectorize_array->(\@t_sys_c_new);
-    die "$in: output vectorized dimensions do not match"
-        unless ($nreceptor * $nstep == scalar @$t_sys_new_v)
-        and ($nreceptor * $nstep == scalar @$t_sys_c_new_v);
-    $set_tsys_tsys_c->($out, $t_sys_new_v, $t_sys_c_new_v);
+        $Mon{'kappa_mon'}->obeyw('mult', "in1=$in in2=$factor out=$out");
 
-    # Determine new "MED" Tsys header value.
-    my $sum = 0.0;
-    $sum += $_ foreach values %sections;
-    my $average_factor = $sum / $nreceptor;
+        # Update TSYS and TSYS_C values in ACSIS extension.
+        my $t_sys_new_v = $vectorize_array->($t_sys_new[$file]);
+        my $t_sys_c_new_v = $vectorize_array->($t_sys_c_new[$file]);
+        die "$in: output vectorized dimensions do not match"
+            unless ($nreceptor * $nstep[$file] == scalar @$t_sys_new_v)
+            and ($nreceptor * $nstep[$file] == scalar @$t_sys_c_new_v);
+        $set_tsys_tsys_c->($out, $t_sys_new_v, $t_sys_c_new_v);
 
-    $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'MEDTSYS'}
-        = $medtsys * $average_factor;
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'MEDTSYS'}
+            = $t_sys_median;
 
-    # Set ETAL header if we used a different value.
-    $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'ETAL'}
-        = $eta_tel if $eta_tel != $eta_tel_hdr;
+        # Set ETAL header if we used a different value.
+        $Frm->uhdr()->{'WESLEY_SET_HEADERS'}->{$out}->{'ETAL'}
+            = $eta_tel if $eta_tel != $eta_tel_hdr;
+
+        $Frm->push_intermediates($factor);
+        push @output, $out;
+    }
 }
 
 # Store processed files in the frame.
