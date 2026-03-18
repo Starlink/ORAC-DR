@@ -48,7 +48,10 @@ my %inst_eta_tel = (
     KUNTUR => 0.65,
 );
 
-my $verbose = 0;
+my $cal_data_src = $RECPARS{'CAL_DATA'} // 'cal';
+my $eta_tel_src = $RECPARS{'ETA_TEL'} // 'auto';
+my $eta_tel_tol = $RECPARS{'ETA_TEL_TOL'} // 0.05;
+my $verbose = $RECPARS{'VERBOSE'} // 0;
 
 my $brightness_temperature = sub {
     my ($frequency_hz, $physical) = @_;
@@ -139,7 +142,7 @@ my $set_tsys_tsys_c = sub {
 my $sideband = $Frm->uhdr('ORAC_OBSERVED_SIDEBAND');
 my $sideband_sign = ($sideband =~ /USB/i ? 1.0 : -1.0);
 
-my $column = ['TCS_AZ_AC2', 'FE_LOFREQ'];
+my $column = [qw/TCS_AIRMASS FE_LOFREQ JOS_DRCONTROL/];
 
 my $eta_tel_expect = $inst_eta_tel{$Frm->uhdr('ORAC_INSTRUMENT')};
 orac_throw('No expected eta_tel value known for this instrument')
@@ -158,17 +161,36 @@ foreach my $subfrm (sort
     my $t_spill = $subfrm->hdrval('TSPSTART', 0);
     my $t_load = $subfrm->hdrval('TAMSTART', 0);
     my $freq_if = $subfrm->hdrval('IFFREQ', 0);
+    my $steps_btwn_cal = $subfrm->hdrval('STBETCAL', 0);
 
     # Check the expected eta_tel for this instrument.
     # For now use the header value unless it differs significantly from our
     # expected value by instrument.
-    # TODO: add a recipe parameter to control this?
     my $eta_tel;
-    if (abs($eta_tel_hdr - $eta_tel_expect) < 0.05) {
+    if ($eta_tel_src =~ /^head/i) {
         $eta_tel = $eta_tel_hdr;
+        orac_say "Using ETA_TEL value from header $eta_tel";
+    }
+    elsif ($eta_tel_src =~ /^tab/i) {
+        $eta_tel = $eta_tel_expect;
+        orac_say "Using tabulated ETA_TEL value $eta_tel";
+    }
+    elsif ($eta_tel_src =~ /^auto/i) {
+        if (abs($eta_tel_hdr - $eta_tel_expect) < $eta_tel_tol) {
+            $eta_tel = $eta_tel_hdr;
+            orac_say "Using ETA_TEL value from header $eta_tel (auto mode)";
+        }
+        else {
+            $eta_tel = $eta_tel_expect;
+            orac_say "Using tabulated ETA_TEL value $eta_tel (auto mode)";
+        }
+    }
+    elsif ($eta_tel_src =~ /^[.0-9]+$/) {
+        $eta_tel = $eta_tel_src;
+        orac_say "Using given ETA_TEL value $eta_tel";
     }
     else {
-        $eta_tel = $eta_tel_expect;
+        orac_termerr "Did not understand ETA_TEL recpar: '$eta_tel_src'";
     }
 
     # Number of receptors (should be same for all files in subfrm).
@@ -182,8 +204,9 @@ foreach my $subfrm (sort
     my @nstep = ();
 
     # General data by [file][step]
-    my @el = ();
+    my @airmass = ();
     my @freq_lo = ();
+    my @jos_drcontrol = ();
 
     # Original t_sys values by [file][receptor][step]
     my @t_sys_orig = ();
@@ -220,8 +243,9 @@ foreach my $subfrm (sort
         # Read JCMT state to get elevation and LO frequency.
         _READ_JCMT_STATE_ FILE=$in COLUMN=$column
         my $state = $_READ_JCMT_STATE_{'STATE'};
-        $el[$file] = $state->{'TCS_AZ_AC2'};
+        $airmass[$file] = $state->{'TCS_AIRMASS'};
         $freq_lo[$file] = $state->{'FE_LOFREQ'};
+        $jos_drcontrol[$file] = $state->{'JOS_DRCONTROL'};
 
         # Check the dimensions.
         $nstep[$file] = 1 + $ubnd[$file]->[2] - $lbnd[$file]->[2];
@@ -232,9 +256,46 @@ foreach my $subfrm (sort
             and ($nstep[$file] == scalar @{$t_sys_orig[$file]->[0]})
             and ($nstep[$file] == scalar @{$t_sys_c_orig[$file]->[0]})
             and ($nstep[$file] == scalar @{$t_sys_tau[$file]->[0]})
-            and ($nstep[$file] == scalar @{$el[$file]})
-            and ($nstep[$file] == scalar @{$freq_lo[$file]});
+            and ($nstep[$file] == scalar @{$airmass[$file]})
+            and ($nstep[$file] == scalar @{$freq_lo[$file]})
+            and ($nstep[$file] == scalar @{$jos_drcontrol[$file]});
     }
+
+    # Locate steps before which a calibration probably happened.
+    my @calibrations = (0);
+    do {
+        my $step_total = 0;
+        my $step_sequence_start = undef;
+
+        for (my $file = 0; $file < $nfiles; $file ++) {
+            for (my $step = 0; $step < $nstep[$file]; $step ++) {
+                # If the previous step was an end, this must be
+                # the start of the next sequence.
+                unless (defined $step_sequence_start) {
+                    $step_sequence_start = $step_total;
+                }
+
+                # Look for bit 1 "end sequence".
+                if ($jos_drcontrol[$file]->[$step] & 1) {
+                    my $steps_since_cal = 1 + $step_total - $calibrations[-1];
+
+                    # Attempt to replicate logic from raster_pssw OCS recipe,
+                    # but don't add 0 to @calibrations again.
+                    if ($steps_since_cal >= $steps_btwn_cal) {
+                        push @calibrations, $step_sequence_start
+                            if $step_sequence_start;
+                    }
+
+                    undef $step_sequence_start;
+                }
+
+                $step_total ++;
+            }
+        }
+
+        orac_say "Would expect calibration before step(s): "
+            . join ', ', @calibrations;
+    };
 
     # Prepare a collection of NDF sections and the correction factor
     # to apply to each.
@@ -260,11 +321,18 @@ foreach my $subfrm (sort
         my $t_sys_new_step = undef;
         my $t_sys_c_new_step = undef;
         my $factor = undef;
+        my $step_total = 0;
+        my $last_calibration = undef;
 
         for (my $file = 0; $file < $nfiles; $file ++) {
             my $step_start = 0;
 
             for (my $step = 0; $step < $nstep[$file]; $step ++) {
+                # Would a calibration be expected here?
+                if (grep {$step_total == $_} @calibrations) {
+                    $last_calibration = [$file, $step];
+                }
+
                 my $t_sys_orig_step = $t_sys_orig[$file]->[$receptor]->[$step];
 
                 unless ((defined $factor) and ($t_sys_orig_step == $t_sys_orig_prev)) {
@@ -284,9 +352,24 @@ foreach my $subfrm (sort
                     # The current step of the current file.
                     my $cal_file = $file;
                     my $cal_step = $step;
+                    if ($cal_data_src =~ /^start/i) {
+                        $cal_file = 0;
+                        $cal_step = 0;
+                    }
+                    elsif ($cal_data_src =~ /^cal/i) {
+                        $cal_file = $last_calibration->[0];
+                        $cal_step = $last_calibration->[1];
+                    }
+                    elsif ($cal_data_src =~ /^step/i) {
+                        $cal_file = $file;
+                        $cal_step = $step;
+                    }
+                    else {
+                        orac_termerr "Did not understand CAL_DATA recpar: '$cal_data_src'";
+                    }
 
                     # This isn't where we actually calibrated -- can we get the ref. coords from the file?
-                    my $am = 1.0 / cos(DPIBY2 - $el[$cal_file]->[$cal_step]);
+                    my $am = $airmass[$cal_file]->[$cal_step];
 
                     my $freq = ($freq_lo[$cal_file]->[$cal_step] + $sideband_sign * $freq_if);
 
@@ -314,6 +397,8 @@ foreach my $subfrm (sort
                 $t_sys_orig_prev = $t_sys_orig_step;
                 $t_sys_new[$file]->[$receptor]->[$step] = $t_sys_new_step;
                 $t_sys_c_new[$file]->[$receptor]->[$step] = $t_sys_c_new_step;
+
+                $step_total ++;
             }
 
             # Write out the factor for the last section in the file.
