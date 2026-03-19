@@ -32,7 +32,7 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 =cut
 
-use Astro::PAL qw/:constants/;
+use DateTime::Format::Epoch::MJD;
 use NDF;
 use Statistics::Descriptive;
 
@@ -49,6 +49,7 @@ my %inst_eta_tel = (
 );
 
 my $cal_data_src = $RECPARS{'CAL_DATA'} // 'cal';
+my $cal_am_src = $RECPARS{'CAL_AM'} // 'ref';
 my $eta_tel_src = $RECPARS{'ETA_TEL'} // 'auto';
 my $eta_tel_tol = $RECPARS{'ETA_TEL_TOL'} // 0.05;
 my $verbose = $RECPARS{'VERBOSE'} // 0;
@@ -142,11 +143,14 @@ my $set_tsys_tsys_c = sub {
 my $sideband = $Frm->uhdr('ORAC_OBSERVED_SIDEBAND');
 my $sideband_sign = ($sideband =~ /USB/i ? 1.0 : -1.0);
 
-my $column = [qw/TCS_AIRMASS FE_LOFREQ JOS_DRCONTROL/];
+my $column = [qw/TCS_AIRMASS TCS_TAI FE_LOFREQ JOS_DRCONTROL/];
 
 my $eta_tel_expect = $inst_eta_tel{$Frm->uhdr('ORAC_INSTRUMENT')};
 orac_throw('No expected eta_tel value known for this instrument')
     unless defined $eta_tel_expect;
+
+_GET_TAI_OFFSET_
+my $dtai = $_GET_TAI_OFFSET_{'DTAI'};
 
 my @output = ();
 
@@ -155,6 +159,17 @@ foreach my $subfrm (sort
         $Frm->subfrms('OBSIDSS')) {
     my @files = $subfrm->files;
     my $nfiles = scalar @files;
+
+    my $reference_position = undef;
+    do {
+        my $in = $files[0];
+        _READ_OCS_CONFIG_ FILE=$in
+        my $config = $_READ_OCS_CONFIG_{'CONFIG'};
+        $reference_position = $config->tcs->getCoords('REFERENCE');
+        my $offset = $config->tcs->getOffset('REFERENCE');
+        $reference_position = $reference_position->apply_offset($offset)
+            if defined $offset;
+    };
 
     my $eta_tel_hdr = $subfrm->hdrval('ETAL', 0);
     my $t_air = $subfrm->hdrval('ATSTART', 0) + $t0;
@@ -204,6 +219,7 @@ foreach my $subfrm (sort
     my @nstep = ();
 
     # General data by [file][step]
+    my @mjd = ();
     my @airmass = ();
     my @freq_lo = ();
     my @jos_drcontrol = ();
@@ -243,6 +259,7 @@ foreach my $subfrm (sort
         # Read JCMT state to get elevation and LO frequency.
         _READ_JCMT_STATE_ FILE=$in COLUMN=$column
         my $state = $_READ_JCMT_STATE_{'STATE'};
+        $mjd[$file] = $state->{'TCS_TAI'};
         $airmass[$file] = $state->{'TCS_AIRMASS'};
         $freq_lo[$file] = $state->{'FE_LOFREQ'};
         $jos_drcontrol[$file] = $state->{'JOS_DRCONTROL'};
@@ -256,6 +273,7 @@ foreach my $subfrm (sort
             and ($nstep[$file] == scalar @{$t_sys_orig[$file]->[0]})
             and ($nstep[$file] == scalar @{$t_sys_c_orig[$file]->[0]})
             and ($nstep[$file] == scalar @{$t_sys_tau[$file]->[0]})
+            and ($nstep[$file] == scalar @{$mjd[$file]})
             and ($nstep[$file] == scalar @{$airmass[$file]})
             and ($nstep[$file] == scalar @{$freq_lo[$file]})
             and ($nstep[$file] == scalar @{$jos_drcontrol[$file]});
@@ -368,8 +386,22 @@ foreach my $subfrm (sort
                         orac_termerr "Did not understand CAL_DATA recpar: '$cal_data_src'";
                     }
 
-                    # This isn't where we actually calibrated -- can we get the ref. coords from the file?
-                    my $am = $airmass[$cal_file]->[$cal_step];
+                    my $am;
+                    if ($cal_am_src =~ /^tcs/i) {
+                        $am = $airmass[$cal_file]->[$cal_step];
+                    }
+                    elsif ($cal_am_src =~ /^ref/i) {
+                        my $dt = DateTime::Format::Epoch::MJD->parse_datetime(
+                            $mjd[$cal_file]->[$cal_step]);
+                        $dt->subtract(seconds => $dtai);
+
+                        $reference_position->datetime($dt);
+
+                        $am = $reference_position->airmass;
+                    }
+                    else {
+                        orac_termerr "Did not understand CAL_AM recpar: '$cal_am_src'";
+                    }
 
                     my $freq = ($freq_lo[$cal_file]->[$cal_step] + $sideband_sign * $freq_if);
 
