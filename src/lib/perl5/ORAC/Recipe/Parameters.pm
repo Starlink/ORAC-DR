@@ -114,8 +114,9 @@ sub fixed_parameters {
     my %clean = ();
 
     my ($key, $value);
-    while (($key,$value) = each %$fixed) {
-      $clean{uc($key)} = $value;
+    while (($key, $value) = each %$fixed) {
+      my ($newkey, $newval) = $self->_clean_entry($key, $value);
+      $clean{$newkey} = $newval;
     }
 
     $self->{'FixedParameters'} = \%clean;

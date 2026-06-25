@@ -1242,9 +1242,10 @@ sub orac_parse_recparams {
   return undef unless defined $string;
 
   my (%fixed, @file);
-  foreach (split ',', $string) {
+  foreach (split /(?<!\\),/, $string) {
     if (/=/) {
       my ($key, $value) = split '=', $_, 2;
+      $value =~ s/\\,/,/g;
       $fixed{$key} = $value;
     }
     else {
