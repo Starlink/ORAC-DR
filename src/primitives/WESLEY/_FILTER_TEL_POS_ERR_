@@ -1,0 +1,105 @@
+# vim: syn=perl
+
+use JSA::Headers qw/read_jcmtstate/;
+use Astro::PAL;
+use NDF;
+
+my $tol = $RECPARS{'TELPOSERRMAX'} // 60;
+
+my $set_jos_drcontrol = sub {
+    my $filename = shift;
+    my $data = shift;
+
+    # Open the raw file and find the JCMTSTATE component.
+    my $status = &NDF::SAI__OK();
+    err_begin($status);
+    hds_open($filename, "UPDATE", my $loc, $status);
+    dat_find($loc, "MORE", my $mloc, $status);
+    dat_find($mloc, "JCMTSTATE", my $jloc, $status);
+    dat_annul($mloc, $status);
+
+    dat_find($jloc, "RTS_END", my $rloc, $status);
+    dat_size($rloc, my $size, $status);
+    orac_throw('Unexpected number of RTS_END elements')
+        unless $size == scalar @$data;
+    dat_annul($rloc, $status);
+
+    my $comp = 'JOS_DRCONTROL';
+    dat_there($jloc, $comp, my $there, $status);
+    dat_erase($jloc, $comp, $status) if $there;
+    # NOTE: should be word, not integer type.
+    dat_new1i($jloc, $comp, $size, $status);
+    cmp_put1i($jloc, $comp, $size, @$data, $status);
+
+    # Annul remaining locators and check the error status.
+    dat_annul($jloc, $status);
+    dat_annul($loc, $status);
+    my $errstr = undef;
+    if ($status != &NDF::SAI__OK()) {
+        $errstr = &NDF::err_flush_to_string($status);
+    }
+    err_end($status);
+    orac_throw("Could not set JOS_DRCONTROL: $errstr") if defined $errstr;
+};
+
+my @output = ();
+for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
+    # Do not use inout to avoid a number being added to the suffix.
+    my $in = $Frm->file($i + 1);
+
+    my $out = $in . '_flt';
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$in out=$out");
+
+    my $seq_type = $Frm->hdrval('SEQ_TYPE', $i);
+
+    unless ($seq_type eq 'science') {
+        orac_say("SEQ_TYPE not science ('$seq_type') for file $in");
+    }
+    else {
+        my %state = read_jcmtstate($in, undef, qw/
+            RTS_END JOS_DRCONTROL
+            TCS_TR_AC1 TCS_TR_AC2
+            TCS_TR_DC1 TCS_TR_DC2
+        /);
+
+        my $data = $state{'JOS_DRCONTROL'};
+        my $n_step = scalar @$data;
+
+        orac_throw('Length of JOS_DRCONTROL and RTS_END do not match')
+            unless $n_step == scalar @{$state{'RTS_END'}};
+
+        my $n_err = 0;
+
+        for (my $step = 0; $step < $n_step; $step ++) {
+            my $sep = Astro::PAL::palDsep(
+                $state{'TCS_TR_AC1'}->[$step],
+                $state{'TCS_TR_AC2'}->[$step],
+                $state{'TCS_TR_DC1'}->[$step],
+                $state{'TCS_TR_DC2'}->[$step],
+            ) * Astro::PAL::DR2AS;
+
+            if ($sep > $tol) {
+                $data->[$step] |= 2;  # Set PTCS_BIT
+                $n_err ++;
+            }
+        }
+
+        if ($n_err) {
+            my $out = $in . '_flt';
+
+            orac_say("Filtering for telescope position errors in file $out");
+
+
+            $set_jos_drcontrol->($out, $data);
+        }
+        else {
+            orac_say("No telescope position errors for file $in");
+        }
+    }
+
+    push @output, $out;
+}
+
+$Frm->files(@output);
+
+$Frm->readhdr();
