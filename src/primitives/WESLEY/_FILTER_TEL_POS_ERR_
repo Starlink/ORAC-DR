@@ -4,7 +4,22 @@ use JSA::Headers qw/read_jcmtstate/;
 use Astro::PAL;
 use NDF;
 
-my $tol = $RECPARS{'TELPOSERRMAX'} // 60;
+my $tol = $RECPARS{'TELPOSERRMAX'};
+unless (defined $tol) {
+    # If the recipe parameter was not specified, use a value defined for one
+    # of the most common modes.  (These have not been accurately determined
+    # but can be somewhat "tight" since this recipe will presumably only
+    # be used for observations where there are excursions to remove.)
+    if ($Frm->hdrval('SCAN_PAT', 0) =~ /pong/i) {
+        my $size = $Frm->hdrval('MAP_WDTH', 0);
+        $tol = ($size < 1300) ? 60  # Pong900
+            : (($size < 2700) ? 300  # Pong1800
+            : 600);  # Pong3600
+    }
+    else {
+        $tol = 15;
+    }
+}
 
 my $set_jos_drcontrol = sub {
     my $filename = shift;
@@ -52,8 +67,8 @@ for (my $i = 0; $i < $Frm->nfiles(); $i ++) {
 
     my $seq_type = $Frm->hdrval('SEQ_TYPE', $i);
 
-    unless ($seq_type eq 'science') {
-        orac_say("SEQ_TYPE not science ('$seq_type') for file $in");
+    unless ($seq_type eq 'science' or $seq_type eq 'pointing') {
+        orac_say("SEQ_TYPE not science/pointing ('$seq_type') for file $in");
     }
     else {
         my %state = read_jcmtstate($in, undef, qw/
