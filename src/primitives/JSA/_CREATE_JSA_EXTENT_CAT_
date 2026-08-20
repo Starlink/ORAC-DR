@@ -71,6 +71,50 @@ my $file = $Obj->file(1);
 # Holder for intermediate files that should be tidied up
 my @intermediates = ();
 
+
+# Determine if recpars indicate artifact removal.
+my $snrinput = $file;
+if (exists $RECPARS{'REMOVE_ART_RING'} and defined $RECPARS{'REMOVE_ART_RING'}) {
+    my $art_spec = $RECPARS{'REMOVE_ART_RING'};
+    my ($art_ra, $art_dec, $art_amp) = split /#/, $art_spec, 3;
+    orac_say("Removing ring artifact at '$art_ra', '$art_dec' with amplitude $art_amp");
+
+    $snrinput = $jsa_tiles
+        ? $Obj->inout_jsatile('artrem', 1)
+        : $Obj->inout('_artrem');
+
+    my $ard = ORAC::TempFile->new(OPEN => 1, SUFFIX => '.ard');
+    my $ard_h = $ard->handle;
+
+    print $ard_h "COFRAME(SKY,SYSTEM=FK5)\n";
+    print $ard_h "CIRCLE($art_ra, $art_dec, 0:03:05) .AND. .NOT. CIRCLE($art_ra, $art_dec, 0:02:45)\n";
+
+    $ard_h->close;
+
+    my $template = ORAC::TempFile->new(0);
+    my $trim = ORAC::TempFile->new(0);
+    my $art = ORAC::TempFile->new(0);
+    my $artsm = ORAC::TempFile->new(0);
+    my $artsc = ORAC::TempFile->new(0);
+
+    # Prepare ring feature for subtraction via ardmask and gausmooth.
+    $Mon{'kappa_mon'}->obeyw('creframe', "out=$template mode=bl like=$file");
+    $Mon{'ndfpack_mon'}->obeyw('ndfcopy', "in=$file out=$trim trim trimwcs");
+    $Mon{'ndfpack_mon'}->obeyw('wcscopy', "ndf=$template like=$trim");
+    $Mon{'kappa_mon'}->obeyw('ardmask', "in=$template ardfile=$ard out=$art const=0.0001");
+    $Mon{'kappa_mon'}->obeyw('gausmooth', "in=$art fwhm=3 out=$artsm");
+
+    # Scale artifact using specified amplitude.
+    $Mon{'kappa_mon'}->obeyw('cmult', "in=$artsm scalar=$art_amp out=$artsc");
+
+    # Set variance and then subtract from input.
+    $Mon{'ndfpack_mon'}->obeyw('setvar', "ndf=$artsc variance=0.0");
+    $Mon{'kappa_mon'}->obeyw('sub', "in1=$file in2=$artsc out=$snrinput");
+
+    push @intermediates, $snrinput;
+}
+
+
 orac_say("Identifying regions of emission in $file." );
 
 #TODO If we want to use beam size to determine the object minpix/ or use
@@ -92,8 +136,8 @@ my $log = new ORAC::TempFile;
 my $fc_param = new ORAC::TempFile;
 
 # Create the SNR file.
-_CALC_SNR_IMAGE_ OUT=$snr STATS=0 GROUP=$group
-orac_say("Created SNR map from $file." );
+_CALC_SNR_IMAGE_ IN=$snrinput OUT=$snr STATS=0 GROUP=$group
+orac_say("Created SNR map from $snrinput." );
 
 # Create catalogue from SNR map.
 my $minheight = "5*RMS";
@@ -167,9 +211,6 @@ if ($nclumps > 0){
 
     orac_say('Added ID column to output extent catalogue');
 
-    # Push intermediates to frame
-    $Obj->push_intermediates(@intermediates);
-
     # Add JSA FITS headers to the catalog.
     _COPY_JSA_HEADERS_TO_FITS_FILE_ IN=$file OUT=$outcat GROUP=$group PRODUCT=extent-cat
 
@@ -195,6 +236,9 @@ else {
     my $text = "No emission\ndetected.";
     _TAG_AS_REPRESENTATIVE_ DISPLAY=0 GROUP=$group FILE=$file SUFFIX=extent-mask PRODUCT=extent-mask PREVIEW_BACKGROUND=TRUE PREVIEW_ONLY=1 PREVIEW_TEXT=$text
 }
+
+# Push intermediates to frame
+$Obj->push_intermediates(@intermediates);
 
 # Unset the product ID prefix again before leaving the primitive.
 $Obj->set_product_id_prefix();
